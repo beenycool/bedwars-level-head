@@ -128,6 +128,98 @@ class LevelheadGUI : EssentialGUI(ElementaVersion.V1, "§lLevelhead §r§8by Sk1
                 }
             }
 
+            // Add Hypixel API Settings Container
+            val apiSettingsContainer = UIContainer().constrain {
+                y = SiblingConstraint(10f)
+                width = RelativeConstraint()
+                height = ChildBasedRangeConstraint()
+            } 
+            
+            val apiSettingsTitle = UIText("§nHypixel API Settings").constrain {
+                x = 0.pixels
+                y = 0.pixels
+            } childOf apiSettingsContainer
+            
+            // API Key Input Field
+            val apiKeyLabel = UIText("Hypixel API Key: ").constrain {
+                x = 0.pixels
+                y = SiblingConstraint(10f)
+            } childOf apiSettingsContainer
+            
+            val apiKeyField = TextInputComponent(
+                Levelhead.displayManager.config.hypixelApiKey, 
+                "Enter your Hypixel API key here..."
+            ).constrain {
+                x = SiblingConstraint(5f)
+                y = CenterConstraint() boundTo apiKeyLabel
+                width = 200.pixels
+                height = 16.pixels
+            } childOf apiSettingsContainer
+            
+            apiKeyField.onValueChange {
+                if (it is String) {
+                    Levelhead.displayManager.config.hypixelApiKey = it.trim()
+                }
+            }
+            
+            val apiKeyHelpText = UIText("§7Get your key with /api new on Hypixel").constrain {
+                x = 0.pixels
+                y = SiblingConstraint(3f)
+            } childOf apiSettingsContainer
+            
+            // Direct API Toggle
+            val directApiLabel = UIText("Use Direct API Access:").constrain {
+                x = 0.pixels
+                y = SiblingConstraint(10f)
+            } childOf apiSettingsContainer
+            
+            val directApiToggle = SwitchComponent(Levelhead.displayManager.config.useDirectApiAccess).constrain {
+                x = SiblingConstraint(5f) 
+                y = CenterConstraint() boundTo directApiLabel
+            } childOf apiSettingsContainer
+            
+            directApiToggle.onValueChange {
+                Levelhead.displayManager.config.useDirectApiAccess = it as Boolean
+            }
+            
+            val directApiHelpText = UIText("§7Directly queries Hypixel API for Bedwars stars and uses prestige colors").constrain {
+                x = 0.pixels
+                y = SiblingConstraint(3f)
+            } childOf apiSettingsContainer
+            
+            // Bedwars Only Toggle
+            val bedwarsOnlyLabel = UIText("Show Only in Bedwars Games:").constrain {
+                x = 0.pixels
+                y = SiblingConstraint(10f)
+            } childOf apiSettingsContainer
+            
+            val bedwarsOnlyToggle = SwitchComponent(Levelhead.displayManager.config.onlyInBedwars).constrain {
+                x = SiblingConstraint(5f)
+                y = CenterConstraint() boundTo bedwarsOnlyLabel
+            } childOf apiSettingsContainer
+            
+            bedwarsOnlyToggle.onValueChange {
+                Levelhead.displayManager.config.onlyInBedwars = it as Boolean
+            }
+            
+            val bedwarsOnlyHelpText = UIText("§7Hides stars in lobbies, only shows during actual Bedwars games").constrain {
+                x = 0.pixels
+                y = SiblingConstraint(3f)
+            } childOf apiSettingsContainer
+            
+            // Clear Cache Button
+            val clearCacheButton = ButtonComponent("Clear API Cache") {
+                HypixelApiHandler.clearCache()
+                Levelhead.displayManager.clearCache()
+                EssentialAPI.getNotifications().push("Cache Cleared", "Cleared Bedwars stars cache")
+            }.constrain {
+                x = 0.pixels
+                y = SiblingConstraint(15f)
+                width = 120.pixels
+            } childOf apiSettingsContainer
+            
+            apiSettingsContainer childOf settings
+
             Window.enqueueRenderOperation {
                 Levelhead.displayManager.aboveHead.forEachIndexed { i, display ->
                     if (i > Levelhead.LevelheadPurchaseStates.aboveHead) return@forEachIndexed

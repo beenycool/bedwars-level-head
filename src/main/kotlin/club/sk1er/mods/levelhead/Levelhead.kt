@@ -4,6 +4,7 @@ import club.sk1er.mods.levelhead.auth.MojangAuth
 import club.sk1er.mods.levelhead.commands.LevelheadCommand
 import club.sk1er.mods.levelhead.config.DisplayConfig
 import club.sk1er.mods.levelhead.core.DisplayManager
+import club.sk1er.mods.levelhead.core.HypixelApiHandler
 import club.sk1er.mods.levelhead.core.RateLimiter
 import club.sk1er.mods.levelhead.core.dashUUID
 import club.sk1er.mods.levelhead.core.trimmed
@@ -171,59 +172,111 @@ object Levelhead {
 
     fun fetch(requests: List<LevelheadRequest>): Job {
         return scope.launch {
-
-            rateLimiter.consume()
-
-            val reqMap = requests.associateBy { it.display.toString() to it.uuid }
-            val url = "https://api.sk1er.club/levelheadv8?auth=${auth.hash}&" +
-                    "uuid=${UMinecraft.getMinecraft().session.profile.id.trimmed}"
-
-            val requestObj = JsonObject().also { obj ->
-                obj.add("requests", JsonArray().also { arr ->
-                    requests.map { arr.add(gson.toJsonTree(it).asJsonObject.apply { this.addProperty("display", it.display.toString()) }) }
-                })
+            // Check if we should use direct API access for Bedwars stars
+            if (displayManager.config.useDirectApiAccess && 
+                displayManager.config.hypixelApiKey.isNotEmpty() &&
+                requests.any { it.type == "BEDWARS_STARS" }) {
+                
+                // Process requests using direct API access for Bedwars stars
+                fetchDirectBedwarsStars(requests.filter { it.type == "BEDWARS_STARS" })
+                
+                // Process remaining requests using the regular API
+                val nonBedwarsRequests = requests.filter { it.type != "BEDWARS_STARS" }
+                if (nonBedwarsRequests.isNotEmpty()) {
+                    fetchFromSk1erApi(nonBedwarsRequests)
+                }
+            } else {
+                // Use the regular API for all requests
+                fetchFromSk1erApi(requests)
             }
-
-            val res = jsonParser.parse(postWithAgent(url, requestObj)).asJsonObject
-            if (!res["success"].asBoolean) {
-                logger.error("Api broke?", res)
-                return@launch
-            }
-
-            res["results"].asJsonArray.forEach {
-                it.asJsonObject.let { result ->
-                    val uuid = result["uuid"].asString.dashUUID!!
-                    val req = reqMap[result["display"].asString to result["uuid"].asString]!!
-                    val tag = LevelheadTag.build(uuid) {
+        }
+    }
+    
+    /**
+     * Fetches Bedwars stars directly from Hypixel API
+     */
+    private suspend fun fetchDirectBedwarsStars(requests: List<LevelheadRequest>) {
+        for (req in requests) {
+            try {
+                val playerData = HypixelApiHandler.getPlayerBedwarsData(req.uuid)
+                if (playerData != null) {
+                    val tag = LevelheadTag.build(req.uuid.dashUUID!!) {
                         header {
-                            value = if (req.allowOverride && result.has("headerString"))
-                                    "${result["headerString"].asString}: "
-                                else
-                                    "${req.display.config.headerString}: "
-                            if (req.allowOverride && result.has("headerColor")) {
-                                color = Color(result["headerColor"].asInt)
-                                chroma = result["headerChroma"].asBoolean
-                            } else {
-                                color = req.display.config.headerColor
-                                chroma = req.display.config.headerChroma
-                            }
+                            value = "${req.display.config.headerString}: "
+                            color = req.display.config.headerColor
+                            chroma = req.display.config.headerChroma
                         }
                         footer {
-                            value = if (req.allowOverride && result.has("footerString") &&result["footerString"].asString != result["value"].asString)
-                                result["footerString"].asString
-                            else
-                                result["value"].asString
-                            if (req.allowOverride && result.has("footerColor")) {
-                                color = Color(result["footerColor"].asInt)
-                                chroma = result["footerChroma"].asBoolean
-                            } else {
-                                color = req.display.config.footerColor
-                                chroma = req.display.config.footerChroma
-                            }
+                            value = playerData.stars.toString()
+                            color = playerData.color // Color based on prestige
+                            chroma = req.display.config.footerChroma
                         }
                     }
-                    req.display.cache[uuid] = tag
+                    req.display.cache[req.uuid.dashUUID!!] = tag
                 }
+            } catch (e: Exception) {
+                logger.error("Error fetching Bedwars stars for ${req.uuid}", e)
+            }
+        }
+    }
+    
+    /**
+     * Fetches data from the SK1er API
+     */
+    private suspend fun fetchFromSk1erApi(requests: List<LevelheadRequest>) {
+        if (requests.isEmpty()) return
+        
+        rateLimiter.consume()
+
+        val reqMap = requests.associateBy { it.display.toString() to it.uuid }
+        val url = "https://api.sk1er.club/levelheadv8?auth=${auth.hash}&" +
+                "uuid=${UMinecraft.getMinecraft().session.profile.id.trimmed}"
+
+        val requestObj = JsonObject().also { obj ->
+            obj.add("requests", JsonArray().also { arr ->
+                requests.map { arr.add(gson.toJsonTree(it).asJsonObject.apply { this.addProperty("display", it.display.toString()) }) }
+            })
+        }
+
+        val res = jsonParser.parse(postWithAgent(url, requestObj)).asJsonObject
+        if (!res["success"].asBoolean) {
+            logger.error("Api broke?", res)
+            return
+        }
+
+        res["results"].asJsonArray.forEach {
+            it.asJsonObject.let { result ->
+                val uuid = result["uuid"].asString.dashUUID!!
+                val req = reqMap[result["display"].asString to result["uuid"].asString]!!
+                val tag = LevelheadTag.build(uuid) {
+                    header {
+                        value = if (req.allowOverride && result.has("headerString"))
+                                "${result["headerString"].asString}: "
+                            else
+                                "${req.display.config.headerString}: "
+                        if (req.allowOverride && result.has("headerColor")) {
+                            color = Color(result["headerColor"].asInt)
+                            chroma = result["headerChroma"].asBoolean
+                        } else {
+                            color = req.display.config.headerColor
+                            chroma = req.display.config.headerChroma
+                        }
+                    }
+                    footer {
+                        value = if (req.allowOverride && result.has("footerString") &&result["footerString"].asString != result["value"].asString)
+                            result["footerString"].asString
+                        else
+                            result["value"].asString
+                        if (req.allowOverride && result.has("footerColor")) {
+                            color = Color(result["footerColor"].asInt)
+                            chroma = result["footerChroma"].asBoolean
+                        } else {
+                            color = req.display.config.footerColor
+                            chroma = req.display.config.footerChroma
+                        }
+                    }
+                }
+                req.display.cache[uuid] = tag
             }
         }
     }

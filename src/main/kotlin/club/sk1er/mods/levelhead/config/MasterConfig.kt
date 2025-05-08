@@ -7,4 +7,9 @@ class MasterConfig {
 
     val renderDistance: Int = 64
     val purgeSize: Int = 500
+    
+    // Hypixel API settings
+    var hypixelApiKey: String = ""
+    var useDirectApiAccess: Boolean = false
+    var onlyInBedwars: Boolean = true
 }

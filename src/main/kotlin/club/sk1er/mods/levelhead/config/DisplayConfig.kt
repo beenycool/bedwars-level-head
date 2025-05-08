@@ -8,11 +8,11 @@ import java.util.*
 class DisplayConfig {
     var enabled: Boolean = true
     var showSelf: Boolean = true
-    var type: String = "LEVEL"
+    var type: String = "BEDWARS_STARS"
 
     var headerColor: Color = ChatColor.AQUA.color!!
     var headerChroma: Boolean = false
-    var headerString: String = WordUtils.capitalizeFully(type)
+    var headerString: String = "Stars"
 
     var footerColor: Color = ChatColor.YELLOW.color!!
     var footerChroma: Boolean = false
