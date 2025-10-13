@@ -3,6 +3,7 @@ package club.sk1er.mods.levelhead
 import club.sk1er.mods.levelhead.auth.MojangAuth
 import club.sk1er.mods.levelhead.commands.LevelheadCommand
 import club.sk1er.mods.levelhead.config.DisplayConfig
+import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import club.sk1er.mods.levelhead.core.BedwarsStar
 import club.sk1er.mods.levelhead.core.DisplayManager
@@ -86,8 +87,8 @@ object Levelhead {
         get() = Color.HSBtoRGB(System.currentTimeMillis() % 1000 / 1000f, 0.8f, 0.8f)
     val chromaColor: Color
         get() = Color(ChromaColor)
-    val selfLevelheadTag
-        get() = displayManager.aboveHead[0].cache[UPlayer.getUUID()]!!
+    val selfLevelheadTag: LevelheadTag?
+        get() = displayManager.aboveHead.getOrNull(0)?.cache?.get(UPlayer.getUUID())
 
     const val MODID = "level_head"
     const val VERSION = "8.2.3"
@@ -188,17 +189,18 @@ object Levelhead {
                 .groupBy { it.uuid }
                 .forEach { (trimmedUuid, groupedRequests) ->
                     val uuid = trimmedUuid.dashUUID ?: return@forEach
-                    val player = fetchHypixelPlayer(trimmedUuid)
+                    val player = BedwarsFetcher.fetchPlayer(uuid)
                     val experience = BedwarsStar.extractExperience(player)
                     val star = experience?.let { BedwarsStar.calculateStar(it) }
                     val starString = star?.let { "${kotlin.math.max(it, 0)}★" } ?: "?"
-                    val style = BedwarsStar.styleForStar(star ?: 0)
 
                     groupedRequests
                         .filter { it.type == BedwarsModeDetector.BEDWARS_STAR_TYPE }
                         .forEach { req ->
                             val footerTemplate = req.display.config.footerString
                             val footerValue = footerTemplate?.replace("%star%", starString, true) ?: starString
+                            val style = star?.let { BedwarsStar.styleForStar(it) }
+                                ?: BedwarsStar.PrestigeStyle(req.display.config.footerColor, req.display.config.footerChroma)
                             val tag = LevelheadTag.build(uuid) {
                                 header {
                                     value = "${req.display.config.headerString}: "
@@ -215,13 +217,6 @@ object Levelhead {
                         }
                 }
         }
-    }
-
-    private fun fetchHypixelPlayer(trimmedUuid: String): JsonObject? {
-        val url = "https://api.sk1er.club/hypixel/player?uuid=$trimmedUuid"
-        return kotlin.runCatching {
-            jsonParser.parse(getWithAgent(url)).asJsonObject
-        }.getOrNull()?.takeIf { it.get("success")?.asBoolean == true }?.getAsJsonObject("player")
     }
 
     fun getWithAgent(url: String): String {

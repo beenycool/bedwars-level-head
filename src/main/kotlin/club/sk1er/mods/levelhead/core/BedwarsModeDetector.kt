@@ -1,6 +1,7 @@
 package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.Levelhead
+import gg.essential.api.EssentialAPI
 import gg.essential.universal.UMinecraft
 import net.minecraft.scoreboard.Score
 import net.minecraft.scoreboard.ScorePlayerTeam
@@ -53,7 +54,7 @@ object BedwarsModeDetector {
 
     fun isInBedwars(): Boolean = currentContext().isBedwars
 
-    fun shouldRequestData(): Boolean = UMinecraft.getMinecraft().isSingleplayer || isInBedwars()
+    fun shouldRequestData(): Boolean = EssentialAPI.getMinecraftUtil().isHypixel() && isInBedwars()
 
     fun shouldRenderTags(): Boolean {
         currentContext()

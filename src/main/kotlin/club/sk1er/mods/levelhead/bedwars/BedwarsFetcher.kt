@@ -6,7 +6,7 @@ import com.google.gson.JsonObject
 import gg.essential.api.EssentialAPI
 import gg.essential.api.utils.Multithreading
 import gg.essential.universal.ChatColor
-import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.Request
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -24,7 +24,7 @@ object BedwarsFetcher {
             return null
         }
 
-        val url = HttpUrl.parse(HYPIXEL_PLAYER_ENDPOINT)?.newBuilder()
+        val url = HYPIXEL_PLAYER_ENDPOINT.toHttpUrlOrNull()?.newBuilder()
             ?.addQueryParameter("key", key)
             ?.addQueryParameter("uuid", uuid.toString().replace("-", ""))
             ?.build()
@@ -50,7 +50,11 @@ object BedwarsFetcher {
                     return null
                 }
                 invalidKeyWarned.set(false)
-                json
+                val playerElement = json.get("player")
+                if (playerElement == null || playerElement.isJsonNull) {
+                    return null
+                }
+                playerElement.asJsonObject
             }
         } catch (ex: Exception) {
             Levelhead.logger.error("Failed to fetch Hypixel BedWars data", ex)
