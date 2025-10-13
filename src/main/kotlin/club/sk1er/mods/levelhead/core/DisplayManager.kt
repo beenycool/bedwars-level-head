@@ -5,6 +5,7 @@ import club.sk1er.mods.levelhead.Levelhead.gson
 import club.sk1er.mods.levelhead.Levelhead.jsonParser
 import club.sk1er.mods.levelhead.config.DisplayConfig
 import club.sk1er.mods.levelhead.config.MasterConfig
+import club.sk1er.mods.levelhead.core.BedwarsModeDetector.Context
 import club.sk1er.mods.levelhead.display.AboveHeadDisplay
 import club.sk1er.mods.levelhead.display.ChatDisplay
 import club.sk1er.mods.levelhead.display.TabDisplay
@@ -17,6 +18,7 @@ import org.apache.commons.io.FileUtils
 import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 
 class DisplayManager(val file: File) {
 
@@ -26,6 +28,7 @@ class DisplayManager(val file: File) {
         private set
     lateinit var tab: TabDisplay
         private set
+    private var lastKnownContext: Context = Context.UNKNOWN
 
     init {
         this.readConfig()
@@ -34,6 +37,7 @@ class DisplayManager(val file: File) {
     fun readConfig() {
         try {
             var shouldSaveCopyNow = false
+            var migrated = false
             if (!file.exists()) {
                 file.createNewFile()
                 shouldSaveCopyNow = true
@@ -49,6 +53,7 @@ class DisplayManager(val file: File) {
 
             if (aboveHead.isEmpty()) {
                 aboveHead.add(AboveHeadDisplay(DisplayConfig()))
+                migrated = true
             }
 
             if (source.has("chat"))
@@ -63,7 +68,9 @@ class DisplayManager(val file: File) {
 
             adjustIndices()
 
-            if (shouldSaveCopyNow) saveConfig()
+            migrated = migrateLegacyPrimaryDisplay() || migrated
+
+            if (shouldSaveCopyNow || migrated) saveConfig()
 
         } catch (e: IOException) {
             Levelhead.logger.error("Failed to initialize display manager.", e)
@@ -100,28 +107,26 @@ class DisplayManager(val file: File) {
     }
 
     @OptIn(ExperimentalStdlibApi::class)
-    fun joinWorld() {
-        val displays = buildList {
-            if (Levelhead.LevelheadPurchaseStates.chat)
-                add(chat)
-            if (Levelhead.LevelheadPurchaseStates.tab)
-                add(tab)
-            addAll(aboveHead.filterIndexed{ i, _ -> i <= Levelhead.LevelheadPurchaseStates.aboveHead})
+    fun joinWorld(resetDetector: Boolean = false) {
+        if (resetDetector) {
+            BedwarsModeDetector.onWorldJoin()
         }
-        UMinecraft.getWorld()?.playerEntities?.map { playerInfo ->
-                displays.map {
-                    Levelhead.LevelheadRequest(playerInfo.uniqueID.trimmed, it,
-                        if (it is AboveHeadDisplay) it.bottomValue else false
-                    )
-                }
-            }?.flatten()?.chunked(20) { reqList ->
-                Levelhead.fetch(reqList)
+        val context = BedwarsModeDetector.currentContext(force = resetDetector)
+        if (!BedwarsModeDetector.shouldRequestData()) {
+            if (lastKnownContext.isBedwars) {
+                clearCachesWithoutRefetch()
             }
+            lastKnownContext = context.takeUnless { it == Context.UNKNOWN } ?: lastKnownContext
+            return
+        }
+        lastKnownContext = context.takeUnless { it == Context.UNKNOWN } ?: lastKnownContext
+        requestAllDisplays()
     }
 
     @OptIn(ExperimentalStdlibApi::class)
     fun playerJoin(player: EntityPlayer) {
         if (player.isNPC) return
+        if (!BedwarsModeDetector.shouldRequestData()) return
         val displays = buildList {
             if (Levelhead.LevelheadPurchaseStates.chat)
                 add(chat)
@@ -189,13 +194,57 @@ class DisplayManager(val file: File) {
         tab.checkCacheSize()
     }
 
-    fun clearCache() {
+    fun clearCachesWithoutRefetch() {
         aboveHead.forEachIndexed { i, head ->
             if (i > Levelhead.LevelheadPurchaseStates.aboveHead) return@forEachIndexed
             head.cache.clear()
         }
         chat.cache.clear()
         tab.cache.clear()
-        joinWorld()
+    }
+
+    fun clearCache() {
+        clearCachesWithoutRefetch()
+        if (BedwarsModeDetector.shouldRequestData()) {
+            requestAllDisplays()
+        }
+    }
+
+    @OptIn(ExperimentalStdlibApi::class)
+    fun requestAllDisplays() {
+        if (!BedwarsModeDetector.shouldRequestData()) return
+        val displays = buildList {
+            if (Levelhead.LevelheadPurchaseStates.chat)
+                add(chat)
+            if (Levelhead.LevelheadPurchaseStates.tab)
+                add(tab)
+            addAll(aboveHead.filterIndexed { i, _ -> i <= Levelhead.LevelheadPurchaseStates.aboveHead })
+        }
+        UMinecraft.getWorld()?.playerEntities?.map { playerInfo ->
+            displays.map {
+                Levelhead.LevelheadRequest(
+                    playerInfo.uniqueID.trimmed,
+                    it,
+                    if (it is AboveHeadDisplay) it.bottomValue else false
+                )
+            }
+        }?.flatten()?.chunked(20) { reqList ->
+            Levelhead.fetch(reqList)
+        }
+    }
+
+    private fun migrateLegacyPrimaryDisplay(): Boolean {
+        val primary = aboveHead.firstOrNull() ?: return false
+        var updated = false
+        if (primary.config.type.equals("LEVEL", true)) {
+            primary.config.type = BedwarsModeDetector.BEDWARS_STAR_TYPE
+            updated = true
+        }
+        val normalizedHeader = primary.config.headerString.trim().lowercase(Locale.ROOT)
+        if (normalizedHeader == "level" || normalizedHeader == "network level") {
+            primary.config.headerString = BedwarsModeDetector.DEFAULT_HEADER
+            updated = true
+        }
+        return updated
     }
 }

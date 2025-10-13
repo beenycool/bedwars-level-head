@@ -1,0 +1,104 @@
+package club.sk1er.mods.levelhead.core
+
+import club.sk1er.mods.levelhead.Levelhead
+import gg.essential.universal.UMinecraft
+import net.minecraft.scoreboard.Score
+import net.minecraft.scoreboard.ScorePlayerTeam
+import net.minecraft.util.StringUtils
+import java.util.Locale
+
+object BedwarsModeDetector {
+    const val BEDWARS_STAR_TYPE = "BEDWARS_STAR"
+    const val DEFAULT_HEADER = "BedWars Star"
+
+    private val teamPattern = Regex("^(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY|GREY):", RegexOption.IGNORE_CASE)
+
+    private var cachedContext: Context = Context.UNKNOWN
+    private var lastDetectionTime: Long = 0L
+
+    enum class Context {
+        UNKNOWN,
+        NONE,
+        LOBBY,
+        MATCH;
+
+        val isBedwars: Boolean
+            get() = this == LOBBY || this == MATCH
+    }
+
+    fun onWorldJoin() {
+        cachedContext = Context.UNKNOWN
+        lastDetectionTime = 0L
+    }
+
+    fun currentContext(force: Boolean = false): Context {
+        val now = System.currentTimeMillis()
+        if (force || cachedContext == Context.UNKNOWN || now - lastDetectionTime > 1_000L) {
+            val detected = detectContext()
+            if (detected != cachedContext) {
+                val oldContext = cachedContext.takeUnless { it == Context.UNKNOWN } ?: Context.NONE
+                cachedContext = detected
+                handleContextChange(oldContext, detected)
+            } else if (cachedContext == Context.UNKNOWN) {
+                cachedContext = detected
+            }
+            lastDetectionTime = now
+        }
+        return cachedContext
+    }
+
+    fun isInBedwarsLobby(): Boolean = currentContext().let { it == Context.LOBBY }
+
+    fun isInBedwarsMatch(): Boolean = currentContext().let { it == Context.MATCH }
+
+    fun isInBedwars(): Boolean = currentContext().isBedwars
+
+    fun shouldRequestData(): Boolean = UMinecraft.getMinecraft().isSingleplayer || isInBedwars()
+
+    fun shouldRenderTags(): Boolean {
+        currentContext()
+        return shouldRequestData()
+    }
+
+    private fun handleContextChange(old: Context, new: Context) {
+        when {
+            !old.isBedwars && new.isBedwars -> Levelhead.displayManager.requestAllDisplays()
+            old.isBedwars && !new.isBedwars -> Levelhead.displayManager.clearCachesWithoutRefetch()
+        }
+    }
+
+    private fun detectContext(): Context {
+        val mc = UMinecraft.getMinecraft()
+        val world = mc.theWorld ?: return Context.NONE
+        val scoreboard = world.scoreboard ?: return Context.NONE
+        val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: return Context.NONE
+
+        val title = StringUtils.stripControlCodes(objective.displayName.formattedText)
+            .uppercase(Locale.ROOT)
+        if (!title.contains("BED WARS")) {
+            return Context.NONE
+        }
+
+        val lines = scoreboard.getSortedScores(objective)
+            .asSequence()
+            .filterNot { score ->
+                score.playerName == null || score.playerName.startsWith("#")
+            }
+            .map { score -> formatScoreLine(score, scoreboard) }
+            .filter { it.isNotBlank() }
+            .toList()
+
+        if (lines.any { teamPattern.containsMatchIn(it) }) {
+            return Context.MATCH
+        }
+
+        return Context.LOBBY
+    }
+
+    private fun formatScoreLine(score: Score, scoreboard: net.minecraft.scoreboard.Scoreboard): String {
+        val playerName = score.playerName
+        val team = scoreboard.getPlayersTeam(playerName)
+        val formatted = ScorePlayerTeam.formatPlayerName(team, playerName)
+        return StringUtils.stripControlCodes(formatted)
+    }
+}
