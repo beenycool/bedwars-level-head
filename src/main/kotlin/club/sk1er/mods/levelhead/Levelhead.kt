@@ -72,7 +72,7 @@ object Levelhead {
     val displayManager: DisplayManager = DisplayManager(File(File(UMinecraft.getMinecraft().mcDataDir, "config"), "levelhead.json"))
     val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val mutex: Mutex = Mutex()
-    val rateLimiter: RateLimiter = RateLimiter(100, Duration.ofSeconds(1))
+    val rateLimiter: RateLimiter = RateLimiter(150, Duration.ofMinutes(5))
     private val format: DecimalFormat = DecimalFormat("#,###")
     val DarkChromaColor: Int
         get() = Color.HSBtoRGB(System.currentTimeMillis() % 1000 / 1000f, 0.8f, 0.2f)
