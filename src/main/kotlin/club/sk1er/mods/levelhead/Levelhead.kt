@@ -3,6 +3,7 @@ package club.sk1er.mods.levelhead
 import club.sk1er.mods.levelhead.auth.MojangAuth
 import club.sk1er.mods.levelhead.commands.LevelheadCommand
 import club.sk1er.mods.levelhead.config.DisplayConfig
+import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.DisplayManager
 import club.sk1er.mods.levelhead.core.RateLimiter
 import club.sk1er.mods.levelhead.core.dashUUID
@@ -88,6 +89,9 @@ object Levelhead {
 
     @Mod.EventHandler
     fun preInit(event: FMLPreInitializationEvent) {
+        val configDirectory = event.modConfigurationDirectory ?: File(UMinecraft.getMinecraft().mcDataDir, "config")
+        val configFile = File(configDirectory, "bedwars-level-head.cfg")
+        LevelheadConfig.initialize(configFile)
         scope.launch {
             refreshTypes()
         }
