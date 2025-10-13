@@ -192,7 +192,7 @@ object Levelhead {
                     val player = BedwarsFetcher.fetchPlayer(uuid)
                     val experience = BedwarsStar.extractExperience(player)
                     val star = experience?.let { BedwarsStar.calculateStar(it) }
-                    val starString = star?.let { "${kotlin.math.max(it, 0)}★" } ?: "?"
+                    val starString = star?.let { "$it★" } ?: "?"
 
                     groupedRequests
                         .filter { it.type == BedwarsModeDetector.BEDWARS_STAR_TYPE }
