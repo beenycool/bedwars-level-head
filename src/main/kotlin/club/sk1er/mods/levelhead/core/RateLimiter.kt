@@ -46,6 +46,12 @@ class RateLimiter constructor(
         if (isNextInterval) resetState()
 
         if (isAtCapacity) {
+            val now = clock.instant()
+            val waitDuration = Duration.between(now, nextInterval)
+            val safeWait = if (waitDuration.isNegative) Duration.ZERO else waitDuration
+            Levelhead.logger.info(
+                "Reached Levelhead API throttle (150 requests per 5 minutes). Waiting ${safeWait.toMinutes()} minutes (${safeWait.seconds} seconds) before retrying."
+            )
             delayUntilNextInterval()
             resetState()
         }
