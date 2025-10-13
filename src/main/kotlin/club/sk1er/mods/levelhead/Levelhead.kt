@@ -3,6 +3,8 @@ package club.sk1er.mods.levelhead
 import club.sk1er.mods.levelhead.auth.MojangAuth
 import club.sk1er.mods.levelhead.commands.LevelheadCommand
 import club.sk1er.mods.levelhead.config.DisplayConfig
+import club.sk1er.mods.levelhead.core.BedwarsModeDetector
+import club.sk1er.mods.levelhead.core.BedwarsStar
 import club.sk1er.mods.levelhead.core.DisplayManager
 import club.sk1er.mods.levelhead.core.RateLimiter
 import club.sk1er.mods.levelhead.core.dashUUID
@@ -13,7 +15,6 @@ import club.sk1er.mods.levelhead.display.LevelheadTag
 import club.sk1er.mods.levelhead.render.AboveHeadRender
 import club.sk1er.mods.levelhead.render.ChatRender
 import com.google.gson.Gson
-import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import gg.essential.api.EssentialAPI
@@ -65,6 +66,11 @@ object Levelhead {
         private set
     val allowedTypes: JsonObject
         get() = JsonObject().merge(types, true).also { obj ->
+            if (!obj.has(BedwarsModeDetector.BEDWARS_STAR_TYPE)) {
+                obj.add(BedwarsModeDetector.BEDWARS_STAR_TYPE, JsonObject().apply {
+                    addProperty("name", BedwarsModeDetector.DEFAULT_HEADER)
+                })
+            }
             paidData["stats"].asJsonObject.entrySet().filter {
                 purchaseStatus[it.key].asBoolean
             }.map { obj.add(it.key, it.value) }
@@ -162,7 +168,7 @@ object Levelhead {
         if (event.entity is EntityPlayerSP) {
             scope.coroutineContext.cancelChildren()
             rateLimiter.resetState()
-            displayManager.joinWorld()
+            displayManager.joinWorld(resetDetector = true)
         // when others join world
         } else if (event.entity is EntityPlayer && !auth.isFailed) {
             displayManager.playerJoin(event.entity as EntityPlayer)
@@ -171,61 +177,48 @@ object Levelhead {
 
     fun fetch(requests: List<LevelheadRequest>): Job {
         return scope.launch {
+            if (!BedwarsModeDetector.shouldRequestData()) return@launch
 
             rateLimiter.consume()
 
-            val reqMap = requests.associateBy { it.display.toString() to it.uuid }
-            val url = "https://api.sk1er.club/levelheadv8?auth=${auth.hash}&" +
-                    "uuid=${UMinecraft.getMinecraft().session.profile.id.trimmed}"
+            requests
+                .groupBy { it.uuid }
+                .forEach { (trimmedUuid, groupedRequests) ->
+                    val uuid = trimmedUuid.dashUUID ?: return@forEach
+                    val player = fetchHypixelPlayer(trimmedUuid)
+                    val experience = BedwarsStar.extractExperience(player)
+                    val star = experience?.let { BedwarsStar.calculateStar(it) }
+                    val starString = star?.let { "${kotlin.math.max(it, 0)}★" } ?: "?"
+                    val style = BedwarsStar.styleForStar(star ?: 0)
 
-            val requestObj = JsonObject().also { obj ->
-                obj.add("requests", JsonArray().also { arr ->
-                    requests.map { arr.add(gson.toJsonTree(it).asJsonObject.apply { this.addProperty("display", it.display.toString()) }) }
-                })
-            }
-
-            val res = jsonParser.parse(postWithAgent(url, requestObj)).asJsonObject
-            if (!res["success"].asBoolean) {
-                logger.error("Api broke?", res)
-                return@launch
-            }
-
-            res["results"].asJsonArray.forEach {
-                it.asJsonObject.let { result ->
-                    val uuid = result["uuid"].asString.dashUUID!!
-                    val req = reqMap[result["display"].asString to result["uuid"].asString]!!
-                    val tag = LevelheadTag.build(uuid) {
-                        header {
-                            value = if (req.allowOverride && result.has("headerString"))
-                                    "${result["headerString"].asString}: "
-                                else
-                                    "${req.display.config.headerString}: "
-                            if (req.allowOverride && result.has("headerColor")) {
-                                color = Color(result["headerColor"].asInt)
-                                chroma = result["headerChroma"].asBoolean
-                            } else {
-                                color = req.display.config.headerColor
-                                chroma = req.display.config.headerChroma
+                    groupedRequests
+                        .filter { it.type == BedwarsModeDetector.BEDWARS_STAR_TYPE }
+                        .forEach { req ->
+                            val footerTemplate = req.display.config.footerString
+                            val footerValue = footerTemplate?.replace("%star%", starString, true) ?: starString
+                            val tag = LevelheadTag.build(uuid) {
+                                header {
+                                    value = "${req.display.config.headerString}: "
+                                    color = req.display.config.headerColor
+                                    chroma = req.display.config.headerChroma
+                                }
+                                footer {
+                                    value = footerValue
+                                    color = style.color
+                                    chroma = style.chroma
+                                }
                             }
+                            req.display.cache[uuid] = tag
                         }
-                        footer {
-                            value = if (req.allowOverride && result.has("footerString") &&result["footerString"].asString != result["value"].asString)
-                                result["footerString"].asString
-                            else
-                                result["value"].asString
-                            if (req.allowOverride && result.has("footerColor")) {
-                                color = Color(result["footerColor"].asInt)
-                                chroma = result["footerChroma"].asBoolean
-                            } else {
-                                color = req.display.config.footerColor
-                                chroma = req.display.config.footerChroma
-                            }
-                        }
-                    }
-                    req.display.cache[uuid] = tag
                 }
-            }
         }
+    }
+
+    private fun fetchHypixelPlayer(trimmedUuid: String): JsonObject? {
+        val url = "https://api.sk1er.club/hypixel/player?uuid=$trimmedUuid"
+        return kotlin.runCatching {
+            jsonParser.parse(getWithAgent(url)).asJsonObject
+        }.getOrNull()?.takeIf { it.get("success")?.asBoolean == true }?.getAsJsonObject("player")
     }
 
     fun getWithAgent(url: String): String {
