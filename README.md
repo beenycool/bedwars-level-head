@@ -8,6 +8,10 @@ Levelhead is a Minecraft Mod created for the Hypixel Network `mc.hypixel.net` to
 
 `/levelhead reauth` - Refreshes the current purchase data for your player
 
+`/levelhead apikey <key>` - Stores your Hypixel API key for BedWars stat lookups.
+
+`/levelhead clearapikey` - Removes the stored Hypixel API key from `config/bedwars-level-head.cfg`.
+
 ### Gui 
 
 `MasterToggle` - Toggle mod on and off
