@@ -50,6 +50,10 @@ class DisplayManager(val file: File) {
                 migrated = true
             }
 
+            if (migrateLegacyPrimaryDisplay()) {
+                migrated = true
+            }
+
             adjustIndices()
 
             if (shouldSaveCopyNow || migrated) {
@@ -83,6 +87,22 @@ class DisplayManager(val file: File) {
             aboveHead[i].bottomValue = i == 0
             aboveHead[i].index = i
         }
+    }
+
+    private fun migrateLegacyPrimaryDisplay(): Boolean {
+        var migrated = false
+        val legacyHeaders = setOf("Level", "Levelhead", "Network Level")
+        aboveHead.forEachIndexed { index, display ->
+            if (display.config.type != BedwarsModeDetector.BEDWARS_STAR_TYPE) {
+                if (index == 0 && legacyHeaders.any { display.config.headerString.equals(it, ignoreCase = true) }) {
+                    display.config.headerString = BedwarsModeDetector.DEFAULT_HEADER
+                }
+                Levelhead.logger.info("Migrating legacy display #${index + 1} from type '${display.config.type}' to '${BedwarsModeDetector.BEDWARS_STAR_TYPE}'.")
+                display.config.type = BedwarsModeDetector.BEDWARS_STAR_TYPE
+                migrated = true
+            }
+        }
+        return migrated
     }
 
     @OptIn(ExperimentalStdlibApi::class)

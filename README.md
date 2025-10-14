@@ -13,5 +13,5 @@ BedWars Levelhead is a Minecraft mod for the Hypixel Network (`mc.hypixel.net`) 
 3. If you ever need to remove or replace the key, use `/levelhead apikey clear` or repeat the steps above with a new key.
 
 ## Configuration
-Display settings such as header text, colors, and offsets are stored in `config/levelhead.json`. The mod keeps the existing file format so you can copy settings from previous installations or edit the JSON manually.
+Display settings such as header text, colors, and offsets are stored in `config/levelhead.json`. The mod keeps the existing file format so you can copy settings from previous installations or edit the JSON manually. If you reuse a config from an older version of Levelhead, set its `type` field to `BEDWARS_STAR` so the display renders BedWars stars instead of network levels.
 
