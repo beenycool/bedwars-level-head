@@ -1,7 +1,6 @@
 package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.Levelhead
-import club.sk1er.mods.levelhead.config.LevelheadConfig
 import gg.essential.api.EssentialAPI
 import gg.essential.universal.UMinecraft
 import net.minecraft.scoreboard.Score
@@ -65,9 +64,6 @@ object BedwarsModeDetector {
     fun isInBedwars(): Boolean = currentContext().isBedwars
 
     fun shouldRequestData(): Boolean {
-        if (!LevelheadConfig.bedwarsIntegrationEnabled) {
-            return false
-        }
         return EssentialAPI.getMinecraftUtil().isHypixel() && isInBedwars()
     }
 

@@ -8,15 +8,10 @@ object LevelheadConfig {
     private const val CATEGORY_GENERAL = "general"
     private const val PROPERTY_API_KEY = "hypixelApiKey"
     private const val API_KEY_COMMENT = "Hypixel API key used for BedWars integrations"
-    private const val PROPERTY_BEDWARS_ENABLED = "bedwarsIntegrationEnabled"
-    private const val BEDWARS_ENABLED_COMMENT = "Enable fetching and rendering BedWars stars"
 
     private lateinit var configuration: Configuration
 
     var apiKey: String = ""
-        private set
-
-    var bedwarsIntegrationEnabled: Boolean = true
         private set
 
     fun initialize(configFile: File) {
@@ -29,14 +24,6 @@ object LevelheadConfig {
         configuration.load()
         val apiKeyProperty = configuration.get(CATEGORY_GENERAL, PROPERTY_API_KEY, "", API_KEY_COMMENT)
         apiKey = apiKeyProperty.string.trim()
-
-        val enabledProperty = configuration.get(
-            CATEGORY_GENERAL,
-            PROPERTY_BEDWARS_ENABLED,
-            true,
-            BEDWARS_ENABLED_COMMENT
-        )
-        bedwarsIntegrationEnabled = enabledProperty.boolean
         if (configuration.hasChanged()) {
             configuration.save()
         }
@@ -54,19 +41,6 @@ object LevelheadConfig {
 
     fun clearApiKey() {
         setApiKey("")
-    }
-
-    fun setBedwarsIntegrationEnabled(enabled: Boolean) {
-        ensureInitialized()
-        val property = configuration.get(
-            CATEGORY_GENERAL,
-            PROPERTY_BEDWARS_ENABLED,
-            true,
-            BEDWARS_ENABLED_COMMENT
-        )
-        property.set(enabled)
-        bedwarsIntegrationEnabled = enabled
-        configuration.save()
     }
 
     private fun ensureInitialized() {
