@@ -112,6 +112,7 @@ object Levelhead {
     fun postInit(ignored: FMLPostInitializationEvent) {
         MinecraftForge.EVENT_BUS.register(AboveHeadRender)
         MinecraftForge.EVENT_BUS.register(ChatRender)
+        MinecraftForge.EVENT_BUS.register(BedwarsModeDetector)
         MinecraftForge.EVENT_BUS.register(this)
         EssentialAPI.getCommandRegistry().registerCommand(LevelheadCommand())
     }

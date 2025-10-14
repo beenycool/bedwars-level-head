@@ -7,6 +7,8 @@ import gg.essential.universal.UMinecraft
 import net.minecraft.scoreboard.Score
 import net.minecraft.scoreboard.ScorePlayerTeam
 import net.minecraft.util.StringUtils
+import net.minecraftforge.client.event.ClientChatReceivedEvent
+import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import java.util.Locale
 
 object BedwarsModeDetector {
@@ -14,9 +16,14 @@ object BedwarsModeDetector {
     const val DEFAULT_HEADER = "BedWars Star"
 
     private val teamPattern = Regex("^(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY|GREY):", RegexOption.IGNORE_CASE)
+    private val miniServerPattern = Regex("mini\\w+", RegexOption.IGNORE_CASE)
 
     private var cachedContext: Context = Context.UNKNOWN
     private var lastDetectionTime: Long = 0L
+    private var chatDetectedContext: Context = Context.NONE
+    private var chatDetectionExpiry: Long = 0L
+
+    private const val CHAT_CONTEXT_DURATION = 20_000L
 
     enum class Context {
         UNKNOWN,
@@ -31,6 +38,8 @@ object BedwarsModeDetector {
     fun onWorldJoin() {
         cachedContext = Context.UNKNOWN
         lastDetectionTime = 0L
+        chatDetectedContext = Context.NONE
+        chatDetectionExpiry = 0L
     }
 
     fun currentContext(force: Boolean = false): Context {
@@ -75,10 +84,24 @@ object BedwarsModeDetector {
     }
 
     private fun detectContext(): Context {
+        val scoreboardContext = detectScoreboardContext()
+        if (scoreboardContext != null && scoreboardContext != Context.NONE) {
+            return scoreboardContext
+        }
+
+        val chatContext = currentChatContext()
+        if (chatContext != Context.NONE) {
+            return chatContext
+        }
+
+        return scoreboardContext ?: Context.NONE
+    }
+
+    private fun detectScoreboardContext(): Context? {
         val mc = UMinecraft.getMinecraft()
-        val world = mc.theWorld ?: return Context.NONE
-        val scoreboard = world.scoreboard ?: return Context.NONE
-        val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: return Context.NONE
+        val world = mc.theWorld ?: return null
+        val scoreboard = world.scoreboard ?: return null
+        val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: return null
 
         val displayComponent: Any? = objective.displayName
         val rawTitle = when (displayComponent) {
@@ -123,5 +146,57 @@ object BedwarsModeDetector {
         val team = scoreboard.getPlayersTeam(playerName)
         val formatted = ScorePlayerTeam.formatPlayerName(team, playerName)
         return StringUtils.stripControlCodes(formatted)
+    }
+
+    private fun currentChatContext(): Context {
+        val now = System.currentTimeMillis()
+        if (chatDetectedContext == Context.NONE) {
+            return Context.NONE
+        }
+        if (now > chatDetectionExpiry) {
+            chatDetectedContext = Context.NONE
+            chatDetectionExpiry = 0L
+            return Context.NONE
+        }
+        return chatDetectedContext
+    }
+
+    private fun recordChatDetection(context: Context) {
+        if (context == Context.NONE) {
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (context == Context.MATCH || chatDetectedContext != Context.MATCH) {
+            chatDetectedContext = context
+        }
+        chatDetectionExpiry = now + CHAT_CONTEXT_DURATION
+        currentContext(force = true)
+    }
+
+    @SubscribeEvent
+    fun onChat(event: ClientChatReceivedEvent) {
+        if (!EssentialAPI.getMinecraftUtil().isHypixel()) {
+            return
+        }
+        val message = event.message ?: return
+        val rawText = message.unformattedText
+        if (rawText.isBlank()) {
+            return
+        }
+
+        val normalized = StringUtils.stripControlCodes(rawText).lowercase(Locale.ROOT)
+        val detectedContext = when {
+            normalized.contains("protect your bed and destroy the enemy beds") -> Context.MATCH
+            normalized.contains("the game starts in") -> Context.MATCH
+            normalized.contains("game starts in") -> Context.MATCH
+            normalized.contains("sending you to mini") -> Context.LOBBY
+            normalized.contains("bed wars") -> Context.LOBBY
+            miniServerPattern.containsMatchIn(normalized) -> Context.LOBBY
+            else -> Context.NONE
+        }
+
+        if (detectedContext != Context.NONE) {
+            recordChatDetection(detectedContext)
+        }
     }
 }
