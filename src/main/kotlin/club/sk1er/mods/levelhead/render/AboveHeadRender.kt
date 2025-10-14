@@ -35,6 +35,8 @@ object AboveHeadRender {
         if (event.entity !is EntityPlayer) return
         val player = event.entity as EntityPlayer
 
+        val localPlayer = UMinecraft.getPlayer()
+
         displayManager.aboveHead.forEachIndexed { index, display ->
             if (index > Levelhead.LevelheadPurchaseStates.aboveHead
                 || !display.config.enabled
@@ -43,7 +45,9 @@ object AboveHeadRender {
             if (display.loadOrRender(player) && tag != null) {
                 // increase offset if there's something in the above name slot for scoreboards
                 var offset = 0.3
-                if (player.worldScoreboard.getObjectiveInDisplaySlot(2) != null && player.getDistanceSqToEntity(UMinecraft.getPlayer()!!) < 100) {
+                val hasScoreboardObjective = player.worldScoreboard?.getObjectiveInDisplaySlot(2) != null
+                val isCloseToLocalPlayer = localPlayer?.let { player.getDistanceSqToEntity(it) < 100 } ?: false
+                if (hasScoreboardObjective && isCloseToLocalPlayer) {
                     offset *= 2
                 }
                 if (player.isSelf) offset = 0.0

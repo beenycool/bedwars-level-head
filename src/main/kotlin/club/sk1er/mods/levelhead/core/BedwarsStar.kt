@@ -26,11 +26,21 @@ object BedwarsStar {
 
     fun extractExperience(player: JsonObject?): Long? {
         player ?: return null
-        val stats = player.getAsJsonObject("stats") ?: return null
-        val bedwars = stats.getAsJsonObject("Bedwars") ?: return null
+
+        val statsElement = player.get("stats") ?: return null
+        if (!statsElement.isJsonObject) return null
+        val stats = statsElement.asJsonObject
+
+        val bedwarsElement = stats.get("Bedwars") ?: return null
+        if (!bedwarsElement.isJsonObject) return null
+        val bedwars = bedwarsElement.asJsonObject
+
         val experienceEntry = bedwars.entrySet()
-            .firstOrNull { (key, _) -> key.equals("Experience", true) || key.equals("bedwars_experience", true) }
+            .firstOrNull { (key, _) ->
+                key.equals("Experience", ignoreCase = true) || key.equals("bedwars_experience", ignoreCase = true)
+            }
             ?: return null
+
         return kotlin.runCatching { experienceEntry.value.asLong }.getOrNull()
     }
 
@@ -60,10 +70,12 @@ object BedwarsStar {
 
     fun styleForStar(star: Int): PrestigeStyle {
         if (star >= 1000) {
-            return PrestigeStyle(ChatColor.WHITE.color!!, true)
+            val color = ChatColor.WHITE.color ?: Color.WHITE
+            return PrestigeStyle(color, true)
         }
         val prestige = (star / 100).coerceAtLeast(0)
-        val chatColor = prestigeColors.getOrNull(prestige)?.color ?: ChatColor.GRAY.color!!
+        val fallback = ChatColor.GRAY.color ?: Color.GRAY
+        val chatColor = prestigeColors.getOrNull(prestige)?.color ?: fallback
         return PrestigeStyle(chatColor, false)
     }
 }
