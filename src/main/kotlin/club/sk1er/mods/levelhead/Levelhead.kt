@@ -39,7 +39,7 @@ import java.io.File
 import java.time.Duration
 import java.util.concurrent.TimeUnit
 
-@Mod(modid = Levelhead.MODID, name = "Levelhead", version = Levelhead.VERSION, modLanguageAdapter = "gg.essential.api.utils.KotlinAdapter")
+@Mod(modid = Levelhead.MODID, name = "BedWars Levelhead", version = Levelhead.VERSION, modLanguageAdapter = "gg.essential.api.utils.KotlinAdapter")
 object Levelhead {
     val logger: Logger = LogManager.getLogger()
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
@@ -61,7 +61,7 @@ object Levelhead {
     val chromaColor: Color
         get() = Color(ChromaColor)
 
-    const val MODID = "level_head"
+    const val MODID = "bedwars_levelhead"
     const val VERSION = "8.2.3"
 
     @Mod.EventHandler

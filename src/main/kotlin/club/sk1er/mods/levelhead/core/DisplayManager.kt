@@ -15,7 +15,6 @@ import org.apache.commons.io.FileUtils
 import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
-import java.util.Locale
 
 class DisplayManager(val file: File) {
 
@@ -52,8 +51,6 @@ class DisplayManager(val file: File) {
             }
 
             adjustIndices()
-
-            migrated = migrateLegacyPrimaryDisplay() || migrated
 
             if (shouldSaveCopyNow || migrated) {
                 saveConfig()
@@ -150,20 +147,5 @@ class DisplayManager(val file: File) {
             ?.chunked(20) { reqList ->
                 Levelhead.fetch(reqList)
             }
-    }
-
-    private fun migrateLegacyPrimaryDisplay(): Boolean {
-        val primary = aboveHead.firstOrNull() ?: return false
-        var updated = false
-        if (primary.config.type.equals("LEVEL", true)) {
-            primary.config.type = BedwarsModeDetector.BEDWARS_STAR_TYPE
-            updated = true
-        }
-        val normalizedHeader = primary.config.headerString.trim().lowercase(Locale.ROOT)
-        if (normalizedHeader == "level" || normalizedHeader == "network level") {
-            primary.config.headerString = BedwarsModeDetector.DEFAULT_HEADER
-            updated = true
-        }
-        return updated
     }
 }

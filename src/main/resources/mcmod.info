@@ -1,20 +1,21 @@
 [
   {
-    "modid": "level_head",
-    "name": "LevelHead",
-    "description": "Display a player's network level above their head",
+    "modid": "bedwars_levelhead",
+    "name": "BedWars Levelhead",
+    "description": "Displays a player's BedWars star above their head in Hypixel BedWars lobbies and matches.",
     "version": "${version}",
     "mcversion": "${mcVersionStr}",
-    "url": "https://sk1er.club/levelhead",
-    "updateUrl": "https://sk1er.club/levelhead",
+    "url": "https://modrinth.com/mod/bedwars-levelhead",
+    "updateUrl": "https://modrinth.com/mod/bedwars-levelhead",
     "authorList": [
       "Sk1er",
       "boomboompower",
       "FalseHonesty",
       "Sychic",
-      "Sk1erLLC"
+      "Sk1erLLC",
+      "beenycool"
     ],
-    "credits": "HypixelAPI, Codename_B",
+    "credits": "Forked from Levelhead by Sk1er LLC. HypixelAPI, Codename_B.",
     "logoFile": "",
     "screenshots": [],
     "dependencies": []
