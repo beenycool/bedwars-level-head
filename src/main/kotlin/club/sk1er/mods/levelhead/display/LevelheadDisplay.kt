@@ -26,8 +26,6 @@ abstract class LevelheadDisplay(val displayPosition: DisplayPosition, val config
     open fun loadOrRender(player: EntityPlayer?) = !player!!.displayName.formattedText.contains("§k", true)
 
     enum class DisplayPosition {
-        ABOVE_HEAD,
-        TAB,
-        CHAT
+        ABOVE_HEAD
     }
 }

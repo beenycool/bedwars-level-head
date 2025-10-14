@@ -3,7 +3,7 @@ package club.sk1er.mods.levelhead.render
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.Levelhead.displayManager
 import club.sk1er.mods.levelhead.display.LevelheadTag
-import club.sk1er.mods.levelhead.gui.LevelheadGUI
+import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import gg.essential.api.EssentialAPI
 import gg.essential.elementa.utils.withAlpha
 import gg.essential.universal.UGraphics
@@ -24,24 +24,25 @@ object AboveHeadRender {
 
     @SubscribeEvent
     fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
-        if (listOf(
-                !displayManager.config.enabled,
-                !(EssentialAPI.getMinecraftUtil().isHypixel() || getMinecraft().currentScreen is LevelheadGUI),
-                getMinecraft().gameSettings.hideGUI
-        ).any { it }) return
+        if (!displayManager.config.enabled) return
+        if (!EssentialAPI.getMinecraftUtil().isHypixel()) return
+        if (getMinecraft().gameSettings.hideGUI) return
+        if (!BedwarsModeDetector.shouldRenderTags()) return
 
         if (event.entity !is EntityPlayer) return
         val player = event.entity as EntityPlayer
 
+        val localPlayer = UMinecraft.getPlayer()
+
         displayManager.aboveHead.forEachIndexed { index, display ->
-            if (index > Levelhead.LevelheadPurchaseStates.aboveHead
-                || !display.config.enabled
-                || (player.isSelf && !display.config.showSelf)) return@forEachIndexed
+            if (!display.config.enabled || (player.isSelf && !display.config.showSelf)) return@forEachIndexed
             val tag = display.cache[player.uniqueID]
             if (display.loadOrRender(player) && tag != null) {
                 // increase offset if there's something in the above name slot for scoreboards
                 var offset = 0.3
-                if (player.worldScoreboard.getObjectiveInDisplaySlot(2) != null && player.getDistanceSqToEntity(UMinecraft.getPlayer()!!) < 100) {
+                val hasScoreboardObjective = player.worldScoreboard?.getObjectiveInDisplaySlot(2) != null
+                val isCloseToLocalPlayer = localPlayer?.let { player.getDistanceSqToEntity(it) < 100 } ?: false
+                if (hasScoreboardObjective && isCloseToLocalPlayer) {
                     offset *= 2
                 }
                 if (player.isSelf) offset = 0.0

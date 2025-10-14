@@ -1,18 +1,17 @@
 package club.sk1er.mods.levelhead.config
 
+import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import gg.essential.universal.ChatColor
-import org.apache.commons.lang3.text.WordUtils
 import java.awt.Color
-import java.util.*
 
 class DisplayConfig {
     var enabled: Boolean = true
     var showSelf: Boolean = true
-    var type: String = "LEVEL"
+    var type: String = BedwarsModeDetector.BEDWARS_STAR_TYPE
 
     var headerColor: Color = ChatColor.AQUA.color!!
     var headerChroma: Boolean = false
-    var headerString: String = WordUtils.capitalizeFully(type)
+    var headerString: String = BedwarsModeDetector.DEFAULT_HEADER
 
     var footerColor: Color = ChatColor.YELLOW.color!!
     var footerChroma: Boolean = false
