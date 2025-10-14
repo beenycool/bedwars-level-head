@@ -3,7 +3,6 @@ package club.sk1er.mods.levelhead
 import club.sk1er.mods.levelhead.auth.MojangAuth
 import club.sk1er.mods.levelhead.commands.LevelheadCommand
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
-import club.sk1er.mods.levelhead.config.DisplayConfig
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import club.sk1er.mods.levelhead.core.BedwarsStar
@@ -11,7 +10,6 @@ import club.sk1er.mods.levelhead.core.DisplayManager
 import club.sk1er.mods.levelhead.core.RateLimiter
 import club.sk1er.mods.levelhead.core.dashUUID
 import club.sk1er.mods.levelhead.core.trimmed
-import club.sk1er.mods.levelhead.display.AboveHeadDisplay
 import club.sk1er.mods.levelhead.display.LevelheadDisplay
 import club.sk1er.mods.levelhead.display.LevelheadTag
 import club.sk1er.mods.levelhead.render.AboveHeadRender
@@ -58,24 +56,38 @@ object Levelhead {
 
     lateinit var auth: MojangAuth
         private set
-    var types: JsonObject = JsonObject()
+
+    private fun defaultTypes(): JsonObject = JsonObject()
+
+    private fun defaultRawPurchases(): JsonObject = JsonObject().apply {
+        addProperty("remaining_levelhead_credits", 0)
+    }
+
+    private fun defaultPaidData(): JsonObject = JsonObject().apply {
+        add("extra_displays", JsonObject())
+        add("stats", JsonObject())
+    }
+
+    private fun defaultPurchaseStatus(): JsonObject = JsonObject().apply {
+        addProperty("chat", false)
+        addProperty("tab", false)
+        addProperty("head", 0)
+        addProperty("custom_levelhead", false)
+    }
+
+    var types: JsonObject = defaultTypes()
         private set
-    var rawPurchases: JsonObject = JsonObject()
+    var rawPurchases: JsonObject = defaultRawPurchases()
         private set
-    var paidData: JsonObject = JsonObject()
+    var paidData: JsonObject = defaultPaidData()
         private set
-    var purchaseStatus: JsonObject = JsonObject()
+    var purchaseStatus: JsonObject = defaultPurchaseStatus()
         private set
     val allowedTypes: JsonObject
-        get() = JsonObject().merge(types, true).also { obj ->
-            if (!obj.has(BedwarsModeDetector.BEDWARS_STAR_TYPE)) {
-                obj.add(BedwarsModeDetector.BEDWARS_STAR_TYPE, JsonObject().apply {
-                    addProperty("name", BedwarsModeDetector.DEFAULT_HEADER)
-                })
-            }
-            paidData["stats"].asJsonObject.entrySet().filter {
-                purchaseStatus[it.key].asBoolean
-            }.map { obj.add(it.key, it.value) }
+        get() = JsonObject().apply {
+            add(BedwarsModeDetector.BEDWARS_STAR_TYPE, JsonObject().apply {
+                addProperty("name", BedwarsModeDetector.DEFAULT_HEADER)
+            })
         }
     val displayManager: DisplayManager = DisplayManager(File(File(UMinecraft.getMinecraft().mcDataDir, "config"), "levelhead.json"))
     val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -118,40 +130,30 @@ object Levelhead {
     }
 
     suspend fun refreshTypes() {
-        mutex.withLock(types) {
-            types = jsonParser.parse(getWithAgent("https://api.sk1er.club/levelhead_config")).asJsonObject
+        mutex.withLock {
+            types = defaultTypes()
         }
     }
 
     suspend fun refreshRawPurchases() {
-        mutex.withLock(rawPurchases) {
-            rawPurchases = jsonParser.parse(getWithAgent(
-                "https://api.sk1er.club/purchases/" + UMinecraft.getMinecraft().session.profile.id.toString()
-            )).asJsonObject
-            if (!rawPurchases.has("remaining_levelhead_credits")) {
-                rawPurchases.addProperty("remaining_levelhead_credits", 0)
-            }
+        mutex.withLock {
+            rawPurchases = defaultRawPurchases()
         }
     }
 
     suspend fun refreshPaidData() {
-        mutex.withLock(paidData) {
-            paidData = jsonParser.parse(getWithAgent("https://api.sk1er.club/levelhead_data")).asJsonObject
+        mutex.withLock {
+            paidData = defaultPaidData()
         }
     }
 
     suspend fun refreshPurchaseStates() {
-        mutex.withLock(purchaseStatus) {
-            purchaseStatus = jsonParser.parse(getWithAgent(
-                "https://api.sk1er.club/levelhead_purchase_status/" + UMinecraft.getMinecraft().session.profile.id.toString()
-            )).asJsonObject
-            LevelheadPurchaseStates.chat = purchaseStatus["chat"].asBoolean
-            LevelheadPurchaseStates.tab = purchaseStatus["tab"].asBoolean
-            LevelheadPurchaseStates.aboveHead = purchaseStatus["head"].asInt
-            LevelheadPurchaseStates.customLevelhead = purchaseStatus["custom_levelhead"].asBoolean
-            for (i in displayManager.aboveHead.size..LevelheadPurchaseStates.aboveHead) {
-                displayManager.aboveHead.add(AboveHeadDisplay(DisplayConfig()))
-            }
+        mutex.withLock {
+            purchaseStatus = defaultPurchaseStatus()
+            LevelheadPurchaseStates.chat = false
+            LevelheadPurchaseStates.tab = false
+            LevelheadPurchaseStates.aboveHead = 0
+            LevelheadPurchaseStates.customLevelhead = false
             displayManager.adjustIndices()
         }
     }

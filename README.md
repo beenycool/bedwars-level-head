@@ -1,12 +1,12 @@
 ## General Information
-Levelhead is a Minecraft Mod created for the Hypixel Network `mc.hypixel.net` to show a player's network level or other stats above their head.
+BedWars Levelhead is a Minecraft Mod created for the Hypixel Network `mc.hypixel.net` that only displays a player's BedWars star above their head while playing or waiting in BedWars modes.
 
 ## Configuration
 `/levelhead` - Primary configuration command. Opens configuration GUI
 
 `/levelhead dumpcache` - Dumps local cache for players’ levels. Reloads from servers.
 
-`/levelhead reauth` - Refreshes the current purchase data for your player
+`/levelhead reauth` - Confirms that the mod is running in BedWars-only mode (no authentication required)
 
 `/levelhead apikey <key>` - Stores your Hypixel API key for BedWars stat lookups.
 

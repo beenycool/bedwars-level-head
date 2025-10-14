@@ -2,7 +2,6 @@ package club.sk1er.mods.levelhead.commands
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.Levelhead.displayManager
-import club.sk1er.mods.levelhead.Levelhead.types
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.gui.LevelheadGUI
 import gg.essential.api.EssentialAPI
@@ -10,7 +9,6 @@ import gg.essential.api.commands.Command
 import gg.essential.api.commands.DefaultHandler
 import gg.essential.api.commands.SubCommand
 import gg.essential.universal.ChatColor
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.cancelChildren
 import java.util.Locale
 
@@ -37,7 +35,10 @@ class LevelheadCommand : Command("levelhead") {
     @SubCommand(value = "limit")
     fun handleLimit() {
         EssentialAPI.getMinecraftUtil()
-            .sendMessage("${ChatColor.AQUA}[Levelhead]", "${ChatColor.RED}Callback_types: " + types)
+            .sendMessage(
+                "${ChatColor.AQUA}[Levelhead]",
+                "${ChatColor.RED}Available types: ${Levelhead.allowedTypes}"
+            )
         EssentialAPI.getMinecraftUtil().sendMessage(
             "${ChatColor.AQUA}[Levelhead]",
             "${ChatColor.RED}Hypixel: " + EssentialAPI.getMinecraftUtil().isHypixel()
@@ -46,25 +47,10 @@ class LevelheadCommand : Command("levelhead") {
 
     @SubCommand(value = "reauth")
     fun handleReauth() {
-        Levelhead.scope.launch {
-            launch {
-                Levelhead.refreshRawPurchases()
-            }
-            launch {
-                Levelhead.refreshPaidData()
-            }
-            launch {
-                Levelhead.refreshPurchaseStates()
-            }
-            launch {
-                Levelhead.refreshTypes()
-            }
-        }.invokeOnCompletion {
-            if (it == null)
-                EssentialAPI.getMinecraftUtil().sendMessage("${ChatColor.AQUA}[Levelhead]", "${ChatColor.GREEN} Reauthed!")
-            else
-                EssentialAPI.getMinecraftUtil().sendMessage("${ChatColor.AQUA}[Levelhead]", "${ChatColor.RED} Reauth failed!")
-        }
+        EssentialAPI.getMinecraftUtil().sendMessage(
+            "${ChatColor.AQUA}[Levelhead]",
+            "${ChatColor.YELLOW}Reauth is not required for the BedWars-only Levelhead."
+        )
     }
 
     @SubCommand(value = "dumpcache")
