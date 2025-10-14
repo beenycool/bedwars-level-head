@@ -4,9 +4,9 @@ import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import com.google.gson.JsonObject
 import gg.essential.api.EssentialAPI
-import gg.essential.api.utils.Multithreading
 import gg.essential.universal.ChatColor
-import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import gg.essential.universal.UMinecraft
+import okhttp3.HttpUrl
 import okhttp3.Request
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -24,7 +24,7 @@ object BedwarsFetcher {
             return null
         }
 
-        val url = HYPIXEL_PLAYER_ENDPOINT.toHttpUrlOrNull()?.newBuilder()
+        val url = HttpUrl.parse(HYPIXEL_PLAYER_ENDPOINT)?.newBuilder()
             ?.addQueryParameter("key", key)
             ?.addQueryParameter("uuid", uuid.toString().replace("-", ""))
             ?.build()
@@ -44,7 +44,7 @@ object BedwarsFetcher {
             Levelhead.okHttpClient.newCall(request).execute().use { response ->
                 val body = response.body()?.string() ?: return null
                 val json = Levelhead.jsonParser.parse(body).asJsonObject
-                if (!json.get("success")?.asBoolean ?: false) {
+                if (json.get("success")?.asBoolean != true) {
                     val cause = json.get("cause")?.asString ?: "Unknown"
                     notifyInvalidKey(cause)
                     return null
@@ -88,7 +88,7 @@ object BedwarsFetcher {
     }
 
     private fun sendMessage(message: String) {
-        Multithreading.runOnMainThread {
+        UMinecraft.getMinecraft().addScheduledTask {
             EssentialAPI.getMinecraftUtil().sendMessage("${ChatColor.AQUA}[Levelhead]", message)
         }
     }

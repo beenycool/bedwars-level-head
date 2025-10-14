@@ -1,6 +1,7 @@
 package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.Levelhead
+import club.sk1er.mods.levelhead.config.LevelheadConfig
 import gg.essential.api.EssentialAPI
 import gg.essential.universal.UMinecraft
 import net.minecraft.scoreboard.Score
@@ -54,7 +55,12 @@ object BedwarsModeDetector {
 
     fun isInBedwars(): Boolean = currentContext().isBedwars
 
-    fun shouldRequestData(): Boolean = EssentialAPI.getMinecraftUtil().isHypixel() && isInBedwars()
+    fun shouldRequestData(): Boolean {
+        if (!LevelheadConfig.bedwarsIntegrationEnabled) {
+            return false
+        }
+        return EssentialAPI.getMinecraftUtil().isHypixel() && isInBedwars()
+    }
 
     fun shouldRenderTags(): Boolean {
         currentContext()
@@ -74,9 +80,25 @@ object BedwarsModeDetector {
         val scoreboard = world.scoreboard ?: return Context.NONE
         val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: return Context.NONE
 
-        val title = StringUtils.stripControlCodes(objective.displayName.formattedText)
+        val displayComponent: Any? = objective.displayName
+        val rawTitle = when (displayComponent) {
+            null -> ""
+            else -> {
+                val clazz = displayComponent::class.java
+                val formattedMethod = runCatching { clazz.getMethod("getFormattedText") }.getOrNull()
+                    ?: runCatching { clazz.getMethod("getUnformattedText") }.getOrNull()
+                when {
+                    formattedMethod != null -> runCatching {
+                        formattedMethod.invoke(displayComponent) as? String
+                    }.getOrNull()
+                    else -> null
+                } ?: displayComponent.toString()
+            }
+        }
+        val title = StringUtils.stripControlCodes(rawTitle)
             .uppercase(Locale.ROOT)
-        if (!title.contains("BED WARS")) {
+        val normalizedTitle = title.replace("\\s+".toRegex(), "")
+        if (!normalizedTitle.contains("BEDWARS")) {
             return Context.NONE
         }
 

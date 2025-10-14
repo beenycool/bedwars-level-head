@@ -2,8 +2,9 @@ package club.sk1er.mods.levelhead
 
 import club.sk1er.mods.levelhead.auth.MojangAuth
 import club.sk1er.mods.levelhead.commands.LevelheadCommand
-import club.sk1er.mods.levelhead.config.DisplayConfig
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
+import club.sk1er.mods.levelhead.config.DisplayConfig
+import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import club.sk1er.mods.levelhead.core.BedwarsStar
 import club.sk1er.mods.levelhead.core.DisplayManager
@@ -19,7 +20,6 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import gg.essential.api.EssentialAPI
-import gg.essential.api.utils.Multithreading
 import gg.essential.universal.UMinecraft
 import gg.essential.universal.wrappers.UPlayer
 import kotlinx.coroutines.*
@@ -39,6 +39,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import org.apache.logging.log4j.LogManager
+import java.util.UUID
 import org.apache.logging.log4j.Logger
 import java.awt.Color
 import java.io.File
@@ -87,8 +88,12 @@ object Levelhead {
         get() = Color.HSBtoRGB(System.currentTimeMillis() % 1000 / 1000f, 0.8f, 0.8f)
     val chromaColor: Color
         get() = Color(ChromaColor)
-    val selfLevelheadTag: LevelheadTag?
-        get() = displayManager.aboveHead.getOrNull(0)?.cache?.get(UPlayer.getUUID())
+    val selfLevelheadTag: LevelheadTag
+        get() {
+            val uuid = UPlayer.getUUID() ?: return LevelheadTag(UUID(0L, 0L))
+            val display = displayManager.aboveHead.getOrNull(0) ?: return LevelheadTag(uuid)
+            return display.cache.getOrPut(uuid) { LevelheadTag(uuid) }
+        }
 
     const val MODID = "level_head"
     const val VERSION = "8.2.3"
@@ -227,7 +232,8 @@ object Levelhead {
             .build()
         return kotlin.runCatching {
             okHttpClient.newCall(request).execute().use { response ->
-                response.body?.string()
+                response.body()?.string()
+                    ?: "{\"success\":false,\"cause\":\"API_DOWN\"}"
             }
         }.getOrDefault("{\"success\":false,\"cause\":\"API_DOWN\"}")
     }
@@ -240,7 +246,10 @@ object Levelhead {
             .post(body)
             .build()
         return kotlin.runCatching {
-            okHttpClient.newCall(request).execute().body()?.use { it.string() }!!
+            okHttpClient.newCall(request).execute().use { response ->
+                response.body()?.string()
+                    ?: "{\"success\":false,\"cause\":\"API_DOWN\"}"
+            }
         }.getOrDefault("{\"success\":false,\"cause\":\"API_DOWN\"}")
     }
 

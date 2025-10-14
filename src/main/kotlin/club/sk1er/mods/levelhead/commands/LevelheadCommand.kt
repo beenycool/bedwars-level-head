@@ -10,8 +10,9 @@ import gg.essential.api.commands.Command
 import gg.essential.api.commands.DefaultHandler
 import gg.essential.api.commands.SubCommand
 import gg.essential.universal.ChatColor
-import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancelChildren
+import java.util.Locale
 
 class LevelheadCommand : Command("levelhead") {
 
@@ -107,8 +108,30 @@ class LevelheadCommand : Command("levelhead") {
         remindedAboutApiKey = false
     }
 
+    @SubCommand(value = "bedwars")
+    fun handleBedwarsToggle(state: String) {
+        val normalized = state.trim().lowercase(Locale.ROOT)
+        val enabled = when (normalized) {
+            "on", "enable", "enabled", "true" -> true
+            "off", "disable", "disabled", "false" -> false
+            else -> {
+                EssentialAPI.getMinecraftUtil().sendMessage(
+                    "${ChatColor.AQUA}[Levelhead]",
+                    "${ChatColor.RED}Usage: /levelhead bedwars <on|off>"
+                )
+                return
+            }
+        }
+
+        LevelheadConfig.setBedwarsIntegrationEnabled(enabled)
+        EssentialAPI.getMinecraftUtil().sendMessage(
+            "${ChatColor.AQUA}[Levelhead]",
+            if (enabled) "${ChatColor.GREEN}Enabled BedWars star integration." else "${ChatColor.YELLOW}Disabled BedWars star integration."
+        )
+    }
+
     private fun remindToSetApiKey() {
-        if (LevelheadConfig.apiKey.isBlank() && !remindedAboutApiKey) {
+        if (LevelheadConfig.bedwarsIntegrationEnabled && LevelheadConfig.apiKey.isBlank() && !remindedAboutApiKey) {
             remindedAboutApiKey = true
             EssentialAPI.getMinecraftUtil().sendMessage(
                 "${ChatColor.AQUA}[Levelhead]",
