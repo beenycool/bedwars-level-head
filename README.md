@@ -7,12 +7,11 @@ BedWars Levelhead is a Minecraft mod for the Hypixel Network (`mc.hypixel.net`) 
 * `/levelhead clearapikey` — Alias for clearing the stored Hypixel API key from `config/bedwars-level-head.cfg`.
 * `/levelhead reload` — Cancels active fetches, clears cached BedWars stars, and re-requests data for nearby players.
 
+## Setting your Hypixel API key
+1. Join Hypixel (`mc.hypixel.net`) and run `/api new` to generate an API key. Copy the key from chat.
+2. Run `/levelhead apikey <key>` in-game (replace `<key>` with the value you copied). The mod will save it to `config/bedwars-level-head.cfg`.
+3. If you ever need to remove or replace the key, use `/levelhead apikey clear` or repeat the steps above with a new key.
+
 ## Configuration
-Display settings such as header text, colors, and offsets are stored in `config/levelhead.json`. The mod keeps the existing file format so you can copy settings from previous installations or edit the JSON manually.
+Display settings such as header text, colors, and offsets are stored in `config/levelhead.json`. The mod keeps the existing file format so you can copy settings from previous installations or edit the JSON manually. If you reuse a config from an older version of Levelhead, set its `type` field to `BEDWARS_STAR` so the display renders BedWars stars instead of network levels.
 
-## Support the project
-You can support the project by purchasing cosmetics through [Essential](https://essential.gg) while using Levelhead.
-
-## YourKit
-YourKit supports open source projects with innovative and intelligent tools for monitoring and profiling Java and .NET applications.
-YourKit is the creator of [YourKit Java Profiler](https://www.yourkit.com/java/profiler/), [YourKit .NET Profiler](https://www.yourkit.com/.net/profiler/), and [YourKit YouMonitor](https://www.yourkit.com/youmonitor/).

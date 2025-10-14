@@ -15,7 +15,6 @@ import org.apache.commons.io.FileUtils
 import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
-import java.util.Locale
 
 class DisplayManager(val file: File) {
 
@@ -51,9 +50,11 @@ class DisplayManager(val file: File) {
                 migrated = true
             }
 
-            adjustIndices()
+            if (migrateLegacyPrimaryDisplay()) {
+                migrated = true
+            }
 
-            migrated = migrateLegacyPrimaryDisplay() || migrated
+            adjustIndices()
 
             if (shouldSaveCopyNow || migrated) {
                 saveConfig()
@@ -86,6 +87,22 @@ class DisplayManager(val file: File) {
             aboveHead[i].bottomValue = i == 0
             aboveHead[i].index = i
         }
+    }
+
+    private fun migrateLegacyPrimaryDisplay(): Boolean {
+        var migrated = false
+        val legacyHeaders = setOf("Level", "Levelhead", "Network Level")
+        aboveHead.forEachIndexed { index, display ->
+            if (display.config.type != BedwarsModeDetector.BEDWARS_STAR_TYPE) {
+                if (index == 0 && legacyHeaders.any { display.config.headerString.equals(it, ignoreCase = true) }) {
+                    display.config.headerString = BedwarsModeDetector.DEFAULT_HEADER
+                }
+                Levelhead.logger.info("Migrating legacy display #${index + 1} from type '${display.config.type}' to '${BedwarsModeDetector.BEDWARS_STAR_TYPE}'.")
+                display.config.type = BedwarsModeDetector.BEDWARS_STAR_TYPE
+                migrated = true
+            }
+        }
+        return migrated
     }
 
     @OptIn(ExperimentalStdlibApi::class)
@@ -150,20 +167,5 @@ class DisplayManager(val file: File) {
             ?.chunked(20) { reqList ->
                 Levelhead.fetch(reqList)
             }
-    }
-
-    private fun migrateLegacyPrimaryDisplay(): Boolean {
-        val primary = aboveHead.firstOrNull() ?: return false
-        var updated = false
-        if (primary.config.type.equals("LEVEL", true)) {
-            primary.config.type = BedwarsModeDetector.BEDWARS_STAR_TYPE
-            updated = true
-        }
-        val normalizedHeader = primary.config.headerString.trim().lowercase(Locale.ROOT)
-        if (normalizedHeader == "level" || normalizedHeader == "network level") {
-            primary.config.headerString = BedwarsModeDetector.DEFAULT_HEADER
-            updated = true
-        }
-        return updated
     }
 }
