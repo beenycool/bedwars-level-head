@@ -1,5 +1,6 @@
 package club.sk1er.mods.levelhead.core
 
+import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import com.google.gson.JsonObject
 import gg.essential.universal.ChatColor
 import java.awt.Color
@@ -67,6 +68,8 @@ object BedwarsStar {
 
     fun extractExperience(player: JsonObject?): Long? {
         player ?: return null
+
+        BedwarsFetcher.parseBedwarsExperience(player)?.let { return it }
 
         val statsElement = player.get("stats") ?: return null
         if (!statsElement.isJsonObject) return null
