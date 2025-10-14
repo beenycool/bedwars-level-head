@@ -54,13 +54,7 @@ object LevelheadConfig {
     }
 
     fun setApiKey(newKey: String) {
-        ensureInitialized()
-        val sanitized = newKey.trim()
-        val property = configuration.get(CATEGORY_GENERAL, PROPERTY_API_KEY, "", API_KEY_COMMENT)
-        property.set(sanitized)
-        apiKey = sanitized
-        configuration.save()
-        BedwarsFetcher.resetWarnings()
+        updateStringConfig(PROPERTY_API_KEY, API_KEY_COMMENT, newKey) { apiKey = it }
     }
 
     fun clearApiKey() {
@@ -68,30 +62,42 @@ object LevelheadConfig {
     }
 
     fun setProxyEnabled(enabled: Boolean) {
-        ensureInitialized()
-        val property = configuration.get(CATEGORY_GENERAL, PROPERTY_PROXY_ENABLED, false, PROXY_ENABLED_COMMENT)
-        property.set(enabled)
-        proxyEnabled = enabled
-        configuration.save()
-        BedwarsFetcher.resetWarnings()
+        updateBooleanConfig(PROPERTY_PROXY_ENABLED, PROXY_ENABLED_COMMENT, enabled) { proxyEnabled = it }
     }
 
     fun setProxyBaseUrl(baseUrl: String) {
+        updateStringConfig(PROPERTY_PROXY_BASE_URL, PROXY_BASE_URL_COMMENT, baseUrl) { proxyBaseUrl = it }
+    }
+
+    fun setProxyAuthToken(authToken: String) {
+        updateStringConfig(PROPERTY_PROXY_AUTH_TOKEN, PROXY_AUTH_TOKEN_COMMENT, authToken) { proxyAuthToken = it }
+    }
+
+    private fun updateStringConfig(
+        key: String,
+        comment: String,
+        value: String,
+        setter: (String) -> Unit,
+    ) {
         ensureInitialized()
-        val sanitized = baseUrl.trim()
-        val property = configuration.get(CATEGORY_GENERAL, PROPERTY_PROXY_BASE_URL, "", PROXY_BASE_URL_COMMENT)
+        val sanitized = value.trim()
+        val property = configuration.get(CATEGORY_GENERAL, key, "", comment)
         property.set(sanitized)
-        proxyBaseUrl = sanitized
+        setter(sanitized)
         configuration.save()
         BedwarsFetcher.resetWarnings()
     }
 
-    fun setProxyAuthToken(authToken: String) {
+    private fun updateBooleanConfig(
+        key: String,
+        comment: String,
+        value: Boolean,
+        setter: (Boolean) -> Unit,
+    ) {
         ensureInitialized()
-        val sanitized = authToken.trim()
-        val property = configuration.get(CATEGORY_GENERAL, PROPERTY_PROXY_AUTH_TOKEN, "", PROXY_AUTH_TOKEN_COMMENT)
-        property.set(sanitized)
-        proxyAuthToken = sanitized
+        val property = configuration.get(CATEGORY_GENERAL, key, false, comment)
+        property.set(value)
+        setter(value)
         configuration.save()
         BedwarsFetcher.resetWarnings()
     }

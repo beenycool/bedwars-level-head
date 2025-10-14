@@ -69,23 +69,7 @@ object BedwarsStar {
     fun extractExperience(player: JsonObject?): Long? {
         player ?: return null
 
-        BedwarsFetcher.parseBedwarsExperience(player)?.let { return it }
-
-        val statsElement = player.get("stats") ?: return null
-        if (!statsElement.isJsonObject) return null
-        val stats = statsElement.asJsonObject
-
-        val bedwarsElement = stats.get("Bedwars") ?: return null
-        if (!bedwarsElement.isJsonObject) return null
-        val bedwars = bedwarsElement.asJsonObject
-
-        val experienceEntry = bedwars.entrySet()
-            .firstOrNull { (key, _) ->
-                key.equals("Experience", ignoreCase = true) || key.equals("bedwars_experience", ignoreCase = true)
-            }
-            ?: return null
-
-        return kotlin.runCatching { experienceEntry.value.asLong }.getOrNull()
+        return BedwarsFetcher.parseBedwarsExperience(player)
     }
 
     fun calculateStar(experience: Long): Int {

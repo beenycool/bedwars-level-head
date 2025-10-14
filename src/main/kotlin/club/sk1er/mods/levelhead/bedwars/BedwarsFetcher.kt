@@ -21,11 +21,10 @@ object BedwarsFetcher {
     private val networkIssueWarned = AtomicBoolean(false)
 
     fun fetchPlayer(uuid: UUID): JsonObject? {
-        return if (shouldUseProxy()) {
-            fetchFromProxy(uuid)
-        } else {
-            fetchFromHypixel(uuid)
+        if (shouldUseProxy()) {
+            fetchFromProxy(uuid)?.let { return it }
         }
+        return fetchFromHypixel(uuid)
     }
 
     private fun shouldUseProxy(): Boolean {
@@ -33,9 +32,14 @@ object BedwarsFetcher {
     }
 
     private fun fetchFromProxy(uuid: UUID): JsonObject? {
-        val baseUrl = LevelheadConfig.proxyBaseUrl.trim().trimEnd('/')
+        val baseUrl = LevelheadConfig.proxyBaseUrl.trim()
         val uuidNoDashes = uuid.toString().replace("-", "")
-        val url = HttpUrl.parse("$baseUrl/api/player/$uuidNoDashes")
+        val url = HttpUrl.parse(baseUrl)
+            ?.newBuilder()
+            ?.addPathSegment("api")
+            ?.addPathSegment("player")
+            ?.addPathSegment(uuidNoDashes)
+            ?.build()
 
         if (url == null) {
             Levelhead.logger.error(
@@ -45,15 +49,17 @@ object BedwarsFetcher {
             return null
         }
 
-        val requestBuilder = Request.Builder()
+        val request = Request.Builder()
             .url(url)
             .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
             .header("Accept", "application/json")
+            .apply {
+                LevelheadConfig.proxyAuthToken.takeIf { it.isNotBlank() }?.let { token ->
+                    header("Authorization", "Bearer $token")
+                }
+            }
             .get()
-
-        requestBuilder.header("Authorization", "Bearer ${LevelheadConfig.proxyAuthToken}")
-
-        val request = requestBuilder.build()
+            .build()
 
         return try {
             Levelhead.okHttpClient.newCall(request).execute().use { response ->
@@ -151,15 +157,14 @@ object BedwarsFetcher {
     }
 
     fun parseBedwarsExperience(json: JsonObject): Long? {
-        val proxyData = json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
-        val proxyBedwars = proxyData?.get("bedwars")?.takeIf { it.isJsonObject }?.asJsonObject
-        val proxyExperience = proxyBedwars?.get("Experience")
-        if (proxyExperience != null && !proxyExperience.isJsonNull) {
-            val parsed = kotlin.runCatching { proxyExperience.asLong }.getOrNull()
-            if (parsed != null) {
-                return parsed
-            }
-        }
+        json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
+            ?.get("bedwars")?.takeIf { it.isJsonObject }?.asJsonObject
+            ?.let { parseExperienceFromBedwars(it) }
+            ?.let { return it }
+
+        json.get("bedwars")?.takeIf { it.isJsonObject }?.asJsonObject
+            ?.let { parseExperienceFromBedwars(it) }
+            ?.let { return it }
 
         val playerContainer = when {
             json.get("player")?.isJsonObject == true -> json.getAsJsonObject("player")
@@ -170,11 +175,17 @@ object BedwarsFetcher {
         val stats = playerContainer.get("stats")?.takeIf { it.isJsonObject }?.asJsonObject ?: return null
         val bedwars = stats.get("Bedwars")?.takeIf { it.isJsonObject }?.asJsonObject ?: return null
 
-        val experienceEntry = bedwars.entrySet().firstOrNull { (key, _) ->
-            key.equals("Experience", ignoreCase = true) || key.equals("bedwars_experience", ignoreCase = true)
-        } ?: return null
+        return parseExperienceFromBedwars(bedwars)
+    }
 
-        return kotlin.runCatching { experienceEntry.value.asLong }.getOrNull()
+    private fun parseExperienceFromBedwars(bedwars: JsonObject): Long? {
+        return bedwars.entrySet()
+            .firstOrNull { (key, _) ->
+                key.equals("Experience", ignoreCase = true) || key.equals("bedwars_experience", ignoreCase = true)
+            }
+            ?.value
+            ?.takeIf { !it.isJsonNull }
+            ?.let { kotlin.runCatching { it.asLong }.getOrNull() }
     }
 
     private fun notifyMissingKey() {
