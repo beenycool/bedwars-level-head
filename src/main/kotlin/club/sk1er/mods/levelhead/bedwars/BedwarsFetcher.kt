@@ -53,6 +53,7 @@ object BedwarsFetcher {
             .url(url)
             .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
             .header("Accept", "application/json")
+            .header("X-Levelhead-Install", LevelheadConfig.installId)
             .apply {
                 LevelheadConfig.proxyAuthToken.takeIf { it.isNotBlank() }?.let { token ->
                     header("Authorization", "Bearer $token")
@@ -121,6 +122,7 @@ object BedwarsFetcher {
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
+            .header("X-Levelhead-Install", LevelheadConfig.installId)
             .get()
             .build()
 
@@ -222,7 +224,7 @@ object BedwarsFetcher {
     private fun String.sanitizeForLogs(): String {
         if (isEmpty()) return this
         var sanitized = this
-        listOf(LevelheadConfig.apiKey, LevelheadConfig.proxyAuthToken)
+        listOf(LevelheadConfig.apiKey, LevelheadConfig.proxyAuthToken, LevelheadConfig.installId)
             .filter { it.isNotBlank() }
             .forEach { secret ->
                 sanitized = sanitized.replace(secret, "***")

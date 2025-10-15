@@ -3,6 +3,7 @@ package club.sk1er.mods.levelhead.config
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import net.minecraftforge.common.config.Configuration
 import java.io.File
+import java.util.UUID
 
 object LevelheadConfig {
     private const val CATEGORY_GENERAL = "general"
@@ -10,10 +11,12 @@ object LevelheadConfig {
     private const val PROPERTY_PROXY_ENABLED = "proxyEnabled"
     private const val PROPERTY_PROXY_BASE_URL = "proxyBaseUrl"
     private const val PROPERTY_PROXY_AUTH_TOKEN = "proxyAuthToken"
+    private const val PROPERTY_INSTALL_ID = "installId"
     private const val API_KEY_COMMENT = "Hypixel API key used for BedWars integrations"
     private const val PROXY_ENABLED_COMMENT = "Enable fetching BedWars stats from a proxy backend"
     private const val PROXY_BASE_URL_COMMENT = "Base URL for the proxy backend (e.g. https://example.com)"
     private const val PROXY_AUTH_TOKEN_COMMENT = "Bearer token used to authenticate with the proxy backend"
+    private const val INSTALL_ID_COMMENT = "Unique identifier for this BedWars Levelhead installation"
 
     private lateinit var configuration: Configuration
 
@@ -27,6 +30,9 @@ object LevelheadConfig {
         private set
 
     var proxyAuthToken: String = ""
+        private set
+
+    var installId: String = ""
         private set
 
     fun initialize(configFile: File) {
@@ -48,6 +54,16 @@ object LevelheadConfig {
 
         val proxyAuthTokenProperty = configuration.get(CATEGORY_GENERAL, PROPERTY_PROXY_AUTH_TOKEN, "", PROXY_AUTH_TOKEN_COMMENT)
         proxyAuthToken = proxyAuthTokenProperty.string.trim()
+
+        val installIdProperty = configuration.get(CATEGORY_GENERAL, PROPERTY_INSTALL_ID, "", INSTALL_ID_COMMENT)
+        val existingInstallId = installIdProperty.string.trim()
+        if (existingInstallId.isBlank()) {
+            val generated = UUID.randomUUID().toString().replace("-", "")
+            installIdProperty.set(generated)
+            installId = generated
+        } else {
+            installId = existingInstallId
+        }
         if (configuration.hasChanged()) {
             configuration.save()
         }
