@@ -143,6 +143,7 @@ class DisplayManager(val file: File) {
 
     fun clearCachesWithoutRefetch() {
         aboveHead.forEach { it.cache.clear() }
+        Levelhead.clearCachedStars()
     }
 
     fun clearCache() {
