@@ -44,7 +44,7 @@ object BedwarsFetcher {
         if (url == null) {
             Levelhead.logger.error(
                 "Failed to build proxy BedWars endpoint URL from base '{}'",
-                LevelheadConfig.proxyBaseUrl
+                LevelheadConfig.proxyBaseUrl.sanitizeForLogs()
             )
             return null
         }
@@ -71,7 +71,7 @@ object BedwarsFetcher {
                         else -> Levelhead.logger.error(
                             "Proxy request failed with status {}: {}",
                             response.code(),
-                            body.take(200)
+                            body.sanitizeForLogs().take(200)
                         )
                     }
                     return null
@@ -85,7 +85,7 @@ object BedwarsFetcher {
                 }
 
                 if (json.get("success")?.asBoolean == false) {
-                    Levelhead.logger.warn("Proxy response reported success=false: {}", body.take(200))
+                    Levelhead.logger.warn("Proxy response reported success=false: {}", body.sanitizeForLogs().take(200))
                     return null
                 }
 
@@ -133,7 +133,7 @@ object BedwarsFetcher {
                 }
                 if (json.get("success")?.asBoolean != true) {
                     val cause = json.get("cause")?.asString ?: "Unknown"
-                    notifyInvalidKey(cause)
+                    notifyInvalidKey(cause.sanitizeForLogs())
                     return null
                 }
                 invalidKeyWarned.set(false)
@@ -204,7 +204,7 @@ object BedwarsFetcher {
                 )
             }
         } else {
-            Levelhead.logger.warn("Hypixel API returned error: {}", cause)
+            Levelhead.logger.warn("Hypixel API returned error: {}", cause.sanitizeForLogs())
         }
     }
 
@@ -215,8 +215,28 @@ object BedwarsFetcher {
         Levelhead.logger.warn(
             "Proxy authentication failed with status {}: {}",
             status,
-            body.take(200)
+            body.sanitizeForLogs().take(200)
         )
+    }
+
+    private fun String.sanitizeForLogs(): String {
+        if (isEmpty()) return this
+        var sanitized = this
+        listOf(LevelheadConfig.apiKey, LevelheadConfig.proxyAuthToken)
+            .filter { it.isNotBlank() }
+            .forEach { secret ->
+                sanitized = sanitized.replace(secret, "***")
+            }
+        sanitized = sanitized.replace(Regex("""(?i)(key|token)=([^&\s]+)""")) { matchResult ->
+            "${matchResult.groupValues[1]}=***"
+        }
+        sanitized = sanitized.replace(Regex("""(?i)"(key|token|api_key|apikey)"\s*:\s*"([^"]+)""")) { matchResult ->
+            "\"${matchResult.groupValues[1]}\":\"***\""
+        }
+        sanitized = sanitized.replace(Regex("""(?i)(authorization\s*:\s*bearer\s+)([^\s"]+)""")) { matchResult ->
+            "${matchResult.groupValues[1]}***"
+        }
+        return sanitized
     }
 
     private fun notifyNetworkIssue(ex: IOException) {
