@@ -33,4 +33,6 @@ Requests must include the following headers or they will be rejected:
 - `X-Levelhead-Install: <32 hex characters>`
 - `Authorization: Bearer <one of PROXY_AUTH_TOKENS>`
 
+Each bearer token is bound to the first `X-Levelhead-Install` value that uses it; subsequent requests that reuse the token with a different install identifier are rejected.
+
 Successful responses mirror the shapes already supported by the mod so no client update is required.

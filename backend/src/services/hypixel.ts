@@ -37,7 +37,7 @@ export interface ProxyPlayerPayload {
 
 export async function fetchPlayer(uuid: string): Promise<ProxyPlayerPayload> {
   try {
-    const response = await hypixelClient.get<HypixelPlayerResponse>('/player', {
+    const response = await hypixelClient.get<HypixelPlayerResponse>('/v2/player', {
       params: { uuid },
       headers: {
         'API-Key': HYPIXEL_API_KEY,
@@ -50,8 +50,7 @@ export async function fetchPlayer(uuid: string): Promise<ProxyPlayerPayload> {
     }
 
     const bedwarsStats = response.data.player?.stats?.Bedwars ?? {};
-    const experience = (bedwarsStats as { bedwars_experience?: number; Experience?: number }).bedwars_experience ??
-      (bedwarsStats as { Experience?: number }).Experience;
+    const experience = (bedwarsStats as any).bedwars_experience ?? (bedwarsStats as any).Experience;
 
     const shapedStats: Record<string, unknown> = {
       ...bedwarsStats,

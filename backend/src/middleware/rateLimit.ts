@@ -5,16 +5,28 @@ import { HttpError } from '../util/httpError';
 type Bucket = {
   count: number;
   windowStartedAt: number;
+  lastUpdatedAt: number;
 };
 
 const buckets = new Map<string, Bucket>();
+const BUCKET_TTL_MS = RATE_LIMIT_WINDOW_MS * 2;
+const CLEANUP_INTERVAL_MS = RATE_LIMIT_WINDOW_MS;
+
+const cleanupTimer = setInterval(() => {
+  const now = Date.now();
+  for (const [key, bucket] of buckets) {
+    if (now - bucket.lastUpdatedAt > BUCKET_TTL_MS) {
+      buckets.delete(key);
+    }
+  }
+}, CLEANUP_INTERVAL_MS);
+
+if (typeof cleanupTimer.unref === 'function') {
+  cleanupTimer.unref();
+}
 
 function getBucketKey(req: Request): string {
-  if (req.installId) {
-    return req.installId;
-  }
-
-  return req.ip || 'unknown';
+  return req.installId;
 }
 
 export function enforceRateLimit(req: Request, res: Response, next: NextFunction): void {
@@ -23,14 +35,14 @@ export function enforceRateLimit(req: Request, res: Response, next: NextFunction
   const bucket = buckets.get(key);
 
   if (!bucket) {
-    buckets.set(key, { count: 1, windowStartedAt: now });
+    buckets.set(key, { count: 1, windowStartedAt: now, lastUpdatedAt: now });
     next();
     return;
   }
 
   const elapsed = now - bucket.windowStartedAt;
   if (elapsed >= RATE_LIMIT_WINDOW_MS) {
-    buckets.set(key, { count: 1, windowStartedAt: now });
+    buckets.set(key, { count: 1, windowStartedAt: now, lastUpdatedAt: now });
     next();
     return;
   }
@@ -42,5 +54,6 @@ export function enforceRateLimit(req: Request, res: Response, next: NextFunction
   }
 
   bucket.count += 1;
+  bucket.lastUpdatedAt = now;
   next();
 }
