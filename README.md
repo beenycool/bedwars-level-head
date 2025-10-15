@@ -1,19 +1,42 @@
-## General Information
-BedWars Levelhead is a Minecraft mod for the Hypixel Network (`mc.hypixel.net`) that displays a player's BedWars star above their head while you are in BedWars games
+## BedWars Level Head
 
-## Commands
-* `/levelhead` — Shows a short help message explaining how to configure the mod.
-* `/levelhead apikey <key>` — Stores your Hypixel API key so the mod can fetch BedWars statistics. Dashes are optional, and you can also use `/levelhead apikey clear` to remove the stored key.
-* `/levelhead clearapikey` — Alias for clearing the stored Hypixel API key from `config/bedwars-level-head.cfg`.
-* `/levelhead reload` — Cancels active fetches, clears cached BedWars stars, and re-requests data for nearby players.
-## I will try to apply for a key so you don't have to
-## Setting your Hypixel API key
-1. Join Hypixel (`mc.hypixel.net`) and run `/api new` to generate an API key. Copy the key from chat.
-2. Run `/levelhead apikey <key>` in-game (replace `<key>` with the value you copied). The mod will save it to `config/bedwars-level-head.cfg`.
-3. If you ever need to remove or replace the key, use `/levelhead apikey clear` or repeat the steps above with a new key.
+A lightweight and simplified fork of the classic **Levelhead** mod, rebuilt to  display a player's BedWars star above their head on Hypixel.
+All other features from the original Levelhead have been removed to ensure the mod is as lightweight and focused as possible.
 
-## Configuration
-Display settings such as header text, colors, and offsets are stored in `config/levelhead.json`. The mod keeps the existing file format so you can copy settings from previous installations or edit the[...]
 
-## Fork
-This project is a fork of @Sk1erLLC/Levelhead. I forked the mod and added some features.
+### Getting Started
+currently still waiting for a hypixel api key 
+
+1.  Log in to the Hypixel network (`mc.hypixel.net`).
+2.  boom
+#### Commands (not needed unless error or something)
+
+*   `/levelhead`
+    *    Shows a short help message explaining how to configure the mod.
+
+*   `/levelhead apikey <key>`
+    *    Stores your Hypixel API key to allow the mod to fetch BedWars statistics. The `<key>` should be replaced with the key you get from requesting the developer api key from Hypixel if the backend is down. Dashes in the key are optional.
+
+*   `/levelhead apikey clear`
+    *    Removes the Hypixel API key that is currently stored in the mod's configuration.
+
+*   `/levelhead clearapikey`
+    *    This is an alias (a shortcut) for the `/levelhead apikey clear` command. It does the exact same thing.
+
+*   `/levelhead reload`
+    *    Clears all cached BedWars stars and forces the mod to re-request the data for all players currently visible on your screen. This is useful if data seems outdated or incorrect.
+---
+
+### Configuration
+
+For advanced customization, you can edit the `config/levelhead.json` file located in your `.minecraft` directory. Here you can change the header text, colors, on-screen offsets, and more.
+
+If you are using a configuration file from an older version of Levelhead, please ensure the `type` field is set to `"BEDWARS_STAR"` for the mod to function correctly.
+
+---
+
+### Credits & License
+
+This project is a fork of the original **Levelhead** mod created by **Sk1er LLC** and is licensed under the **GNU General Public License v3**. This mod would not exist without their foundational work.
+
+Credit also goes to the Hypixel team for providing the public API that makes this functionality possible.
