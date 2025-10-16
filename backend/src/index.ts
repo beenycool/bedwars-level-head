@@ -11,14 +11,14 @@ app.set('trust proxy', 1);
 app.use(express.json({ limit: '64kb' }));
 app.use('/api/player', playerRouter);
 
-purgeExpiredEntries();
+void purgeExpiredEntries().catch((error) => {
+  console.error('Failed to purge expired cache entries', error);
+});
 
 const purgeInterval = setInterval(() => {
-  try {
-    purgeExpiredEntries();
-  } catch (error) {
+  void purgeExpiredEntries().catch((error) => {
     console.error('Failed to purge expired cache entries', error);
-  }
+  });
 }, 60 * 60 * 1000);
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -37,20 +37,16 @@ const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
 });
 
 let shuttingDown = false;
-let cacheClosed = false;
+let cacheClosePromise: Promise<void> | null = null;
 
-function safeCloseCache(): void {
-  if (cacheClosed) {
-    return;
+function safeCloseCache(): Promise<void> {
+  if (!cacheClosePromise) {
+    cacheClosePromise = closeCache().catch((error) => {
+      console.error('Error closing cache database', error);
+    });
   }
 
-  cacheClosed = true;
-
-  try {
-    closeCache();
-  } catch (error) {
-    console.error('Error closing cache database', error);
-  }
+  return cacheClosePromise;
 }
 
 function shutdown(signal: NodeJS.Signals): void {
@@ -64,7 +60,7 @@ function shutdown(signal: NodeJS.Signals): void {
 
   const forcedShutdown = setTimeout(() => {
     console.error('Forcing shutdown.');
-    safeCloseCache();
+    void safeCloseCache();
     process.exit(1);
   }, 5000);
   forcedShutdown.unref();
@@ -75,11 +71,12 @@ function shutdown(signal: NodeJS.Signals): void {
       process.exitCode = 1;
     }
 
-    safeCloseCache();
-    clearTimeout(forcedShutdown);
+    safeCloseCache().finally(() => {
+      clearTimeout(forcedShutdown);
 
-    const exitCode = typeof process.exitCode === 'number' ? process.exitCode : 0;
-    process.exit(exitCode);
+      const exitCode = typeof process.exitCode === 'number' ? process.exitCode : 0;
+      process.exit(exitCode);
+    });
   });
 }
 
@@ -91,5 +88,5 @@ shutdownSignals.forEach((signal) => {
 
 process.on('exit', () => {
   clearInterval(purgeInterval);
-  safeCloseCache();
+  void safeCloseCache();
 });

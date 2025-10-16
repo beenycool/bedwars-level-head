@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { config as loadEnv } from 'dotenv';
 
 loadEnv();
@@ -56,4 +55,4 @@ const maximumCacheTtl = 3 * 60 * 60 * 1000;
 
 export const CACHE_TTL_MS = Math.min(Math.max(rawCacheTtl, minimumCacheTtl), maximumCacheTtl);
 
-export const CACHE_DB_PATH = process.env.CACHE_DB_PATH ?? path.resolve(process.cwd(), 'player-cache.sqlite');
+export const CACHE_DB_URL = requiredEnv('CACHE_DB_URL');
