@@ -34,7 +34,9 @@ class DisplayManager(val file: File) {
                 file.createNewFile()
                 shouldSaveCopyNow = true
             }
-            val source = jsonParser.parse(FileUtils.readFileToString(file, StandardCharsets.UTF_8)).runCatching { asJsonObject }.getOrElse { JsonObject() }
+            val source = runCatching {
+                jsonParser.parse(FileUtils.readFileToString(file, StandardCharsets.UTF_8)).asJsonObject
+            }.getOrElse { JsonObject() }
             if (source.has("master")) {
                 config = gson.fromJson(source["master"].asJsonObject, MasterConfig::class.java)
             }
