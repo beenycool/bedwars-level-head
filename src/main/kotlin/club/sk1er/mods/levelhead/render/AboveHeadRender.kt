@@ -93,7 +93,7 @@ object AboveHeadRender {
     }
 
     private fun renderString(renderer: FontRenderer, tag: LevelheadTag) {
-        var x = -renderer.getStringWidth(tag.getString()) shr 1
+        var x = -(renderer.getStringWidth(tag.getString()) shr 1)
         //Render header
         render(renderer, tag.header, x)
         x += renderer.getStringWidth(tag.header.value)
