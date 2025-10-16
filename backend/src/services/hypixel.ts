@@ -24,6 +24,7 @@ export interface HypixelPlayerResponse {
 export interface ProxyPlayerPayload {
   success: boolean;
   cause?: string;
+  message?: string;
   data?: {
     bedwars?: Record<string, unknown>;
   };
@@ -33,9 +34,11 @@ export interface ProxyPlayerPayload {
       Bedwars?: Record<string, unknown>;
     };
   };
+  nicked?: boolean;
+  display?: string;
 }
 
-export async function fetchPlayer(uuid: string): Promise<ProxyPlayerPayload> {
+export async function fetchHypixelPlayer(uuid: string): Promise<ProxyPlayerPayload> {
   try {
     const response = await hypixelClient.get<HypixelPlayerResponse>('/v2/player', {
       params: { uuid },
