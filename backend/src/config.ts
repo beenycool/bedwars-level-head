@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { config as loadEnv } from 'dotenv';
 
 loadEnv();
@@ -47,3 +48,12 @@ export const SERVER_HOST = process.env.HOST ?? '0.0.0.0';
 export const HYPIXEL_API_BASE_URL = process.env.HYPIXEL_API_BASE_URL ?? 'https://api.hypixel.net';
 
 export const CLOUD_FLARE_TUNNEL = process.env.CLOUDFLARE_TUNNEL ?? '';
+
+const defaultCacheTtl = 2 * 60 * 60 * 1000;
+const rawCacheTtl = parseIntEnv('CACHE_TTL_MS', defaultCacheTtl);
+const minimumCacheTtl = 60 * 60 * 1000;
+const maximumCacheTtl = 3 * 60 * 60 * 1000;
+
+export const CACHE_TTL_MS = Math.min(Math.max(rawCacheTtl, minimumCacheTtl), maximumCacheTtl);
+
+export const CACHE_DB_PATH = process.env.CACHE_DB_PATH ?? path.resolve(process.cwd(), 'player-cache.sqlite');
