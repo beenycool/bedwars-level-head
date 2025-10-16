@@ -39,13 +39,13 @@ async function fetchByUuid(uuid: string): Promise<ProxyPlayerPayload> {
   const normalizedUuid = uuid.toLowerCase();
   const cacheKey = buildCacheKey('player', normalizedUuid);
 
-  const cached = getCachedPayload<ProxyPlayerPayload>(cacheKey);
+  const cached = await getCachedPayload<ProxyPlayerPayload>(cacheKey);
   if (cached) {
     return cached;
   }
 
   const payload = await fetchHypixelPlayer(normalizedUuid);
-  setCachedPayload(cacheKey, payload, CACHE_TTL_MS);
+  await setCachedPayload(cacheKey, payload, CACHE_TTL_MS);
   return payload;
 }
 
@@ -53,7 +53,7 @@ async function fetchByIgn(ign: string): Promise<ProxyPlayerPayload> {
   const normalizedIgn = ign.toLowerCase();
   const ignCacheKey = buildCacheKey('ign', normalizedIgn);
 
-  const cached = getCachedPayload<ProxyPlayerPayload>(ignCacheKey);
+  const cached = await getCachedPayload<ProxyPlayerPayload>(ignCacheKey);
   if (cached) {
     return cached;
   }
@@ -61,12 +61,12 @@ async function fetchByIgn(ign: string): Promise<ProxyPlayerPayload> {
   const profile = await lookupProfileByUsername(ign);
   if (!profile) {
     const nickedPayload = buildNickedPayload();
-    setCachedPayload(ignCacheKey, nickedPayload, CACHE_TTL_MS);
+    await setCachedPayload(ignCacheKey, nickedPayload, CACHE_TTL_MS);
     return nickedPayload;
   }
 
   const payload = await fetchByUuid(profile.id);
-  setCachedPayload(ignCacheKey, payload, CACHE_TTL_MS);
+  await setCachedPayload(ignCacheKey, payload, CACHE_TTL_MS);
   return payload;
 }
 

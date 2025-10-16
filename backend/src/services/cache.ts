@@ -1,68 +1,71 @@
-import Database from 'better-sqlite3';
-import fs from 'node:fs';
-import path from 'node:path';
-import { CACHE_DB_PATH } from '../config';
+import { Pool } from 'pg';
+import { CACHE_DB_URL } from '../config';
 
 interface CacheEntry {
   payload: string;
-  expires_at: number;
+  expires_at: number | string;
 }
 
-const resolvedPath = path.isAbsolute(CACHE_DB_PATH)
-  ? CACHE_DB_PATH
-  : path.resolve(process.cwd(), CACHE_DB_PATH);
+const pool = new Pool({ connectionString: CACHE_DB_URL });
 
-const directory = path.dirname(resolvedPath);
-if (!fs.existsSync(directory)) {
-  fs.mkdirSync(directory, { recursive: true });
+const initialization = pool
+  .query(
+    `CREATE TABLE IF NOT EXISTS player_cache (
+      cache_key TEXT PRIMARY KEY,
+      payload TEXT NOT NULL,
+      expires_at BIGINT NOT NULL
+    )`,
+  )
+  .catch((error) => {
+    console.error('Failed to initialize cache table', error);
+    throw error;
+  });
+
+async function ensureInitialized(): Promise<void> {
+  await initialization;
 }
 
-const db = new Database(resolvedPath);
-
-db.pragma('journal_mode = WAL');
-db.exec(
-  `CREATE TABLE IF NOT EXISTS player_cache (
-    cache_key TEXT PRIMARY KEY,
-    payload TEXT NOT NULL,
-    expires_at INTEGER NOT NULL
-  )`,
-);
-
-const selectStatement = db.prepare<[string], CacheEntry>('SELECT payload, expires_at FROM player_cache WHERE cache_key = ?');
-const upsertStatement = db.prepare<[string, string, number]>('INSERT INTO player_cache (cache_key, payload, expires_at) VALUES (?, ?, ?) ON CONFLICT(cache_key) DO UPDATE SET payload = excluded.payload, expires_at = excluded.expires_at');
-const deleteStatement = db.prepare<[string]>('DELETE FROM player_cache WHERE cache_key = ?');
-const purgeExpiredStatement = db.prepare<[number]>('DELETE FROM player_cache WHERE expires_at <= ?');
-
-export function purgeExpiredEntries(now: number = Date.now()): void {
-  purgeExpiredStatement.run(now);
+export async function purgeExpiredEntries(now: number = Date.now()): Promise<void> {
+  await ensureInitialized();
+  await pool.query('DELETE FROM player_cache WHERE expires_at <= $1', [now]);
 }
 
-export function getCachedPayload<T>(key: string): T | null {
-  const row = selectStatement.get(key) as CacheEntry | undefined;
+export async function getCachedPayload<T>(key: string): Promise<T | null> {
+  await ensureInitialized();
+  const result = await pool.query<CacheEntry>('SELECT payload, expires_at FROM player_cache WHERE cache_key = $1', [key]);
+  const row = result.rows[0];
   if (!row) {
     return null;
   }
 
-  if (row.expires_at <= Date.now()) {
-    deleteStatement.run(key);
+  const expiresAt = typeof row.expires_at === 'string' ? Number.parseInt(row.expires_at, 10) : row.expires_at;
+  if (Number.isNaN(expiresAt) || expiresAt <= Date.now()) {
+    await pool.query('DELETE FROM player_cache WHERE cache_key = $1', [key]);
     return null;
   }
 
   try {
     return JSON.parse(row.payload) as T;
   } catch (error) {
-    deleteStatement.run(key);
+    await pool.query('DELETE FROM player_cache WHERE cache_key = $1', [key]);
     return null;
   }
 }
 
-export function setCachedPayload<T>(key: string, value: T, ttlMs: number): void {
+export async function setCachedPayload<T>(key: string, value: T, ttlMs: number): Promise<void> {
+  await ensureInitialized();
   const expiresAt = Date.now() + ttlMs;
   const payload = JSON.stringify(value);
-  purgeExpiredEntries();
-  upsertStatement.run(key, payload, expiresAt);
+  await purgeExpiredEntries();
+  await pool.query(
+    `INSERT INTO player_cache (cache_key, payload, expires_at)
+     VALUES ($1, $2, $3)
+     ON CONFLICT (cache_key) DO UPDATE SET payload = EXCLUDED.payload, expires_at = EXCLUDED.expires_at`,
+    [key, payload, expiresAt],
+  );
 }
 
-export function closeCache(): void {
-  db.close();
+export async function closeCache(): Promise<void> {
+  await ensureInitialized();
+  await pool.end();
 }
