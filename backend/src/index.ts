@@ -37,18 +37,14 @@ const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
 });
 
 let shuttingDown = false;
-let cacheClosed = false;
 let cacheClosePromise: Promise<void> | null = null;
 
 function safeCloseCache(): Promise<void> {
-  if (cacheClosed) {
-    return cacheClosePromise ?? Promise.resolve();
+  if (!cacheClosePromise) {
+    cacheClosePromise = closeCache().catch((error) => {
+      console.error('Error closing cache database', error);
+    });
   }
-
-  cacheClosed = true;
-  cacheClosePromise = closeCache().catch((error) => {
-    console.error('Error closing cache database', error);
-  });
 
   return cacheClosePromise;
 }
@@ -64,9 +60,8 @@ function shutdown(signal: NodeJS.Signals): void {
 
   const forcedShutdown = setTimeout(() => {
     console.error('Forcing shutdown.');
-    void safeCloseCache().finally(() => {
-      process.exit(1);
-    });
+    void safeCloseCache();
+    process.exit(1);
   }, 5000);
   forcedShutdown.unref();
 
@@ -76,16 +71,12 @@ function shutdown(signal: NodeJS.Signals): void {
       process.exitCode = 1;
     }
 
-    safeCloseCache()
-      .catch(() => {
-        // Error already logged in safeCloseCache.
-      })
-      .finally(() => {
-        clearTimeout(forcedShutdown);
+    safeCloseCache().finally(() => {
+      clearTimeout(forcedShutdown);
 
-        const exitCode = typeof process.exitCode === 'number' ? process.exitCode : 0;
-        process.exit(exitCode);
-      });
+      const exitCode = typeof process.exitCode === 'number' ? process.exitCode : 0;
+      process.exit(exitCode);
+    });
   });
 }
 

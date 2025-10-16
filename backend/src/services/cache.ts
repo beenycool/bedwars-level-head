@@ -16,7 +16,7 @@ const initialization = pool
       expires_at BIGINT NOT NULL
     )`,
   )
-  .catch((error) => {
+  .catch((error: unknown) => {
     console.error('Failed to initialize cache table', error);
     throw error;
   });
@@ -56,7 +56,6 @@ export async function setCachedPayload<T>(key: string, value: T, ttlMs: number):
   await ensureInitialized();
   const expiresAt = Date.now() + ttlMs;
   const payload = JSON.stringify(value);
-  await purgeExpiredEntries();
   await pool.query(
     `INSERT INTO player_cache (cache_key, payload, expires_at)
      VALUES ($1, $2, $3)
