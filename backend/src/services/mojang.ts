@@ -17,7 +17,10 @@ export interface MojangProfileResponse {
 
 export async function lookupProfileByUsername(username: string): Promise<MojangProfileResponse | null> {
   try {
-    const response = await mojangClient.get<MojangProfileResponse>(`/users/profiles/minecraft/${username}`);
+    const encodedUsername = encodeURIComponent(username);
+    const response = await mojangClient.get<MojangProfileResponse>(
+      `/users/profiles/minecraft/${encodedUsername}`
+    );
 
     if (response.status === 200 && response.data && response.data.id) {
       return response.data;
@@ -27,18 +30,11 @@ export async function lookupProfileByUsername(username: string): Promise<MojangP
       return null;
     }
 
-    if (response.status === 429) {
-      throw new HttpError(429, 'MOJANG_RATE_LIMIT', 'Mojang rate limit exceeded. Please try again later.');
-    }
-
     throw new HttpError(502, 'MOJANG_ERROR', `Mojang responded with status ${response.status}.`);
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
         const status = error.response.status;
-        if (status === 429) {
-          throw new HttpError(429, 'MOJANG_RATE_LIMIT', 'Mojang rate limit exceeded. Please try again later.');
-        }
         throw new HttpError(502, 'MOJANG_ERROR', `Mojang responded with status ${status}.`);
       }
 

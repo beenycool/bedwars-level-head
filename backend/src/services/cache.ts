@@ -59,7 +59,10 @@ export function getCachedPayload<T>(key: string): T | null {
 export function setCachedPayload<T>(key: string, value: T, ttlMs: number): void {
   const expiresAt = Date.now() + ttlMs;
   const payload = JSON.stringify(value);
+  purgeExpiredEntries();
   upsertStatement.run(key, payload, expiresAt);
 }
 
-purgeExpiredEntries();
+export function closeCache(): void {
+  db.close();
+}
