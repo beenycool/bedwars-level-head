@@ -21,6 +21,8 @@ class RateLimiter constructor(
     private val interval: Duration,
     private val clock: Clock = Clock.systemDefaultZone()
 ) {
+    data class Metrics(val remaining: Int, val resetIn: Duration)
+
     private val mutex: Mutex = Mutex()
 
     private var count: Int = 0
@@ -35,6 +37,7 @@ class RateLimiter constructor(
         count = 0
         nextInterval = clock.instant() + interval
         Levelhead.displayManager.checkCacheSizes()
+        Levelhead.resetRateLimiterNotification()
     }
 
     private suspend fun delayUntilNextInterval() {
@@ -42,16 +45,23 @@ class RateLimiter constructor(
         delay(delay.toKotlinDuration())
     }
 
+    private fun metricsLocked(now: Instant = clock.instant()): Metrics {
+        val remaining = capacity - count
+        val resetIn = if (nextInterval.isBefore(now)) Duration.ZERO else Duration.between(now, nextInterval)
+        return Metrics(remaining, resetIn)
+    }
+
     suspend fun consume() = mutex.withLock {
         if (isNextInterval) resetState()
 
         if (isAtCapacity) {
             val now = clock.instant()
-            val waitDuration = Duration.between(now, nextInterval)
-            val safeWait = if (waitDuration.isNegative) Duration.ZERO else waitDuration
+            val metrics = metricsLocked(now)
+            val safeWait = metrics.resetIn
             Levelhead.logger.info(
                 "Reached Levelhead API throttle (150 requests per 5 minutes). Waiting ${safeWait.toMinutes()} minutes (${safeWait.seconds} seconds) before retrying."
             )
+            Levelhead.onRateLimiterBlocked(metrics)
             delayUntilNextInterval()
             resetState()
         }
