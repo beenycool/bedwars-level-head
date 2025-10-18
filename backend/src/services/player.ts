@@ -17,6 +17,11 @@ const MEMOIZED_TTL_MS = 2_000;
 
 const inFlightRequests = new Map<string, Promise<ResolvedPlayer>>();
 
+export function clearInMemoryPlayerCache(): void {
+  memoizedResults.clear();
+  inFlightRequests.clear();
+}
+
 function buildNickedPayload(): ProxyPlayerPayload {
   const display = '(nicked)';
   const bedwarsStats: Record<string, unknown> = {
@@ -117,7 +122,7 @@ async function fetchByUuid(uuid: string, conditional?: HypixelFetchOptions): Pro
 
   const payload = response.payload ?? cacheEntry?.value;
   if (!payload) {
-    recordCacheMiss();
+    recordCacheMiss('empty_payload');
     throw new HttpError(502, 'HYPIXEL_EMPTY_PAYLOAD', 'Hypixel did not return any data.');
   }
 

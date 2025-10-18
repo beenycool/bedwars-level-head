@@ -82,7 +82,7 @@ export async function getCacheEntry<T>(key: string, includeExpired = false): Pro
   );
   const row = result.rows[0];
   if (!row) {
-    recordCacheMiss();
+    recordCacheMiss('absent');
     return null;
   }
 
@@ -93,7 +93,7 @@ export async function getCacheEntry<T>(key: string, includeExpired = false): Pro
     if (!includeExpired) {
       await pool.query('DELETE FROM player_cache WHERE cache_key = $1', [key]);
     }
-    recordCacheMiss();
+    recordCacheMiss('deserialization');
     return null;
   }
   const now = Date.now();
@@ -101,7 +101,7 @@ export async function getCacheEntry<T>(key: string, includeExpired = false): Pro
     if (!includeExpired) {
       await pool.query('DELETE FROM player_cache WHERE cache_key = $1', [key]);
     }
-    recordCacheMiss();
+    recordCacheMiss('expired');
     return includeExpired ? entry : null;
   }
 
@@ -128,6 +128,22 @@ export async function setCachedPayload<T>(
          last_modified = EXCLUDED.last_modified`,
     [key, payload, expiresAt, metadata.etag ?? null, metadata.lastModified ?? null],
   );
+}
+
+export async function clearAllCacheEntries(): Promise<number> {
+  await ensureInitialized();
+  const result = await pool.query('DELETE FROM player_cache');
+  return result.rowCount ?? 0;
+}
+
+export async function deleteCacheEntries(keys: string[]): Promise<number> {
+  if (keys.length === 0) {
+    return 0;
+  }
+
+  await ensureInitialized();
+  const result = await pool.query('DELETE FROM player_cache WHERE cache_key = ANY($1)', [keys]);
+  return result.rowCount ?? 0;
 }
 
 export async function closeCache(): Promise<void> {

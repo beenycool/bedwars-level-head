@@ -48,6 +48,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
 
 @Mod(modid = Levelhead.MODID, name = "BedWars Levelhead", version = Levelhead.VERSION, modLanguageAdapter = "gg.essential.api.utils.KotlinAdapter")
@@ -71,12 +72,13 @@ object Levelhead {
     private var worldScope: CoroutineScope = CoroutineScope(worldJob + Dispatchers.IO)
     val rateLimiter: RateLimiter = RateLimiter(150, Duration.ofMinutes(5))
 
-    private val starCacheTtl: Duration = Duration.ofMinutes(45)
     private val starCache: ConcurrentHashMap<UUID, CachedBedwarsStar> = ConcurrentHashMap()
     private val inFlightStarRequests: ConcurrentHashMap<UUID, Deferred<CachedBedwarsStar?>> = ConcurrentHashMap()
     private val pendingDisplayRefreshes: ConcurrentHashMap<UUID, MutableSet<LevelheadDisplay>> = ConcurrentHashMap()
     private val starFetchSemaphore: Semaphore = Semaphore(6)
     private val rateLimiterNotified = AtomicBoolean(false)
+    private val starCacheMetrics = StarCacheMetrics()
+    private val serverCooldownNotifiedUntil = AtomicLong(0L)
     @Volatile
     private var lastFetchAttemptAt: Long = 0L
     @Volatile
@@ -150,6 +152,7 @@ object Levelhead {
         pendingDisplayRefreshes.clear()
         inFlightStarRequests.values.forEach { it.cancel() }
         inFlightStarRequests.clear()
+        starCacheMetrics.reset()
     }
 
     internal fun onRateLimiterBlocked(metrics: Metrics) {
@@ -168,12 +171,41 @@ object Levelhead {
         rateLimiterNotified.set(false)
     }
 
+    internal fun onServerRetryAfter(duration: Duration) {
+        if (duration.isZero || duration.isNegative) return
+        val newDeadline = System.currentTimeMillis() + duration.toMillis()
+        while (true) {
+            val current = serverCooldownNotifiedUntil.get()
+            if (newDeadline <= current) {
+                return
+            }
+            if (serverCooldownNotifiedUntil.compareAndSet(current, newDeadline)) {
+                val formatted = formatCooldownDuration(duration)
+                UMinecraft.getMinecraft().addScheduledTask {
+                    EssentialAPI.getMinecraftUtil().sendMessage(
+                        "${ChatColor.AQUA}[Levelhead]",
+                        "${ChatColor.YELLOW}Proxy asked us to pause BedWars stat requests for ${ChatColor.GOLD}$formatted${ChatColor.YELLOW}."
+                    )
+                }
+                return
+            }
+        }
+    }
+
+    internal fun resetServerCooldownNotification() {
+        serverCooldownNotifiedUntil.set(0L)
+    }
+
     private suspend fun resolveStar(uuid: UUID, displays: Collection<LevelheadDisplay>): CachedBedwarsStar? {
         val cached = starCache[uuid]
         val now = System.currentTimeMillis()
         return when {
-            cached == null -> ensureStarFetch(uuid, cached, displays, registerForRefresh = false).await()
-            cached.isExpired(starCacheTtl, now) -> {
+            cached == null -> {
+                starCacheMetrics.recordMiss(CacheMissReason.COLD)
+                ensureStarFetch(uuid, cached, displays, registerForRefresh = false).await()
+            }
+            cached.isExpired(LevelheadConfig.starCacheTtl, now) -> {
+                starCacheMetrics.recordMiss(CacheMissReason.EXPIRED)
                 ensureStarFetch(uuid, cached, displays, registerForRefresh = true)
                 cached
             }
@@ -274,6 +306,7 @@ object Levelhead {
         val attemptAge = lastFetchAttemptAt.takeIf { it > 0 }?.let { now - it }
         val successAge = lastFetchSuccessAt.takeIf { it > 0 }?.let { now - it }
         val rateMetrics = rateLimiter.metricsSnapshot()
+        val starCacheSnapshot = starCacheMetrics.snapshot()
         return StatusSnapshot(
             proxyEnabled = LevelheadConfig.proxyEnabled,
             proxyConfigured = LevelheadConfig.proxyEnabled && LevelheadConfig.proxyBaseUrl.isNotBlank() && LevelheadConfig.proxyAuthToken.isNotBlank(),
@@ -281,7 +314,11 @@ object Levelhead {
             lastAttemptAgeMillis = attemptAge,
             lastSuccessAgeMillis = successAge,
             rateLimitRemaining = rateMetrics.remaining,
-            rateLimitResetMillis = rateMetrics.resetIn.toMillis().coerceAtLeast(0)
+            rateLimitResetMillis = rateMetrics.resetIn.toMillis().coerceAtLeast(0),
+            starCacheTtlMinutes = LevelheadConfig.starCacheTtlMinutes,
+            cacheMissesCold = starCacheSnapshot.cold,
+            cacheMissesExpired = starCacheSnapshot.expired,
+            serverCooldownMillis = rateMetrics.serverCooldown?.toMillis()?.coerceAtLeast(0)
         )
     }
 
@@ -361,6 +398,35 @@ object Levelhead {
         val lastAttemptAgeMillis: Long?,
         val lastSuccessAgeMillis: Long?,
         val rateLimitRemaining: Int,
-        val rateLimitResetMillis: Long
+        val rateLimitResetMillis: Long,
+        val starCacheTtlMinutes: Int,
+        val cacheMissesCold: Long,
+        val cacheMissesExpired: Long,
+        val serverCooldownMillis: Long?
     )
+
+    private enum class CacheMissReason { COLD, EXPIRED }
+
+    private class StarCacheMetrics {
+        private val coldMisses = AtomicLong(0L)
+        private val expiredMisses = AtomicLong(0L)
+
+        fun recordMiss(reason: CacheMissReason) {
+            when (reason) {
+                CacheMissReason.COLD -> coldMisses.incrementAndGet()
+                CacheMissReason.EXPIRED -> expiredMisses.incrementAndGet()
+            }
+        }
+
+        fun reset() {
+            coldMisses.set(0L)
+            expiredMisses.set(0L)
+        }
+
+        fun snapshot(): StarCacheSnapshot {
+            return StarCacheSnapshot(coldMisses.get(), expiredMisses.get())
+        }
+    }
+
+    data class StarCacheSnapshot(val cold: Long, val expired: Long)
 }
