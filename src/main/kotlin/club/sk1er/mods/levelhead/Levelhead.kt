@@ -24,7 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -48,6 +48,7 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.random.Random
 
 @Mod(modid = Levelhead.MODID, name = "BedWars Levelhead", version = Levelhead.VERSION, modLanguageAdapter = "gg.essential.api.utils.KotlinAdapter")
 object Levelhead {
@@ -61,15 +62,25 @@ object Levelhead {
     val jsonParser = JsonParser()
 
     val displayManager: DisplayManager = DisplayManager(File(File(UMinecraft.getMinecraft().mcDataDir, "config"), "levelhead.json"))
-    val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val modJob: Job = SupervisorJob()
+    val scope: CoroutineScope = CoroutineScope(modJob + Dispatchers.IO)
+    private val worldScopeLock = Any()
+    @Volatile
+    private var worldJob: Job = SupervisorJob(modJob)
+    @Volatile
+    private var worldScope: CoroutineScope = CoroutineScope(worldJob + Dispatchers.IO)
     val rateLimiter: RateLimiter = RateLimiter(150, Duration.ofMinutes(5))
 
-    private val starCacheTtl: Duration = Duration.ofMinutes(10)
+    private val starCacheTtl: Duration = Duration.ofMinutes(45)
     private val starCache: ConcurrentHashMap<UUID, CachedBedwarsStar> = ConcurrentHashMap()
     private val inFlightStarRequests: ConcurrentHashMap<UUID, Deferred<CachedBedwarsStar?>> = ConcurrentHashMap()
     private val pendingDisplayRefreshes: ConcurrentHashMap<UUID, MutableSet<LevelheadDisplay>> = ConcurrentHashMap()
-    private val starFetchSemaphore: Semaphore = Semaphore(4)
+    private val starFetchSemaphore: Semaphore = Semaphore(6)
     private val rateLimiterNotified = AtomicBoolean(false)
+    @Volatile
+    private var lastFetchAttemptAt: Long = 0L
+    @Volatile
+    private var lastFetchSuccessAt: Long = 0L
 
     val DarkChromaColor: Int
         get() = Color.HSBtoRGB(System.currentTimeMillis() % 1000 / 1000f, 0.8f, 0.2f)
@@ -99,27 +110,28 @@ object Levelhead {
     @SubscribeEvent
     fun joinServer(@Suppress("UNUSED_PARAMETER") event: FMLNetworkEvent.ClientConnectedToServerEvent) {
         BedwarsFetcher.resetWarnings()
-        scope.coroutineContext.cancelChildren()
+        resetWorldScope()
         rateLimiter.resetState()
         displayManager.clearCachesWithoutRefetch()
-        clearCachedStars()
-        scope.launch { displayManager.requestAllDisplays() }
+        resetFetchTimestamps()
+        worldScope.launch { displayManager.requestAllDisplays() }
     }
 
     @SubscribeEvent
     fun playerJoin(event: EntityJoinWorldEvent) {
         if (event.entity is EntityPlayerSP) {
-            scope.coroutineContext.cancelChildren()
+            resetWorldScope()
             rateLimiter.resetState()
-            displayManager.joinWorld(resetDetector = true)
             clearCachedStars()
+            resetFetchTimestamps()
+            displayManager.joinWorld(resetDetector = true)
         } else if (event.entity is EntityPlayer) {
             displayManager.playerJoin(event.entity as EntityPlayer)
         }
     }
 
     fun fetch(requests: List<LevelheadRequest>): Job {
-        return scope.launch {
+        return worldScope.launch {
             if (!BedwarsModeDetector.shouldRequestData()) return@launch
 
             requests
@@ -160,9 +172,9 @@ object Levelhead {
         val cached = starCache[uuid]
         val now = System.currentTimeMillis()
         return when {
-            cached == null -> ensureStarFetch(uuid, displays, registerForRefresh = false).await()
+            cached == null -> ensureStarFetch(uuid, cached, displays, registerForRefresh = false).await()
             cached.isExpired(starCacheTtl, now) -> {
-                ensureStarFetch(uuid, displays, registerForRefresh = true)
+                ensureStarFetch(uuid, cached, displays, registerForRefresh = true)
                 cached
             }
             else -> cached
@@ -171,6 +183,7 @@ object Levelhead {
 
     private fun ensureStarFetch(
         uuid: UUID,
+        cached: CachedBedwarsStar?,
         displays: Collection<LevelheadDisplay>,
         registerForRefresh: Boolean
     ): Deferred<CachedBedwarsStar?> {
@@ -186,19 +199,38 @@ object Levelhead {
             return existing
         }
 
-        val deferred = scope.async {
+        val deferred = worldScope.async {
             starFetchSemaphore.withPermit {
+                if (registerForRefresh && cached != null) {
+                    delay(Random.nextLong(50L, 201L))
+                }
                 try {
+                    lastFetchAttemptAt = System.currentTimeMillis()
                     rateLimiter.consume()
-                    val player = BedwarsFetcher.fetchPlayer(uuid) ?: run {
-                        handleStarUpdate(uuid, null)
-                        return@withPermit null
+                    when (val result = BedwarsFetcher.fetchPlayer(uuid, cached?.fetchedAt)) {
+                        is BedwarsFetcher.FetchResult.Success -> {
+                            lastFetchSuccessAt = System.currentTimeMillis()
+                            val experience = BedwarsStar.extractExperience(result.payload)
+                            val star = experience?.let { BedwarsStar.calculateStar(it) }
+                            val entry = CachedBedwarsStar(star, experience, System.currentTimeMillis())
+                            handleStarUpdate(uuid, entry)
+                            entry
+                        }
+                        BedwarsFetcher.FetchResult.NotModified -> {
+                            lastFetchSuccessAt = System.currentTimeMillis()
+                            val refreshed = cached?.copy(fetchedAt = System.currentTimeMillis())
+                            refreshed?.let { handleStarUpdate(uuid, it) }
+                            refreshed
+                        }
+                        is BedwarsFetcher.FetchResult.TemporaryError -> {
+                            handleStarUpdate(uuid, cached)
+                            null
+                        }
+                        is BedwarsFetcher.FetchResult.PermanentError -> {
+                            handleStarUpdate(uuid, cached)
+                            null
+                        }
                     }
-                    val experience = BedwarsStar.extractExperience(player)
-                    val star = experience?.let { BedwarsStar.calculateStar(it) }
-                    val entry = CachedBedwarsStar(star, experience, System.currentTimeMillis())
-                    handleStarUpdate(uuid, entry)
-                    entry
                 } catch (throwable: Throwable) {
                     handleStarUpdate(uuid, null)
                     null
@@ -217,6 +249,40 @@ object Levelhead {
 
         deferred.invokeOnCompletion { inFlightStarRequests.remove(uuid, deferred) }
         return deferred
+    }
+
+    private fun resetWorldScope() {
+        synchronized(worldScopeLock) {
+            worldJob.cancel()
+            worldJob = SupervisorJob(modJob)
+            worldScope = CoroutineScope(worldJob + Dispatchers.IO)
+        }
+    }
+
+    private fun resetFetchTimestamps() {
+        lastFetchAttemptAt = 0L
+        lastFetchSuccessAt = 0L
+    }
+
+    fun resetWorldCoroutines() {
+        resetWorldScope()
+        resetFetchTimestamps()
+    }
+
+    fun statusSnapshot(): StatusSnapshot {
+        val now = System.currentTimeMillis()
+        val attemptAge = lastFetchAttemptAt.takeIf { it > 0 }?.let { now - it }
+        val successAge = lastFetchSuccessAt.takeIf { it > 0 }?.let { now - it }
+        val rateMetrics = rateLimiter.metricsSnapshot()
+        return StatusSnapshot(
+            proxyEnabled = LevelheadConfig.proxyEnabled,
+            proxyConfigured = LevelheadConfig.proxyEnabled && LevelheadConfig.proxyBaseUrl.isNotBlank() && LevelheadConfig.proxyAuthToken.isNotBlank(),
+            cacheSize = starCache.size,
+            lastAttemptAgeMillis = attemptAge,
+            lastSuccessAgeMillis = successAge,
+            rateLimitRemaining = rateMetrics.remaining,
+            rateLimitResetMillis = rateMetrics.resetIn.toMillis().coerceAtLeast(0)
+        )
     }
 
     private fun registerDisplaysForRefresh(uuid: UUID, displays: Collection<LevelheadDisplay>) {
@@ -287,4 +353,14 @@ object Levelhead {
             return now - fetchedAt >= ttl.toMillis()
         }
     }
+
+    data class StatusSnapshot(
+        val proxyEnabled: Boolean,
+        val proxyConfigured: Boolean,
+        val cacheSize: Int,
+        val lastAttemptAgeMillis: Long?,
+        val lastSuccessAgeMillis: Long?,
+        val rateLimitRemaining: Int,
+        val rateLimitResetMillis: Long
+    )
 }

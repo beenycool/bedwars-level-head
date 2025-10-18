@@ -27,6 +27,8 @@ class RateLimiter constructor(
 
     private var count: Int = 0
     private var nextInterval: Instant = Instant.ofEpochMilli(0)
+    @Volatile
+    private var latestMetrics: Metrics = Metrics(capacity, Duration.ZERO)
 
     private val isNextInterval: Boolean
         get() = nextInterval <= clock.instant()
@@ -38,6 +40,7 @@ class RateLimiter constructor(
         nextInterval = clock.instant() + interval
         Levelhead.displayManager.checkCacheSizes()
         Levelhead.resetRateLimiterNotification()
+        updateMetrics()
     }
 
     private suspend fun delayUntilNextInterval() {
@@ -49,6 +52,10 @@ class RateLimiter constructor(
         val remaining = capacity - count
         val resetIn = if (nextInterval.isBefore(now)) Duration.ZERO else Duration.between(now, nextInterval)
         return Metrics(remaining, resetIn)
+    }
+
+    private fun updateMetrics(now: Instant = clock.instant()) {
+        latestMetrics = metricsLocked(now)
     }
 
     suspend fun consume() = mutex.withLock {
@@ -67,5 +74,8 @@ class RateLimiter constructor(
         }
 
         count++
+        updateMetrics()
     }
+
+    fun metricsSnapshot(): Metrics = latestMetrics
 }

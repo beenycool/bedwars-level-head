@@ -1,21 +1,46 @@
 import { Pool } from 'pg';
-import { CACHE_DB_URL } from '../config';
+import { CACHE_DB_URL, CACHE_DB_POOL_MAX, CACHE_DB_POOL_MIN } from '../config';
+import { recordCacheHit, recordCacheMiss } from './metrics';
 
-interface CacheEntry {
+interface CacheRow {
   payload: string;
   expires_at: number | string;
+  etag: string | null;
+  last_modified: number | string | null;
 }
 
-const pool = new Pool({ connectionString: CACHE_DB_URL });
+export interface CacheEntry<T> {
+  value: T;
+  expiresAt: number;
+  etag: string | null;
+  lastModified: number | null;
+}
+
+export interface CacheMetadata {
+  etag?: string | null;
+  lastModified?: number | null;
+}
+
+export const pool = new Pool({
+  connectionString: CACHE_DB_URL,
+  min: CACHE_DB_POOL_MIN,
+  max: CACHE_DB_POOL_MAX,
+});
 
 const initialization = pool
   .query(
     `CREATE TABLE IF NOT EXISTS player_cache (
       cache_key TEXT PRIMARY KEY,
       payload TEXT NOT NULL,
-      expires_at BIGINT NOT NULL
+      expires_at BIGINT NOT NULL,
+      etag TEXT,
+      last_modified BIGINT
     )`,
   )
+  .then(async () => {
+    await pool.query('ALTER TABLE player_cache ADD COLUMN IF NOT EXISTS etag TEXT');
+    await pool.query('ALTER TABLE player_cache ADD COLUMN IF NOT EXISTS last_modified BIGINT');
+  })
   .catch((error: unknown) => {
     console.error('Failed to initialize cache table', error);
     throw error;
@@ -30,37 +55,78 @@ export async function purgeExpiredEntries(now: number = Date.now()): Promise<voi
   await pool.query('DELETE FROM player_cache WHERE expires_at <= $1', [now]);
 }
 
-export async function getCachedPayload<T>(key: string): Promise<T | null> {
-  await ensureInitialized();
-  const result = await pool.query<CacheEntry>('SELECT payload, expires_at FROM player_cache WHERE cache_key = $1', [key]);
-  const row = result.rows[0];
-  if (!row) {
-    return null;
-  }
+function mapRow<T>(row: CacheRow): CacheEntry<T> {
+  const expiresAtRaw = row.expires_at;
+  const expiresAt = typeof expiresAtRaw === 'string' ? Number.parseInt(expiresAtRaw, 10) : expiresAtRaw;
+  const lastModifiedRaw = row.last_modified;
+  const lastModified =
+    lastModifiedRaw === null
+      ? null
+      : typeof lastModifiedRaw === 'string'
+        ? Number.parseInt(lastModifiedRaw, 10)
+        : lastModifiedRaw;
 
-  const expiresAt = typeof row.expires_at === 'string' ? Number.parseInt(row.expires_at, 10) : row.expires_at;
-  if (Number.isNaN(expiresAt) || expiresAt <= Date.now()) {
-    await pool.query('DELETE FROM player_cache WHERE cache_key = $1', [key]);
-    return null;
-  }
-
-  try {
-    return JSON.parse(row.payload) as T;
-  } catch (error) {
-    await pool.query('DELETE FROM player_cache WHERE cache_key = $1', [key]);
-    return null;
-  }
+  return {
+    value: JSON.parse(row.payload) as T,
+    expiresAt,
+    etag: row.etag,
+    lastModified,
+  };
 }
 
-export async function setCachedPayload<T>(key: string, value: T, ttlMs: number): Promise<void> {
+export async function getCacheEntry<T>(key: string, includeExpired = false): Promise<CacheEntry<T> | null> {
+  await ensureInitialized();
+  const result = await pool.query<CacheRow>(
+    'SELECT payload, expires_at, etag, last_modified FROM player_cache WHERE cache_key = $1',
+    [key],
+  );
+  const row = result.rows[0];
+  if (!row) {
+    recordCacheMiss();
+    return null;
+  }
+
+  let entry: CacheEntry<T>;
+  try {
+    entry = mapRow<T>(row);
+  } catch (error) {
+    if (!includeExpired) {
+      await pool.query('DELETE FROM player_cache WHERE cache_key = $1', [key]);
+    }
+    recordCacheMiss();
+    return null;
+  }
+  const now = Date.now();
+  if (Number.isNaN(entry.expiresAt) || entry.expiresAt <= now) {
+    if (!includeExpired) {
+      await pool.query('DELETE FROM player_cache WHERE cache_key = $1', [key]);
+    }
+    recordCacheMiss();
+    return includeExpired ? entry : null;
+  }
+
+  recordCacheHit();
+  return entry;
+}
+
+export async function setCachedPayload<T>(
+  key: string,
+  value: T,
+  ttlMs: number,
+  metadata: CacheMetadata = {},
+): Promise<void> {
   await ensureInitialized();
   const expiresAt = Date.now() + ttlMs;
   const payload = JSON.stringify(value);
   await pool.query(
-    `INSERT INTO player_cache (cache_key, payload, expires_at)
-     VALUES ($1, $2, $3)
-     ON CONFLICT (cache_key) DO UPDATE SET payload = EXCLUDED.payload, expires_at = EXCLUDED.expires_at`,
-    [key, payload, expiresAt],
+    `INSERT INTO player_cache (cache_key, payload, expires_at, etag, last_modified)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (cache_key) DO UPDATE
+     SET payload = EXCLUDED.payload,
+         expires_at = EXCLUDED.expires_at,
+         etag = EXCLUDED.etag,
+         last_modified = EXCLUDED.last_modified`,
+    [key, payload, expiresAt, metadata.etag ?? null, metadata.lastModified ?? null],
   );
 }
 

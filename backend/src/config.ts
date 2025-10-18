@@ -48,11 +48,18 @@ export const HYPIXEL_API_BASE_URL = process.env.HYPIXEL_API_BASE_URL ?? 'https:/
 
 export const CLOUD_FLARE_TUNNEL = process.env.CLOUDFLARE_TUNNEL ?? '';
 
-const defaultCacheTtl = 2 * 60 * 60 * 1000;
+const defaultCacheTtl = 45 * 60 * 1000;
 const rawCacheTtl = parseIntEnv('CACHE_TTL_MS', defaultCacheTtl);
-const minimumCacheTtl = 60 * 60 * 1000;
-const maximumCacheTtl = 3 * 60 * 60 * 1000;
+const minimumCacheTtl = 30 * 60 * 1000;
+const maximumCacheTtl = 60 * 60 * 1000;
 
 export const CACHE_TTL_MS = Math.min(Math.max(rawCacheTtl, minimumCacheTtl), maximumCacheTtl);
+
+export const CACHE_DB_POOL_MIN = parseIntEnv('CACHE_DB_POOL_MIN', 0);
+export const CACHE_DB_POOL_MAX = parseIntEnv('CACHE_DB_POOL_MAX', 10);
+
+export const HYPIXEL_TIMEOUT_MS = parseIntEnv('HYPIXEL_TIMEOUT_MS', 5 * 1000);
+export const HYPIXEL_RETRY_DELAY_MIN_MS = parseIntEnv('HYPIXEL_RETRY_DELAY_MIN_MS', 50);
+export const HYPIXEL_RETRY_DELAY_MAX_MS = parseIntEnv('HYPIXEL_RETRY_DELAY_MAX_MS', 150);
 
 export const CACHE_DB_URL = requiredEnv('CACHE_DB_URL');

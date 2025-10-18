@@ -1,8 +1,9 @@
 import { CACHE_TTL_MS } from '../config';
 import { HttpError } from '../util/httpError';
-import { getCachedPayload, setCachedPayload } from './cache';
-import { fetchHypixelPlayer, ProxyPlayerPayload } from './hypixel';
+import { CacheEntry, CacheMetadata, getCacheEntry, setCachedPayload } from './cache';
+import { fetchHypixelPlayer, HypixelFetchOptions, ProxyPlayerPayload } from './hypixel';
 import { lookupProfileByUsername } from './mojang';
+import { recordCacheMiss } from './metrics';
 
 const uuidRegex = /^[0-9a-f]{32}$/i;
 const ignRegex = /^[a-zA-Z0-9_]{1,16}$/;
@@ -10,6 +11,11 @@ const ignRegex = /^[a-zA-Z0-9_]{1,16}$/;
 function buildCacheKey(prefix: string, value: string): string {
   return `${prefix}:${value}`;
 }
+
+const memoizedResults = new Map<string, { expiresAt: number; value: ResolvedPlayer }>();
+const MEMOIZED_TTL_MS = 2_000;
+
+const inFlightRequests = new Map<string, Promise<ResolvedPlayer>>();
 
 function buildNickedPayload(): ProxyPlayerPayload {
   const display = '(nicked)';
@@ -35,53 +41,206 @@ function buildNickedPayload(): ProxyPlayerPayload {
   };
 }
 
-async function fetchByUuid(uuid: string): Promise<ProxyPlayerPayload> {
-  const normalizedUuid = uuid.toLowerCase();
-  const cacheKey = buildCacheKey('player', normalizedUuid);
-
-  const cached = await getCachedPayload<ProxyPlayerPayload>(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  const payload = await fetchHypixelPlayer(normalizedUuid);
-  await setCachedPayload(cacheKey, payload, CACHE_TTL_MS);
-  return payload;
+function memoKey(prefix: string, value: string): string {
+  return `${prefix}:${value}`;
 }
 
-async function fetchByIgn(ign: string): Promise<ProxyPlayerPayload> {
+function getMemoized(prefix: string, value: string): ResolvedPlayer | null {
+  const key = memoKey(prefix, value);
+  const entry = memoizedResults.get(key);
+  if (entry && entry.expiresAt > Date.now()) {
+    return entry.value;
+  }
+
+  memoizedResults.delete(key);
+  return null;
+}
+
+function setMemoized(prefix: string, value: string, resolved: ResolvedPlayer): void {
+  const key = memoKey(prefix, value);
+  memoizedResults.set(key, { expiresAt: Date.now() + MEMOIZED_TTL_MS, value: resolved });
+}
+
+function summarizeCacheEntry(entry: CacheEntry<ProxyPlayerPayload>): CacheMetadata {
+  return { etag: entry.etag ?? undefined, lastModified: entry.lastModified ?? undefined };
+}
+
+export interface ResolvedPlayer {
+  payload: ProxyPlayerPayload;
+  etag: string | null;
+  lastModified: number | null;
+  source: 'cache' | 'network';
+  revalidated: boolean;
+}
+
+async function fetchByUuid(uuid: string, conditional?: HypixelFetchOptions): Promise<ResolvedPlayer> {
+  const normalizedUuid = uuid.toLowerCase();
+  const cacheKey = buildCacheKey('player', normalizedUuid);
+  const memoized = getMemoized('player', normalizedUuid);
+  if (memoized) {
+    return memoized;
+  }
+
+  const cacheEntry = await getCacheEntry<ProxyPlayerPayload>(cacheKey, true);
+  const now = Date.now();
+  if (cacheEntry && cacheEntry.expiresAt > now) {
+    const resolved: ResolvedPlayer = {
+      payload: cacheEntry.value,
+      etag: cacheEntry.etag,
+      lastModified: cacheEntry.lastModified,
+      source: 'cache',
+      revalidated: false,
+    };
+    setMemoized('player', normalizedUuid, resolved);
+    return resolved;
+  }
+
+  const cacheMetadata = cacheEntry ? summarizeCacheEntry(cacheEntry) : {};
+
+  const response = await fetchHypixelPlayer(normalizedUuid, {
+    etag: conditional?.etag ?? cacheMetadata.etag ?? undefined,
+    lastModified: conditional?.lastModified ?? cacheMetadata.lastModified ?? undefined,
+  });
+
+  if (response.notModified && cacheEntry) {
+    await setCachedPayload(cacheKey, cacheEntry.value, CACHE_TTL_MS, cacheMetadata);
+    const resolved: ResolvedPlayer = {
+      payload: cacheEntry.value,
+      etag: cacheEntry.etag,
+      lastModified: cacheEntry.lastModified,
+      source: 'cache',
+      revalidated: true,
+    };
+    setMemoized('player', normalizedUuid, resolved);
+    return resolved;
+  }
+
+  const payload = response.payload ?? cacheEntry?.value;
+  if (!payload) {
+    recordCacheMiss();
+    throw new HttpError(502, 'HYPIXEL_EMPTY_PAYLOAD', 'Hypixel did not return any data.');
+  }
+
+  const etag = response.etag ?? cacheEntry?.etag ?? null;
+  const lastModified = response.lastModified ?? cacheEntry?.lastModified ?? null;
+
+  await setCachedPayload(cacheKey, payload, CACHE_TTL_MS, { etag, lastModified });
+
+  const resolved: ResolvedPlayer = {
+    payload,
+    etag,
+    lastModified,
+    source: 'network',
+    revalidated: Boolean(cacheEntry),
+  };
+  setMemoized('player', normalizedUuid, resolved);
+  return resolved;
+}
+
+async function fetchByIgn(ign: string): Promise<ResolvedPlayer> {
   const normalizedIgn = ign.toLowerCase();
   const ignCacheKey = buildCacheKey('ign', normalizedIgn);
+  const memoized = getMemoized('ign', normalizedIgn);
+  if (memoized) {
+    return memoized;
+  }
 
-  const cached = await getCachedPayload<ProxyPlayerPayload>(ignCacheKey);
-  if (cached) {
-    return cached;
+  const cacheEntry = await getCacheEntry<ProxyPlayerPayload>(ignCacheKey, true);
+  const now = Date.now();
+  if (cacheEntry && cacheEntry.expiresAt > now) {
+    const resolved: ResolvedPlayer = {
+      payload: cacheEntry.value,
+      etag: cacheEntry.etag,
+      lastModified: cacheEntry.lastModified,
+      source: 'cache',
+      revalidated: false,
+    };
+    setMemoized('ign', normalizedIgn, resolved);
+    return resolved;
   }
 
   const profile = await lookupProfileByUsername(ign);
   if (!profile) {
     const nickedPayload = buildNickedPayload();
-    await setCachedPayload(ignCacheKey, nickedPayload, CACHE_TTL_MS);
-    return nickedPayload;
+    await setCachedPayload(ignCacheKey, nickedPayload, CACHE_TTL_MS, { etag: 'nicked', lastModified: Date.now() });
+    const resolved: ResolvedPlayer = {
+      payload: nickedPayload,
+      etag: 'nicked',
+      lastModified: Date.now(),
+      source: 'network',
+      revalidated: false,
+    };
+    setMemoized('ign', normalizedIgn, resolved);
+    return resolved;
   }
 
-  const payload = await fetchByUuid(profile.id);
-  await setCachedPayload(ignCacheKey, payload, CACHE_TTL_MS);
-  return payload;
+  const resolved = await fetchByUuid(profile.id);
+  await setCachedPayload(ignCacheKey, resolved.payload, CACHE_TTL_MS, {
+    etag: resolved.etag,
+    lastModified: resolved.lastModified,
+  });
+  setMemoized('ign', normalizedIgn, resolved);
+  return resolved;
 }
 
-export async function resolvePlayer(identifier: string): Promise<ProxyPlayerPayload> {
-  if (uuidRegex.test(identifier)) {
-    return fetchByUuid(identifier);
+function normalizeConditionalHeaders(options?: PlayerResolutionOptions): HypixelFetchOptions | undefined {
+  if (!options) {
+    return undefined;
   }
 
-  if (ignRegex.test(identifier)) {
-    return fetchByIgn(identifier);
+  const normalized: HypixelFetchOptions = {};
+  if (options.etag) {
+    normalized.etag = options.etag;
+  }
+  if (typeof options.lastModified === 'number' && !Number.isNaN(options.lastModified)) {
+    normalized.lastModified = options.lastModified;
+  }
+  return normalized;
+}
+
+export interface PlayerResolutionOptions {
+  etag?: string;
+  lastModified?: number;
+}
+
+export async function resolvePlayer(
+  identifier: string,
+  options?: PlayerResolutionOptions,
+): Promise<ResolvedPlayer> {
+  const key = identifier.toLowerCase();
+  const inFlightKey = uuidRegex.test(key) ? `uuid:${key}` : ignRegex.test(key) ? `ign:${key}` : null;
+  if (inFlightKey) {
+    const pending = inFlightRequests.get(inFlightKey);
+    if (pending) {
+      return pending;
+    }
   }
 
-  throw new HttpError(
-    400,
-    'INVALID_IDENTIFIER',
-    'Identifier must be a valid UUID (no dashes) or Minecraft username.',
-  );
+  const conditional = normalizeConditionalHeaders(options);
+
+  const executor = async (): Promise<ResolvedPlayer> => {
+    if (uuidRegex.test(identifier)) {
+      return fetchByUuid(identifier, conditional);
+    }
+
+    if (ignRegex.test(identifier)) {
+      return fetchByIgn(identifier);
+    }
+
+    throw new HttpError(
+      400,
+      'INVALID_IDENTIFIER',
+      'Identifier must be a valid UUID (no dashes) or Minecraft username.',
+    );
+  };
+
+  if (!inFlightKey) {
+    return executor();
+  }
+
+  const promise = executor().finally(() => {
+    inFlightRequests.delete(inFlightKey);
+  });
+  inFlightRequests.set(inFlightKey, promise);
+  return promise;
 }
