@@ -9,6 +9,9 @@ import gg.essential.universal.UMinecraft
 import okhttp3.HttpUrl
 import okhttp3.Request
 import java.io.IOException
+import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -19,19 +22,53 @@ object BedwarsFetcher {
     private val invalidKeyWarned = AtomicBoolean(false)
     private val invalidProxyTokenWarned = AtomicBoolean(false)
     private val networkIssueWarned = AtomicBoolean(false)
+    private val proxyMisconfiguredWarned = AtomicBoolean(false)
 
-    fun fetchPlayer(uuid: UUID): JsonObject? {
+    sealed class FetchResult {
+        data class Success(val payload: JsonObject) : FetchResult()
+        object NotModified : FetchResult()
+        data class TemporaryError(val reason: String? = null) : FetchResult()
+        data class PermanentError(val reason: String? = null) : FetchResult()
+    }
+
+    fun fetchPlayer(uuid: UUID, lastFetchedAt: Long?): FetchResult {
+        var fallback: FetchResult? = null
         if (shouldUseProxy()) {
-            fetchFromProxy(uuid)?.let { return it }
+            when (val proxyResult = fetchFromProxy(uuid, lastFetchedAt)) {
+                is FetchResult.Success, FetchResult.NotModified -> return proxyResult
+                else -> fallback = proxyResult
+            }
         }
-        return fetchFromHypixel(uuid)
+
+        val hypixelResult = fetchFromHypixel(uuid)
+        return when (hypixelResult) {
+            is FetchResult.Success, FetchResult.NotModified -> hypixelResult
+            else -> fallback ?: hypixelResult
+        }
     }
 
     private fun shouldUseProxy(): Boolean {
-        return LevelheadConfig.proxyEnabled && LevelheadConfig.proxyBaseUrl.isNotBlank()
+        if (!LevelheadConfig.proxyEnabled) {
+            proxyMisconfiguredWarned.set(false)
+            return false
+        }
+
+        val baseConfigured = LevelheadConfig.proxyBaseUrl.isNotBlank()
+        val tokenConfigured = LevelheadConfig.proxyAuthToken.isNotBlank()
+        if (!baseConfigured || !tokenConfigured) {
+            if (proxyMisconfiguredWarned.compareAndSet(false, true)) {
+                sendMessage(
+                    "${ChatColor.RED}Proxy enabled but misconfigured. ${ChatColor.YELLOW}Set both a base URL and auth token in Levelhead settings."
+                )
+            }
+            return false
+        }
+
+        proxyMisconfiguredWarned.set(false)
+        return true
     }
 
-    private fun fetchFromProxy(uuid: UUID): JsonObject? {
+    private fun fetchFromProxy(uuid: UUID, lastFetchedAt: Long?): FetchResult {
         val baseUrl = LevelheadConfig.proxyBaseUrl.trim()
         val uuidNoDashes = uuid.toString().replace("-", "")
         val url = HttpUrl.parse(baseUrl)
@@ -46,7 +83,7 @@ object BedwarsFetcher {
                 "Failed to build proxy BedWars endpoint URL from base '{}'",
                 LevelheadConfig.proxyBaseUrl.sanitizeForLogs()
             )
-            return null
+            return FetchResult.PermanentError("INVALID_PROXY_URL")
         }
 
         val request = Request.Builder()
@@ -58,55 +95,70 @@ object BedwarsFetcher {
                 LevelheadConfig.proxyAuthToken.takeIf { it.isNotBlank() }?.let { token ->
                     header("Authorization", "Bearer $token")
                 }
+                lastFetchedAt?.let { since ->
+                    header("If-Modified-Since", since.toHttpDateString())
+                }
             }
             .get()
             .build()
 
         return try {
             Levelhead.okHttpClient.newCall(request).execute().use { response ->
+                if (response.code() == 304) {
+                    networkIssueWarned.set(false)
+                    invalidProxyTokenWarned.set(false)
+                    return FetchResult.NotModified
+                }
+
                 val body = response.body()?.string().orEmpty()
 
                 if (!response.isSuccessful) {
-                    when (response.code()) {
-                        401, 403 -> notifyInvalidProxyToken(response.code(), body)
-                        else -> Levelhead.logger.error(
-                            "Proxy request failed with status {}: {}",
-                            response.code(),
-                            body.sanitizeForLogs().take(200)
-                        )
+                    return when (response.code()) {
+                        401, 403 -> {
+                            notifyInvalidProxyToken(response.code(), body)
+                            FetchResult.PermanentError("PROXY_AUTH")
+                        }
+
+                        else -> {
+                            Levelhead.logger.error(
+                                "Proxy request failed with status {}: {}",
+                                response.code(),
+                                body.sanitizeForLogs().take(200)
+                            )
+                            FetchResult.TemporaryError("HTTP_${response.code()}")
+                        }
                     }
-                    return null
                 }
 
                 invalidProxyTokenWarned.set(false)
 
                 val json = kotlin.runCatching { Levelhead.jsonParser.parse(body).asJsonObject }.getOrElse {
                     Levelhead.logger.error("Failed to parse proxy response body", it)
-                    return null
+                    return FetchResult.TemporaryError("PARSE_ERROR")
                 }
 
                 if (json.get("success")?.asBoolean == false) {
                     Levelhead.logger.warn("Proxy response reported success=false: {}", body.sanitizeForLogs().take(200))
-                    return null
+                    return FetchResult.TemporaryError("PROXY_ERROR")
                 }
 
                 networkIssueWarned.set(false)
-                json
+                FetchResult.Success(json)
             }
         } catch (ex: IOException) {
             notifyNetworkIssue(ex)
-            null
+            FetchResult.TemporaryError(ex.message)
         } catch (ex: Exception) {
             Levelhead.logger.error("Failed to fetch proxy BedWars data", ex)
-            null
+            FetchResult.TemporaryError(ex.message)
         }
     }
 
-    private fun fetchFromHypixel(uuid: UUID): JsonObject? {
+    private fun fetchFromHypixel(uuid: UUID): FetchResult {
         val key = LevelheadConfig.apiKey
         if (key.isBlank()) {
             notifyMissingKey()
-            return null
+            return FetchResult.PermanentError("MISSING_KEY")
         }
 
         val url = HttpUrl.parse(HYPIXEL_PLAYER_ENDPOINT)?.newBuilder()
@@ -116,38 +168,46 @@ object BedwarsFetcher {
 
         if (url == null) {
             Levelhead.logger.error("Failed to build Hypixel BedWars endpoint URL")
-            return null
+            return FetchResult.PermanentError("INVALID_URL")
         }
 
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
-            .header("X-Levelhead-Install", LevelheadConfig.installId)
+            .header("Accept", "application/json")
             .get()
             .build()
 
         return try {
             Levelhead.okHttpClient.newCall(request).execute().use { response ->
-                val body = response.body()?.string() ?: return null
-                val json = kotlin.runCatching { Levelhead.jsonParser.parse(body).asJsonObject }.getOrElse {
-                    Levelhead.logger.error("Failed to parse Hypixel response body", it)
-                    return null
+                val body = response.body()?.string().orEmpty()
+
+                if (!response.isSuccessful) {
+                    val json = kotlin.runCatching { Levelhead.jsonParser.parse(body).asJsonObject }.getOrNull()
+                    if (response.code() == 403 && json != null) {
+                        val cause = json.get("cause")?.asString ?: "Unknown"
+                        notifyInvalidKey(cause.sanitizeForLogs())
+                        return FetchResult.PermanentError("INVALID_KEY")
+                    }
+                    invalidKeyWarned.set(false)
+                    networkIssueWarned.set(false)
+                    return FetchResult.TemporaryError("HYPIXEL_${response.code()}")
                 }
-                if (json.get("success")?.asBoolean != true) {
-                    val cause = json.get("cause")?.asString ?: "Unknown"
-                    notifyInvalidKey(cause.sanitizeForLogs())
-                    return null
-                }
+
                 invalidKeyWarned.set(false)
                 networkIssueWarned.set(false)
-                json
+                val json = kotlin.runCatching { Levelhead.jsonParser.parse(body).asJsonObject }.getOrElse {
+                    Levelhead.logger.error("Failed to parse Hypixel response", it)
+                    return FetchResult.TemporaryError("PARSE_ERROR")
+                }
+                FetchResult.Success(json)
             }
         } catch (ex: IOException) {
             notifyNetworkIssue(ex)
-            null
+            FetchResult.TemporaryError(ex.message)
         } catch (ex: Exception) {
             Levelhead.logger.error("Failed to fetch Hypixel BedWars data", ex)
-            null
+            FetchResult.TemporaryError(ex.message)
         }
     }
 
@@ -156,6 +216,7 @@ object BedwarsFetcher {
         invalidKeyWarned.set(false)
         invalidProxyTokenWarned.set(false)
         networkIssueWarned.set(false)
+        proxyMisconfiguredWarned.set(false)
     }
 
     fun parseBedwarsExperience(json: JsonObject): Long? {
@@ -243,7 +304,7 @@ object BedwarsFetcher {
 
     private fun notifyNetworkIssue(ex: IOException) {
         if (networkIssueWarned.compareAndSet(false, true)) {
-            sendMessage("${ChatColor.RED}Levelhead couldn't reach BedWars stats. ${ChatColor.YELLOW}Check your connection or proxy.")
+            sendMessage("${ChatColor.RED}Stats offline (proxy/hypixel). ${ChatColor.YELLOW}Retrying in 60s.")
         }
         Levelhead.logger.error("Network error while fetching BedWars data", ex)
     }
@@ -252,5 +313,9 @@ object BedwarsFetcher {
         UMinecraft.getMinecraft().addScheduledTask {
             EssentialAPI.getMinecraftUtil().sendMessage("${ChatColor.AQUA}[Levelhead]", message)
         }
+    }
+
+    private fun Long.toHttpDateString(): String {
+        return DateTimeFormatter.RFC_1123_DATE_TIME.withZone(ZoneOffset.UTC).format(Instant.ofEpochMilli(this))
     }
 }

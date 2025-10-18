@@ -1,10 +1,16 @@
 import axios from 'axios';
-import { HYPIXEL_API_BASE_URL, HYPIXEL_API_KEY } from '../config';
+import {
+  HYPIXEL_API_BASE_URL,
+  HYPIXEL_API_KEY,
+  HYPIXEL_RETRY_DELAY_MAX_MS,
+  HYPIXEL_RETRY_DELAY_MIN_MS,
+  HYPIXEL_TIMEOUT_MS,
+} from '../config';
 import { HttpError } from '../util/httpError';
 
 const hypixelClient = axios.create({
   baseURL: HYPIXEL_API_BASE_URL,
-  timeout: 5000,
+  timeout: HYPIXEL_TIMEOUT_MS,
   headers: {
     'User-Agent': 'Levelhead-Proxy/1.0',
   },
@@ -38,57 +44,180 @@ export interface ProxyPlayerPayload {
   display?: string;
 }
 
-export async function fetchHypixelPlayer(uuid: string): Promise<ProxyPlayerPayload> {
-  try {
-    const response = await hypixelClient.get<HypixelPlayerResponse>('/v2/player', {
-      params: { uuid },
-      headers: {
-        'API-Key': HYPIXEL_API_KEY,
-      },
-    });
+export interface HypixelFetchOptions {
+  etag?: string;
+  lastModified?: number;
+}
 
-    if (!response.data.success) {
-      const cause = response.data.cause ?? 'UNKNOWN_HYPIXEL_ERROR';
-      throw new HttpError(502, cause, 'Hypixel returned an error response.');
-    }
+export interface HypixelFetchResult {
+  payload?: ProxyPlayerPayload;
+  etag: string | null;
+  lastModified: number | null;
+  notModified: boolean;
+}
 
-    const bedwarsStats = response.data.player?.stats?.Bedwars ?? {};
-    const experience = (bedwarsStats as any).bedwars_experience ?? (bedwarsStats as any).Experience;
+function toHttpDate(ms?: number): string | undefined {
+  if (typeof ms !== 'number' || Number.isNaN(ms)) {
+    return undefined;
+  }
 
-    const shapedStats: Record<string, unknown> = {
-      ...bedwarsStats,
-      ...(experience !== undefined ? { bedwars_experience: experience, Experience: experience } : {}),
-    };
+  return new Date(ms).toUTCString();
+}
 
-    return {
-      success: true,
-      data: {
-        bedwars: shapedStats,
-      },
+function parseLastModified(value?: string): number | null {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? null : parsed;
+}
+
+function jitterDelay(): number {
+  const min = Math.max(0, HYPIXEL_RETRY_DELAY_MIN_MS);
+  const max = Math.max(min, HYPIXEL_RETRY_DELAY_MAX_MS);
+  return min + Math.random() * (max - min);
+}
+
+async function wait(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
+  if (!response.success) {
+    const cause = response.cause ?? 'UNKNOWN_HYPIXEL_ERROR';
+    throw new HttpError(502, cause, 'Hypixel returned an error response.');
+  }
+
+  const bedwarsStats = response.player?.stats?.Bedwars ?? {};
+  const experience = (bedwarsStats as any).bedwars_experience ?? (bedwarsStats as any).Experience;
+
+  const shapedStats: Record<string, unknown> = {
+    ...bedwarsStats,
+    ...(experience !== undefined ? { bedwars_experience: experience, Experience: experience } : {}),
+  };
+
+  return {
+    success: true,
+    data: {
       bedwars: shapedStats,
-      player: {
-        stats: {
-          Bedwars: shapedStats,
-        },
+    },
+    bedwars: shapedStats,
+    player: {
+      stats: {
+        Bedwars: shapedStats,
       },
-    };
-  } catch (error) {
-    if (axios.isAxiosError(error)) {
-      if (error.response) {
-        const status = error.response.status;
-        if (status === 403) {
-          throw new HttpError(502, 'HYPIXEL_FORBIDDEN', 'Hypixel rejected the backend API key.');
-        }
-        throw new HttpError(502, 'HYPIXEL_ERROR', `Hypixel responded with status ${status}.`);
-      }
+    },
+  };
+}
 
-      if (error.code === 'ECONNABORTED') {
-        throw new HttpError(504, 'HYPIXEL_TIMEOUT', 'Hypixel did not respond within 5 seconds.');
-      }
+function buildHeaders(options?: HypixelFetchOptions): Record<string, string> {
+  const headers: Record<string, string> = {
+    'API-Key': HYPIXEL_API_KEY,
+  };
 
-      throw new HttpError(502, 'HYPIXEL_NETWORK_ERROR', 'Unable to reach Hypixel.');
+  if (options?.etag) {
+    headers['If-None-Match'] = options.etag;
+  }
+
+  const modifiedSince = toHttpDate(options?.lastModified);
+  if (modifiedSince) {
+    headers['If-Modified-Since'] = modifiedSince;
+  }
+
+  return headers;
+}
+
+function shouldRetry(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) {
+    return false;
+  }
+
+  if (error.response) {
+    const status = error.response.status;
+    if (status === 403 || status === 429) {
+      return false;
     }
+    return status >= 500;
+  }
 
-    throw error;
+  return ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EAI_AGAIN'].includes(error.code ?? '');
+}
+
+export async function fetchHypixelPlayer(
+  uuid: string,
+  options?: HypixelFetchOptions,
+): Promise<HypixelFetchResult> {
+  let attempt = 0;
+  let lastError: unknown;
+
+  while (attempt < 2) {
+    try {
+      const response = await hypixelClient.get<HypixelPlayerResponse>('/v2/player', {
+        params: { uuid },
+        headers: buildHeaders(options),
+        timeout: HYPIXEL_TIMEOUT_MS,
+        validateStatus: (status) => (status >= 200 && status < 300) || status === 304,
+      });
+
+      const etag = response.headers['etag'] ?? null;
+      const lastModified = parseLastModified(response.headers['last-modified']);
+
+      if (response.status === 304) {
+        return { payload: undefined, etag, lastModified, notModified: true };
+      }
+
+      const payload = shapePayload(response.data);
+
+      return {
+        payload,
+        etag,
+        lastModified,
+        notModified: false,
+      };
+    } catch (error) {
+      lastError = error;
+      if (attempt === 0 && shouldRetry(error)) {
+        attempt += 1;
+        await wait(jitterDelay());
+        continue;
+      }
+
+      if (axios.isAxiosError(error)) {
+        if (error.response) {
+          const status = error.response.status;
+          if (status === 403) {
+            throw new HttpError(502, 'HYPIXEL_FORBIDDEN', 'Hypixel rejected the backend API key.');
+          }
+          if (status === 429) {
+            throw new HttpError(429, 'HYPIXEL_RATE_LIMIT', 'Hypixel rate limited the backend.');
+          }
+          throw new HttpError(502, 'HYPIXEL_ERROR', `Hypixel responded with status ${status}.`);
+        }
+
+        if (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT') {
+          throw new HttpError(504, 'HYPIXEL_TIMEOUT', 'Hypixel did not respond before timing out.');
+        }
+
+        throw new HttpError(502, 'HYPIXEL_NETWORK_ERROR', 'Unable to reach Hypixel.');
+      }
+
+      throw error;
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Unknown Hypixel fetch failure');
+}
+
+export async function checkHypixelReachability(): Promise<boolean> {
+  try {
+    const response = await hypixelClient.get('/status', {
+      timeout: Math.min(HYPIXEL_TIMEOUT_MS, 2000),
+      validateStatus: () => true,
+    });
+    return response.status < 500;
+  } catch (error) {
+    console.error('Hypixel reachability check failed', error);
+    return false;
   }
 }
