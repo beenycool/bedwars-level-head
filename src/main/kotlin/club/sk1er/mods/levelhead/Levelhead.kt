@@ -101,6 +101,7 @@ object Levelhead {
         BedwarsFetcher.resetWarnings()
         scope.coroutineContext.cancelChildren()
         rateLimiter.resetState()
+        resetRateLimiterNotification()
         displayManager.clearCachesWithoutRefetch()
         clearCachedStars()
         scope.launch { displayManager.requestAllDisplays() }

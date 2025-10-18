@@ -3,12 +3,15 @@ import playerRouter from './routes/player';
 import { HttpError } from './util/httpError';
 import { SERVER_HOST, SERVER_PORT, CLOUD_FLARE_TUNNEL } from './config';
 import { purgeExpiredEntries, closeCache } from './services/cache';
+import { metricsHandler, metricsMiddleware } from './services/metrics';
 
 const app = express();
 
 app.disable('x-powered-by');
 app.set('trust proxy', 1);
 app.use(express.json({ limit: '64kb' }));
+app.use(metricsMiddleware);
+app.get('/metrics', metricsHandler);
 app.use('/api/player', playerRouter);
 
 void purgeExpiredEntries().catch((error) => {
