@@ -1,4 +1,4 @@
-import axios from 'axios';
+import axios, { type AxiosResponseHeaders, type RawAxiosResponseHeaders } from 'axios';
 import {
   HYPIXEL_API_BASE_URL,
   HYPIXEL_API_KEY,
@@ -144,6 +144,25 @@ function shouldRetry(error: unknown): boolean {
   return ['ECONNRESET', 'ETIMEDOUT', 'ECONNABORTED', 'EAI_AGAIN'].includes(error.code ?? '');
 }
 
+function extractRetryAfterHeader(
+  headers?: RawAxiosResponseHeaders | AxiosResponseHeaders,
+): string | undefined {
+  if (!headers) {
+    return undefined;
+  }
+
+  const headerValue = (headers as Record<string, unknown>)['retry-after'];
+  if (!headerValue) {
+    return undefined;
+  }
+
+  if (Array.isArray(headerValue)) {
+    return headerValue[0];
+  }
+
+  return String(headerValue);
+}
+
 export async function fetchHypixelPlayer(
   uuid: string,
   options?: HypixelFetchOptions,
@@ -190,7 +209,13 @@ export async function fetchHypixelPlayer(
             throw new HttpError(502, 'HYPIXEL_FORBIDDEN', 'Hypixel rejected the backend API key.');
           }
           if (status === 429) {
-            throw new HttpError(429, 'HYPIXEL_RATE_LIMIT', 'Hypixel rate limited the backend.');
+            const retryAfter = extractRetryAfterHeader(error.response.headers);
+            throw new HttpError(
+              429,
+              'HYPIXEL_RATE_LIMIT',
+              'Hypixel rate limited the backend.',
+              retryAfter ? { 'Retry-After': retryAfter } : undefined,
+            );
           }
           throw new HttpError(502, 'HYPIXEL_ERROR', `Hypixel responded with status ${status}.`);
         }

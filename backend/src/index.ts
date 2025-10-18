@@ -11,6 +11,7 @@ import {
 import { purgeExpiredEntries, closeCache, pool as cachePool } from './services/cache';
 import { observeRequest, registry } from './services/metrics';
 import { checkHypixelReachability } from './services/hypixel';
+import adminRouter from './routes/admin';
 
 const app = express();
 
@@ -35,6 +36,7 @@ app.use((req, res, next) => {
 });
 
 app.use('/api/player', playerRouter);
+app.use('/api/admin', adminRouter);
 
 app.get('/healthz', async (_req, res) => {
   res.locals.metricsRoute = '/healthz';
@@ -78,6 +80,13 @@ const purgeInterval = setInterval(() => {
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (err instanceof HttpError) {
+    if (err.headers) {
+      Object.entries(err.headers).forEach(([key, value]) => {
+        if (!res.headersSent) {
+          res.set(key, value);
+        }
+      });
+    }
     res.status(err.status).json({ success: false, cause: err.causeCode, message: err.message });
     return;
   }

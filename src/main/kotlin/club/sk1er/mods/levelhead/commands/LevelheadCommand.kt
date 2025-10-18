@@ -86,14 +86,44 @@ class LevelheadCommand : Command("levelhead") {
         val lastAttempt = formatAge(snapshot.lastAttemptAgeMillis)
         val lastSuccess = formatAge(snapshot.lastSuccessAgeMillis)
         val rateReset = formatAge(snapshot.rateLimitResetMillis)
+        val serverCooldown = snapshot.serverCooldownMillis?.let { formatAge(it) }
 
         sendStatus("${ChatColor.GREEN}Status snapshot:")
         sendStatus("${ChatColor.YELLOW}Proxy: $proxyStatus")
         sendStatus("${ChatColor.YELLOW}Cache size: ${ChatColor.GOLD}${snapshot.cacheSize}")
+        sendStatus(
+            "${ChatColor.YELLOW}Star cache TTL: ${ChatColor.GOLD}${snapshot.starCacheTtlMinutes}m" +
+                "${ChatColor.YELLOW} (cold misses: ${ChatColor.GOLD}${snapshot.cacheMissesCold}${ChatColor.YELLOW}," +
+                " expired refreshes: ${ChatColor.GOLD}${snapshot.cacheMissesExpired}${ChatColor.YELLOW})"
+        )
         sendStatus("${ChatColor.YELLOW}Last request: ${ChatColor.GOLD}$lastAttempt${ChatColor.YELLOW} ago")
         sendStatus("${ChatColor.YELLOW}Last success: ${ChatColor.GOLD}$lastSuccess${ChatColor.YELLOW} ago")
         sendStatus(
             "${ChatColor.YELLOW}Rate limit: ${ChatColor.GOLD}${snapshot.rateLimitRemaining}${ChatColor.YELLOW} remaining, resets in ${ChatColor.GOLD}$rateReset"
+        )
+        serverCooldown?.let {
+            sendStatus("${ChatColor.YELLOW}Server cooldown hint: ${ChatColor.GOLD}$it${ChatColor.YELLOW} remaining")
+        }
+    }
+
+    @SubCommand(value = "cachettl")
+    fun handleCacheTtl(minutesInput: String) {
+        val sanitized = minutesInput.trim()
+        val parsed = sanitized.toIntOrNull()
+        if (parsed == null) {
+            EssentialAPI.getMinecraftUtil().sendMessage(
+                "${ChatColor.AQUA}[Levelhead]",
+                "${ChatColor.RED}Invalid TTL. Provide the number of minutes between ${LevelheadConfig.MIN_STAR_CACHE_TTL_MINUTES} and ${LevelheadConfig.MAX_STAR_CACHE_TTL_MINUTES}."
+            )
+            return
+        }
+
+        val clamped = parsed.coerceIn(LevelheadConfig.MIN_STAR_CACHE_TTL_MINUTES, LevelheadConfig.MAX_STAR_CACHE_TTL_MINUTES)
+        LevelheadConfig.setStarCacheTtlMinutes(clamped)
+        Levelhead.clearCachedStars()
+        EssentialAPI.getMinecraftUtil().sendMessage(
+            "${ChatColor.AQUA}[Levelhead]",
+            "${ChatColor.GREEN}Updated BedWars star cache TTL to ${ChatColor.GOLD}${clamped} minutes${ChatColor.GREEN}."
         )
     }
 

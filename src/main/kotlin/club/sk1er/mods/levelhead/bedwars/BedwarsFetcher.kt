@@ -9,8 +9,10 @@ import gg.essential.universal.UMinecraft
 import okhttp3.HttpUrl
 import okhttp3.Request
 import java.io.IOException
+import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
+import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
@@ -110,6 +112,7 @@ object BedwarsFetcher {
                     return FetchResult.NotModified
                 }
 
+                val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
                 val body = response.body()?.string().orEmpty()
 
                 if (!response.isSuccessful) {
@@ -118,8 +121,17 @@ object BedwarsFetcher {
                             notifyInvalidProxyToken(response.code(), body)
                             FetchResult.PermanentError("PROXY_AUTH")
                         }
+                        429 -> {
+                            handleRetryAfterHint("proxy", retryAfterMillis)
+                            Levelhead.logger.warn(
+                                "Proxy rate limited BedWars requests. Retry after {} ms.",
+                                retryAfterMillis ?: -1
+                            )
+                            FetchResult.TemporaryError("PROXY_RATE_LIMIT")
+                        }
 
                         else -> {
+                            handleRetryAfterHint("proxy", retryAfterMillis)
                             Levelhead.logger.error(
                                 "Proxy request failed with status {}: {}",
                                 response.code(),
@@ -143,6 +155,7 @@ object BedwarsFetcher {
                 }
 
                 networkIssueWarned.set(false)
+                handleRetryAfterHint("proxy", retryAfterMillis)
                 FetchResult.Success(json)
             }
         } catch (ex: IOException) {
@@ -181,6 +194,7 @@ object BedwarsFetcher {
         return try {
             Levelhead.okHttpClient.newCall(request).execute().use { response ->
                 val body = response.body()?.string().orEmpty()
+                val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
 
                 if (!response.isSuccessful) {
                     val json = kotlin.runCatching { Levelhead.jsonParser.parse(body).asJsonObject }.getOrNull()
@@ -191,6 +205,13 @@ object BedwarsFetcher {
                     }
                     invalidKeyWarned.set(false)
                     networkIssueWarned.set(false)
+                    if (response.code() == 429) {
+                        handleRetryAfterHint("hypixel", retryAfterMillis)
+                        Levelhead.logger.warn(
+                            "Hypixel rate limited BedWars requests. Retry after {} ms.",
+                            retryAfterMillis ?: -1
+                        )
+                    }
                     return FetchResult.TemporaryError("HYPIXEL_${response.code()}")
                 }
 
@@ -200,6 +221,7 @@ object BedwarsFetcher {
                     Levelhead.logger.error("Failed to parse Hypixel response", it)
                     return FetchResult.TemporaryError("PARSE_ERROR")
                 }
+                handleRetryAfterHint("hypixel", retryAfterMillis)
                 FetchResult.Success(json)
             }
         } catch (ex: IOException) {
@@ -313,6 +335,30 @@ object BedwarsFetcher {
         UMinecraft.getMinecraft().addScheduledTask {
             EssentialAPI.getMinecraftUtil().sendMessage("${ChatColor.AQUA}[Levelhead]", message)
         }
+    }
+
+    private fun handleRetryAfterHint(source: String, retryAfterMillis: Long?) {
+        val millis = retryAfterMillis ?: return
+        if (millis <= 0) return
+        Levelhead.logger.info("Received Retry-After hint from {} for {} ms", source, millis)
+        Levelhead.rateLimiter.registerServerCooldown(Duration.ofMillis(millis))
+    }
+
+    private fun parseRetryAfterMillis(value: String?): Long? {
+        val raw = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        raw.toLongOrNull()?.let { seconds ->
+            return if (seconds < 0) null else seconds * 1000L
+        }
+        raw.toDoubleOrNull()?.let { seconds ->
+            return if (seconds < 0) null else (seconds * 1000.0).toLong()
+        }
+
+        return kotlin.runCatching {
+            val targetInstant = ZonedDateTime.parse(raw, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant()
+            val now = Instant.now()
+            val millis = Duration.between(now, targetInstant).toMillis()
+            if (millis <= 0) null else millis
+        }.getOrNull()
     }
 
     private fun Long.toHttpDateString(): String {
