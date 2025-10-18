@@ -1,33 +1,69 @@
-name: Build 1.8.9 Jar
+name: Build and Upload Draft to Modrinth
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main  # or whatever branch you want to trigger on
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
+    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Set up JDK
         uses: actions/setup-java@v4
         with:
+          java-version: 17  # Adjust to your project's Java version
           distribution: temurin
-          java-version: 17
           cache: gradle
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Make Gradle wrapper executable
+        run: chmod +x ./gradlew
 
-      - name: Build 1.8.9 jar
-        run: ./gradlew :1.8.9:build
+      - name: Build with Gradle
+        run: ./gradlew build
 
-      - name: Upload 1.8.9 jar artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload 1.8.9 draft to Modrinth
+        uses: Kir-Antipov/mc-publish@v3.3
         with:
-          name: levelhead-1.8.9-jar
-          path: versions/1.8.9/build/libs/*.jar
-          if-no-files-found: error
+          modrinth-id: JBRfBF5q
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+
+          version-type: beta  # or alpha, depending on your preference
+          modrinth-featured: false
+
+          # Automatically generate version number from commit
+          version: 1.8.9-${{ github.sha }}
+          name: "Draft Build 1.8.9 - ${{ github.sha }}"
+
+          # Specify your JAR files
+          files: versions/1.8.9/build/libs/*.jar
+
+          # Game versions and loaders
+          game-versions: 1.8.9
+          loaders: forge
+
+      - name: Upload 1.12.2 draft to Modrinth
+        uses: Kir-Antipov/mc-publish@v3.3
+        with:
+          modrinth-id: JBRfBF5q
+          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
+
+          version-type: beta  # or alpha, depending on your preference
+          modrinth-featured: false
+
+          # Automatically generate version number from commit
+          version: 1.12.2-${{ github.sha }}
+          name: "Draft Build 1.12.2 - ${{ github.sha }}"
+
+          # Specify your JAR files
+          files: versions/1.12.2/build/libs/*.jar
+
+          # Game versions and loaders
+          game-versions: 1.12.2
+          loaders: forge
