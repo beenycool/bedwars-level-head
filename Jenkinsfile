@@ -1,8 +1,8 @@
 pipeline {
   agent any
-   environment {
-          DEPLOY_TOKEN     = credentials('mod_deploy_token')
-      }
+  environment {
+    MODRINTH_TOKEN = credentials(':MODRINTH_TOKEN')
+  }
   stages {
     stage('Initialize') {
       steps {
@@ -26,10 +26,25 @@ pipeline {
 //         archiveArtifacts 'versions/1.15.2/build/libs/*.jar'
       }
     }
-    stage('Notify') {
-        steps {
-            sh "java -jar deploy.jar ${JENKINS_HOME} ${env.JOB_NAME} ${env.BUILD_ID} ${DEPLOY_TOKEN}"
-        }
+    stage('Publish Modrinth Draft') {
+      steps {
+        sh '''
+          set -euo pipefail
+          ./gradlew modrinth -PBUILD_ID=${BUILD_ID} -Pbranch=${BRANCH_NAME} -PIS_CI=true --no-daemon --console=plain 2>&1 | tee modrinth-upload.log
+          VERSION_IDS=$(sed -n 's/.*version ID \([A-Za-z0-9]+\).*/\1/p' modrinth-upload.log)
+          if [ -z "$VERSION_IDS" ]; then
+            echo "Failed to detect Modrinth version IDs from upload output" >&2
+            exit 1
+          fi
+          for VERSION_ID in $VERSION_IDS; do
+            curl -fSs -X PATCH "https://api.modrinth.com/v2/version/$VERSION_ID" \
+              -H "Authorization: $MODRINTH_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d '{"status":"draft"}' > /dev/null
+          done
+          rm -f modrinth-upload.log
+        '''
+      }
     }
   }
 }

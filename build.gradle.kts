@@ -1,9 +1,13 @@
+import com.modrinth.minotaur.TaskModrinthUpload
 import gg.essential.gradle.util.noServerRunConfigs
+import net.fabricmc.loom.task.RemapJarTask
+import org.gradle.api.GradleException
 
 plugins {
     kotlin("jvm")
     id("gg.essential.multi-version")
     id("gg.essential.defaults")
+    id("com.modrinth.minotaur") version "2.7.5"
 }
 
 val modGroup: String by project
@@ -59,4 +63,31 @@ tasks.jar {
         "TweakOrder" to "0",
         "MixinConfigs" to "mixins.levelhead.json"
     ))
+}
+
+modrinth {
+    token.set(providers.environmentVariable("MODRINTH_TOKEN"))
+    projectId.set("bedwars-levelhead")
+    versionNumber.set("${project.version}-${platform.mcVersionStr}")
+    versionName.set("Levelhead ${platform.mcVersionStr} ${project.version}")
+    changelog.set(providers.provider {
+        val branch = System.getenv("BRANCH_NAME") ?: "local"
+        val build = System.getenv("BUILD_ID") ?: "local"
+        "Automated build $build on branch $branch."
+    })
+    file.set(tasks.named<RemapJarTask>("remapJar").flatMap { it.archiveFile })
+    gameVersions.set(listOf(platform.mcVersionStr))
+    loaders.set(listOf("forge"))
+    versionType.set("release")
+    detectLoaders.set(false)
+}
+
+tasks.named<TaskModrinthUpload>("modrinth") {
+    dependsOn(tasks.named("remapJar"))
+    outputs.upToDateWhen { false }
+    doFirst {
+        if (System.getenv("MODRINTH_TOKEN").isNullOrBlank()) {
+            throw GradleException("MODRINTH_TOKEN is required to publish to Modrinth")
+        }
+    }
 }
