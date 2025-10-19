@@ -38,10 +38,13 @@ import net.minecraftforge.fml.common.event.FMLPreInitializationEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import net.minecraftforge.fml.common.network.FMLNetworkEvent
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.apache.logging.log4j.LogManager
 import org.apache.logging.log4j.Logger
 import java.awt.Color
 import java.io.File
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.Locale
 import java.util.UUID
@@ -79,10 +82,81 @@ object Levelhead {
     private val rateLimiterNotified = AtomicBoolean(false)
     private val starCacheMetrics = StarCacheMetrics()
     private val serverCooldownNotifiedUntil = AtomicLong(0L)
+    private val updateCheckScheduled = AtomicBoolean(false)
     @Volatile
     private var lastFetchAttemptAt: Long = 0L
     @Volatile
     private var lastFetchSuccessAt: Long = 0L
+
+    const val MODID = "bedwars_levelhead"
+    const val VERSION = "8.2.3"
+    private const val MODRINTH_PROJECT_SLUG = "bedwars-level-head"
+    private const val MODRINTH_MOD_PAGE = "https://modrinth.com/mod/$MODRINTH_PROJECT_SLUG"
+    private const val MODRINTH_API_BASE = "https://api.modrinth.com/v2"
+    private const val TARGET_MC_VERSION = "1.8.9"
+    private const val TARGET_LOADER = "forge"
+
+    private fun scheduleUpdateCheck() {
+        if (!updateCheckScheduled.compareAndSet(false, true)) {
+            return
+        }
+        scope.launch {
+            try {
+                val request = Request.Builder()
+                    .url(buildModrinthVersionUrl())
+                    .header("User-Agent", "Levelhead/$VERSION")
+                    .build()
+                okHttpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        logger.debug("Modrinth update check failed with status {}", response.code())
+                        return@use
+                    }
+                    val body = response.body()?.string()?.takeIf { it.isNotBlank() } ?: return@use
+                    val json = kotlin.runCatching { jsonParser.parse(body) }.getOrNull() ?: return@use
+                    if (!json.isJsonArray) {
+                        logger.debug("Unexpected Modrinth response: not an array")
+                        return@use
+                    }
+                    var latestObject: com.google.gson.JsonObject? = null
+                    for (element in json.asJsonArray) {
+                        if (!element.isJsonObject) continue
+                        val obj = element.asJsonObject
+                        val type = obj.get("version_type")?.asString?.lowercase(Locale.ROOT)
+                        if (type == null || type == "release") {
+                            latestObject = obj
+                            break
+                        }
+                        if (latestObject == null) {
+                            latestObject = obj
+                        }
+                    }
+                    val latest = latestObject ?: return@use
+                    val latestVersion = latest.get("version_number")?.asString ?: return@use
+                    if (latestVersion == VERSION) {
+                        return@use
+                    }
+                    val encodedVersion = URLEncoder.encode(latestVersion, StandardCharsets.UTF_8.name()).replace("+", "%20")
+                    val downloadUrl = "$MODRINTH_MOD_PAGE/version/$encodedVersion"
+                    UMinecraft.getMinecraft().addScheduledTask {
+                        EssentialAPI.getMinecraftUtil().sendMessage(
+                            "${ChatColor.AQUA}[Levelhead]",
+                            "${ChatColor.YELLOW}A new update is available: ${ChatColor.GOLD}$latestVersion${ChatColor.YELLOW} (current ${ChatColor.GOLD}$VERSION${ChatColor.YELLOW}). ${ChatColor.GREEN}Download: ${ChatColor.AQUA}$downloadUrl"
+                        )
+                    }
+                }
+            } catch (throwable: Throwable) {
+                logger.debug("Failed to check for updates on Modrinth", throwable)
+            }
+        }
+    }
+
+    private fun buildModrinthVersionUrl(): String {
+        val encodedVersions = URLEncoder.encode("[\"$TARGET_MC_VERSION\"]", StandardCharsets.UTF_8.name())
+            .replace("+", "%20")
+        val encodedLoaders = URLEncoder.encode("[\"$TARGET_LOADER\"]", StandardCharsets.UTF_8.name())
+            .replace("+", "%20")
+        return "$MODRINTH_API_BASE/project/$MODRINTH_PROJECT_SLUG/version?game_versions=$encodedVersions&loaders=$encodedLoaders"
+    }
 
     val DarkChromaColor: Int
         get() = Color.HSBtoRGB(System.currentTimeMillis() % 1000 / 1000f, 0.8f, 0.2f)
@@ -90,9 +164,6 @@ object Levelhead {
         get() = Color.HSBtoRGB(System.currentTimeMillis() % 1000 / 1000f, 0.8f, 0.8f)
     val chromaColor: Color
         get() = Color(ChromaColor)
-
-    const val MODID = "bedwars_levelhead"
-    const val VERSION = "8.2.3"
 
     @Mod.EventHandler
     fun preInit(event: FMLPreInitializationEvent) {
@@ -107,6 +178,7 @@ object Levelhead {
         MinecraftForge.EVENT_BUS.register(BedwarsModeDetector)
         MinecraftForge.EVENT_BUS.register(this)
         EssentialAPI.getCommandRegistry().registerCommand(LevelheadCommand())
+        scheduleUpdateCheck()
     }
 
     @SubscribeEvent
