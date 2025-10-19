@@ -90,7 +90,7 @@ object Levelhead {
 
     const val MODID = "bedwars_levelhead"
     const val VERSION = "8.2.3"
-    private const val MODRINTH_PROJECT_SLUG = "bedwars-level-head"
+    private const val MODRINTH_PROJECT_SLUG = "levelhead"
     private const val MODRINTH_MOD_PAGE = "https://modrinth.com/mod/$MODRINTH_PROJECT_SLUG"
     private const val MODRINTH_API_BASE = "https://api.modrinth.com/v2"
     private const val TARGET_MC_VERSION = "1.8.9"
@@ -117,25 +117,18 @@ object Levelhead {
                         logger.debug("Unexpected Modrinth response: not an array")
                         return@use
                     }
-                    var latestObject: com.google.gson.JsonObject? = null
-                    for (element in json.asJsonArray) {
-                        if (!element.isJsonObject) continue
-                        val obj = element.asJsonObject
+                    val versions = json.asJsonArray.asSequence()
+                        .filter { it.isJsonObject }
+                        .map { it.asJsonObject }
+                    val latest = versions.firstOrNull { obj ->
                         val type = obj.get("version_type")?.asString?.lowercase(Locale.ROOT)
-                        if (type == null || type == "release") {
-                            latestObject = obj
-                            break
-                        }
-                        if (latestObject == null) {
-                            latestObject = obj
-                        }
-                    }
-                    val latest = latestObject ?: return@use
+                        type == null || type == "release"
+                    } ?: versions.firstOrNull() ?: return@use
                     val latestVersion = latest.get("version_number")?.asString ?: return@use
                     if (latestVersion == VERSION) {
                         return@use
                     }
-                    val encodedVersion = URLEncoder.encode(latestVersion, StandardCharsets.UTF_8.name()).replace("+", "%20")
+                    val encodedVersion = latestVersion.encodeForUrl()
                     val downloadUrl = "$MODRINTH_MOD_PAGE/version/$encodedVersion"
                     UMinecraft.getMinecraft().addScheduledTask {
                         EssentialAPI.getMinecraftUtil().sendMessage(
@@ -151,12 +144,13 @@ object Levelhead {
     }
 
     private fun buildModrinthVersionUrl(): String {
-        val encodedVersions = URLEncoder.encode("[\"$TARGET_MC_VERSION\"]", StandardCharsets.UTF_8.name())
-            .replace("+", "%20")
-        val encodedLoaders = URLEncoder.encode("[\"$TARGET_LOADER\"]", StandardCharsets.UTF_8.name())
-            .replace("+", "%20")
+        val encodedVersions = "[\"$TARGET_MC_VERSION\"]".encodeForUrl()
+        val encodedLoaders = "[\"$TARGET_LOADER\"]".encodeForUrl()
         return "$MODRINTH_API_BASE/project/$MODRINTH_PROJECT_SLUG/version?game_versions=$encodedVersions&loaders=$encodedLoaders"
     }
+
+    private fun String.encodeForUrl(): String =
+        URLEncoder.encode(this, StandardCharsets.UTF_8.name()).replace("+", "%20")
 
     val DarkChromaColor: Int
         get() = Color.HSBtoRGB(System.currentTimeMillis() % 1000 / 1000f, 0.8f, 0.2f)
