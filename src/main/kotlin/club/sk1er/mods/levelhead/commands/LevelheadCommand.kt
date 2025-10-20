@@ -164,17 +164,12 @@ class LevelheadCommand : Command("levelhead") {
         val changed = Levelhead.displayManager.setEnabled(enabled)
         val stateText = if (enabled) "enabled" else "disabled"
         val color = if (enabled) ChatColor.GREEN else ChatColor.RED
-        if (changed) {
-            EssentialAPI.getMinecraftUtil().sendMessage(
-                "${ChatColor.AQUA}[Levelhead]",
-                "${color}BedWars Levelhead ${ChatColor.YELLOW}has been ${color}$stateText${ChatColor.YELLOW}."
-            )
+        val message = if (changed) {
+            "${color}BedWars Levelhead ${ChatColor.YELLOW}has been ${color}$stateText${ChatColor.YELLOW}."
         } else {
-            EssentialAPI.getMinecraftUtil().sendMessage(
-                "${ChatColor.AQUA}[Levelhead]",
-                "${ChatColor.YELLOW}BedWars Levelhead is already ${color}$stateText${ChatColor.YELLOW}."
-            )
+            "${ChatColor.YELLOW}BedWars Levelhead is already ${color}$stateText${ChatColor.YELLOW}."
         }
+        EssentialAPI.getMinecraftUtil().sendMessage("${ChatColor.AQUA}[Levelhead]", message)
     }
 
     private fun formatAge(ageMillis: Long?): String {

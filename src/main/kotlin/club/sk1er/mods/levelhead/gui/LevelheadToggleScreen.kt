@@ -34,23 +34,23 @@ class LevelheadToggleScreen : GuiScreen() {
         }
     }
 
-    override fun keyTyped(typedChar: Char, keyCode: Int) {
-        if (keyCode == Keyboard.KEY_ESCAPE) {
-            mc.displayGuiScreen(null)
-            return
-        }
-        super.keyTyped(typedChar, keyCode)
-    }
-
     override fun drawScreen(mouseX: Int, mouseY: Int, partialTicks: Float) {
         drawDefaultBackground()
         val title = "BedWars Levelhead"
         drawCenteredString(fontRendererObj, title, width / 2, height / 2 - 60, 0xFFFFFF)
-        val enabled = Levelhead.displayManager.config.enabled
-        val statusColor = if (enabled) 0x55FF55 else 0xFF5555
-        val statusText = if (enabled) "Enabled" else "Disabled"
+        val (statusText, statusColor) = if (Levelhead.displayManager.config.enabled) {
+            "Enabled" to ENABLED_COLOR
+        } else {
+            "Disabled" to DISABLED_COLOR
+        }
         drawCenteredString(fontRendererObj, "Status: $statusText", width / 2, height / 2 - 40, statusColor)
-        drawCenteredString(fontRendererObj, "Click the button below to toggle the display.", width / 2, height / 2 - 24, 0xCCCCCC)
+        drawCenteredString(
+            fontRendererObj,
+            "Click the button below to toggle the display.",
+            width / 2,
+            height / 2 - 24,
+            0xCCCCCC
+        )
         super.drawScreen(mouseX, mouseY, partialTicks)
     }
 
@@ -60,5 +60,10 @@ class LevelheadToggleScreen : GuiScreen() {
         } else {
             "Enable BedWars Levelhead"
         }
+    }
+
+    private companion object {
+        private const val ENABLED_COLOR = 0x55FF55
+        private const val DISABLED_COLOR = 0xFF5555
     }
 }
