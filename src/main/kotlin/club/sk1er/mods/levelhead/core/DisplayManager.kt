@@ -126,6 +126,7 @@ class DisplayManager(val file: File) {
 
     @OptIn(ExperimentalStdlibApi::class)
     fun playerJoin(player: EntityPlayer) {
+        if (!config.enabled) return
         if (player.isNPC) return
         if (!BedwarsModeDetector.shouldRequestData()) return
         val displays = aboveHead.filter { it.config.enabled }
@@ -155,8 +156,26 @@ class DisplayManager(val file: File) {
         }
     }
 
+    fun setEnabled(enabled: Boolean): Boolean {
+        if (config.enabled == enabled) {
+            return false
+        }
+
+        config.enabled = enabled
+        saveConfig()
+
+        if (!enabled) {
+            clearCachesWithoutRefetch()
+        } else if (BedwarsModeDetector.shouldRequestData()) {
+            requestAllDisplays()
+        }
+
+        return true
+    }
+
     @OptIn(ExperimentalStdlibApi::class)
     fun requestAllDisplays() {
+        if (!config.enabled) return
         if (!BedwarsModeDetector.shouldRequestData()) return
         val displays = aboveHead.filter { it.config.enabled }
         if (displays.isEmpty()) return

@@ -3,11 +3,13 @@ package club.sk1er.mods.levelhead.commands
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import club.sk1er.mods.levelhead.config.LevelheadConfig
+import club.sk1er.mods.levelhead.gui.LevelheadToggleScreen
 import gg.essential.api.EssentialAPI
 import gg.essential.api.commands.Command
 import gg.essential.api.commands.DefaultHandler
 import gg.essential.api.commands.SubCommand
 import gg.essential.universal.ChatColor
+import gg.essential.universal.UMinecraft
 import java.util.Locale
 
 class LevelheadCommand : Command("levelhead") {
@@ -20,7 +22,7 @@ class LevelheadCommand : Command("levelhead") {
     fun handle() {
         EssentialAPI.getMinecraftUtil().sendMessage(
             "${ChatColor.AQUA}[Levelhead]",
-            "${ChatColor.YELLOW}BedWars star display is active. Use ${ChatColor.GOLD}/levelhead apikey <key>${ChatColor.YELLOW} to set your Hypixel API key."
+            "${ChatColor.YELLOW}BedWars star display is active. Use ${ChatColor.GOLD}/levelhead gui${ChatColor.YELLOW} to open the toggle menu or ${ChatColor.GOLD}/levelhead apikey <key>${ChatColor.YELLOW} to set your Hypixel API key."
         )
     }
 
@@ -73,6 +75,26 @@ class LevelheadCommand : Command("levelhead") {
             "${ChatColor.AQUA}[Levelhead]",
             "${ChatColor.GREEN}Reloaded BedWars star cache."
         )
+    }
+
+    @SubCommand(value = "enable")
+    fun handleEnable() {
+        updateEnabledState(true)
+    }
+
+    @SubCommand(value = "disable")
+    fun handleDisable() {
+        updateEnabledState(false)
+    }
+
+    @SubCommand(value = "toggle")
+    fun handleToggle() {
+        updateEnabledState(!Levelhead.displayManager.config.enabled)
+    }
+
+    @SubCommand(value = "gui")
+    fun handleGui() {
+        UMinecraft.getMinecraft().displayGuiScreen(LevelheadToggleScreen())
     }
 
     @SubCommand(value = "status")
@@ -135,6 +157,18 @@ class LevelheadCommand : Command("levelhead") {
     }
 
     private fun sendStatus(message: String) {
+        EssentialAPI.getMinecraftUtil().sendMessage("${ChatColor.AQUA}[Levelhead]", message)
+    }
+
+    private fun updateEnabledState(enabled: Boolean) {
+        val changed = Levelhead.displayManager.setEnabled(enabled)
+        val stateText = if (enabled) "enabled" else "disabled"
+        val color = if (enabled) ChatColor.GREEN else ChatColor.RED
+        val message = if (changed) {
+            "${color}BedWars Levelhead ${ChatColor.YELLOW}has been ${color}$stateText${ChatColor.YELLOW}."
+        } else {
+            "${ChatColor.YELLOW}BedWars Levelhead is already ${color}$stateText${ChatColor.YELLOW}."
+        }
         EssentialAPI.getMinecraftUtil().sendMessage("${ChatColor.AQUA}[Levelhead]", message)
     }
 
