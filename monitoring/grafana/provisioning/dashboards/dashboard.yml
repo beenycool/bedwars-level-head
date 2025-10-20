@@ -1,0 +1,11 @@
+apiVersion: 1
+
+disableDeletion: false
+
+providers:
+  - name: 'levelhead'
+    folder: 'Levelhead'
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards
+      recursive: true

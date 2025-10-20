@@ -13,9 +13,6 @@ import java.util.*
 import kotlin.math.min
 import kotlin.properties.Delegates
 
-//#if MC==11202
-//$$ import net.minecraft.init.MobEffects;
-//#endif
 
 class AboveHeadDisplay(config: DisplayConfig) : LevelheadDisplay(DisplayPosition.ABOVE_HEAD, config) {
 
@@ -27,9 +24,6 @@ class AboveHeadDisplay(config: DisplayConfig) : LevelheadDisplay(DisplayPosition
         if (player.isPotionActive(
             //#if MC==10809
             Potion.invisibility
-            //#endif
-            //#if MC==11202
-            //$$ MobEffects.INVISIBILITY
             //#endif
         )) return false
         if (!renderFromTeam(player)) return false

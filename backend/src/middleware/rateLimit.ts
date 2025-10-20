@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS } from '../config';
 import { HttpError } from '../util/httpError';
+import { rateLimitBlocksTotal } from '../services/metrics';
 
 type Bucket = {
   count: number;
@@ -49,8 +50,15 @@ export function enforceRateLimit(req: Request, res: Response, next: NextFunction
 
   if (bucket.count >= RATE_LIMIT_MAX) {
     const retryAfterSeconds = Math.ceil((bucket.windowStartedAt + RATE_LIMIT_WINDOW_MS - now) / 1000);
-    res.set('Retry-After', retryAfterSeconds.toString());
-    throw new HttpError(429, 'RATE_LIMIT', `Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`);
+    const retryAfterHeader = retryAfterSeconds.toString();
+    res.set('Retry-After', retryAfterHeader);
+    rateLimitBlocksTotal.inc();
+    throw new HttpError(
+      429,
+      'RATE_LIMIT',
+      `Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`,
+      { 'Retry-After': retryAfterHeader },
+    );
   }
 
   bucket.count += 1;

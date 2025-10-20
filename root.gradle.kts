@@ -8,7 +8,5 @@ plugins {
 version = versionFromBuildIdAndBranch()
 
 preprocess {
-    "1.12.2"(11202, "srg") {
-        "1.8.9"(10809, "srg", file("versions/1.12.2-1.8.9.txt"))
-    }
+    "1.8.9"(10809, "srg")
 }

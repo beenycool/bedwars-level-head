@@ -24,7 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
@@ -38,16 +38,21 @@ import net.minecraftforge.fml.common.event.FMLPreInitializationEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import net.minecraftforge.fml.common.network.FMLNetworkEvent
 import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.apache.logging.log4j.LogManager
 import org.apache.logging.log4j.Logger
 import java.awt.Color
 import java.io.File
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.random.Random
 
 @Mod(modid = Levelhead.MODID, name = "BedWars Levelhead", version = Levelhead.VERSION, modLanguageAdapter = "gg.essential.api.utils.KotlinAdapter")
 object Levelhead {
@@ -61,15 +66,91 @@ object Levelhead {
     val jsonParser = JsonParser()
 
     val displayManager: DisplayManager = DisplayManager(File(File(UMinecraft.getMinecraft().mcDataDir, "config"), "levelhead.json"))
-    val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val modJob: Job = SupervisorJob()
+    val scope: CoroutineScope = CoroutineScope(modJob + Dispatchers.IO)
+    private val worldScopeLock = Any()
+    @Volatile
+    private var worldJob: Job = SupervisorJob(modJob)
+    @Volatile
+    private var worldScope: CoroutineScope = CoroutineScope(worldJob + Dispatchers.IO)
     val rateLimiter: RateLimiter = RateLimiter(150, Duration.ofMinutes(5))
 
-    private val starCacheTtl: Duration = Duration.ofMinutes(10)
     private val starCache: ConcurrentHashMap<UUID, CachedBedwarsStar> = ConcurrentHashMap()
     private val inFlightStarRequests: ConcurrentHashMap<UUID, Deferred<CachedBedwarsStar?>> = ConcurrentHashMap()
     private val pendingDisplayRefreshes: ConcurrentHashMap<UUID, MutableSet<LevelheadDisplay>> = ConcurrentHashMap()
-    private val starFetchSemaphore: Semaphore = Semaphore(4)
+    private val starFetchSemaphore: Semaphore = Semaphore(6)
     private val rateLimiterNotified = AtomicBoolean(false)
+    private val starCacheMetrics = StarCacheMetrics()
+    private val serverCooldownNotifiedUntil = AtomicLong(0L)
+    private val updateCheckScheduled = AtomicBoolean(false)
+    @Volatile
+    private var lastFetchAttemptAt: Long = 0L
+    @Volatile
+    private var lastFetchSuccessAt: Long = 0L
+
+    const val MODID = "bedwars_levelhead"
+    const val VERSION = "8.2.3"
+    private const val MODRINTH_PROJECT_SLUG = "levelhead"
+    private const val MODRINTH_MOD_PAGE = "https://modrinth.com/mod/$MODRINTH_PROJECT_SLUG"
+    private const val MODRINTH_API_BASE = "https://api.modrinth.com/v2"
+    private const val TARGET_MC_VERSION = "1.8.9"
+    private const val TARGET_LOADER = "forge"
+
+    private fun scheduleUpdateCheck() {
+        if (!updateCheckScheduled.compareAndSet(false, true)) {
+            return
+        }
+        scope.launch {
+            try {
+                val request = Request.Builder()
+                    .url(buildModrinthVersionUrl())
+                    .header("User-Agent", "Levelhead/$VERSION")
+                    .build()
+                okHttpClient.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        logger.debug("Modrinth update check failed with status {}", response.code())
+                        return@use
+                    }
+                    val body = response.body()?.string()?.takeIf { it.isNotBlank() } ?: return@use
+                    val json = kotlin.runCatching { jsonParser.parse(body) }.getOrNull() ?: return@use
+                    if (!json.isJsonArray) {
+                        logger.debug("Unexpected Modrinth response: not an array")
+                        return@use
+                    }
+                    val versions = json.asJsonArray.asSequence()
+                        .filter { it.isJsonObject }
+                        .map { it.asJsonObject }
+                    val latest = versions.firstOrNull { obj ->
+                        val type = obj.get("version_type")?.asString?.lowercase(Locale.ROOT)
+                        type == null || type == "release"
+                    } ?: versions.firstOrNull() ?: return@use
+                    val latestVersion = latest.get("version_number")?.asString ?: return@use
+                    if (latestVersion == VERSION) {
+                        return@use
+                    }
+                    val encodedVersion = latestVersion.encodeForUrl()
+                    val downloadUrl = "$MODRINTH_MOD_PAGE/version/$encodedVersion"
+                    UMinecraft.getMinecraft().addScheduledTask {
+                        EssentialAPI.getMinecraftUtil().sendMessage(
+                            "${ChatColor.AQUA}[Levelhead]",
+                            "${ChatColor.YELLOW}A new update is available: ${ChatColor.GOLD}$latestVersion${ChatColor.YELLOW} (current ${ChatColor.GOLD}$VERSION${ChatColor.YELLOW}). ${ChatColor.GREEN}Download: ${ChatColor.AQUA}$downloadUrl"
+                        )
+                    }
+                }
+            } catch (throwable: Throwable) {
+                logger.debug("Failed to check for updates on Modrinth", throwable)
+            }
+        }
+    }
+
+    private fun buildModrinthVersionUrl(): String {
+        val encodedVersions = "[\"$TARGET_MC_VERSION\"]".encodeForUrl()
+        val encodedLoaders = "[\"$TARGET_LOADER\"]".encodeForUrl()
+        return "$MODRINTH_API_BASE/project/$MODRINTH_PROJECT_SLUG/version?game_versions=$encodedVersions&loaders=$encodedLoaders"
+    }
+
+    private fun String.encodeForUrl(): String =
+        URLEncoder.encode(this, StandardCharsets.UTF_8.name()).replace("+", "%20")
 
     val DarkChromaColor: Int
         get() = Color.HSBtoRGB(System.currentTimeMillis() % 1000 / 1000f, 0.8f, 0.2f)
@@ -77,9 +158,6 @@ object Levelhead {
         get() = Color.HSBtoRGB(System.currentTimeMillis() % 1000 / 1000f, 0.8f, 0.8f)
     val chromaColor: Color
         get() = Color(ChromaColor)
-
-    const val MODID = "bedwars_levelhead"
-    const val VERSION = "8.2.3"
 
     @Mod.EventHandler
     fun preInit(event: FMLPreInitializationEvent) {
@@ -94,32 +172,34 @@ object Levelhead {
         MinecraftForge.EVENT_BUS.register(BedwarsModeDetector)
         MinecraftForge.EVENT_BUS.register(this)
         EssentialAPI.getCommandRegistry().registerCommand(LevelheadCommand())
+        scheduleUpdateCheck()
     }
 
     @SubscribeEvent
     fun joinServer(@Suppress("UNUSED_PARAMETER") event: FMLNetworkEvent.ClientConnectedToServerEvent) {
         BedwarsFetcher.resetWarnings()
-        scope.coroutineContext.cancelChildren()
+        resetWorldScope()
         rateLimiter.resetState()
         displayManager.clearCachesWithoutRefetch()
-        clearCachedStars()
-        scope.launch { displayManager.requestAllDisplays() }
+        resetFetchTimestamps()
+        worldScope.launch { displayManager.requestAllDisplays() }
     }
 
     @SubscribeEvent
     fun playerJoin(event: EntityJoinWorldEvent) {
         if (event.entity is EntityPlayerSP) {
-            scope.coroutineContext.cancelChildren()
+            resetWorldScope()
             rateLimiter.resetState()
-            displayManager.joinWorld(resetDetector = true)
             clearCachedStars()
+            resetFetchTimestamps()
+            displayManager.joinWorld(resetDetector = true)
         } else if (event.entity is EntityPlayer) {
             displayManager.playerJoin(event.entity as EntityPlayer)
         }
     }
 
     fun fetch(requests: List<LevelheadRequest>): Job {
-        return scope.launch {
+        return worldScope.launch {
             if (!BedwarsModeDetector.shouldRequestData()) return@launch
 
             requests
@@ -138,6 +218,7 @@ object Levelhead {
         pendingDisplayRefreshes.clear()
         inFlightStarRequests.values.forEach { it.cancel() }
         inFlightStarRequests.clear()
+        starCacheMetrics.reset()
     }
 
     internal fun onRateLimiterBlocked(metrics: Metrics) {
@@ -156,13 +237,42 @@ object Levelhead {
         rateLimiterNotified.set(false)
     }
 
+    internal fun onServerRetryAfter(duration: Duration) {
+        if (duration.isZero || duration.isNegative) return
+        val newDeadline = System.currentTimeMillis() + duration.toMillis()
+        while (true) {
+            val current = serverCooldownNotifiedUntil.get()
+            if (newDeadline <= current) {
+                return
+            }
+            if (serverCooldownNotifiedUntil.compareAndSet(current, newDeadline)) {
+                val formatted = formatCooldownDuration(duration)
+                UMinecraft.getMinecraft().addScheduledTask {
+                    EssentialAPI.getMinecraftUtil().sendMessage(
+                        "${ChatColor.AQUA}[Levelhead]",
+                        "${ChatColor.YELLOW}Proxy asked us to pause BedWars stat requests for ${ChatColor.GOLD}$formatted${ChatColor.YELLOW}."
+                    )
+                }
+                return
+            }
+        }
+    }
+
+    internal fun resetServerCooldownNotification() {
+        serverCooldownNotifiedUntil.set(0L)
+    }
+
     private suspend fun resolveStar(uuid: UUID, displays: Collection<LevelheadDisplay>): CachedBedwarsStar? {
         val cached = starCache[uuid]
         val now = System.currentTimeMillis()
         return when {
-            cached == null -> ensureStarFetch(uuid, displays, registerForRefresh = false).await()
-            cached.isExpired(starCacheTtl, now) -> {
-                ensureStarFetch(uuid, displays, registerForRefresh = true)
+            cached == null -> {
+                starCacheMetrics.recordMiss(CacheMissReason.COLD)
+                ensureStarFetch(uuid, cached, displays, registerForRefresh = false).await()
+            }
+            cached.isExpired(LevelheadConfig.starCacheTtl, now) -> {
+                starCacheMetrics.recordMiss(CacheMissReason.EXPIRED)
+                ensureStarFetch(uuid, cached, displays, registerForRefresh = true)
                 cached
             }
             else -> cached
@@ -171,6 +281,7 @@ object Levelhead {
 
     private fun ensureStarFetch(
         uuid: UUID,
+        cached: CachedBedwarsStar?,
         displays: Collection<LevelheadDisplay>,
         registerForRefresh: Boolean
     ): Deferred<CachedBedwarsStar?> {
@@ -186,19 +297,38 @@ object Levelhead {
             return existing
         }
 
-        val deferred = scope.async {
+        val deferred = worldScope.async {
             starFetchSemaphore.withPermit {
+                if (registerForRefresh && cached != null) {
+                    delay(Random.nextLong(50L, 201L))
+                }
                 try {
+                    lastFetchAttemptAt = System.currentTimeMillis()
                     rateLimiter.consume()
-                    val player = BedwarsFetcher.fetchPlayer(uuid) ?: run {
-                        handleStarUpdate(uuid, null)
-                        return@withPermit null
+                    when (val result = BedwarsFetcher.fetchPlayer(uuid, cached?.fetchedAt)) {
+                        is BedwarsFetcher.FetchResult.Success -> {
+                            lastFetchSuccessAt = System.currentTimeMillis()
+                            val experience = BedwarsStar.extractExperience(result.payload)
+                            val star = experience?.let { BedwarsStar.calculateStar(it) }
+                            val entry = CachedBedwarsStar(star, experience, System.currentTimeMillis())
+                            handleStarUpdate(uuid, entry)
+                            entry
+                        }
+                        BedwarsFetcher.FetchResult.NotModified -> {
+                            lastFetchSuccessAt = System.currentTimeMillis()
+                            val refreshed = cached?.copy(fetchedAt = System.currentTimeMillis())
+                            refreshed?.let { handleStarUpdate(uuid, it) }
+                            refreshed
+                        }
+                        is BedwarsFetcher.FetchResult.TemporaryError -> {
+                            handleStarUpdate(uuid, cached)
+                            null
+                        }
+                        is BedwarsFetcher.FetchResult.PermanentError -> {
+                            handleStarUpdate(uuid, cached)
+                            null
+                        }
                     }
-                    val experience = BedwarsStar.extractExperience(player)
-                    val star = experience?.let { BedwarsStar.calculateStar(it) }
-                    val entry = CachedBedwarsStar(star, experience, System.currentTimeMillis())
-                    handleStarUpdate(uuid, entry)
-                    entry
                 } catch (throwable: Throwable) {
                     handleStarUpdate(uuid, null)
                     null
@@ -217,6 +347,45 @@ object Levelhead {
 
         deferred.invokeOnCompletion { inFlightStarRequests.remove(uuid, deferred) }
         return deferred
+    }
+
+    private fun resetWorldScope() {
+        synchronized(worldScopeLock) {
+            worldJob.cancel()
+            worldJob = SupervisorJob(modJob)
+            worldScope = CoroutineScope(worldJob + Dispatchers.IO)
+        }
+    }
+
+    private fun resetFetchTimestamps() {
+        lastFetchAttemptAt = 0L
+        lastFetchSuccessAt = 0L
+    }
+
+    fun resetWorldCoroutines() {
+        resetWorldScope()
+        resetFetchTimestamps()
+    }
+
+    fun statusSnapshot(): StatusSnapshot {
+        val now = System.currentTimeMillis()
+        val attemptAge = lastFetchAttemptAt.takeIf { it > 0 }?.let { now - it }
+        val successAge = lastFetchSuccessAt.takeIf { it > 0 }?.let { now - it }
+        val rateMetrics = rateLimiter.metricsSnapshot()
+        val starCacheSnapshot = starCacheMetrics.snapshot()
+        return StatusSnapshot(
+            proxyEnabled = LevelheadConfig.proxyEnabled,
+            proxyConfigured = LevelheadConfig.proxyEnabled && LevelheadConfig.proxyBaseUrl.isNotBlank() && LevelheadConfig.proxyAuthToken.isNotBlank(),
+            cacheSize = starCache.size,
+            lastAttemptAgeMillis = attemptAge,
+            lastSuccessAgeMillis = successAge,
+            rateLimitRemaining = rateMetrics.remaining,
+            rateLimitResetMillis = rateMetrics.resetIn.toMillis().coerceAtLeast(0),
+            starCacheTtlMinutes = LevelheadConfig.starCacheTtlMinutes,
+            cacheMissesCold = starCacheSnapshot.cold,
+            cacheMissesExpired = starCacheSnapshot.expired,
+            serverCooldownMillis = rateMetrics.serverCooldown?.toMillis()?.coerceAtLeast(0)
+        )
     }
 
     private fun registerDisplaysForRefresh(uuid: UUID, displays: Collection<LevelheadDisplay>) {
@@ -287,4 +456,43 @@ object Levelhead {
             return now - fetchedAt >= ttl.toMillis()
         }
     }
+
+    data class StatusSnapshot(
+        val proxyEnabled: Boolean,
+        val proxyConfigured: Boolean,
+        val cacheSize: Int,
+        val lastAttemptAgeMillis: Long?,
+        val lastSuccessAgeMillis: Long?,
+        val rateLimitRemaining: Int,
+        val rateLimitResetMillis: Long,
+        val starCacheTtlMinutes: Int,
+        val cacheMissesCold: Long,
+        val cacheMissesExpired: Long,
+        val serverCooldownMillis: Long?
+    )
+
+    private enum class CacheMissReason { COLD, EXPIRED }
+
+    private class StarCacheMetrics {
+        private val coldMisses = AtomicLong(0L)
+        private val expiredMisses = AtomicLong(0L)
+
+        fun recordMiss(reason: CacheMissReason) {
+            when (reason) {
+                CacheMissReason.COLD -> coldMisses.incrementAndGet()
+                CacheMissReason.EXPIRED -> expiredMisses.incrementAndGet()
+            }
+        }
+
+        fun reset() {
+            coldMisses.set(0L)
+            expiredMisses.set(0L)
+        }
+
+        fun snapshot(): StarCacheSnapshot {
+            return StarCacheSnapshot(coldMisses.get(), expiredMisses.get())
+        }
+    }
+
+    data class StarCacheSnapshot(val cold: Long, val expired: Long)
 }
