@@ -1,37 +1,30 @@
 name: Build (on release or manual)
-
 on:
   release:
     types: [published]
   workflow_dispatch:
-
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
           java-version: 17
           distribution: temurin
           cache: gradle
-
       - name: Make Gradle wrapper executable
         run: chmod +x ./gradlew
-
       - name: Build with Gradle
         run: ./gradlew build
-
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts
           path: |
-            build/libs/*.jar
-            build/libs/*.war
+            **/build/libs/*.jar
+            **/build/libs/*.war
