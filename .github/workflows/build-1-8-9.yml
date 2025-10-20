@@ -1,16 +1,15 @@
-name: Build and Upload Draft to Modrinth
+name: Build (on release)
 
 on:
-  push:
-    branches:
-      - main  # or whatever branch you want to trigger on
+  release:
+    types: [published]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -18,7 +17,7 @@ jobs:
       - name: Set up JDK
         uses: actions/setup-java@v4
         with:
-          java-version: 17  # Adjust to your project's Java version
+          java-version: 17
           distribution: temurin
           cache: gradle
 
@@ -27,43 +26,3 @@ jobs:
 
       - name: Build with Gradle
         run: ./gradlew build
-
-      - name: Upload 1.8.9 draft to Modrinth
-        uses: Kir-Antipov/mc-publish@v3.3
-        with:
-          modrinth-id: JBRfBF5q
-          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
-
-          version-type: beta  # or alpha, depending on your preference
-          modrinth-featured: false
-
-          # Automatically generate version number from commit
-          version: 1.8.9-${{ github.sha }}
-          name: "Draft Build 1.8.9 - ${{ github.sha }}"
-
-          # Specify your JAR files
-          files: versions/1.8.9/build/libs/*.jar
-
-          # Game versions and loaders
-          game-versions: 1.8.9
-          loaders: forge
-
-      - name: Upload 1.12.2 draft to Modrinth
-        uses: Kir-Antipov/mc-publish@v3.3
-        with:
-          modrinth-id: JBRfBF5q
-          modrinth-token: ${{ secrets.MODRINTH_TOKEN }}
-
-          version-type: beta  # or alpha, depending on your preference
-          modrinth-featured: false
-
-          # Automatically generate version number from commit
-          version: 1.12.2-${{ github.sha }}
-          name: "Draft Build 1.12.2 - ${{ github.sha }}"
-
-          # Specify your JAR files
-          files: versions/1.12.2/build/libs/*.jar
-
-          # Game versions and loaders
-          game-versions: 1.12.2
-          loaders: forge
