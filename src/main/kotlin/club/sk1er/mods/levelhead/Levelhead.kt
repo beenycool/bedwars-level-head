@@ -90,7 +90,7 @@ object Levelhead {
 
     const val MODID = "bedwars_levelhead"
     const val VERSION = "8.2.3"
-    private const val MODRINTH_PROJECT_SLUG = "levelhead"
+    private const val MODRINTH_PROJECT_SLUG = "bedwars-level-head"
     private const val MODRINTH_MOD_PAGE = "https://modrinth.com/mod/$MODRINTH_PROJECT_SLUG"
     private const val MODRINTH_API_BASE = "https://api.modrinth.com/v2"
     private const val TARGET_MC_VERSION = "1.8.9"
@@ -128,8 +128,7 @@ object Levelhead {
                     if (latestVersion == VERSION) {
                         return@use
                     }
-                    val encodedVersion = latestVersion.encodeForUrl()
-                    val downloadUrl = "$MODRINTH_MOD_PAGE/version/$encodedVersion"
+                    val downloadUrl = "$MODRINTH_MOD_PAGE/versions"
                     UMinecraft.getMinecraft().addScheduledTask {
                         EssentialAPI.getMinecraftUtil().sendMessage(
                             "${ChatColor.AQUA}[Levelhead]",
