@@ -94,7 +94,10 @@ class LevelheadCommand : Command("levelhead") {
 
     @SubCommand(value = "gui")
     fun handleGui() {
-        UMinecraft.getMinecraft().displayGuiScreen(LevelheadToggleScreen())
+        val minecraft = UMinecraft.getMinecraft()
+        minecraft.addScheduledTask {
+            minecraft.displayGuiScreen(LevelheadToggleScreen())
+        }
     }
 
     @SubCommand(value = "status")
