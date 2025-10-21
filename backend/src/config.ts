@@ -50,8 +50,8 @@ export const CLOUD_FLARE_TUNNEL = process.env.CLOUDFLARE_TUNNEL ?? '';
 
 const defaultCacheTtl = 45 * 60 * 1000;
 const rawCacheTtl = parseIntEnv('CACHE_TTL_MS', defaultCacheTtl);
-const minimumCacheTtl = 30 * 60 * 1000;
-const maximumCacheTtl = 60 * 60 * 1000;
+const minimumCacheTtl = 5 * 60 * 1000;
+const maximumCacheTtl = 180 * 60 * 1000;
 
 export const CACHE_TTL_MS = Math.min(Math.max(rawCacheTtl, minimumCacheTtl), maximumCacheTtl);
 
