@@ -1,7 +1,7 @@
 {
   "required": true,
   "minVersion": "0.7.11",
-  "package": "me.truffle.bedwarslevelhead.mixins",
+  "package": "me.beeny.bedwarslevelhead.mixins",
   "refmap": "mixins.bedwarslevelhead.refmap.json",
   "compatibilityLevel": "JAVA_8",
   "client": [

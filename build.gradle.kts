@@ -34,7 +34,7 @@ blossom {
 version = mod_version
 // Sets the group, make sure to change this to your own. It can be a website you own backwards or your GitHub username.
 // e.g. com.github.<your username> or com.<your domain>
-group = "me.truffle"
+group = "me.beeny"
 
 // Sets the name of the output jar (the one you put in your mods folder and send to other people)
 // It outputs all versions of the mod into the `versions/{mcVersion}/build` directory.
@@ -74,6 +74,10 @@ val modShade: Configuration by configurations.creating {
     configurations.modImplementation.get().extendsFrom(this)
 }
 
+configurations {
+    getByName("compileOnly").extendsFrom(getByName("modCompileOnly"))
+}
+
 // Configures the output directory for when building from the `src/resources` directory.
 sourceSets {
     main {
@@ -84,6 +88,7 @@ sourceSets {
 // Adds the Polyfrost maven repository so that we can get the libraries necessary to develop the mod.
 repositories {
     maven("https://repo.polyfrost.org/releases")
+    mavenCentral()
 }
 
 // Configures the libraries/dependencies for your mod.
@@ -91,14 +96,15 @@ dependencies {
     // Adds the OneConfig library, so we can develop with it.
     modCompileOnly("cc.polyfrost:oneconfig-$platform:0.2.2-alpha+")
 
-    // Adds DevAuth, which we can use to log in to Minecraft in development.
-    modRuntimeOnly("me.djtheredstoner:DevAuth-${if (platform.isFabric) "fabric" else if (platform.isLegacyForge) "forge-legacy" else "forge-latest"}:1.2.0")
-
     // If we are building for legacy forge, includes the launch wrapper with `shade` as we configured earlier, as well as mixin 0.7.11
     if (platform.isLegacyForge) {
         compileOnly("org.spongepowered:mixin:0.7.11-SNAPSHOT")
         shade("cc.polyfrost:oneconfig-wrapper-launchwrapper:1.0.0-beta17")
     }
+
+    testImplementation("org.jetbrains.kotlin:kotlin-test-junit:1.9.10")
+    testImplementation("junit:junit:4.13.2")
+
 }
 
 tasks {
@@ -107,14 +113,10 @@ tasks {
     processResources {
         inputs.property("id", mod_id)
         inputs.property("name", mod_name)
-        val java = if (project.platform.mcMinor >= 18) {
-            17 // If we are playing on version 1.18, set the java version to 17
-        } else {
-            // Else if we are playing on version 1.17, use java 16.
-            if (project.platform.mcMinor == 17)
-                16
-            else
-                8 // For all previous versions, we **need** java 8 (for Forge support).
+        val java = when {
+            project.platform.mcMinor >= 18 -> 17 // If we are playing on version 1.18, set the java version to 17
+            project.platform.mcMinor == 17 -> 16 // Else if we are playing on version 1.17, use java 16.
+            else -> 8 // For all previous versions, we **need** java 8 (for Forge support).
         }
         val compatLevel = "JAVA_${java}"
         inputs.property("java", java)

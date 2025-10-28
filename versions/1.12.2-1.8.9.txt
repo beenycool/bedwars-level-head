@@ -1,3 +1,0 @@
-net.minecraft.util.text.event.ClickEvent net.minecraft.event.ClickEvent
-net.minecraft.util.text.event.HoverEvent net.minecraft.event.HoverEvent
-net.minecraft.util.text.TextComponentString net.minecraft.util.ChatComponentText

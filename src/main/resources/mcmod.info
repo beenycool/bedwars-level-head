@@ -1,10 +1,12 @@
-{
-  "modid": "bedwarslevelhead",
-  "name": "BedWars Level Head",
-  "description": "Displays BedWars levels above player heads using OneConfig",
-  "version": "2.0.0",
-  "mcversion": "1.8.9",
-  "author": "Truffle",
-  "url": "https://github.com/ooTruffle/bedwars-level-head",
-  "dependencies": ["oneconfig"]
-}
+[
+  {
+    "modid": "bedwarslevelhead",
+    "name": "BedWars Level Head",
+    "description": "Displays BedWars levels above player heads using OneConfig",
+    "version": "${version}",
+    "mcversion": "1.8.9",
+    "author": "beenycool",
+    "dependencies": ["required-after:oneconfig"],
+    "url": "https://github.com/beenycool/bedwars-level-head"
+  }
+]

@@ -5,26 +5,19 @@ All other features from the original Levelhead have been removed to ensure the m
 
 
 ### Getting Started
-currently still waiting for a hypixel api key 
 
-1.  Log in to the Hypixel network (`mc.hypixel.net`).
-2.  boom
-#### Commands (not needed unless error or something)
+1. Install the mod and launch the game.
+2. Open the config via the command `/bedwarslevel` (aliases: `/bwl`, `/bedwarslvl`) or through the OneConfig menu and customize display settings.
 
-*   `/levelhead`
-    *    Shows a short help message explaining how to configure the mod.
+#### Commands
 
-*   `/levelhead apikey <key>`
-    *    Stores your Hypixel API key to allow the mod to fetch BedWars statistics. The `<key>` should be replaced with the key you get from requesting the developer api key from Hypixel if the backend is down. Dashes in the key are optional.
+Currently implemented:
 
-*   `/levelhead apikey clear`
-    *    Removes the Hypixel API key that is currently stored in the mod's configuration.
+- `/(bedwarslevel|bwl|bedwarslvl)` opens the OneConfig menu for this mod.
 
-*   `/levelhead clearapikey`
-    *    This is an alias (a shortcut) for the `/levelhead apikey clear` command. It does the exact same thing.
+Planned (not yet implemented):
 
-*   `/levelhead reload`
-    *    Clears all cached BedWars stars and forces the mod to re-request the data for all players currently visible on your screen. This is useful if data seems outdated or incorrect.
+- `/levelhead apikey <key>` and related subcommands. These are not available in the client. The backend handles API access; client-side key storage will be added only if needed.
 ---
 
 ### Configuration
