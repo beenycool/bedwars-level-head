@@ -129,7 +129,9 @@ class LevelheadCommand : Command("levelhead") {
     fun handleMod(state: String) {
         val toggle = parseToggle(state)
         if (toggle == null) {
-            sendMessage("${ChatColor.RED}Usage: ${ChatColor.GOLD}/levelhead mod <on|off>")
+            sendMessage(
+                "${ChatColor.RED}Couldn't understand '$state'.${ChatColor.YELLOW} Toggle the mod with ${ChatColor.GOLD}/levelhead mod <on|off>${ChatColor.YELLOW}. Current state: ${formatToggle(Levelhead.displayManager.config.enabled)}${ChatColor.YELLOW}."
+            )
             return
         }
         updateEnabledState(toggle)
@@ -179,8 +181,9 @@ class LevelheadCommand : Command("levelhead") {
         val sanitized = minutesInput.trim()
         val parsed = sanitized.toIntOrNull()
         if (parsed == null) {
+            val current = LevelheadConfig.starCacheTtlMinutes
             sendMessage(
-                "${ChatColor.RED}Invalid TTL. Provide the number of minutes between ${LevelheadConfig.MIN_STAR_CACHE_TTL_MINUTES} and ${LevelheadConfig.MAX_STAR_CACHE_TTL_MINUTES}."
+                "${ChatColor.RED}Couldn't read '$minutesInput'.${ChatColor.YELLOW} Choose a number of minutes between ${ChatColor.GOLD}${LevelheadConfig.MIN_STAR_CACHE_TTL_MINUTES}${ChatColor.YELLOW} and ${ChatColor.GOLD}${LevelheadConfig.MAX_STAR_CACHE_TTL_MINUTES}${ChatColor.YELLOW}. Current TTL: ${ChatColor.GOLD}$current${ChatColor.YELLOW}."
             )
             return
         }
@@ -194,6 +197,7 @@ class LevelheadCommand : Command("levelhead") {
     @SubCommand(value = "display")
     fun handleDisplay(vararg args: String) {
         if (args.isEmpty()) {
+            sendDisplayOverview()
             sendDisplayUsage()
             return
         }
@@ -201,7 +205,10 @@ class LevelheadCommand : Command("levelhead") {
             "header" -> handleDisplayHeader(args.drop(1).toTypedArray())
             "offset" -> handleDisplayOffset(args.drop(1).toTypedArray())
             "showself" -> handleDisplayShowSelf(args.drop(1).toTypedArray())
-            else -> sendDisplayUsage()
+            else -> {
+                sendMessage("${ChatColor.RED}Unknown display option '${args[0]}'.")
+                sendDisplayUsage()
+            }
         }
     }
 
@@ -214,9 +221,7 @@ class LevelheadCommand : Command("levelhead") {
                 else -> "${ChatColor.GREEN}configured"
             }
             sendMessage("${ChatColor.YELLOW}Proxy is currently $status${ChatColor.YELLOW}.")
-            sendMessage(
-                "${ChatColor.GRAY}Usage: ${ChatColor.GOLD}/levelhead proxy <enable|disable|url|token>"
-            )
+            sendProxyHelp()
             return
         }
 
@@ -234,12 +239,17 @@ class LevelheadCommand : Command("levelhead") {
             "url" -> {
                 val url = args.getOrNull(1)?.trim()
                 if (url.isNullOrEmpty()) {
-                    sendMessage("${ChatColor.RED}Usage: ${ChatColor.GOLD}/levelhead proxy url <baseUrl>")
+                    val current = LevelheadConfig.proxyBaseUrl.ifBlank { "not set" }
+                    sendMessage(
+                        "${ChatColor.RED}Provide the proxy base URL.${ChatColor.YELLOW} Current URL: ${ChatColor.GOLD}$current${ChatColor.YELLOW}. Try ${ChatColor.GOLD}/levelhead proxy url <baseUrl>${ChatColor.YELLOW}."
+                    )
                     return
                 }
                 val parsed = HttpUrl.parse(url)
                 if (parsed == null || parsed.scheme() !in setOf("http", "https")) {
-                    sendMessage("${ChatColor.RED}Invalid proxy base URL. Provide an http or https URL.")
+                    sendMessage(
+                        "${ChatColor.RED}Invalid proxy base URL.${ChatColor.YELLOW} Use an http or https address like ${ChatColor.GOLD}https://example.com${ChatColor.YELLOW}."
+                    )
                     return
                 }
                 val sanitized = parsed.newBuilder()
@@ -255,26 +265,35 @@ class LevelheadCommand : Command("levelhead") {
             "token" -> {
                 val token = args.getOrNull(1)?.trim()
                 if (token.isNullOrEmpty()) {
-                    sendMessage("${ChatColor.RED}Usage: ${ChatColor.GOLD}/levelhead proxy token <token>")
+                    val currentState = if (LevelheadConfig.proxyAuthToken.isBlank()) "not set" else "configured"
+                    sendMessage(
+                        "${ChatColor.RED}Provide the proxy auth token.${ChatColor.YELLOW} Current token: ${ChatColor.GOLD}$currentState${ChatColor.YELLOW}. Use ${ChatColor.GOLD}/levelhead proxy token <token>${ChatColor.YELLOW}."
+                    )
                     return
                 }
                 LevelheadConfig.setProxyAuthToken(token)
                 sendMessage("${ChatColor.GREEN}Updated proxy token.")
                 resetBedwarsFetcher()
             }
-            else -> sendMessage("${ChatColor.RED}Usage: ${ChatColor.GOLD}/levelhead proxy <enable|disable|url|token>")
+            else -> {
+                sendMessage("${ChatColor.RED}Unknown proxy option '${args[0]}'.")
+                sendProxyHelp()
+            }
         }
     }
 
     @SubCommand(value = "admin")
     fun handleAdmin(vararg args: String) {
         if (args.isEmpty()) {
-            sendMessage("${ChatColor.RED}Usage: ${ChatColor.GOLD}/levelhead admin purgecache [player]")
+            sendAdminHelp()
             return
         }
         when (args[0].lowercase(Locale.ROOT)) {
             "purgecache" -> handleAdminPurgeCache(args.drop(1).toTypedArray())
-            else -> sendMessage("${ChatColor.RED}Usage: ${ChatColor.GOLD}/levelhead admin purgecache [player]")
+            else -> {
+                sendMessage("${ChatColor.RED}Unknown admin action '${args[0]}'.")
+                sendAdminHelp()
+            }
         }
     }
 
@@ -282,7 +301,9 @@ class LevelheadCommand : Command("levelhead") {
     fun handleWhois(vararg args: String) {
         val identifier = args.joinToString(" ").trim()
         if (identifier.isEmpty()) {
-            sendMessage("${ChatColor.RED}Usage: ${ChatColor.GOLD}/levelhead whois <player|uuid>")
+            sendMessage(
+                "${ChatColor.RED}Tell me who to inspect.${ChatColor.YELLOW} Run ${ChatColor.GOLD}/levelhead whois <player|uuid>${ChatColor.YELLOW} using an in-game name, UUID, or someone nearby."
+            )
             return
         }
 
@@ -325,14 +346,14 @@ class LevelheadCommand : Command("levelhead") {
 
     private fun handleDisplayHeader(args: Array<String>) {
         if (args.isEmpty()) {
-            sendMessage("${ChatColor.RED}Usage: ${ChatColor.GOLD}/levelhead display header <text|color|chroma> ...")
+            sendDisplayHeaderDetails()
             return
         }
         when (args[0].lowercase(Locale.ROOT)) {
             "text" -> {
                 val text = args.drop(1).joinToString(" ").trim()
                 if (text.isEmpty()) {
-                    sendMessage("${ChatColor.RED}Header text cannot be empty.")
+                    sendMessage("${ChatColor.RED}Header text cannot be empty.${ChatColor.YELLOW} Current header: ${ChatColor.GOLD}${currentHeaderText()}${ChatColor.YELLOW}.")
                     return
                 }
                 val sanitized = text.take(48)
@@ -351,12 +372,14 @@ class LevelheadCommand : Command("levelhead") {
             "color" -> {
                 val colorInput = args.getOrNull(1)?.trim()
                 if (colorInput.isNullOrEmpty()) {
-                    sendMessage("${ChatColor.RED}Usage: ${ChatColor.GOLD}/levelhead display header color <color>")
+                    sendDisplayHeaderColorHelp()
                     return
                 }
                 val color = parseColor(colorInput)
                 if (color == null) {
-                    sendMessage("${ChatColor.RED}Unable to parse color '$colorInput'. Use a hex code (e.g. #ff00ff), RGB (r,g,b), or a Minecraft color name.")
+                    sendMessage(
+                        "${ChatColor.RED}Unable to parse color '$colorInput'.${ChatColor.YELLOW} Try a hex code (e.g. ${ChatColor.GOLD}#ff00ff${ChatColor.YELLOW}), RGB (r,g,b), or a Minecraft color name.${ChatColor.YELLOW} Current header color: ${ChatColor.GOLD}${formatColor(currentHeaderColor())}${ChatColor.YELLOW}."
+                    )
                     return
                 }
                 val changed = Levelhead.displayManager.updatePrimaryDisplay { config ->
@@ -374,7 +397,9 @@ class LevelheadCommand : Command("levelhead") {
             "chroma" -> {
                 val toggle = args.getOrNull(1)?.let { parseToggle(it) }
                 if (toggle == null) {
-                    sendMessage("${ChatColor.RED}Usage: ${ChatColor.GOLD}/levelhead display header chroma <on|off>")
+                    sendMessage(
+                        "${ChatColor.RED}Specify whether chroma should be on or off.${ChatColor.YELLOW} Current setting: ${formatToggle(currentHeaderChroma())}${ChatColor.YELLOW}."
+                    )
                     return
                 }
                 val changed = Levelhead.displayManager.updatePrimaryDisplay { config ->
@@ -389,7 +414,12 @@ class LevelheadCommand : Command("levelhead") {
                     sendMessage("${ChatColor.YELLOW}Header chroma already ${if (toggle) "enabled" else "disabled"}.")
                 }
             }
-            else -> sendMessage("${ChatColor.RED}Usage: ${ChatColor.GOLD}/levelhead display header <text|color|chroma> ...")
+            else -> {
+                sendMessage(
+                    "${ChatColor.RED}Unknown header option '${args[0]}'."
+                )
+                sendDisplayHeaderDetails()
+            }
         }
     }
 
@@ -397,7 +427,7 @@ class LevelheadCommand : Command("levelhead") {
         val valueRaw = args.getOrNull(0)?.trim()
         val parsed = valueRaw?.toDoubleOrNull()
         if (parsed == null) {
-            sendMessage("${ChatColor.RED}Usage: ${ChatColor.GOLD}/levelhead display offset <value>")
+            sendDisplayOffsetDetails()
             return
         }
         val clamped = parsed.coerceIn(MIN_DISPLAY_OFFSET, MAX_DISPLAY_OFFSET)
@@ -412,9 +442,15 @@ class LevelheadCommand : Command("levelhead") {
     }
 
     private fun handleDisplayShowSelf(args: Array<String>) {
+        if (args.isEmpty()) {
+            sendDisplayShowSelfDetails()
+            return
+        }
         val toggle = args.getOrNull(0)?.let { parseToggle(it) }
         if (toggle == null) {
-            sendMessage("${ChatColor.RED}Usage: ${ChatColor.GOLD}/levelhead display showself <on|off>")
+            sendMessage(
+                "${ChatColor.RED}Couldn't understand '${args[0]}'.${ChatColor.YELLOW} Use ${ChatColor.GOLD}/levelhead display showself <on|off>${ChatColor.YELLOW}. Current setting: ${formatToggle(currentShowSelf())}${ChatColor.YELLOW}."
+            )
             return
         }
         val changed = Levelhead.displayManager.updatePrimaryDisplay { config ->
@@ -468,6 +504,27 @@ class LevelheadCommand : Command("levelhead") {
         BedwarsFetcher.resetWarnings()
     }
 
+    private fun sendProxyHelp() {
+        val baseUrl = LevelheadConfig.proxyBaseUrl.ifBlank { "not set" }
+        val tokenState = if (LevelheadConfig.proxyAuthToken.isBlank()) "not set" else "configured"
+        val enabledState = formatToggle(LevelheadConfig.proxyEnabled)
+        sendMessage(
+            "${ChatColor.GRAY}Options:${ChatColor.YELLOW} enable/disable toggle usage (${enabledState}${ChatColor.YELLOW}), url to set the backend (${ChatColor.GOLD}$baseUrl${ChatColor.YELLOW}), token to update auth (${ChatColor.GOLD}$tokenState${ChatColor.YELLOW})."
+        )
+        sendMessage(
+            "${ChatColor.GRAY}Try:${ChatColor.GOLD} /levelhead proxy enable${ChatColor.YELLOW}, ${ChatColor.GOLD}/levelhead proxy url https://example.com${ChatColor.YELLOW}, ${ChatColor.GOLD}/levelhead proxy token <token>${ChatColor.YELLOW}."
+        )
+    }
+
+    private fun sendAdminHelp() {
+        sendMessage(
+            "${ChatColor.YELLOW}Admin commands control the proxy cache.${ChatColor.GRAY} Available: ${ChatColor.GOLD}purgecache [player]${ChatColor.GRAY} to clear cached stats globally or for a specific player."
+        )
+        sendMessage(
+            "${ChatColor.GRAY}Example:${ChatColor.GOLD} /levelhead admin purgecache${ChatColor.YELLOW} (all) or ${ChatColor.GOLD}/levelhead admin purgecache Notch${ChatColor.YELLOW}."
+        )
+    }
+
     private fun sendStatus(message: String) {
         EssentialAPI.getMinecraftUtil().sendMessage("${ChatColor.AQUA}[Levelhead]", message)
     }
@@ -502,10 +559,71 @@ class LevelheadCommand : Command("levelhead") {
         EssentialAPI.getMinecraftUtil().sendMessage("${ChatColor.AQUA}[Levelhead]", message)
     }
 
+    private fun sendDisplayOverview() {
+        val primaryDisplay = Levelhead.displayManager.primaryDisplay()
+        val headerText = primaryDisplay?.config?.headerString ?: BedwarsModeDetector.DEFAULT_HEADER
+        val headerColor = primaryDisplay?.config?.headerColor ?: ChatColor.AQUA.color!!
+        val headerChroma = primaryDisplay?.config?.headerChroma ?: false
+        val showSelf = primaryDisplay?.config?.showSelf ?: true
+        val offset = Levelhead.displayManager.config.offset
+
+        sendMessage(
+            "${ChatColor.YELLOW}Primary header: ${ChatColor.GOLD}$headerText${ChatColor.YELLOW} (${ChatColor.GOLD}${formatColor(headerColor)}${ChatColor.YELLOW}, chroma ${formatToggle(headerChroma)}${ChatColor.YELLOW})."
+        )
+        sendMessage(
+            "${ChatColor.YELLOW}Display offset: ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", offset)}${ChatColor.YELLOW}, show self ${formatToggle(showSelf)}${ChatColor.YELLOW}."
+        )
+    }
+
     private fun sendDisplayUsage() {
         sendMessage(
-            "${ChatColor.RED}Usage: ${ChatColor.GOLD}/levelhead display header <text|color|chroma>${ChatColor.RED}, ${ChatColor.GOLD}/levelhead display offset <value>${ChatColor.RED}, ${ChatColor.GOLD}/levelhead display showself <on|off>"
+            "${ChatColor.GRAY}Use ${ChatColor.GOLD}/levelhead display header <text|color|chroma>${ChatColor.GRAY}, ${ChatColor.GOLD}/levelhead display offset <value>${ChatColor.GRAY}, ${ChatColor.GOLD}/levelhead display showself <on|off>${ChatColor.GRAY} to make changes."
         )
+    }
+
+    private fun sendDisplayHeaderDetails() {
+        sendMessage(
+            "${ChatColor.YELLOW}Current header text: ${ChatColor.GOLD}${currentHeaderText()}${ChatColor.YELLOW}. Use ${ChatColor.GOLD}/levelhead display header text <value>${ChatColor.YELLOW} to change it."
+        )
+        sendDisplayHeaderColorHelp()
+        sendMessage(
+            "${ChatColor.YELLOW}Header chroma: ${formatToggle(currentHeaderChroma())}${ChatColor.YELLOW}. Use ${ChatColor.GOLD}/levelhead display header chroma <on|off>${ChatColor.YELLOW} to toggle it."
+        )
+    }
+
+    private fun sendDisplayHeaderColorHelp() {
+        sendMessage(
+            "${ChatColor.YELLOW}Current header color: ${ChatColor.GOLD}${formatColor(currentHeaderColor())}${ChatColor.YELLOW}. Use ${ChatColor.GOLD}/levelhead display header color <color>${ChatColor.YELLOW} with a hex code, RGB value, or Minecraft color name."
+        )
+    }
+
+    private fun sendDisplayOffsetDetails() {
+        val offset = Levelhead.displayManager.config.offset
+        sendMessage(
+            "${ChatColor.YELLOW}Current display offset: ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", offset)}${ChatColor.YELLOW}. Provide a value between ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.1f", MIN_DISPLAY_OFFSET)}${ChatColor.YELLOW} and ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.1f", MAX_DISPLAY_OFFSET)}${ChatColor.YELLOW}."
+        )
+    }
+
+    private fun sendDisplayShowSelfDetails() {
+        sendMessage(
+            "${ChatColor.YELLOW}Self display visibility is currently ${formatToggle(currentShowSelf())}${ChatColor.YELLOW}. Use ${ChatColor.GOLD}/levelhead display showself <on|off>${ChatColor.YELLOW} to change it."
+        )
+    }
+
+    private fun currentHeaderText(): String {
+        return Levelhead.displayManager.primaryDisplay()?.config?.headerString ?: BedwarsModeDetector.DEFAULT_HEADER
+    }
+
+    private fun currentHeaderColor(): Color {
+        return Levelhead.displayManager.primaryDisplay()?.config?.headerColor ?: ChatColor.AQUA.color!!
+    }
+
+    private fun currentHeaderChroma(): Boolean {
+        return Levelhead.displayManager.primaryDisplay()?.config?.headerChroma ?: false
+    }
+
+    private fun currentShowSelf(): Boolean {
+        return Levelhead.displayManager.primaryDisplay()?.config?.showSelf ?: true
     }
 
     private fun formatToggle(value: Boolean): String {
