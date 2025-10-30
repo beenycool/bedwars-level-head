@@ -27,15 +27,12 @@ if (typeof cleanupTimer.unref === 'function') {
 }
 
 function getBucketKey(req: Request): string {
-  // This middleware is only used on authenticated routes, so installId should always be defined
-  // But we add a fallback for type safety
-  if (!req.installId) {
-    throw new Error('installId is required for authenticated rate limiting');
-  }
-  return req.installId;
+  // Use req.ip (set by Express trust proxy) or fallback to socket address
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  return `public:${ip}`;
 }
 
-export function enforceRateLimit(req: Request, res: Response, next: NextFunction): void {
+export function enforcePublicRateLimit(req: Request, res: Response, next: NextFunction): void {
   const now = Date.now();
   const key = getBucketKey(req);
   const bucket = buckets.get(key);

@@ -47,6 +47,7 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use('/api/public/player', playerPublicRouter);
 app.use('/api/player', playerRouter);
 app.use('/api/admin', adminRouter);
 app.use('/stats', statsRouter);

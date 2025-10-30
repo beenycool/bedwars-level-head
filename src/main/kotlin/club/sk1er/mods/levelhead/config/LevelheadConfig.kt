@@ -72,10 +72,15 @@ object LevelheadConfig {
             apiKeyProperty.set(persistedKey)
         }
 
-        val proxyEnabledProperty = configuration.get(CATEGORY_GENERAL, PROPERTY_PROXY_ENABLED, false, PROXY_ENABLED_COMMENT)
+        val proxyEnabledProperty = configuration.get(CATEGORY_GENERAL, PROPERTY_PROXY_ENABLED, true, PROXY_ENABLED_COMMENT)
         proxyEnabled = proxyEnabledProperty.boolean
 
-        val proxyBaseUrlProperty = configuration.get(CATEGORY_GENERAL, PROPERTY_PROXY_BASE_URL, "", PROXY_BASE_URL_COMMENT)
+        val proxyBaseUrlProperty = configuration.get(
+            CATEGORY_GENERAL,
+            PROPERTY_PROXY_BASE_URL,
+            "http://beeny.hackclub.app",
+            PROXY_BASE_URL_COMMENT
+        )
         proxyBaseUrl = proxyBaseUrlProperty.string.trim()
 
         val proxyAuthTokenProperty = configuration.get(CATEGORY_GENERAL, PROPERTY_PROXY_AUTH_TOKEN, "", PROXY_AUTH_TOKEN_COMMENT)
