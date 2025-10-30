@@ -200,13 +200,20 @@ async function fetchByIgn(ign: string): Promise<ResolvedPlayer> {
   const now = Date.now();
   if (cacheEntry && cacheEntry.expiresAt > now) {
     const payload = cacheEntry.value;
+    const payloadPlayer = (payload as Record<string, unknown> | undefined)?.player;
+    const payloadUuidRaw =
+      payloadPlayer && typeof payloadPlayer === 'object' && typeof (payloadPlayer as Record<string, unknown>).uuid === 'string'
+        ? ((payloadPlayer as Record<string, unknown>).uuid as string)
+        : null;
+    const payloadUuid = payloadUuidRaw ? payloadUuidRaw.replace(/-/g, '').toLowerCase() : null;
+
     const resolved: ResolvedPlayer = {
       payload,
       etag: cacheEntry.etag,
       lastModified: cacheEntry.lastModified,
       source: 'cache',
       revalidated: false,
-      uuid: null,
+      uuid: payloadUuid,
       username: extractDisplayName(payload) ?? normalizedIgn,
       lookupType: 'ign',
       lookupValue: normalizedIgn,

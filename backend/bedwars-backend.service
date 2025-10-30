@@ -4,9 +4,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/beeny/bedwars-level-head/backend
-Environment=PORT=44525
-EnvironmentFile=/home/beeny/bedwars-level-head/backend/.env
+WorkingDirectory=/srv/bedwars-level-head/backend
+EnvironmentFile=/srv/bedwars-level-head/backend/.env
 ExecStart=/usr/bin/node dist/index.js
 Restart=always
 RestartSec=10

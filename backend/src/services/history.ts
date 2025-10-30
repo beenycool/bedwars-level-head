@@ -1,4 +1,3 @@
-import { PoolClient } from 'pg';
 import { pool } from './cache';
 
 interface PlayerQueryHistoryRow {
@@ -83,56 +82,45 @@ const initialization = (async () => {
   }
 })();
 
-async function withClient<T>(fn: (client: PoolClient) => Promise<T>): Promise<T> {
-  const client = await pool.connect();
-  try {
-    return await fn(client);
-  } finally {
-    client.release();
-  }
-}
-
 async function ensureInitialized(): Promise<void> {
   await initialization;
 }
 
 export async function recordPlayerQuery(record: PlayerQueryRecord): Promise<void> {
   await ensureInitialized();
-  await withClient(async (client) => {
-    await client.query(
-      `
-        INSERT INTO player_query_history (
-          identifier,
-          normalized_identifier,
-          lookup_type,
-          resolved_uuid,
-          resolved_username,
-          stars,
-          nicked,
-          cache_source,
-          cache_hit,
-          revalidated,
-          install_id,
-          response_status
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-      `,
-      [
-        record.identifier,
-        record.normalizedIdentifier,
-        record.lookupType,
-        record.resolvedUuid,
-        record.resolvedUsername,
-        record.stars,
-        record.nicked,
-        record.cacheSource,
-        record.cacheHit,
-        record.revalidated,
-        record.installId,
-        record.responseStatus,
-      ],
-    );
-  });
+  await pool.query(
+    `
+      INSERT INTO player_query_history (
+        identifier,
+        normalized_identifier,
+        lookup_type,
+        resolved_uuid,
+        resolved_username,
+        stars,
+        nicked,
+        cache_source,
+        cache_hit,
+        revalidated,
+        install_id,
+        response_status
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+    `,
+    [
+      record.identifier,
+      record.normalizedIdentifier,
+      record.lookupType,
+      record.resolvedUuid,
+      record.resolvedUsername,
+      record.stars,
+      record.nicked,
+      record.cacheSource,
+      record.cacheHit,
+      record.revalidated,
+      record.installId,
+      record.responseStatus,
+    ],
+  );
 }
 
 export async function getRecentPlayerQueries(limit = 50): Promise<PlayerQuerySummary[]> {
