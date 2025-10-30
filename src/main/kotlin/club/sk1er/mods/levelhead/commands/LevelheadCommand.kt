@@ -16,6 +16,7 @@ import gg.essential.universal.ChatColor
 import gg.essential.universal.UMinecraft
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import net.minecraft.entity.player.EntityPlayer
 import okhttp3.HttpUrl
@@ -27,6 +28,7 @@ import java.util.Locale
 import java.util.UUID
 import kotlin.math.abs
 import kotlin.text.RegexOption
+import kotlin.coroutines.resume
 
 class LevelheadCommand : Command("levelhead") {
 
@@ -240,7 +242,12 @@ class LevelheadCommand : Command("levelhead") {
                     sendMessage("${ChatColor.RED}Invalid proxy base URL. Provide an http or https URL.")
                     return
                 }
-                val sanitized = parsed.newBuilder().encodedPath("/").build().toString().trimEnd('/')
+                val sanitized = parsed.newBuilder()
+                    .query(null)
+                    .fragment(null)
+                    .build()
+                    .toString()
+                    .trimEnd('/')
                 LevelheadConfig.setProxyBaseUrl(sanitized)
                 sendMessage("${ChatColor.GREEN}Updated proxy base URL to ${ChatColor.GOLD}$sanitized${ChatColor.GREEN}.")
                 resetBedwarsFetcher()
@@ -284,12 +291,10 @@ class LevelheadCommand : Command("levelhead") {
             try {
                 val result = lookupWhois(identifier)
                 UMinecraft.getMinecraft().addScheduledTask {
-                    val prefix = "${ChatColor.AQUA}[Levelhead]"
                     val starText = result.star?.let { "${ChatColor.GOLD}$it✪" } ?: "${ChatColor.RED}?"
-                    val experienceText = result.experience?.let { "${ChatColor.GOLD}${it}" } ?: "${ChatColor.GRAY}unknown"
+                    val experienceText = result.experience?.let { "${ChatColor.GOLD}$it" } ?: "${ChatColor.GRAY}unknown"
                     val nickedText = if (result.nicked) " ${ChatColor.GRAY}(nicked)" else ""
-                    EssentialAPI.getMinecraftUtil().sendMessage(
-                        prefix,
+                    sendMessage(
                         "${ChatColor.YELLOW}${result.displayName}$nickedText ${ChatColor.YELLOW}is $starText ${ChatColor.YELLOW}(${ChatColor.AQUA}${result.source}${ChatColor.YELLOW}, XP: $experienceText)"
                     )
                 }
@@ -429,7 +434,12 @@ class LevelheadCommand : Command("levelhead") {
             sendMessage("${ChatColor.RED}Proxy must be enabled and configured to purge the backend cache.")
             return
         }
-        val identifier = args.joinToString(" ").trim().takeIf { it.isNotEmpty() }
+        val identifier = args.joinToString(" ").trim()
+            .takeIf { it.isNotEmpty() }
+            ?.let { raw ->
+                val collapsed = raw.replace("-", "")
+                if (UUID_NO_DASH_PATTERN.matches(collapsed)) collapsed.lowercase(Locale.ROOT) else raw
+            }
 
         Levelhead.scope.launch {
             try {
@@ -630,13 +640,7 @@ class LevelheadCommand : Command("levelhead") {
             return null
         }
 
-        val world = UMinecraft.getWorld()
-        val localMatch = world?.playerEntities
-            ?.asSequence()
-            ?.mapNotNull { it as? EntityPlayer }
-            ?.firstOrNull { player ->
-                player.name.equals(trimmed, true) || player.gameProfile?.name?.equals(trimmed, true) == true
-            }
+        val localMatch = resolveLocalPlayer(trimmed)
         if (localMatch != null) {
             return ResolvedIdentifier(localMatch.uniqueID, localMatch.name)
         }
@@ -659,6 +663,21 @@ class LevelheadCommand : Command("levelhead") {
             }
         }
         return null
+    }
+
+    private suspend fun resolveLocalPlayer(trimmed: String): EntityPlayer? = suspendCancellableCoroutine { continuation ->
+        val minecraft = UMinecraft.getMinecraft()
+
+        minecraft.addScheduledTask {
+            val match = UMinecraft.getWorld()
+                ?.playerEntities
+                ?.firstOrNull { player ->
+                    player.name.equals(trimmed, true) || player.gameProfile?.name?.equals(trimmed, true) == true
+                }
+            if (continuation.isActive) {
+                continuation.resume(match)
+            }
+        }
     }
 
     private suspend fun lookupUuidForIgn(ign: String): Pair<UUID, String>? = withContext(Dispatchers.IO) {
