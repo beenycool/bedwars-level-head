@@ -5,8 +5,8 @@
     "description": "Displays a player's BedWars star above their head in Hypixel BedWars lobbies and matches.",
     "version": "${version}",
     "mcversion": "${mcVersionStr}",
-    "url": "https://modrinth.com/mod/bedwars-levelhead",
-    "updateUrl": "https://modrinth.com/mod/bedwars-levelhead",
+    "url": "https://modrinth.com/mod/bedwars-level-head",
+    "updateUrl": "https://modrinth.com/mod/bedwars-level-head/versions",
     "authorList": [
       "Sk1er",
       "boomboompower",
