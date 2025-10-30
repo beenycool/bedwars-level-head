@@ -8,16 +8,6 @@ BedWars Levelhead is a lightweight reimagining of the classic **Levelhead** mod 
 - Display headers, colors, chroma, and offsets update immediately thanks to refreshed display management helpers.
 - The backend tracks detailed lookup history, serves a `/stats` dashboard, and enforces smarter cache TTL bounds.
 
----
-
-### Key Features
-- ✪ **BedWars Stars Everywhere** – Always show the correct BedWars star above players, using the latest prestige palette and consistent math helpers shared with the backend.
-- ⚙️ **Chat-First Configuration** – Adjust header text, color, chroma, vertical offset, and self-visibility without ever leaving chat.
-- 🔍 **Rich Player Lookups** – Run `/levelhead whois <player|uuid>` to inspect BedWars stats via the configured proxy or a direct Hypixel call, with graceful error messaging.
-- 🛰️ **Proxy-Friendly** – Point the mod at the included proxy/backend, manage credentials from in-game commands, and flush cached lookups on demand.
-- 📊 **Operational Insights** – Backend operators get structured request logs, cache hit/miss reporting, TTL enforcement (1–24h), and a `/stats` HTML dashboard of recent lookups.
-
----
 
 ### Getting Started
 1. Install the mod just like any other Forge/LiteLoader mod compatible with your client.
