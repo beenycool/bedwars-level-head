@@ -156,6 +156,28 @@ class DisplayManager(val file: File) {
         }
     }
 
+    fun primaryDisplay(): AboveHeadDisplay? = aboveHead.firstOrNull()
+
+    fun updatePrimaryDisplay(mutator: (DisplayConfig) -> Boolean): Boolean {
+        val display = primaryDisplay() ?: return false
+        val changed = mutator(display.config)
+        if (!changed) {
+            return false
+        }
+        saveConfig()
+        return true
+    }
+
+    fun applyPrimaryDisplayConfigToCache() {
+        val display = primaryDisplay() ?: return
+        val headerValue = "${display.config.headerString}: "
+        display.cache.values.forEach { tag ->
+            tag.header.value = headerValue
+            tag.header.color = display.config.headerColor
+            tag.header.chroma = display.config.headerChroma
+        }
+    }
+
     fun setEnabled(enabled: Boolean): Boolean {
         if (config.enabled == enabled) {
             return false

@@ -89,7 +89,7 @@ object Levelhead {
     private var lastFetchSuccessAt: Long = 0L
 
     const val MODID = "bedwars_levelhead"
-    const val VERSION = "8.2.3"
+    const val VERSION = "8.3.0"
     private const val MODRINTH_PROJECT_SLUG = "bedwars-level-head"
     private const val MODRINTH_MOD_PAGE = "https://modrinth.com/mod/$MODRINTH_PROJECT_SLUG"
     private const val MODRINTH_API_BASE = "https://api.modrinth.com/v2"
