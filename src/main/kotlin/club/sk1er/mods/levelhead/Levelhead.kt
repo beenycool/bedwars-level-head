@@ -421,7 +421,7 @@ object Levelhead {
     private fun updateDisplayCache(display: LevelheadDisplay, uuid: UUID, starData: CachedBedwarsStar?) {
         if (!display.config.enabled) return
         val starValue = starData?.star
-        val starString = starValue?.let { "$it★" } ?: "?"
+        val starString = starValue?.let { "$it✪" } ?: "?"
         val footerTemplate = display.config.footerString
         val footerValue = footerTemplate?.replace("%star%", starString, true) ?: starString
         val style = starValue?.let { BedwarsStar.styleForStar(it) }
