@@ -22,6 +22,30 @@ export function clearInMemoryPlayerCache(): void {
   inFlightRequests.clear();
 }
 
+function extractDisplayName(payload: ProxyPlayerPayload): string | null {
+  if (payload.display && typeof payload.display === 'string') {
+    return payload.display;
+  }
+
+  const bedwars = payload.data?.bedwars ?? payload.bedwars;
+  if (bedwars && typeof bedwars === 'object') {
+    const candidate = (bedwars as Record<string, unknown>).displayname;
+    if (typeof candidate === 'string' && candidate.trim().length > 0) {
+      return candidate;
+    }
+  }
+
+  const player = payload.player as Record<string, unknown> | undefined;
+  if (player && typeof player.displayname === 'string') {
+    const candidate = player.displayname as string;
+    if (candidate.trim().length > 0) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
 function buildNickedPayload(): ProxyPlayerPayload {
   const display = '(nicked)';
   const bedwarsStats: Record<string, unknown> = {
@@ -76,6 +100,11 @@ export interface ResolvedPlayer {
   lastModified: number | null;
   source: 'cache' | 'network';
   revalidated: boolean;
+  uuid: string | null;
+  username: string | null;
+  lookupType: 'uuid' | 'ign';
+  lookupValue: string;
+  nicked: boolean;
 }
 
 async function fetchByUuid(uuid: string, conditional?: HypixelFetchOptions): Promise<ResolvedPlayer> {
@@ -89,12 +118,18 @@ async function fetchByUuid(uuid: string, conditional?: HypixelFetchOptions): Pro
   const cacheEntry = await getCacheEntry<ProxyPlayerPayload>(cacheKey, true);
   const now = Date.now();
   if (cacheEntry && cacheEntry.expiresAt > now) {
+    const payload = cacheEntry.value;
     const resolved: ResolvedPlayer = {
-      payload: cacheEntry.value,
+      payload,
       etag: cacheEntry.etag,
       lastModified: cacheEntry.lastModified,
       source: 'cache',
       revalidated: false,
+      uuid: normalizedUuid,
+      username: extractDisplayName(payload),
+      lookupType: 'uuid',
+      lookupValue: normalizedUuid,
+      nicked: payload.nicked === true,
     };
     setMemoized('player', normalizedUuid, resolved);
     return resolved;
@@ -108,13 +143,19 @@ async function fetchByUuid(uuid: string, conditional?: HypixelFetchOptions): Pro
   });
 
   if (response.notModified && cacheEntry) {
-    await setCachedPayload(cacheKey, cacheEntry.value, CACHE_TTL_MS, cacheMetadata);
+    const payload = cacheEntry.value;
+    await setCachedPayload(cacheKey, payload, CACHE_TTL_MS, cacheMetadata);
     const resolved: ResolvedPlayer = {
-      payload: cacheEntry.value,
+      payload,
       etag: cacheEntry.etag,
       lastModified: cacheEntry.lastModified,
       source: 'cache',
       revalidated: true,
+      uuid: normalizedUuid,
+      username: extractDisplayName(payload),
+      lookupType: 'uuid',
+      lookupValue: normalizedUuid,
+      nicked: payload.nicked === true,
     };
     setMemoized('player', normalizedUuid, resolved);
     return resolved;
@@ -137,6 +178,11 @@ async function fetchByUuid(uuid: string, conditional?: HypixelFetchOptions): Pro
     lastModified,
     source: 'network',
     revalidated: Boolean(cacheEntry),
+    uuid: normalizedUuid,
+    username: extractDisplayName(payload),
+    lookupType: 'uuid',
+    lookupValue: normalizedUuid,
+    nicked: payload.nicked === true,
   };
   setMemoized('player', normalizedUuid, resolved);
   return resolved;
@@ -153,12 +199,18 @@ async function fetchByIgn(ign: string): Promise<ResolvedPlayer> {
   const cacheEntry = await getCacheEntry<ProxyPlayerPayload>(ignCacheKey, true);
   const now = Date.now();
   if (cacheEntry && cacheEntry.expiresAt > now) {
+    const payload = cacheEntry.value;
     const resolved: ResolvedPlayer = {
-      payload: cacheEntry.value,
+      payload,
       etag: cacheEntry.etag,
       lastModified: cacheEntry.lastModified,
       source: 'cache',
       revalidated: false,
+      uuid: null,
+      username: extractDisplayName(payload) ?? normalizedIgn,
+      lookupType: 'ign',
+      lookupValue: normalizedIgn,
+      nicked: payload.nicked === true,
     };
     setMemoized('ign', normalizedIgn, resolved);
     return resolved;
@@ -174,12 +226,23 @@ async function fetchByIgn(ign: string): Promise<ResolvedPlayer> {
       lastModified: Date.now(),
       source: 'network',
       revalidated: false,
+      uuid: null,
+      username: normalizedIgn,
+      lookupType: 'ign',
+      lookupValue: normalizedIgn,
+      nicked: true,
     };
     setMemoized('ign', normalizedIgn, resolved);
     return resolved;
   }
 
-  const resolved = await fetchByUuid(profile.id);
+  const resolvedUuid = await fetchByUuid(profile.id);
+  const resolved: ResolvedPlayer = {
+    ...resolvedUuid,
+    lookupType: 'ign',
+    lookupValue: normalizedIgn,
+    username: profile.name ?? normalizedIgn,
+  };
   await setCachedPayload(ignCacheKey, resolved.payload, CACHE_TTL_MS, {
     etag: resolved.etag,
     lastModified: resolved.lastModified,
