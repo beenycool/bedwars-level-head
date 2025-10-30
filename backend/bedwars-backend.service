@@ -1,0 +1,17 @@
+[Unit]
+Description=Bedwars Level Head Backend
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/bedwars-level-head/backend
+EnvironmentFile=/srv/bedwars-level-head/backend/.env
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=10
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

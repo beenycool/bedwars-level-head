@@ -19,11 +19,12 @@ pipeline {
 
     stage('Report') {
       steps {
-        archiveArtifacts 'versions/1.8.9/build/libs/*.jar'
-//         archiveArtifacts 'versions/1.8.9-vanilla/build/libs/*.jar'
-        archiveArtifacts 'versions/1.12.2/build/libs/*.jar'
-//         archiveArtifacts 'versions/1.12.2-vanilla/build/libs/*.jar'
-//         archiveArtifacts 'versions/1.15.2/build/libs/*.jar'
+        archiveArtifacts artifacts: 'versions/1.8.9/build/libs/*.jar', allowEmptyArchive: false
+        // Additional versions can be re-enabled once the corresponding modules are included in settings.gradle.kts.
+        // archiveArtifacts 'versions/1.8.9-vanilla/build/libs/*.jar'
+        // archiveArtifacts 'versions/1.12.2/build/libs/*.jar'
+        // archiveArtifacts 'versions/1.12.2-vanilla/build/libs/*.jar'
+        // archiveArtifacts 'versions/1.15.2/build/libs/*.jar'
       }
     }
     stage('Notify') {

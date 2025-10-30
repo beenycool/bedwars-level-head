@@ -16,7 +16,7 @@ The backend uses environment variables for all secrets and tunables:
 | `HOST` | ❌ | Host/IP to bind to (defaults to `0.0.0.0`). |
 | `HYPIXEL_API_BASE_URL` | ❌ | Override for Hypixel API base URL. |
 | `CLOUDFLARE_TUNNEL` | ❌ | Optional Cloudflare Tunnel URL printed on boot. |
-| `CACHE_TTL_MS` | ❌ | Cache lifetime in milliseconds (defaults to 2 hours, clamped between 1-3 hours). |
+| `CACHE_TTL_MS` | ❌ | Cache lifetime in milliseconds (defaults to 45 minutes, clamped between 5-180 minutes). |
 | `CACHE_DB_URL` | ✅ | PostgreSQL connection string for the response cache database. |
 
 Set these variables in your deployment environment (or a `.env` file for local testing). When connecting to the shared Nest

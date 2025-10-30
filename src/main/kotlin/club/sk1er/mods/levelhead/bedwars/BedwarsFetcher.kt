@@ -14,8 +14,10 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.text.RegexOption
 
 object BedwarsFetcher {
     private const val HYPIXEL_PLAYER_ENDPOINT = "https://api.hypixel.net/player"
@@ -36,7 +38,8 @@ object BedwarsFetcher {
     fun fetchPlayer(uuid: UUID, lastFetchedAt: Long?): FetchResult {
         var fallback: FetchResult? = null
         if (shouldUseProxy()) {
-            when (val proxyResult = fetchFromProxy(uuid, lastFetchedAt)) {
+            val identifier = uuid.toString().replace("-", "")
+            when (val proxyResult = fetchProxy(identifier, lastFetchedAt)) {
                 is FetchResult.Success, FetchResult.NotModified -> return proxyResult
                 else -> fallback = proxyResult
             }
@@ -47,6 +50,13 @@ object BedwarsFetcher {
             is FetchResult.Success, FetchResult.NotModified -> hypixelResult
             else -> fallback ?: hypixelResult
         }
+    }
+
+    fun fetchProxyPlayer(identifier: String, lastFetchedAt: Long? = null): FetchResult {
+        if (!shouldUseProxy()) {
+            return FetchResult.PermanentError("PROXY_DISABLED")
+        }
+        return fetchProxy(identifier, lastFetchedAt)
     }
 
     private fun shouldUseProxy(): Boolean {
@@ -70,14 +80,14 @@ object BedwarsFetcher {
         return true
     }
 
-    private fun fetchFromProxy(uuid: UUID, lastFetchedAt: Long?): FetchResult {
+    private fun fetchProxy(identifierInput: String, lastFetchedAt: Long?): FetchResult {
         val baseUrl = LevelheadConfig.proxyBaseUrl.trim()
-        val uuidNoDashes = uuid.toString().replace("-", "")
+        val identifier = sanitizeProxyIdentifier(identifierInput)
         val url = HttpUrl.parse(baseUrl)
             ?.newBuilder()
             ?.addPathSegment("api")
             ?.addPathSegment("player")
-            ?.addPathSegment(uuidNoDashes)
+            ?.addPathSegment(identifier)
             ?.build()
 
         if (url == null) {
@@ -278,6 +288,19 @@ object BedwarsFetcher {
             sendMessage(
                 "${ChatColor.YELLOW}Set your Hypixel API key with ${ChatColor.GOLD}/levelhead apikey <key>${ChatColor.YELLOW} to enable BedWars stats."
             )
+        }
+    }
+
+    private fun sanitizeProxyIdentifier(identifier: String): String {
+        val trimmed = identifier.trim()
+        if (trimmed.isEmpty()) {
+            return trimmed
+        }
+        val collapsed = trimmed.replace("-", "")
+        return if (collapsed.matches(Regex("^[0-9a-f]{32}$", RegexOption.IGNORE_CASE))) {
+            collapsed.lowercase(Locale.ROOT)
+        } else {
+            trimmed
         }
     }
 

@@ -28,3 +28,7 @@ run
 .DS_Store
 Thumbs.db
 .vscode
+
+# environment configuration
+.env
+backend/.env

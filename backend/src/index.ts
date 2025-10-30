@@ -12,6 +12,7 @@ import { purgeExpiredEntries, closeCache, pool as cachePool } from './services/c
 import { observeRequest, registry } from './services/metrics';
 import { checkHypixelReachability } from './services/hypixel';
 import adminRouter from './routes/admin';
+import statsRouter from './routes/stats';
 
 const app = express();
 
@@ -24,6 +25,7 @@ app.use((req, res, next) => {
   res.on('finish', () => {
     const end = process.hrtime.bigint();
     const durationSeconds = Number(end - start) / 1_000_000_000;
+    const durationMs = durationSeconds * 1000;
     const routeLabel =
       typeof res.locals.metricsRoute === 'string'
         ? res.locals.metricsRoute
@@ -31,12 +33,23 @@ app.use((req, res, next) => {
           ? `${req.baseUrl}${req.route?.path ?? ''}`
           : req.route?.path ?? req.path;
     observeRequest(req.method, routeLabel, res.statusCode, durationSeconds);
+
+    const target = req.originalUrl ?? req.url ?? routeLabel;
+    const message = `[request] ${req.method} ${target} -> ${res.statusCode} (${durationMs.toFixed(2)} ms)`;
+    if (res.statusCode >= 500) {
+      console.error(message);
+    } else if (res.statusCode >= 400) {
+      console.warn(message);
+    } else {
+      console.info(message);
+    }
   });
   next();
 });
 
 app.use('/api/player', playerRouter);
 app.use('/api/admin', adminRouter);
+app.use('/stats', statsRouter);
 
 app.get('/healthz', async (_req, res) => {
   res.locals.metricsRoute = '/healthz';

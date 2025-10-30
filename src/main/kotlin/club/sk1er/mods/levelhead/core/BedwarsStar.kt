@@ -11,57 +11,57 @@ object BedwarsStar {
     private const val EXPERIENCE_PER_PRESTIGE = 487_000L
 
     private val prestigeStyles = listOf(
-        PrestigeStyle(Color.decode("#AAAAAA"), false), // Stone
-        PrestigeStyle(Color.decode("#FFFFFF"), false), // Iron
-        PrestigeStyle(Color.decode("#FFAA00"), false), // Gold
-        PrestigeStyle(Color.decode("#55FFFF"), false), // Diamond
-        PrestigeStyle(Color.decode("#55FF55"), false), // Emerald
-        PrestigeStyle(Color.decode("#0000AA"), false), // Sapphire
-        PrestigeStyle(Color.decode("#FF5555"), false), // Ruby
-        PrestigeStyle(Color.decode("#FF55FF"), false), // Crystal
-        PrestigeStyle(Color.decode("#00AAAA"), false), // Opal
-        PrestigeStyle(Color.decode("#AA00AA"), false), // Amethyst
-        PrestigeStyle(Color.WHITE, true), // Rainbow
-        PrestigeStyle(Color.decode("#FFFFFF"), false), // Iron Prime
-        PrestigeStyle(Color.decode("#FFAA00"), false), // Gold Prime
-        PrestigeStyle(Color.decode("#55FFFF"), false), // Diamond Prime
-        PrestigeStyle(Color.decode("#55FF55"), false), // Emerald Prime
-        PrestigeStyle(Color.decode("#0000AA"), false), // Sapphire Prime
-        PrestigeStyle(Color.decode("#FF5555"), false), // Ruby Prime
-        PrestigeStyle(Color.decode("#FF55FF"), false), // Crystal Prime
-        PrestigeStyle(Color.decode("#00AAAA"), false), // Opal Prime
-        PrestigeStyle(Color.decode("#AA00AA"), false), // Amethyst Prime
-        PrestigeStyle(Color.decode("#AAAAAA"), false), // Mirror
-        PrestigeStyle(Color.decode("#FFAA00"), false), // Light
-        PrestigeStyle(Color.decode("#FFFF55"), false), // Dawn
-        PrestigeStyle(Color.decode("#AA00AA"), false), // Dusk
-        PrestigeStyle(Color.decode("#FFFFFF"), false), // Air
-        PrestigeStyle(Color.decode("#55FF55"), false), // Wind
-        PrestigeStyle(Color.decode("#FF55FF"), false), // Nebula
-        PrestigeStyle(Color.decode("#FFFF55"), false), // Thunder
-        PrestigeStyle(Color.decode("#FFAA00"), false), // Earth
-        PrestigeStyle(Color.decode("#55FFFF"), false), // Water
-        PrestigeStyle(Color.decode("#FF5555"), false), // Fire
-        PrestigeStyle(Color.decode("#FFFF55"), false), // Sunshine
-        PrestigeStyle(Color.decode("#FF5555"), false), // Eclipse
-        PrestigeStyle(Color.decode("#AA0000"), false), // Gamma
-        PrestigeStyle(Color.decode("#FF55FF"), false), // Majestic
-        PrestigeStyle(Color.decode("#55FF55"), false), // Andesine
-        PrestigeStyle(Color.decode("#00AAAA"), false), // Marine
-        PrestigeStyle(Color.decode("#55FFFF"), false), // Element
-        PrestigeStyle(Color.decode("#AA00AA"), false), // Galaxy
-        PrestigeStyle(Color.decode("#55FF55"), false), // Atomic
-        PrestigeStyle(Color.decode("#FFAA00"), false), // Sunset
-        PrestigeStyle(Color.decode("#FFFFFF"), false), // Time
-        PrestigeStyle(Color.decode("#AAAAAA"), false), // Winter
-        PrestigeStyle(Color.decode("#00AAAA"), false), // Obsidian
-        PrestigeStyle(Color.decode("#FF55FF"), false), // Spring
-        PrestigeStyle(Color.decode("#55FFFF"), false), // Ice
-        PrestigeStyle(Color.decode("#FFFFFF"), false), // Summer
-        PrestigeStyle(Color.decode("#AA00AA"), false), // Spinel
-        PrestigeStyle(Color.decode("#55FF55"), false), // Autumn
-        PrestigeStyle(Color.decode("#00AA00"), false), // Mystic
-        PrestigeStyle(Color.decode("#AA0000"), false) // Eternal
+        PrestigeStyle(Color.decode("#808080"), false), // Stone
+        PrestigeStyle(Color.decode("#D1D5D8"), false), // Iron
+        PrestigeStyle(Color.decode("#FAC51C"), false), // Gold
+        PrestigeStyle(Color.decode("#00FFFF"), false), // Diamond
+        PrestigeStyle(Color.decode("#348017"), false), // Emerald
+        PrestigeStyle(Color.decode("#008080"), false), // Sapphire
+        PrestigeStyle(Color.decode("#E41B17"), false), // Ruby
+        PrestigeStyle(Color.decode("#F535AA"), false), // Crystal
+        PrestigeStyle(Color.decode("#000FFF"), false), // Opal
+        PrestigeStyle(Color.decode("#800080"), false), // Amethyst
+        PrestigeStyle(Color.decode("#F75D59"), true), // Rainbow (gradient)
+        PrestigeStyle(Color.decode("#D1D5D8"), false), // Iron Prime
+        PrestigeStyle(Color.decode("#F7DA64"), false), // Gold Prime
+        PrestigeStyle(Color.decode("#00FFFF"), false), // Diamond Prime
+        PrestigeStyle(Color.decode("#6AFB92"), false), // Emerald Prime
+        PrestigeStyle(Color.decode("#3B9C9C"), false), // Sapphire Prime
+        PrestigeStyle(Color.decode("#F75D59"), false), // Ruby Prime
+        PrestigeStyle(Color.decode("#F535AA"), false), // Crystal Prime
+        PrestigeStyle(Color.decode("#0000FF"), false), // Opal Prime
+        PrestigeStyle(Color.decode("#800080"), false), // Amethyst Prime
+        PrestigeStyle(Color.decode("#7C706B"), false), // Mirror
+        PrestigeStyle(Color.decode("#D1D5D8"), false), // Light
+        PrestigeStyle(Color.decode("#008080"), false), // Dawn
+        PrestigeStyle(Color.decode("#800080"), false), // Dusk
+        PrestigeStyle(Color.decode("#00FFFF"), false), // Air
+        PrestigeStyle(Color.decode("#6AFB92"), false), // Wind
+        PrestigeStyle(Color.decode("#C11B17"), false), // Nebula
+        PrestigeStyle(Color.decode("#FAC51C"), false), // Thunder
+        PrestigeStyle(Color.decode("#347C17"), false), // Earth
+        PrestigeStyle(Color.decode("#3B9C9C"), false), // Water
+        PrestigeStyle(Color.decode("#F7DA64"), false), // Fire
+        PrestigeStyle(Color.decode("#3F51B5"), false), // Sunshine
+        PrestigeStyle(Color.decode("#E25041"), false), // Eclipse
+        PrestigeStyle(Color.decode("#3F51B5"), false), // Gamma
+        PrestigeStyle(Color.decode("#1B7920"), false), // Majestic
+        PrestigeStyle(Color.decode("#E25041"), false), // Andesine
+        PrestigeStyle(Color.decode("#2BFFEA"), false), // Marine
+        PrestigeStyle(Color.decode("#850000"), false), // Element
+        PrestigeStyle(Color.decode("#1A237E"), false), // Galaxy
+        PrestigeStyle(Color.decode("#E25041"), false), // Atomic
+        PrestigeStyle(Color.decode("#6A1B9A"), false), // Sunset
+        PrestigeStyle(Color.decode("#FBA026"), false), // Time
+        PrestigeStyle(Color.decode("#3F51B5"), false), // Winter
+        PrestigeStyle(Color.decode("#6A1B9A"), false), // Obsidian
+        PrestigeStyle(Color.decode("#1B7920"), false), // Spring
+        PrestigeStyle(Color.decode("#EFEFEF"), false), // Ice
+        PrestigeStyle(Color.decode("#0097A7"), false), // Summer
+        PrestigeStyle(Color.decode("#EFEFEF"), false), // Spinel
+        PrestigeStyle(Color.decode("#6A1B9A"), false), // Autumn
+        PrestigeStyle(Color.decode("#1B7920"), false), // Mystic
+        PrestigeStyle(Color.decode("#850000"), false) // Eternal
     )
 
     data class PrestigeStyle(val color: Color, val chroma: Boolean)
