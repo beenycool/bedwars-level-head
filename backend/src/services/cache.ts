@@ -27,6 +27,14 @@ export const pool = new Pool({
   max: CACHE_DB_POOL_MAX,
 });
 
+pool.on('connect', () => {
+  console.info('[cache] connected to PostgreSQL');
+});
+
+pool.on('error', (error: unknown) => {
+  console.error('[cache] unexpected database error', error);
+});
+
 const initialization = pool
   .query(
     `CREATE TABLE IF NOT EXISTS player_cache (
@@ -40,6 +48,7 @@ const initialization = pool
   .then(async () => {
     await pool.query('ALTER TABLE player_cache ADD COLUMN IF NOT EXISTS etag TEXT');
     await pool.query('ALTER TABLE player_cache ADD COLUMN IF NOT EXISTS last_modified BIGINT');
+    console.info('[cache] player_cache table is ready');
   })
   .catch((error: unknown) => {
     console.error('Failed to initialize cache table', error);
@@ -52,7 +61,11 @@ async function ensureInitialized(): Promise<void> {
 
 export async function purgeExpiredEntries(now: number = Date.now()): Promise<void> {
   await ensureInitialized();
-  await pool.query('DELETE FROM player_cache WHERE expires_at <= $1', [now]);
+  const result = await pool.query('DELETE FROM player_cache WHERE expires_at <= $1', [now]);
+  const purged = result.rowCount ?? 0;
+  if (purged > 0) {
+    console.info(`[cache] purged ${purged} expired entries`);
+  }
 }
 
 function mapRow<T>(row: CacheRow): CacheEntry<T> {
@@ -83,6 +96,7 @@ export async function getCacheEntry<T>(key: string, includeExpired = false): Pro
   const row = result.rows[0];
   if (!row) {
     recordCacheMiss('absent');
+    console.info(`[cache] miss key=${key} reason=not_found`);
     return null;
   }
 
@@ -94,6 +108,8 @@ export async function getCacheEntry<T>(key: string, includeExpired = false): Pro
       await pool.query('DELETE FROM player_cache WHERE cache_key = $1', [key]);
     }
     recordCacheMiss('deserialization');
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.warn(`[cache] miss key=${key} reason=deserialization error=${errorMessage}`);
     return null;
   }
   const now = Date.now();
@@ -102,10 +118,18 @@ export async function getCacheEntry<T>(key: string, includeExpired = false): Pro
       await pool.query('DELETE FROM player_cache WHERE cache_key = $1', [key]);
     }
     recordCacheMiss('expired');
+    if (includeExpired) {
+      console.info(`[cache] miss key=${key} reason=expired returning_stale`);
+    } else {
+      console.info(`[cache] miss key=${key} reason=expired`);
+    }
     return includeExpired ? entry : null;
   }
 
   recordCacheHit();
+  console.info(
+    `[cache] hit key=${key} expires_at=${new Date(entry.expiresAt).toISOString()} etag=${entry.etag ?? 'null'}`,
+  );
   return entry;
 }
 
@@ -128,11 +152,21 @@ export async function setCachedPayload<T>(
          last_modified = EXCLUDED.last_modified`,
     [key, payload, expiresAt, metadata.etag ?? null, metadata.lastModified ?? null],
   );
+  const expiresIso = new Date(expiresAt).toISOString();
+  const lastModifiedIso =
+    typeof metadata.lastModified === 'number' ? new Date(metadata.lastModified).toISOString() : metadata.lastModified;
+  console.info(
+    `[cache] stored key=${key} expires_at=${expiresIso} etag=${metadata.etag ?? 'null'} last_modified=${lastModifiedIso ?? 'null'}`,
+  );
 }
 
 export async function clearAllCacheEntries(): Promise<number> {
   await ensureInitialized();
   const result = await pool.query('DELETE FROM player_cache');
+  const cleared = result.rowCount ?? 0;
+  if (cleared > 0) {
+    console.warn(`[cache] cleared ${cleared} cached entries`);
+  }
   return result.rowCount ?? 0;
 }
 
@@ -143,10 +177,15 @@ export async function deleteCacheEntries(keys: string[]): Promise<number> {
 
   await ensureInitialized();
   const result = await pool.query('DELETE FROM player_cache WHERE cache_key = ANY($1)', [keys]);
+  const deleted = result.rowCount ?? 0;
+  if (deleted > 0) {
+    console.info(`[cache] deleted ${deleted} cache entries for requested keys`);
+  }
   return result.rowCount ?? 0;
 }
 
 export async function closeCache(): Promise<void> {
   await ensureInitialized();
   await pool.end();
+  console.info('[cache] PostgreSQL pool closed');
 }
