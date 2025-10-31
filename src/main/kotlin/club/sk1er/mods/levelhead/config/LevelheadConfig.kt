@@ -14,6 +14,7 @@ object LevelheadConfig {
     private const val PROPERTY_PROXY_AUTH_TOKEN = "proxyAuthToken"
     private const val PROPERTY_INSTALL_ID = "installId"
     private const val PROPERTY_STAR_CACHE_TTL_MINUTES = "starCacheTtlMinutes"
+    private const val PROPERTY_WELCOME_MESSAGE_SHOWN = "welcomeMessageShown"
     private const val API_KEY_COMMENT = "Hypixel API key used for BedWars integrations"
     private const val PROXY_ENABLED_COMMENT = "Enable fetching BedWars stats from a proxy backend"
     private const val PROXY_BASE_URL_COMMENT = "Base URL for the proxy backend (e.g. https://example.com)"
@@ -21,6 +22,8 @@ object LevelheadConfig {
     private const val INSTALL_ID_COMMENT = "Unique identifier for this BedWars Levelhead installation"
     private const val STAR_CACHE_TTL_COMMENT =
         "Duration (in minutes) to cache BedWars stars locally before revalidating with the proxy/Hypixel"
+    private const val WELCOME_MESSAGE_COMMENT =
+        "Tracks whether the first-time welcome message has already been shown"
 
     const val MIN_STAR_CACHE_TTL_MINUTES = 5
     const val MAX_STAR_CACHE_TTL_MINUTES = 180
@@ -48,6 +51,9 @@ object LevelheadConfig {
 
     val starCacheTtl: Duration
         get() = Duration.ofMinutes(starCacheTtlMinutes.toLong())
+
+    var welcomeMessageShown: Boolean = false
+        private set
 
     fun initialize(configFile: File) {
         configFile.parentFile?.takeIf { !it.exists() }?.mkdirs()
@@ -108,6 +114,14 @@ object LevelheadConfig {
         if (sanitizedTtl != configuredTtl) {
             starCacheTtlProperty.set(sanitizedTtl)
         }
+
+        val welcomeMessageShownProperty = configuration.get(
+            CATEGORY_GENERAL,
+            PROPERTY_WELCOME_MESSAGE_SHOWN,
+            false,
+            WELCOME_MESSAGE_COMMENT,
+        )
+        welcomeMessageShown = welcomeMessageShownProperty.boolean
         if (configuration.hasChanged()) {
             configuration.save()
         }
@@ -145,6 +159,19 @@ object LevelheadConfig {
         updateIntConfig(PROPERTY_STAR_CACHE_TTL_MINUTES, STAR_CACHE_TTL_COMMENT, sanitized) {
             starCacheTtlMinutes = it
         }
+    }
+
+    fun setWelcomeMessageShown(shown: Boolean) {
+        ensureInitialized()
+        val property = configuration.get(
+            CATEGORY_GENERAL,
+            PROPERTY_WELCOME_MESSAGE_SHOWN,
+            false,
+            WELCOME_MESSAGE_COMMENT,
+        )
+        property.set(shown)
+        welcomeMessageShown = shown
+        configuration.save()
     }
 
     private fun updateStringConfig(
