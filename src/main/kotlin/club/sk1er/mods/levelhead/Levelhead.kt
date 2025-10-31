@@ -160,11 +160,11 @@ object Levelhead {
             val prefix = "${ChatColor.AQUA}[Levelhead]"
             EssentialAPI.getMinecraftUtil().sendMessage(
                 prefix,
-                "${ChatColor.GREEN}Thanks for installing BedWars Levelhead!",
+                "${ChatColor.GREEN}Thanks for installing Levelhead!",
             )
             EssentialAPI.getMinecraftUtil().sendMessage(
                 prefix,
-                "${ChatColor.YELLOW}The mod is in alpha, so bugs may occur. ${ChatColor.GOLD}Report issues on GitHub or message ${ChatColor.AQUA}beenyiscool${ChatColor.GOLD} on Discord.",
+                "${ChatColor.YELLOW}The mod is in alpha, so bugs may occur (i suck at coding) ${ChatColor.GOLD}Report issues on GitHub or message ${ChatColor.AQUA}beenyiscool${ChatColor.GOLD} on Discord, or to request any new features.",
             )
         }
     }
