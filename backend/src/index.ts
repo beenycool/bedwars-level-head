@@ -1,5 +1,6 @@
 import express from 'express';
 import playerRouter from './routes/player';
+import playerPublicRouter from './routes/playerPublic';
 import { HttpError } from './util/httpError';
 import {
   SERVER_HOST,

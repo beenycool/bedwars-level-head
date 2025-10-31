@@ -78,7 +78,7 @@ object LevelheadConfig {
         val proxyBaseUrlProperty = configuration.get(
             CATEGORY_GENERAL,
             PROPERTY_PROXY_BASE_URL,
-            "http://beeny.hackclub.app",
+            "https://beeny.hackclub.app",
             PROXY_BASE_URL_COMMENT
         )
         proxyBaseUrl = proxyBaseUrlProperty.string.trim()

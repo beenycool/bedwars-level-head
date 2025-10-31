@@ -14,23 +14,6 @@ function parseIfModifiedSince(value: string | undefined): number | undefined {
   return Number.isNaN(parsed) ? undefined : parsed;
 }
 
-function shouldReturnNotModified(
-  clientEtag: string | undefined,
-  clientModifiedSince: number | undefined,
-  serverEtag: string | null,
-  serverLastModified: number | null,
-): boolean {
-  if (clientEtag && serverEtag) {
-    return clientEtag === serverEtag;
-  }
-
-  if (!clientEtag && clientModifiedSince && serverLastModified) {
-    return serverLastModified <= clientModifiedSince;
-  }
-
-  return false;
-}
-
 const router = Router();
 
 function extractBedwarsExperience(payload: ResolvedPlayer['payload']): number | null {
@@ -67,7 +50,16 @@ router.get('/:identifier', requireModHandshake, enforceRateLimit, async (req, re
 
     const experience = extractBedwarsExperience(resolved.payload);
     const computedStars = experience === null ? null : computeBedwarsStar(experience);
-    const notModified = shouldReturnNotModified(ifNoneMatch, ifModifiedSince, resolved.etag, resolved.lastModified);
+    if (resolved.etag) {
+      res.set('ETag', resolved.etag);
+    }
+
+    if (resolved.lastModified) {
+      res.set('Last-Modified', new Date(resolved.lastModified).toUTCString());
+    }
+
+    res.statusCode = 200;
+    const notModified = req.fresh;
     const responseStatus = notModified ? 304 : 200;
 
     await recordPlayerQuery({
@@ -81,21 +73,13 @@ router.get('/:identifier', requireModHandshake, enforceRateLimit, async (req, re
       cacheSource: resolved.source,
       cacheHit: resolved.source === 'cache',
       revalidated: resolved.revalidated,
-      installId: req.installId,
+      installId: req.installId ?? null,
       responseStatus,
     });
 
     if (notModified) {
       res.status(304).end();
       return;
-    }
-
-    if (resolved.etag) {
-      res.set('ETag', resolved.etag);
-    }
-
-    if (resolved.lastModified) {
-      res.set('Last-Modified', new Date(resolved.lastModified).toUTCString());
     }
 
     res.json(resolved.payload);

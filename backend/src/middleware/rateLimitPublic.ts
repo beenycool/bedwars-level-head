@@ -1,69 +1,19 @@
-import type { Request, Response, NextFunction } from 'express';
-import { RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS } from '../config';
+import type { Request } from 'express';
+import { PUBLIC_RATE_LIMIT_MAX, PUBLIC_RATE_LIMIT_WINDOW_MS } from '../config';
 import { HttpError } from '../util/httpError';
-import { rateLimitBlocksTotal } from '../services/metrics';
-
-type Bucket = {
-  count: number;
-  windowStartedAt: number;
-  lastUpdatedAt: number;
-};
-
-const buckets = new Map<string, Bucket>();
-const BUCKET_TTL_MS = RATE_LIMIT_WINDOW_MS * 2;
-const CLEANUP_INTERVAL_MS = RATE_LIMIT_WINDOW_MS;
-
-const cleanupTimer = setInterval(() => {
-  const now = Date.now();
-  for (const [key, bucket] of buckets) {
-    if (now - bucket.lastUpdatedAt > BUCKET_TTL_MS) {
-      buckets.delete(key);
-    }
-  }
-}, CLEANUP_INTERVAL_MS);
-
-if (typeof cleanupTimer.unref === 'function') {
-  cleanupTimer.unref();
-}
+import { createRateLimitMiddleware } from './rateLimit';
 
 function getBucketKey(req: Request): string {
-  // Use req.ip (set by Express trust proxy) or fallback to socket address
-  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  const ip = req.ip || req.socket.remoteAddress || '';
+  if (!ip) {
+    throw new HttpError(400, 'INVALID_REQUEST', 'Unable to identify client IP address');
+  }
   return `public:${ip}`;
 }
 
-export function enforcePublicRateLimit(req: Request, res: Response, next: NextFunction): void {
-  const now = Date.now();
-  const key = getBucketKey(req);
-  const bucket = buckets.get(key);
-
-  if (!bucket) {
-    buckets.set(key, { count: 1, windowStartedAt: now, lastUpdatedAt: now });
-    next();
-    return;
-  }
-
-  const elapsed = now - bucket.windowStartedAt;
-  if (elapsed >= RATE_LIMIT_WINDOW_MS) {
-    buckets.set(key, { count: 1, windowStartedAt: now, lastUpdatedAt: now });
-    next();
-    return;
-  }
-
-  if (bucket.count >= RATE_LIMIT_MAX) {
-    const retryAfterSeconds = Math.ceil((bucket.windowStartedAt + RATE_LIMIT_WINDOW_MS - now) / 1000);
-    const retryAfterHeader = retryAfterSeconds.toString();
-    res.set('Retry-After', retryAfterHeader);
-    rateLimitBlocksTotal.inc();
-    throw new HttpError(
-      429,
-      'RATE_LIMIT',
-      `Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`,
-      { 'Retry-After': retryAfterHeader },
-    );
-  }
-
-  bucket.count += 1;
-  bucket.lastUpdatedAt = now;
-  next();
-}
+export const enforcePublicRateLimit = createRateLimitMiddleware({
+  windowMs: PUBLIC_RATE_LIMIT_WINDOW_MS,
+  max: PUBLIC_RATE_LIMIT_MAX,
+  getBucketKey,
+  metricLabel: 'public',
+});

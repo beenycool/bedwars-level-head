@@ -12,6 +12,8 @@ The backend uses environment variables for all secrets and tunables:
 | `PROXY_AUTH_TOKENS` | ✅ | Comma-separated list of bearer tokens accepted from the mod. |
 | `RATE_LIMIT_MAX` | ❌ | Requests allowed per window (defaults to `300`). |
 | `RATE_LIMIT_WINDOW_MS` | ❌ | Window length in milliseconds (defaults to `300000`, i.e. 5 minutes). |
+| `PUBLIC_RATE_LIMIT_MAX` | ❌ | Requests allowed per window on public routes (defaults to `60`). |
+| `PUBLIC_RATE_LIMIT_WINDOW_MS` | ❌ | Window length for public route rate limits (defaults to `60000`, i.e. 1 minute). |
 | `PORT` | ❌ | Port to bind to (defaults to `3000`). |
 | `HOST` | ❌ | Host/IP to bind to (defaults to `0.0.0.0`). |
 | `HYPIXEL_API_BASE_URL` | ❌ | Override for Hypixel API base URL. |
@@ -54,7 +56,7 @@ The following routes do not require authentication and use IP-based rate limitin
 
 - `GET /api/public/player/:identifier` - Get player data by UUID or username (public access)
 
-Public routes are rate-limited by IP address using the same rate limit configuration (`RATE_LIMIT_MAX` and `RATE_LIMIT_WINDOW_MS`).
+Public routes are rate-limited by IP address using dedicated configuration (`PUBLIC_RATE_LIMIT_MAX` / `PUBLIC_RATE_LIMIT_WINDOW_MS`) that is more restrictive than the authenticated limits by default.
 
 ### Other Routes
 
