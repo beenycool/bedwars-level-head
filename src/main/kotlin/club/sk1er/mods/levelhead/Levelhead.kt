@@ -151,6 +151,24 @@ object Levelhead {
     private fun String.encodeForUrl(): String =
         URLEncoder.encode(this, StandardCharsets.UTF_8.name()).replace("+", "%20")
 
+    private fun showWelcomeMessageIfNeeded() {
+        if (LevelheadConfig.welcomeMessageShown) {
+            return
+        }
+        LevelheadConfig.setWelcomeMessageShown(true)
+        UMinecraft.getMinecraft().addScheduledTask {
+            val prefix = "${ChatColor.AQUA}[Levelhead]"
+            EssentialAPI.getMinecraftUtil().sendMessage(
+                prefix,
+                "${ChatColor.GREEN}Thanks for installing Levelhead!",
+            )
+            EssentialAPI.getMinecraftUtil().sendMessage(
+                prefix,
+                "${ChatColor.YELLOW}The mod is in alpha, so bugs may occur (i suck at coding) ${ChatColor.GOLD}Report issues on GitHub or message ${ChatColor.AQUA}beenyiscool${ChatColor.GOLD} on Discord, or to request any new features.",
+            )
+        }
+    }
+
     val DarkChromaColor: Int
         get() = Color.HSBtoRGB(System.currentTimeMillis() % 1000 / 1000f, 0.8f, 0.2f)
     val ChromaColor: Int
@@ -172,6 +190,7 @@ object Levelhead {
         MinecraftForge.EVENT_BUS.register(this)
         EssentialAPI.getCommandRegistry().registerCommand(LevelheadCommand())
         scheduleUpdateCheck()
+        showWelcomeMessageIfNeeded()
     }
 
     @SubscribeEvent
