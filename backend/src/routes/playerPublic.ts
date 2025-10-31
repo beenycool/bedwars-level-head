@@ -1,6 +1,5 @@
 import { Router } from 'express';
-import { requireModHandshake } from '../middleware/auth';
-import { enforceRateLimit } from '../middleware/rateLimit';
+import { enforcePublicRateLimit } from '../middleware/rateLimitPublic';
 import { resolvePlayer, ResolvedPlayer } from '../services/player';
 import { recordPlayerQuery } from '../services/history';
 import { computeBedwarsStar } from '../util/bedwars';
@@ -36,11 +35,11 @@ function extractBedwarsExperience(payload: ResolvedPlayer['payload']): number | 
   return numeric;
 }
 
-router.get('/:identifier', requireModHandshake, enforceRateLimit, async (req, res, next) => {
+router.get('/:identifier', enforcePublicRateLimit, async (req, res, next) => {
   const { identifier } = req.params;
   const ifNoneMatch = req.header('if-none-match')?.trim();
   const ifModifiedSince = parseIfModifiedSince(req.header('if-modified-since'));
-  res.locals.metricsRoute = '/api/player/:identifier';
+  res.locals.metricsRoute = '/api/public/player/:identifier';
 
   try {
     const resolved = await resolvePlayer(identifier, {
@@ -73,7 +72,7 @@ router.get('/:identifier', requireModHandshake, enforceRateLimit, async (req, re
       cacheSource: resolved.source,
       cacheHit: resolved.source === 'cache',
       revalidated: resolved.revalidated,
-      installId: req.installId ?? null,
+      installId: null,
       responseStatus,
     });
 

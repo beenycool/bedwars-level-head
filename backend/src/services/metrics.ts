@@ -54,6 +54,7 @@ const cacheHitRatioGauge = new client.Gauge({
 export const rateLimitBlocksTotal = new client.Counter({
   name: 'levelhead_rate_limit_blocks_total',
   help: 'Number of requests blocked by the proxy rate limiter.',
+  labelNames: ['type'],
   registers: [registry],
 });
 

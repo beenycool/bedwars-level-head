@@ -1,4 +1,4 @@
-import type { Request, Response, NextFunction } from 'express';
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS } from '../config';
 import { HttpError } from '../util/httpError';
 import { rateLimitBlocksTotal } from '../services/metrics';
@@ -9,59 +9,89 @@ type Bucket = {
   lastUpdatedAt: number;
 };
 
-const buckets = new Map<string, Bucket>();
-const BUCKET_TTL_MS = RATE_LIMIT_WINDOW_MS * 2;
-const CLEANUP_INTERVAL_MS = RATE_LIMIT_WINDOW_MS;
+export interface RateLimitOptions {
+  windowMs: number;
+  max: number;
+  getBucketKey(req: Request): string;
+  metricLabel?: string;
+}
 
-const cleanupTimer = setInterval(() => {
-  const now = Date.now();
-  for (const [key, bucket] of buckets) {
-    if (now - bucket.lastUpdatedAt > BUCKET_TTL_MS) {
-      buckets.delete(key);
+export function createRateLimitMiddleware({
+  windowMs,
+  max,
+  getBucketKey,
+  metricLabel,
+}: RateLimitOptions): RequestHandler {
+  const buckets = new Map<string, Bucket>();
+  const bucketTtlMs = windowMs * 2;
+  const cleanupIntervalMs = windowMs;
+
+  const cleanupTimer = setInterval(() => {
+    const now = Date.now();
+    for (const [key, bucket] of buckets) {
+      if (now - bucket.lastUpdatedAt > bucketTtlMs) {
+        buckets.delete(key);
+      }
     }
+  }, cleanupIntervalMs);
+
+  if (typeof cleanupTimer.unref === 'function') {
+    cleanupTimer.unref();
   }
-}, CLEANUP_INTERVAL_MS);
 
-if (typeof cleanupTimer.unref === 'function') {
-  cleanupTimer.unref();
-}
+  return (req: Request, _res: Response, next: NextFunction): void => {
+    const now = Date.now();
 
-function getBucketKey(req: Request): string {
-  return req.installId;
-}
+    let key: string;
+    try {
+      key = getBucketKey(req);
+    } catch (error) {
+      next(error);
+      return;
+    }
 
-export function enforceRateLimit(req: Request, res: Response, next: NextFunction): void {
-  const now = Date.now();
-  const key = getBucketKey(req);
-  const bucket = buckets.get(key);
+    const bucket = buckets.get(key);
 
-  if (!bucket) {
-    buckets.set(key, { count: 1, windowStartedAt: now, lastUpdatedAt: now });
+    if (!bucket) {
+      buckets.set(key, { count: 1, windowStartedAt: now, lastUpdatedAt: now });
+      next();
+      return;
+    }
+
+    const elapsed = now - bucket.windowStartedAt;
+    if (elapsed >= windowMs) {
+      buckets.set(key, { count: 1, windowStartedAt: now, lastUpdatedAt: now });
+      next();
+      return;
+    }
+
+    if (bucket.count >= max) {
+      const retryAfterSeconds = Math.ceil((bucket.windowStartedAt + windowMs - now) / 1000);
+      const retryAfterHeader = retryAfterSeconds.toString();
+      const labelValue = metricLabel ?? 'unknown';
+      rateLimitBlocksTotal.inc({ type: labelValue });
+      throw new HttpError(
+        429,
+        'RATE_LIMIT',
+        `Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`,
+        { 'Retry-After': retryAfterHeader },
+      );
+    }
+
+    bucket.count += 1;
+    bucket.lastUpdatedAt = now;
     next();
-    return;
-  }
-
-  const elapsed = now - bucket.windowStartedAt;
-  if (elapsed >= RATE_LIMIT_WINDOW_MS) {
-    buckets.set(key, { count: 1, windowStartedAt: now, lastUpdatedAt: now });
-    next();
-    return;
-  }
-
-  if (bucket.count >= RATE_LIMIT_MAX) {
-    const retryAfterSeconds = Math.ceil((bucket.windowStartedAt + RATE_LIMIT_WINDOW_MS - now) / 1000);
-    const retryAfterHeader = retryAfterSeconds.toString();
-    res.set('Retry-After', retryAfterHeader);
-    rateLimitBlocksTotal.inc();
-    throw new HttpError(
-      429,
-      'RATE_LIMIT',
-      `Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`,
-      { 'Retry-After': retryAfterHeader },
-    );
-  }
-
-  bucket.count += 1;
-  bucket.lastUpdatedAt = now;
-  next();
+  };
 }
+
+export const enforceRateLimit = createRateLimitMiddleware({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_MAX,
+  getBucketKey(req: Request) {
+    if (!req.installId) {
+      throw new Error('installId is required for authenticated rate limiting');
+    }
+    return req.installId;
+  },
+  metricLabel: 'authenticated',
+});

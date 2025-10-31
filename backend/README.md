@@ -12,6 +12,8 @@ The backend uses environment variables for all secrets and tunables:
 | `PROXY_AUTH_TOKENS` | ✅ | Comma-separated list of bearer tokens accepted from the mod. |
 | `RATE_LIMIT_MAX` | ❌ | Requests allowed per window (defaults to `300`). |
 | `RATE_LIMIT_WINDOW_MS` | ❌ | Window length in milliseconds (defaults to `300000`, i.e. 5 minutes). |
+| `PUBLIC_RATE_LIMIT_MAX` | ❌ | Requests allowed per window on public routes (defaults to `60`). |
+| `PUBLIC_RATE_LIMIT_WINDOW_MS` | ❌ | Window length for public route rate limits (defaults to `60000`, i.e. 1 minute). |
 | `PORT` | ❌ | Port to bind to (defaults to `3000`). |
 | `HOST` | ❌ | Host/IP to bind to (defaults to `0.0.0.0`). |
 | `HYPIXEL_API_BASE_URL` | ❌ | Override for Hypixel API base URL. |
@@ -31,6 +33,15 @@ npm install
 npm run dev
 ```
 
+## API Endpoints
+
+### Authenticated Routes
+
+The following routes require authentication via the mod handshake:
+
+- `GET /api/player/:identifier` - Get player data by UUID or username
+- `GET /api/admin/*` - Admin endpoints
+
 Requests must include the following headers or they will be rejected:
 
 - `User-Agent: Levelhead/<version>`
@@ -38,5 +49,19 @@ Requests must include the following headers or they will be rejected:
 - `Authorization: Bearer <one of PROXY_AUTH_TOKENS>`
 
 Each bearer token is bound to the first `X-Levelhead-Install` value that uses it; subsequent requests that reuse the token with a different install identifier are rejected.
+
+### Public Routes
+
+The following routes do not require authentication and use IP-based rate limiting:
+
+- `GET /api/public/player/:identifier` - Get player data by UUID or username (public access)
+
+Public routes are rate-limited by IP address using dedicated configuration (`PUBLIC_RATE_LIMIT_MAX` / `PUBLIC_RATE_LIMIT_WINDOW_MS`) that is more restrictive than the authenticated limits by default.
+
+### Other Routes
+
+- `GET /stats` - Statistics endpoint (public)
+- `GET /healthz` - Health check endpoint (public)
+- `GET /metrics` - Prometheus metrics endpoint (public)
 
 Successful responses mirror the shapes already supported by the mod so no client update is required.

@@ -1,5 +1,6 @@
 import express from 'express';
 import playerRouter from './routes/player';
+import playerPublicRouter from './routes/playerPublic';
 import { HttpError } from './util/httpError';
 import {
   SERVER_HOST,
@@ -47,6 +48,7 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use('/api/public/player', playerPublicRouter);
 app.use('/api/player', playerRouter);
 app.use('/api/admin', adminRouter);
 app.use('/stats', statsRouter);

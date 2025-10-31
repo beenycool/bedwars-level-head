@@ -36,20 +36,13 @@ object BedwarsFetcher {
     }
 
     fun fetchPlayer(uuid: UUID, lastFetchedAt: Long?): FetchResult {
-        var fallback: FetchResult? = null
         if (shouldUseProxy()) {
             val identifier = uuid.toString().replace("-", "")
-            when (val proxyResult = fetchProxy(identifier, lastFetchedAt)) {
-                is FetchResult.Success, FetchResult.NotModified -> return proxyResult
-                else -> fallback = proxyResult
-            }
+            return fetchProxy(identifier, lastFetchedAt)
         }
 
         val hypixelResult = fetchFromHypixel(uuid)
-        return when (hypixelResult) {
-            is FetchResult.Success, FetchResult.NotModified -> hypixelResult
-            else -> fallback ?: hypixelResult
-        }
+        return hypixelResult
     }
 
     fun fetchProxyPlayer(identifier: String, lastFetchedAt: Long? = null): FetchResult {
@@ -66,11 +59,10 @@ object BedwarsFetcher {
         }
 
         val baseConfigured = LevelheadConfig.proxyBaseUrl.isNotBlank()
-        val tokenConfigured = LevelheadConfig.proxyAuthToken.isNotBlank()
-        if (!baseConfigured || !tokenConfigured) {
+        if (!baseConfigured) {
             if (proxyMisconfiguredWarned.compareAndSet(false, true)) {
                 sendMessage(
-                    "${ChatColor.RED}Proxy enabled but misconfigured. ${ChatColor.YELLOW}Set both a base URL and auth token in Levelhead settings."
+                    "${ChatColor.RED}Proxy enabled but missing base URL. ${ChatColor.YELLOW}Set the proxy base URL in Levelhead settings."
                 )
             }
             return false
@@ -83,9 +75,11 @@ object BedwarsFetcher {
     private fun fetchProxy(identifierInput: String, lastFetchedAt: Long?): FetchResult {
         val baseUrl = LevelheadConfig.proxyBaseUrl.trim()
         val identifier = sanitizeProxyIdentifier(identifierInput)
+        val isPublic = LevelheadConfig.proxyAuthToken.isBlank()
         val url = HttpUrl.parse(baseUrl)
             ?.newBuilder()
             ?.addPathSegment("api")
+            ?.apply { if (isPublic) addPathSegment("public") }
             ?.addPathSegment("player")
             ?.addPathSegment(identifier)
             ?.build()
