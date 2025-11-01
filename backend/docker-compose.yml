@@ -1,0 +1,35 @@
+services:
+  backend:
+    build: .
+    image: levelhead-backend:local
+    env_file: .env
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO", "-", "http://localhost:3000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-levelhead_cache}
+      POSTGRES_USER: ${POSTGRES_USER:-levelhead}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-levelhead}
+    volumes:
+      - cache-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER:-levelhead}\" -d \"$${POSTGRES_DB:-levelhead_cache}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  cache-data:

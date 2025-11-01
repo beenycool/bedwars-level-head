@@ -1,13 +1,9 @@
 import type { Request } from 'express';
 import { PUBLIC_RATE_LIMIT_MAX, PUBLIC_RATE_LIMIT_WINDOW_MS } from '../config';
-import { HttpError } from '../util/httpError';
-import { createRateLimitMiddleware } from './rateLimit';
+import { createRateLimitMiddleware, getClientIpAddress } from './rateLimit';
 
 function getBucketKey(req: Request): string {
-  const ip = req.ip || req.socket.remoteAddress || '';
-  if (!ip) {
-    throw new HttpError(400, 'INVALID_REQUEST', 'Unable to identify client IP address');
-  }
+  const ip = getClientIpAddress(req);
   return `public:${ip}`;
 }
 

@@ -1,5 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import { RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS } from '../config';
+import { RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS, TRUST_PROXY_ENABLED } from '../config';
 import { HttpError } from '../util/httpError';
 import { rateLimitBlocksTotal } from '../services/metrics';
 
@@ -14,6 +14,15 @@ export interface RateLimitOptions {
   max: number;
   getBucketKey(req: Request): string;
   metricLabel?: string;
+}
+
+export function getClientIpAddress(req: Request): string {
+  const ip = TRUST_PROXY_ENABLED ? req.ip : req.socket.remoteAddress ?? '';
+  if (!ip) {
+    throw new HttpError(400, 'INVALID_REQUEST', 'Unable to identify client IP address');
+  }
+
+  return ip;
 }
 
 export function createRateLimitMiddleware({
@@ -88,10 +97,8 @@ export const enforceRateLimit = createRateLimitMiddleware({
   windowMs: RATE_LIMIT_WINDOW_MS,
   max: RATE_LIMIT_MAX,
   getBucketKey(req: Request) {
-    if (!req.installId) {
-      throw new Error('installId is required for authenticated rate limiting');
-    }
-    return req.installId;
+    const ip = getClientIpAddress(req);
+    return `private:${ip}`;
   },
-  metricLabel: 'authenticated',
+  metricLabel: 'private',
 });

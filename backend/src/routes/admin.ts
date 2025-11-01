@@ -1,5 +1,6 @@
 import { Router } from 'express';
-import { requireModHandshake } from '../middleware/auth';
+import { enforceRateLimit } from '../middleware/rateLimit';
+import { enforceAdminAuth } from '../middleware/adminAuth';
 import { clearAllCacheEntries, deleteCacheEntries } from '../services/cache';
 import { clearInMemoryPlayerCache } from '../services/player';
 import { HttpError } from '../util/httpError';
@@ -22,7 +23,7 @@ function cacheKeysForIdentifier(identifier: string): string[] {
   return [];
 }
 
-router.post('/cache/purge', requireModHandshake, async (req, res, next) => {
+router.post('/cache/purge', enforceAdminAuth, enforceRateLimit, async (req, res, next) => {
   res.locals.metricsRoute = '/api/admin/cache/purge';
   const { identifier } = req.body ?? {};
 
