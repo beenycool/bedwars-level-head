@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable
 class EntityRendererMixin {
 
     @ModifyVariable(
-        method = ["renderName"],
+        method = ["renderName", "func_177067_a"],
         at = At("STORE"),
         ordinal = 0
     )
