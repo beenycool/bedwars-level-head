@@ -8,6 +8,7 @@ import {
   CLOUD_FLARE_TUNNEL,
   CACHE_DB_POOL_MAX,
   CACHE_DB_POOL_MIN,
+  TRUST_PROXY,
 } from './config';
 import { purgeExpiredEntries, closeCache, pool as cachePool } from './services/cache';
 import { observeRequest, registry } from './services/metrics';
@@ -18,7 +19,7 @@ import statsRouter from './routes/stats';
 const app = express();
 
 app.disable('x-powered-by');
-app.set('trust proxy', 1);
+app.set('trust proxy', TRUST_PROXY);
 app.use(express.json({ limit: '64kb' }));
 
 app.use((req, res, next) => {

@@ -19,13 +19,13 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: levelhead_cache
-      POSTGRES_USER: levelhead
-      POSTGRES_PASSWORD: levelhead
+      POSTGRES_DB: ${POSTGRES_DB:-levelhead_cache}
+      POSTGRES_USER: ${POSTGRES_USER:-levelhead}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-levelhead}
     volumes:
       - cache-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U levelhead -d levelhead_cache"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER:-levelhead}\" -d \"$${POSTGRES_DB:-levelhead_cache}\""]
       interval: 10s
       timeout: 5s
       retries: 5

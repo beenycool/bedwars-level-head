@@ -12,6 +12,51 @@ function requiredEnv(name: string): string {
 
 export const HYPIXEL_API_KEY = requiredEnv('HYPIXEL_API_KEY');
 
+function requiredStringListEnv(name: string): string[] {
+  const raw = requiredEnv(name);
+  const values = raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+
+  if (values.length === 0) {
+    throw new Error(`Environment variable ${name} must contain at least one value`);
+  }
+
+  return values;
+}
+
+type TrustProxyValue = false | true | number | string;
+
+function parseTrustProxyEnv(value: string | undefined): TrustProxyValue {
+  if (value === undefined) {
+    return false;
+  }
+
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    return false;
+  }
+
+  const lower = normalized.toLowerCase();
+  if (lower === 'false' || lower === '0') {
+    return false;
+  }
+
+  if (lower === 'true') {
+    return true;
+  }
+
+  const asNumber = Number(normalized);
+  if (!Number.isNaN(asNumber)) {
+    return asNumber;
+  }
+
+  return normalized;
+}
+
+export const ADMIN_API_KEYS = requiredStringListEnv('ADMIN_API_KEYS');
+
 function parseIntEnv(name: string, defaultValue: number): number {
   const raw = process.env[name];
   if (raw === undefined) {
@@ -33,6 +78,8 @@ export const PUBLIC_RATE_LIMIT_MAX = parseIntEnv('PUBLIC_RATE_LIMIT_MAX', 60);
 
 export const SERVER_PORT = parseIntEnv('PORT', 3000);
 export const SERVER_HOST = process.env.HOST ?? '0.0.0.0';
+export const TRUST_PROXY: TrustProxyValue = parseTrustProxyEnv(process.env.TRUST_PROXY);
+export const TRUST_PROXY_ENABLED = TRUST_PROXY !== false;
 
 export const HYPIXEL_API_BASE_URL = process.env.HYPIXEL_API_BASE_URL ?? 'https://api.hypixel.net';
 

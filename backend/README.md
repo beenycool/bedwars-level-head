@@ -62,6 +62,7 @@ The backend uses environment variables for all secrets and tunables. The `.env.e
 | --- | --- | --- |
 | `HYPIXEL_API_KEY` | ✅ | Hypixel API key owned by the proxy operator. |
 | `CACHE_DB_URL` | ✅ | PostgreSQL connection string for the response cache database. |
+| `ADMIN_API_KEYS` | ✅ | Comma-separated list of tokens required to access administrative endpoints. |
 | `RATE_LIMIT_MAX` | ❌ | Requests per IP allowed per window (defaults to `300`). |
 | `RATE_LIMIT_WINDOW_MS` | ❌ | Window length in milliseconds for the private route limit (defaults to `300000`, i.e. 5 minutes). |
 | `PUBLIC_RATE_LIMIT_MAX` | ❌ | Requests per IP allowed per window on public routes (defaults to `60`). |
@@ -76,8 +77,19 @@ The backend uses environment variables for all secrets and tunables. The `.env.e
 | `HYPIXEL_TIMEOUT_MS` | ❌ | Hypixel API request timeout (defaults to `5000`). |
 | `HYPIXEL_RETRY_DELAY_MIN_MS` | ❌ | Minimum retry backoff when calling the Hypixel API (defaults to `50`). |
 | `HYPIXEL_RETRY_DELAY_MAX_MS` | ❌ | Maximum retry backoff when calling the Hypixel API (defaults to `150`). |
+| `TRUST_PROXY` | ❌ | Express [trust proxy](https://expressjs.com/en/guide/behind-proxies.html) setting. Defaults to `false` to ignore forwarded IP headers. |
 
-Set these variables in your deployment environment or `.env` file. When connecting to the shared Nest Postgres service from within a Nest container, the connection string should follow the format `postgres://<username>@localhost/<username>_<database>?sslmode=disable&host=/var/run/postgresql`.
+Set these variables in your deployment environment or `.env` file.
+
+### Administrative access
+
+Administrative endpoints require clients to present a valid API token via one of the following methods:
+
+- `Authorization: Bearer <token>` header (recommended)
+- `X-Admin-Token: <token>` header
+- `adminToken=<token>` query parameter (useful for manual debugging only)
+
+Multiple tokens can be configured by providing a comma-separated list in `ADMIN_API_KEYS`.
 
 ## API Endpoints
 
@@ -88,7 +100,7 @@ Set these variables in your deployment environment or `.env` file. When connecti
 
 ### Admin Routes
 
-- `POST /api/admin/cache/purge` - Purge cache entries for a specific UUID/IGN or clear the entire cache. This route is also rate-limited per client IP using the `RATE_LIMIT_*` configuration.
+- `POST /api/admin/cache/purge` - Purge cache entries for a specific UUID/IGN or clear the entire cache. Requires an admin token and is rate-limited per client IP using the `RATE_LIMIT_*` configuration.
 
 ### Other Routes
 

@@ -1,5 +1,5 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import { RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS } from '../config';
+import { RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS, TRUST_PROXY_ENABLED } from '../config';
 import { HttpError } from '../util/httpError';
 import { rateLimitBlocksTotal } from '../services/metrics';
 
@@ -17,7 +17,7 @@ export interface RateLimitOptions {
 }
 
 export function getClientIpAddress(req: Request): string {
-  const ip = req.ip || req.socket.remoteAddress || '';
+  const ip = TRUST_PROXY_ENABLED ? req.ip : req.socket.remoteAddress ?? '';
   if (!ip) {
     throw new HttpError(400, 'INVALID_REQUEST', 'Unable to identify client IP address');
   }
