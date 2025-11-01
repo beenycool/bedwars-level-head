@@ -12,18 +12,6 @@ function requiredEnv(name: string): string {
 
 export const HYPIXEL_API_KEY = requiredEnv('HYPIXEL_API_KEY');
 
-const rawTokens = process.env.PROXY_AUTH_TOKENS ?? '';
-export const PROXY_AUTH_TOKENS = new Set(
-  rawTokens
-    .split(',')
-    .map((token) => token.trim())
-    .filter((token) => token.length > 0)
-);
-
-if (PROXY_AUTH_TOKENS.size === 0) {
-  throw new Error('PROXY_AUTH_TOKENS must include at least one token.');
-}
-
 function parseIntEnv(name: string, defaultValue: number): number {
   const raw = process.env[name];
   if (raw === undefined) {

@@ -16,6 +16,15 @@ export interface RateLimitOptions {
   metricLabel?: string;
 }
 
+export function getClientIpAddress(req: Request): string {
+  const ip = req.ip || req.socket.remoteAddress || '';
+  if (!ip) {
+    throw new HttpError(400, 'INVALID_REQUEST', 'Unable to identify client IP address');
+  }
+
+  return ip;
+}
+
 export function createRateLimitMiddleware({
   windowMs,
   max,
@@ -88,10 +97,8 @@ export const enforceRateLimit = createRateLimitMiddleware({
   windowMs: RATE_LIMIT_WINDOW_MS,
   max: RATE_LIMIT_MAX,
   getBucketKey(req: Request) {
-    if (!req.installId) {
-      throw new Error('installId is required for authenticated rate limiting');
-    }
-    return req.installId;
+    const ip = getClientIpAddress(req);
+    return `private:${ip}`;
   },
-  metricLabel: 'authenticated',
+  metricLabel: 'private',
 });
