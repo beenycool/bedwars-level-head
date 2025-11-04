@@ -2,9 +2,9 @@ package me.beeny.bedwarslevelhead
 
 import cc.polyfrost.oneconfig.config.Config
 import cc.polyfrost.oneconfig.config.annotations.*
+import cc.polyfrost.oneconfig.config.core.OneColor
 import cc.polyfrost.oneconfig.config.data.Mod
 import cc.polyfrost.oneconfig.config.data.ModType
-import java.awt.Color as AwtColor
 
 class BedwarsLevelHeadConfig : Config(
     Mod("BedWars Level Head", ModType.HYPIXEL),
@@ -39,7 +39,7 @@ class BedwarsLevelHeadConfig : Config(
         description = "Color for level text display",
         category = "Display"
     )
-    var textColor: AwtColor = AwtColor(255, 255, 255)
+    var textColor: OneColor = OneColor(255, 255, 255)
 
     @Slider(
         name = "Text Scale",
