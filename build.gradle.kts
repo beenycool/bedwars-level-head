@@ -1,8 +1,7 @@
 @file:Suppress("UnstableApiUsage", "PropertyName")
 
-import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
-import org.gradle.api.tasks.compile.JavaCompile
 import org.polyfrost.gradle.util.noServerRunConfigs
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
 
 // Adds support for kotlin, and adds the Polyfrost Gradle Toolkit
 // which we use to prepare the environment.
@@ -191,10 +190,5 @@ tasks {
         dependsOn(shadowJar)
         archiveClassifier.set("")
         enabled = false
-    }
-
-    withType<JavaCompile>().configureEach {
-        sourceCompatibility = "1.8"
-        targetCompatibility = "1.8"
     }
 }
