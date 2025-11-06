@@ -16,7 +16,7 @@ class BedwarsLevelHeadConfig : Config(
         category = "General",
         subcategory = "Toggle"
     )
-    var enabled = true
+    var modEnabled = true
 
     @Switch(
         name = "Show Own Level",

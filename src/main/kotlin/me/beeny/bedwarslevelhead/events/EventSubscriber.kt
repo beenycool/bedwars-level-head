@@ -14,7 +14,7 @@ object EventSubscriber {
 
     @SubscribeEvent
     fun onChatReceived(event: ClientChatReceivedEvent) {
-        if (!BedwarsLevelHead.config.enabled || !BedwarsLevelHead.config.chatDetection) return
+        if (!BedwarsLevelHead.config.modEnabled || !BedwarsLevelHead.config.chatDetection) return
 
         val message = event.message.unformattedText
         try {
@@ -34,7 +34,7 @@ object EventSubscriber {
 
     @SubscribeEvent
     fun onRenderOverlay(event: RenderGameOverlayEvent.Text) {
-        if (!BedwarsLevelHead.config.enabled || !BedwarsLevelHead.config.hudEnabled) return
+        if (!BedwarsLevelHead.config.modEnabled || !BedwarsLevelHead.config.hudEnabled) return
         val playerName = runCatching { MinecraftUtils.getPlayerName() }.getOrNull()
         if (playerName.isNullOrEmpty()) return
         val data = LevelCache.getPlayerLevel(playerName) ?: return
