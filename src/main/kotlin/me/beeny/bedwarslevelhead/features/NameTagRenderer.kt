@@ -12,7 +12,7 @@ object NameTagRenderer {
     private const val POSITION_LEFT = 3
 
     fun shouldRenderLevel(): Boolean {
-        return BedwarsLevelHead.config.enabled
+        return BedwarsLevelHead.config.modEnabled
     }
 
     fun modifyNameTag(originalName: String, playerName: String): String {

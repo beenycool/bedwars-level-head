@@ -12,12 +12,12 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable
 class GuiPlayerTabOverlayMixin {
 
     @ModifyVariable(
-        method = ["getPlayerName"],
+        method = ["getPlayerName", "func_175243_a"],
         at = At("STORE"),
         ordinal = 0
     )
     fun modifyTabListName(displayName: IChatComponent): IChatComponent {
-        if (!BedwarsLevelHead.config.enabled || !BedwarsLevelHead.config.tabListEnabled) {
+        if (!BedwarsLevelHead.config.modEnabled || !BedwarsLevelHead.config.tabListEnabled) {
             return displayName
         }
 
