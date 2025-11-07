@@ -45,9 +45,7 @@ const initialization = pool
       last_modified BIGINT
     )`,
   )
-  .then(async () => {
-    await pool.query('ALTER TABLE player_cache ADD COLUMN IF NOT EXISTS etag TEXT');
-    await pool.query('ALTER TABLE player_cache ADD COLUMN IF NOT EXISTS last_modified BIGINT');
+  .then(() => {
     console.info('[cache] player_cache table is ready');
   })
   .catch((error: unknown) => {

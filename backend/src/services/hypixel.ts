@@ -5,6 +5,7 @@ import {
   HYPIXEL_RETRY_DELAY_MAX_MS,
   HYPIXEL_RETRY_DELAY_MIN_MS,
   HYPIXEL_TIMEOUT_MS,
+  OUTBOUND_USER_AGENT,
 } from '../config';
 import { HttpError } from '../util/httpError';
 
@@ -12,7 +13,7 @@ const hypixelClient = axios.create({
   baseURL: HYPIXEL_API_BASE_URL,
   timeout: HYPIXEL_TIMEOUT_MS,
   headers: {
-    'User-Agent': 'Levelhead-Proxy/1.0',
+    'User-Agent': OUTBOUND_USER_AGENT,
   },
 });
 

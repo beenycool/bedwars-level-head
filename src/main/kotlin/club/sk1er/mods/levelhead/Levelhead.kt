@@ -164,7 +164,7 @@ object Levelhead {
             )
             EssentialAPI.getMinecraftUtil().sendMessage(
                 prefix,
-                "${ChatColor.YELLOW}The mod is in alpha, so bugs may occur (i suck at coding) ${ChatColor.GOLD}Report issues on GitHub or message ${ChatColor.AQUA}beenyiscool${ChatColor.GOLD} on Discord, or to request any new features.",
+                "${ChatColor.YELLOW}The mod is in alpha, so bugs may occur. ${ChatColor.GOLD}Report issues on GitHub or message ${ChatColor.AQUA}beenyiscool${ChatColor.GOLD} on Discord to request new features.",
             )
         }
     }

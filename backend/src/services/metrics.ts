@@ -1,8 +1,24 @@
 import client from 'prom-client';
+import { BACKEND_VERSION, BUILD_REVISION } from '../config';
 
 export const registry = new client.Registry();
 
 client.collectDefaultMetrics({ register: registry });
+
+const buildInfo = new client.Gauge({
+  name: 'levelhead_build_info',
+  help: 'Levelhead backend build metadata.',
+  labelNames: ['version', 'revision'],
+  registers: [registry],
+});
+
+buildInfo.set(
+  {
+    version: BACKEND_VERSION || 'dev',
+    revision: BUILD_REVISION || 'unknown',
+  },
+  1,
+);
 
 export const httpRequestsTotal = new client.Counter({
   name: 'levelhead_http_requests_total',

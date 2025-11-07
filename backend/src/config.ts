@@ -1,4 +1,6 @@
 import { config as loadEnv } from 'dotenv';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
 loadEnv();
 
@@ -101,3 +103,43 @@ export const HYPIXEL_RETRY_DELAY_MIN_MS = parseIntEnv('HYPIXEL_RETRY_DELAY_MIN_M
 export const HYPIXEL_RETRY_DELAY_MAX_MS = parseIntEnv('HYPIXEL_RETRY_DELAY_MAX_MS', 150);
 
 export const CACHE_DB_URL = requiredEnv('CACHE_DB_URL');
+
+function readPackageVersion(): string {
+  const override = process.env.BACKEND_VERSION?.trim();
+  if (override) {
+    return override;
+  }
+
+  try {
+    const packageJsonPath = path.resolve(__dirname, '..', 'package.json');
+    const raw = readFileSync(packageJsonPath, 'utf8');
+    const parsed = JSON.parse(raw) as { version?: string };
+    if (typeof parsed.version === 'string' && parsed.version.trim().length > 0) {
+      return parsed.version.trim();
+    }
+  } catch (error) {
+    console.warn('Unable to read backend package version for user-agent metadata', error);
+  }
+
+  return 'dev';
+}
+
+function resolveRevision(): string {
+  const revision =
+    process.env.BUILD_SHA ??
+    process.env.GIT_REVISION ??
+    process.env.COMMIT_SHA ??
+    process.env.SOURCE_VERSION ??
+    '';
+  return revision.trim();
+}
+
+function buildUserAgent(version: string, revision: string): string {
+  const normalizedVersion = version || 'dev';
+  const normalizedRevision = revision || 'unknown';
+  return `Levelhead-Proxy/${normalizedVersion} (rev:${normalizedRevision})`;
+}
+
+export const BACKEND_VERSION = readPackageVersion();
+export const BUILD_REVISION = resolveRevision();
+export const OUTBOUND_USER_AGENT = buildUserAgent(BACKEND_VERSION, BUILD_REVISION);
