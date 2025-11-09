@@ -46,9 +46,27 @@ const initialization = pool
     )`,
   )
   .then(async () => {
-    await pool.query('ALTER TABLE player_cache ADD COLUMN IF NOT EXISTS etag TEXT');
-    await pool.query('ALTER TABLE player_cache ADD COLUMN IF NOT EXISTS last_modified BIGINT');
     console.info('[cache] player_cache table is ready');
+
+    const alterStatements: Array<{ column: string; query: string }> = [
+      { column: 'etag', query: 'ALTER TABLE player_cache ADD COLUMN IF NOT EXISTS etag TEXT' },
+      {
+        column: 'last_modified',
+        query: 'ALTER TABLE player_cache ADD COLUMN IF NOT EXISTS last_modified BIGINT',
+      },
+    ];
+
+    for (const { column, query } of alterStatements) {
+      try {
+        const result = await pool.query(query);
+        if (result.command === 'ALTER') {
+          console.info(`[cache] ensured column ${column} exists on player_cache`);
+        }
+      } catch (error) {
+        console.error(`[cache] failed to ensure column ${column} exists`, error);
+        throw error;
+      }
+    }
   })
   .catch((error: unknown) => {
     console.error('Failed to initialize cache table', error);

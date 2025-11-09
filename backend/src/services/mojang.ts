@@ -1,11 +1,12 @@
 import axios from 'axios';
 import { HttpError } from '../util/httpError';
+import { OUTBOUND_USER_AGENT } from '../config';
 
 const mojangClient = axios.create({
   baseURL: 'https://api.mojang.com',
   timeout: 5000,
   headers: {
-    'User-Agent': 'Levelhead-Proxy/1.0',
+    'User-Agent': OUTBOUND_USER_AGENT,
   },
   validateStatus: (status) => status >= 200 && status < 500,
 });
