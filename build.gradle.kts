@@ -1,7 +1,7 @@
 plugins {
     kotlin("jvm")
-    id("org.polyfrost.multi-version")
-    id("org.polyfrost.defaults")
+    id("gg.essential.multi-version")
+    id("gg.essential.defaults")
 }
 
 val modGroup: String by project
@@ -35,7 +35,7 @@ repositories {
 }
 
 dependencies {
-    compileOnly("org.polyfrost:oneconfig:0.3.0-alpha.+")
+    compileOnly("org.polyfrost:universalcraft-1.8.9-forge:2.0.1")
 
     embed("com.squareup.okhttp3:okhttp:3.14.9")
     compileOnly("org.spongepowered:mixin:0.8.5-SNAPSHOT")

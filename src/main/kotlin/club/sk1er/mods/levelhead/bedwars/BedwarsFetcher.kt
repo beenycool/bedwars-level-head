@@ -5,7 +5,7 @@ import club.sk1er.mods.levelhead.config.LevelheadConfig
 import com.google.gson.JsonObject
 import org.polyfrost.oneconfig.libs.universal.ChatColor
 import org.polyfrost.oneconfig.libs.universal.UMinecraft
-import org.polyfrost.oneconfig.utils.ChatUtils
+import club.sk1er.mods.levelhead.compat.ChatUtils
 import okhttp3.HttpUrl
 import okhttp3.Request
 import java.io.IOException

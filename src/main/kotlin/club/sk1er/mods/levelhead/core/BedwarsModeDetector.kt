@@ -2,7 +2,7 @@ package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.Levelhead
 import org.polyfrost.oneconfig.libs.universal.UMinecraft
-import org.polyfrost.oneconfig.utils.ServerUtils
+import club.sk1er.mods.levelhead.compat.ServerUtils
 import net.minecraft.scoreboard.Score
 import net.minecraft.scoreboard.ScorePlayerTeam
 import net.minecraft.util.StringUtils

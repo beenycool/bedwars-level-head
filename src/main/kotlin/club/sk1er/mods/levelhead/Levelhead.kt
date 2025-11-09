@@ -15,12 +15,11 @@ import club.sk1er.mods.levelhead.display.LevelheadTag
 import club.sk1er.mods.levelhead.render.AboveHeadRender
 import com.google.gson.Gson
 import com.google.gson.JsonParser
+import gg.essential.api.EssentialAPI
 import org.polyfrost.oneconfig.libs.universal.ChatColor
 import org.polyfrost.oneconfig.libs.universal.UMinecraft
-import org.polyfrost.oneconfig.utils.ChatUtils
-import org.polyfrost.oneconfig.commands.CommandManager
+import club.sk1er.mods.levelhead.compat.ChatUtils
 import club.sk1er.mods.levelhead.commands.LevelheadCommand
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -56,7 +55,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
 
-@Mod(modid = Levelhead.MODID, name = "BedWars Levelhead", version = Levelhead.VERSION, modLanguageAdapter = "org.polyfrost.oneconfig.api.KotlinAdapter")
+@Mod(modid = Levelhead.MODID, name = "BedWars Levelhead", version = Levelhead.VERSION, modLanguageAdapter = "gg.essential.api.utils.KotlinAdapter")
 object Levelhead {
     val logger: Logger = LogManager.getLogger()
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
@@ -185,7 +184,7 @@ object Levelhead {
         MinecraftForge.EVENT_BUS.register(AboveHeadRender)
         MinecraftForge.EVENT_BUS.register(BedwarsModeDetector)
         MinecraftForge.EVENT_BUS.register(this)
-        CommandManager.registerCommand(LevelheadCommand())
+        EssentialAPI.getCommandRegistry().registerCommand(LevelheadCommand())
         scheduleUpdateCheck()
         showWelcomeMessageIfNeeded()
     }

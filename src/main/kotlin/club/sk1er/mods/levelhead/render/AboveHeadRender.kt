@@ -4,13 +4,13 @@ import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.Levelhead.displayManager
 import club.sk1er.mods.levelhead.display.LevelheadTag
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
+import club.sk1er.mods.levelhead.compat.ServerUtils
 import org.polyfrost.oneconfig.libs.universal.UGraphics
 import org.polyfrost.oneconfig.libs.universal.UMatrixStack
 import org.polyfrost.oneconfig.libs.universal.UMinecraft
 import org.polyfrost.oneconfig.libs.universal.UMinecraft.getFontRenderer
 import org.polyfrost.oneconfig.libs.universal.UMinecraft.getMinecraft
 import org.polyfrost.oneconfig.libs.universal.UPlayer
-import org.polyfrost.oneconfig.utils.ServerUtils
 import net.minecraft.client.gui.FontRenderer
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats
 import net.minecraft.entity.EntityLivingBase
