@@ -2,7 +2,6 @@ package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import com.google.gson.JsonObject
-import gg.essential.universal.ChatColor
 import java.awt.Color
 
 object BedwarsStar {
@@ -98,7 +97,7 @@ object BedwarsStar {
 
     fun styleForStar(star: Int): PrestigeStyle {
         val prestigeIndex = (star / 100).coerceAtLeast(0)
-        val fallback = PrestigeStyle(ChatColor.GRAY.color ?: Color.GRAY, false)
+        val fallback = PrestigeStyle(Color.GRAY, false)
         val prestigeStyle = prestigeStyles.getOrNull(prestigeIndex) ?: prestigeStyles.lastOrNull() ?: fallback
         return prestigeStyle.copy()
     }

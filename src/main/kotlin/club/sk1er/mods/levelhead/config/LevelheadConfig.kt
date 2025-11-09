@@ -1,223 +1,152 @@
 package club.sk1er.mods.levelhead.config
 
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
-import net.minecraftforge.common.config.Configuration
-import java.io.File
+import org.polyfrost.oneconfig.api.config.v1.annotations.*
+import org.polyfrost.oneconfig.api.platform.v1.Platform
+import org.polyfrost.oneconfig.api.config.v1.Category
 import java.time.Duration
 import java.util.UUID
 
 object LevelheadConfig {
-    private const val CATEGORY_GENERAL = "general"
-    private const val PROPERTY_API_KEY = "hypixelApiKey"
-    private const val PROPERTY_PROXY_ENABLED = "proxyEnabled"
-    private const val PROPERTY_PROXY_BASE_URL = "proxyBaseUrl"
-    private const val PROPERTY_PROXY_AUTH_TOKEN = "proxyAuthToken"
-    private const val PROPERTY_INSTALL_ID = "installId"
-    private const val PROPERTY_STAR_CACHE_TTL_MINUTES = "starCacheTtlMinutes"
-    private const val PROPERTY_WELCOME_MESSAGE_SHOWN = "welcomeMessageShown"
-    private const val API_KEY_COMMENT = "Hypixel API key used for BedWars integrations"
-    private const val PROXY_ENABLED_COMMENT = "Enable fetching BedWars stats from a proxy backend"
-    private const val PROXY_BASE_URL_COMMENT = "Base URL for the proxy backend (e.g. https://example.com)"
-    private const val PROXY_AUTH_TOKEN_COMMENT = "Bearer token used to authenticate with the proxy backend"
-    private const val INSTALL_ID_COMMENT = "Unique identifier for this BedWars Levelhead installation"
-    private const val STAR_CACHE_TTL_COMMENT =
-        "Duration (in minutes) to cache BedWars stars locally before revalidating with the proxy/Hypixel"
-    private const val WELCOME_MESSAGE_COMMENT =
-        "Tracks whether the first-time welcome message has already been shown"
-
+    
     const val MIN_STAR_CACHE_TTL_MINUTES = 5
     const val MAX_STAR_CACHE_TTL_MINUTES = 180
     const val DEFAULT_STAR_CACHE_TTL_MINUTES = 45
 
-    private lateinit var configuration: Configuration
-
-    var apiKey: String = ""
-        private set
-
-    var proxyEnabled: Boolean = false
-        private set
-
-    var proxyBaseUrl: String = ""
-        private set
-
-    var proxyAuthToken: String = ""
-        private set
-
-    var installId: String = ""
-        private set
-
-    var starCacheTtlMinutes: Int = DEFAULT_STAR_CACHE_TTL_MINUTES
-        private set
-
-    val starCacheTtl: Duration
-        get() = Duration.ofMinutes(starCacheTtlMinutes.toLong())
-
-    var welcomeMessageShown: Boolean = false
-        private set
-
-    fun initialize(configFile: File) {
-        configFile.parentFile?.takeIf { !it.exists() }?.mkdirs()
-        configuration = Configuration(configFile)
-        val keyStoreDirectory = configFile.parentFile ?: configFile
-        val keyStoreFile = File(keyStoreDirectory, "bedwars-levelhead-apikey.json")
-        ApiKeyStore.initialize(keyStoreFile)
-        load()
-    }
-
-    private fun load() {
-        configuration.load()
-        val apiKeyProperty = configuration.get(CATEGORY_GENERAL, PROPERTY_API_KEY, "", API_KEY_COMMENT)
-        val persistedKey = ApiKeyStore.load()
-        val propertyKey = apiKeyProperty.string.trim()
-        apiKey = when {
-            !persistedKey.isNullOrBlank() -> persistedKey
-            propertyKey.isNotEmpty() -> propertyKey
-            else -> ""
-        }
-        if (!persistedKey.isNullOrBlank() && persistedKey != propertyKey) {
-            apiKeyProperty.set(persistedKey)
-        }
-
-        val proxyEnabledProperty = configuration.get(CATEGORY_GENERAL, PROPERTY_PROXY_ENABLED, true, PROXY_ENABLED_COMMENT)
-        proxyEnabled = proxyEnabledProperty.boolean
-
-        val proxyBaseUrlProperty = configuration.get(
-            CATEGORY_GENERAL,
-            PROPERTY_PROXY_BASE_URL,
-            "https://beeny.hackclub.app",
-            PROXY_BASE_URL_COMMENT
+    // General category configuration
+    @Config(title = "General", description = "General settings for BedWars Levelhead")
+    object General {
+        
+        @Text(
+            title = "Hypixel API Key", 
+            description = "Hypixel API key used for BedWars integrations",
+            placeholder = "Enter your API key here",
+            secure = true
         )
-        proxyBaseUrl = proxyBaseUrlProperty.string.trim()
-
-        val proxyAuthTokenProperty = configuration.get(CATEGORY_GENERAL, PROPERTY_PROXY_AUTH_TOKEN, "", PROXY_AUTH_TOKEN_COMMENT)
-        proxyAuthToken = proxyAuthTokenProperty.string.trim()
-
-        val installIdProperty = configuration.get(CATEGORY_GENERAL, PROPERTY_INSTALL_ID, "", INSTALL_ID_COMMENT)
-        val existingInstallId = installIdProperty.string.trim()
-        if (existingInstallId.isBlank()) {
-            val generated = UUID.randomUUID().toString().replace("-", "")
-            installIdProperty.set(generated)
-            installId = generated
-        } else {
-            installId = existingInstallId
-        }
-
-        val starCacheTtlProperty = configuration.get(
-            CATEGORY_GENERAL,
-            PROPERTY_STAR_CACHE_TTL_MINUTES,
-            DEFAULT_STAR_CACHE_TTL_MINUTES,
-            STAR_CACHE_TTL_COMMENT
+        var apiKey: String = ""
+        
+        @Switch(
+            title = "Enable Proxy", 
+            description = "Enable fetching BedWars stats from a proxy backend"
         )
-        val configuredTtl = starCacheTtlProperty.int
-        val sanitizedTtl = configuredTtl.coerceIn(MIN_STAR_CACHE_TTL_MINUTES, MAX_STAR_CACHE_TTL_MINUTES)
-        starCacheTtlMinutes = sanitizedTtl
-        if (sanitizedTtl != configuredTtl) {
-            starCacheTtlProperty.set(sanitizedTtl)
-        }
-
-        val welcomeMessageShownProperty = configuration.get(
-            CATEGORY_GENERAL,
-            PROPERTY_WELCOME_MESSAGE_SHOWN,
-            false,
-            WELCOME_MESSAGE_COMMENT,
+        var proxyEnabled: Boolean = false
+        
+        @Text(
+            title = "Proxy Base URL", 
+            description = "Base URL for the proxy backend (e.g. https://example.com)",
+            placeholder = "https://beeny.hackclub.app"
         )
-        welcomeMessageShown = welcomeMessageShownProperty.boolean
-        if (configuration.hasChanged()) {
-            configuration.save()
-        }
-    }
-
-    fun setApiKey(newKey: String) {
-        updateStringConfig(PROPERTY_API_KEY, API_KEY_COMMENT, newKey) { value ->
-            apiKey = value
-            if (value.isBlank()) {
-                ApiKeyStore.clear()
-            } else {
-                ApiKeyStore.save(value)
+        @DependsOn("proxyEnabled")
+        var proxyBaseUrl: String = "https://beeny.hackclub.app"
+        
+        @Text(
+            title = "Proxy Auth Token", 
+            description = "Bearer token used to authenticate with the proxy backend",
+            secure = true
+        )
+        @DependsOn("proxyEnabled")
+        var proxyAuthToken: String = ""
+        
+        @Text(
+            title = "Install ID", 
+            description = "Unique identifier for this BedWars Levelhead installation",
+            readOnly = true
+        )
+        var installId: String = ""
+        
+        @Slider(
+            title = "Star Cache Duration", 
+            description = "Duration (in minutes) to cache BedWars stars locally before revalidating with the proxy/Hypixel",
+            min = MIN_STAR_CACHE_TTL_MINUTES.toFloat(), 
+            max = MAX_STAR_CACHE_TTL_MINUTES.toFloat(),
+            step = 1f
+        )
+        var starCacheTtlMinutes: Int = DEFAULT_STAR_CACHE_TTL_MINUTES
+        
+        // Hidden field to track if welcome message was shown
+        var welcomeMessageShown: Boolean = false
+        
+        init {
+            // Generate install ID if not present
+            if (installId.isBlank()) {
+                installId = UUID.randomUUID().toString().replace("-", "")
             }
         }
     }
-
+    
+    // Computed properties for compatibility
+    val starCacheTtl: Duration
+        get() = Duration.ofMinutes(General.starCacheTtlMinutes.toLong())
+    
+    // API functions for compatibility with existing code
+    fun setApiKey(newKey: String) {
+        General.apiKey = newKey
+        if (newKey.isBlank()) {
+            ApiKeyStore.clear()
+        } else {
+            // Save to legacy for compatibility and set in OneConfig
+            ApiKeyStore.saveToLegacy(newKey)
+        }
+        BedwarsFetcher.resetWarnings()
+    }
+    
     fun clearApiKey() {
         setApiKey("")
     }
-
+    
     fun setProxyEnabled(enabled: Boolean) {
-        updateBooleanConfig(PROPERTY_PROXY_ENABLED, PROXY_ENABLED_COMMENT, enabled) { proxyEnabled = it }
+        General.proxyEnabled = enabled
+        BedwarsFetcher.resetWarnings()
     }
-
+    
     fun setProxyBaseUrl(baseUrl: String) {
-        updateStringConfig(PROPERTY_PROXY_BASE_URL, PROXY_BASE_URL_COMMENT, baseUrl) { proxyBaseUrl = it }
+        General.proxyBaseUrl = baseUrl
+        BedwarsFetcher.resetWarnings()
     }
-
+    
     fun setProxyAuthToken(authToken: String) {
-        updateStringConfig(PROPERTY_PROXY_AUTH_TOKEN, PROXY_AUTH_TOKEN_COMMENT, authToken) { proxyAuthToken = it }
+        General.proxyAuthToken = authToken
+        BedwarsFetcher.resetWarnings()
     }
-
+    
     fun setStarCacheTtlMinutes(minutes: Int) {
-        val sanitized = minutes.coerceIn(MIN_STAR_CACHE_TTL_MINUTES, MAX_STAR_CACHE_TTL_MINUTES)
-        updateIntConfig(PROPERTY_STAR_CACHE_TTL_MINUTES, STAR_CACHE_TTL_COMMENT, sanitized) {
-            starCacheTtlMinutes = it
-        }
+        General.starCacheTtlMinutes = minutes.coerceIn(MIN_STAR_CACHE_TTL_MINUTES, MAX_STAR_CACHE_TTL_MINUTES)
+        BedwarsFetcher.resetWarnings()
     }
-
+    
     fun setWelcomeMessageShown(shown: Boolean) {
-        ensureInitialized()
-        val property = configuration.get(
-            CATEGORY_GENERAL,
-            PROPERTY_WELCOME_MESSAGE_SHOWN,
-            false,
-            WELCOME_MESSAGE_COMMENT,
-        )
-        property.set(shown)
-        welcomeMessageShown = shown
-        configuration.save()
+        General.welcomeMessageShown = shown
     }
-
-    private fun updateStringConfig(
-        key: String,
-        comment: String,
-        value: String,
-        setter: (String) -> Unit,
-    ) {
-        ensureInitialized()
-        val sanitized = value.trim()
-        val property = configuration.get(CATEGORY_GENERAL, key, "", comment)
-        property.set(sanitized)
-        setter(sanitized)
-        configuration.save()
-        BedwarsFetcher.resetWarnings()
-    }
-
-    private fun updateBooleanConfig(
-        key: String,
-        comment: String,
-        value: Boolean,
-        setter: (Boolean) -> Unit,
-    ) {
-        ensureInitialized()
-        val property = configuration.get(CATEGORY_GENERAL, key, false, comment)
-        property.set(value)
-        setter(value)
-        configuration.save()
-        BedwarsFetcher.resetWarnings()
-    }
-
-    private fun updateIntConfig(
-        key: String,
-        comment: String,
-        value: Int,
-        setter: (Int) -> Unit,
-    ) {
-        ensureInitialized()
-        val property = configuration.get(CATEGORY_GENERAL, key, value, comment)
-        property.set(value)
-        setter(value)
-        configuration.save()
-        BedwarsFetcher.resetWarnings()
-    }
-
-    private fun ensureInitialized() {
-        check(::configuration.isInitialized) { "LevelheadConfig has not been initialized yet" }
+    
+    // Properties for compatibility
+    val apiKeyValue: String
+        get() = General.apiKey
+        
+    val proxyEnabledValue: Boolean
+        get() = General.proxyEnabled
+        
+    val proxyBaseUrlValue: String
+        get() = General.proxyBaseUrl
+        
+    val proxyAuthTokenValue: String
+        get() = General.proxyAuthToken
+        
+    val installIdValue: String
+        get() = General.installId
+        
+    val welcomeMessageShownValue: Boolean
+        get() = General.welcomeMessageShown
+        
+    val starCacheTtlMinutesValue: Int
+        get() = General.starCacheTtlMinutes
+    
+    // Migration function to be called during mod initialization
+    fun initialize() {
+        // Migrate API key from legacy storage if needed and OneConfig field is empty
+        if (General.apiKey.isBlank()) {
+            ApiKeyStore.migrateToOneConfig { key -> 
+                General.apiKey = key 
+            }
+        }
     }
 }

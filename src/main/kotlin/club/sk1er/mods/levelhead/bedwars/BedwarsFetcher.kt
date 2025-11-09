@@ -3,9 +3,7 @@ package club.sk1er.mods.levelhead.bedwars
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import com.google.gson.JsonObject
-import gg.essential.api.EssentialAPI
-import gg.essential.universal.ChatColor
-import gg.essential.universal.UMinecraft
+import net.minecraft.client.Minecraft
 import okhttp3.HttpUrl
 import okhttp3.Request
 import java.io.IOException
@@ -349,8 +347,9 @@ object BedwarsFetcher {
     }
 
     private fun sendMessage(message: String) {
-        UMinecraft.getMinecraft().addScheduledTask {
-            EssentialAPI.getMinecraftUtil().sendMessage("${ChatColor.AQUA}[Levelhead]", message)
+        Minecraft.getMinecraft().addScheduledTask {
+            // Using println for now - can be replaced with OneConfig's chat utilities later
+            println("[Levelhead] $message")
         }
     }
 

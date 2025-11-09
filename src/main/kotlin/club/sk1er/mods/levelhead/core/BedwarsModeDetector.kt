@@ -1,13 +1,12 @@
 package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.Levelhead
-import gg.essential.api.EssentialAPI
-import gg.essential.universal.UMinecraft
+import net.minecraft.client.Minecraft
 import net.minecraft.scoreboard.Score
 import net.minecraft.scoreboard.ScorePlayerTeam
 import net.minecraft.util.StringUtils
-import net.minecraftforge.client.event.ClientChatReceivedEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
+import net.minecraftforge.fml.common.gameevent.TickEvent
 import java.util.Locale
 
 object BedwarsModeDetector {
@@ -64,7 +63,7 @@ object BedwarsModeDetector {
     fun isInBedwars(): Boolean = currentContext().isBedwars
 
     fun shouldRequestData(): Boolean {
-        return EssentialAPI.getMinecraftUtil().isHypixel() && isInBedwars()
+        return Minecraft.getMinecraft().theWorld != null && Minecraft.getMinecraft().theWorld?.scoreboard != null && Minecraft.getMinecraft().theWorld?.scoreboard?.getObjectiveInDisplaySlot(1) != null
     }
 
     fun shouldRenderTags(): Boolean {
@@ -94,7 +93,7 @@ object BedwarsModeDetector {
     }
 
     private fun detectScoreboardContext(): Context? {
-        val mc = UMinecraft.getMinecraft()
+        val mc = Minecraft.getMinecraft()
         val world = mc.theWorld ?: return null
         val scoreboard = world.scoreboard ?: return null
         val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: return null
@@ -171,7 +170,7 @@ object BedwarsModeDetector {
 
     @SubscribeEvent
     fun onChat(event: ClientChatReceivedEvent) {
-        if (!EssentialAPI.getMinecraftUtil().isHypixel()) {
+        if (!Minecraft.getMinecraft().theWorld?.scoreboard?.getObjectiveInDisplaySlot(1) != null) {
             return
         }
         val message = event.message ?: return

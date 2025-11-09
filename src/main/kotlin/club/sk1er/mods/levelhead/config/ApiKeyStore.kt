@@ -8,6 +8,12 @@ import java.io.FileWriter
 
 private data class PersistedApiKey(val apiKey: String?)
 
+/**
+ * ApiKeyStore for BedWars Levelhead
+ * 
+ * This class provides secure API key storage and migration capabilities.
+ * It supports both OneConfig secure storage and legacy file storage.
+ */
 object ApiKeyStore {
     private val gson = Gson()
     @Volatile
@@ -17,7 +23,12 @@ object ApiKeyStore {
         storeFile = file
     }
 
-    fun load(): String? {
+    /**
+     * Load API key from legacy file storage
+     * 
+     * @return The stored API key, or null if not found
+     */
+    fun loadFromLegacy(): String? {
         val file = storeFile ?: return null
         if (!file.exists()) {
             return null
@@ -32,11 +43,16 @@ object ApiKeyStore {
         }.getOrNull()?.takeIf { it.isNotBlank() }
     }
 
-    fun save(apiKey: String) {
+    /**
+     * Save API key to legacy file storage (for migration compatibility)
+     * 
+     * @param apiKey The API key to save
+     */
+    fun saveToLegacy(apiKey: String) {
         val file = storeFile ?: return
         val sanitized = apiKey.trim()
         if (sanitized.isEmpty()) {
-            clear()
+            clearLegacy()
             return
         }
 
@@ -46,11 +62,14 @@ object ApiKeyStore {
                 gson.toJson(PersistedApiKey(sanitized), writer)
             }
         }.onFailure { throwable ->
-            Levelhead.logger.error("Failed to persist API key", throwable)
+            Levelhead.logger.error("Failed to persist API key to legacy store", throwable)
         }
     }
 
-    fun clear() {
+    /**
+     * Clear API key from legacy file
+     */
+    fun clearLegacy() {
         val file = storeFile ?: return
         if (!file.exists()) {
             return
@@ -59,5 +78,33 @@ object ApiKeyStore {
         if (!file.delete()) {
             Levelhead.logger.warn("Failed to delete persisted API key store at {}", file.absolutePath)
         }
+    }
+    
+    /**
+     * Clear API key from both legacy file and signal OneConfig to clear secure storage
+     */
+    fun clear() {
+        clearLegacy()
+        // OneConfig secure storage will be cleared by setting the field directly
+        // This is handled by the LevelheadConfig.setApiKey("") method
+    }
+    
+    /**
+     * Migrate existing API key from legacy file to OneConfig
+     * This should be called with the OneConfig field setter
+     * 
+     * @param oneConfigSetter A lambda that sets the OneConfig field
+     * @return true if migration was successful, false otherwise
+     */
+    fun migrateToOneConfig(oneConfigSetter: (String) -> Unit): Boolean {
+        val legacyKey = loadFromLegacy() ?: return false
+        
+        return kotlin.runCatching {
+            oneConfigSetter(legacyKey)
+            Levelhead.logger.info("Migrated API key from legacy store to OneConfig secure storage")
+            true
+        }.onFailure { throwable ->
+            Levelhead.logger.warn("Failed to migrate API key to OneConfig secure storage", throwable)
+        }.getOrDefault(false)
     }
 }
