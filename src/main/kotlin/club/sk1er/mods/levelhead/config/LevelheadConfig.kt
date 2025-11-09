@@ -26,10 +26,10 @@ object LevelheadConfig {
         var apiKey: String = ""
         
         @Switch(
-            title = "Enable Proxy", 
+            title = "Enable Proxy",
             description = "Enable fetching BedWars stats from a proxy backend"
         )
-        var proxyEnabled: Boolean = false
+        var proxyEnabled: Boolean = true
         
         @Text(
             title = "Proxy Base URL", 

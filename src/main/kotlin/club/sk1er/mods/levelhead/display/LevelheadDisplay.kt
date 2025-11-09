@@ -15,7 +15,8 @@ abstract class LevelheadDisplay(val displayPosition: DisplayPosition, val config
     fun checkCacheSize() {
         val max = max(150, Levelhead.displayManager.config.purgeSize)
         if (cache.size > max) {
-            val uuids = Minecraft.getMinecraft().theWorld.playerEntities.mapTo(mutableSetOf<UUID>()) { it.uniqueID }
+            val world = Minecraft.getMinecraft().theWorld ?: return
+            val uuids = world.playerEntities.mapTo(mutableSetOf<UUID>()) { it.uniqueID }
             val cache2ElectricBoogaloo = cache.filter { uuids.contains(it.key) }
             this.cache.clear()
             this.cache.putAll(cache2ElectricBoogaloo)

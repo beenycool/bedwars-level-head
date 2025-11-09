@@ -9,25 +9,19 @@ import club.sk1er.mods.levelhead.config.MasterConfig
 import club.sk1er.mods.levelhead.util.Bedwars
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.FontRenderer
-import net.minecraft.client.renderer.vertex.DefaultVertexFormats
 import net.minecraft.entity.EntityLivingBase
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraftforge.client.event.RenderLivingEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import org.lwjgl.opengl.GL11
-import org.polyfrost.oneconfig.api.events.Subscribe
 import org.polyfrost.polyui.color.PolyColor
-import org.polyfrost.polyui.renderer.Renderer
-import org.polyfrost.polyui.renderer.impl.PolyRenderer
-import org.polyfrost.polyui.state.State
 import org.polyfrost.polyui.utils.Matrix4f
 import org.polyfrost.polyui.utils.U
-import org.polyfrost.polyui.utils.Vec2f
 import java.awt.Color
 
 class AboveHeadRender {
 
-    @Subscribe
+    @SubscribeEvent
     fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
         if (!MasterConfig.enabled || !DisplayConfig.enabled) return
         if (!Bedwars.isHypixel()) return
@@ -39,7 +33,7 @@ class AboveHeadRender {
 
         val localPlayer = Minecraft.getMinecraft().thePlayer
 
-        displayManager?.aboveHead?.forEachIndexed { index, display ->
+        displayManager.aboveHead.forEachIndexed { index, display ->
             if (!display.config.enabled || (player.isSelf && !display.config.showSelf)) return@forEachIndexed
             val tag = display.cache[player.uniqueID]
             if (display.loadOrRender(player) && tag != null) {
@@ -51,7 +45,7 @@ class AboveHeadRender {
                     offset *= 2
                 }
                 if (player.isSelf) offset = 0.0
-                offset += displayManager?.config?.offset ?: 0.0
+                offset += displayManager.config.offset
                 renderName(tag, player, event.x, event.y + offset + index * 0.3, event.z)
             }
         }

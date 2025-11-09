@@ -2,8 +2,11 @@ package club.sk1er.mods.levelhead.bedwars
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
+import club.sk1er.mods.levelhead.core.BedwarsStar
+import club.sk1er.mods.levelhead.core.dashUUID
 import com.google.gson.JsonObject
 import net.minecraft.client.Minecraft
+import net.minecraft.util.ChatComponentText
 import okhttp3.HttpUrl
 import okhttp3.Request
 import java.io.IOException
@@ -20,14 +23,36 @@ import kotlin.text.RegexOption
 object BedwarsFetcher {
     private const val HYPIXEL_PLAYER_ENDPOINT = "https://api.hypixel.net/player"
 
+    enum class ChatColor(val code: String) {
+        RED("§c"),
+        YELLOW("§e"),
+        GOLD("§6"),
+        GREEN("§a"),
+        GRAY("§7");
+
+        override fun toString(): String = code
+    }
+
     private val missingKeyWarned = AtomicBoolean(false)
     private val invalidKeyWarned = AtomicBoolean(false)
     private val invalidProxyTokenWarned = AtomicBoolean(false)
     private val networkIssueWarned = AtomicBoolean(false)
     private val proxyMisconfiguredWarned = AtomicBoolean(false)
 
+    private data class CacheEntry(
+        var star: Int?,
+        var fetchedAt: Long,
+        var lastModified: Long?
+    )
+
+    private val cache = java.util.concurrent.ConcurrentHashMap<String, CacheEntry>()
+    @Volatile private var lastAttemptAt: Long? = null
+    @Volatile private var lastSuccessAt: Long? = null
+    @Volatile private var coldMisses: Int = 0
+    @Volatile private var expiredMisses: Int = 0
+
     sealed class FetchResult {
-        data class Success(val payload: JsonObject) : FetchResult()
+        data class Success(val payload: JsonObject, val lastModified: Long? = null) : FetchResult()
         object NotModified : FetchResult()
         data class TemporaryError(val reason: String? = null) : FetchResult()
         data class PermanentError(val reason: String? = null) : FetchResult()
@@ -49,6 +74,73 @@ object BedwarsFetcher {
         }
         return fetchProxy(identifier, lastFetchedAt)
     }
+
+    fun getStar(identifierInput: String): Int? {
+        val identifier = identifierInput.trim()
+        if (identifier.isEmpty()) return null
+
+        val normalized = identifier.lowercase(Locale.ROOT)
+        val now = System.currentTimeMillis()
+        val entry = cache[normalized]
+        val ttlMillis = LevelheadConfig.starCacheTtl.toMillis()
+        if (entry != null && now - entry.fetchedAt <= ttlMillis && entry.star != null) {
+            return entry.star
+        }
+
+        if (entry == null) {
+            coldMisses++
+        } else {
+            expiredMisses++
+        }
+
+        val result = if (shouldUseProxy()) {
+            fetchProxyPlayer(normalized, entry?.lastModified)
+        } else {
+            val uuid = dashUUID(identifier)?.let { UUID.fromString(it) }
+            if (uuid != null) fetchPlayer(uuid, entry?.lastModified) else FetchResult.PermanentError("INVALID_IDENTIFIER")
+        }
+
+        lastAttemptAt = now
+
+        return when (result) {
+            is FetchResult.Success -> {
+                val experience = parseBedwarsExperience(result.payload)
+                val star = experience?.let { BedwarsStar.calculateStar(it) }
+                cache[normalized] = CacheEntry(star, now, result.lastModified)
+                lastSuccessAt = System.currentTimeMillis()
+                star
+            }
+            FetchResult.NotModified -> {
+                entry?.let {
+                    it.fetchedAt = now
+                    lastSuccessAt = System.currentTimeMillis()
+                    it.star
+                }
+            }
+            is FetchResult.PermanentError -> {
+                entry?.star
+            }
+            is FetchResult.TemporaryError -> {
+                entry?.star
+            }
+        }
+    }
+
+    fun clearCache() {
+        cache.clear()
+        coldMisses = 0
+        expiredMisses = 0
+    }
+
+    fun cacheSize(): Int = cache.size
+
+    fun cacheMissesCold(): Int = coldMisses
+
+    fun cacheMissesExpired(): Int = expiredMisses
+
+    fun lastAttemptAgeMillis(): Long? = lastAttemptAt?.let { System.currentTimeMillis() - it }
+
+    fun lastSuccessAgeMillis(): Long? = lastSuccessAt?.let { System.currentTimeMillis() - it }
 
     private fun shouldUseProxy(): Boolean {
         if (!LevelheadConfig.proxyEnabled) {
@@ -115,6 +207,7 @@ object BedwarsFetcher {
                 }
 
                 val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
+                val lastModifiedMillis = parseHttpDateMillis(response.header("Last-Modified"))
                 val body = response.body()?.string().orEmpty()
 
                 if (!response.isSuccessful) {
@@ -158,7 +251,7 @@ object BedwarsFetcher {
 
                 networkIssueWarned.set(false)
                 handleRetryAfterHint("proxy", retryAfterMillis)
-                FetchResult.Success(json)
+                FetchResult.Success(json, lastModifiedMillis)
             }
         } catch (ex: IOException) {
             notifyNetworkIssue(ex)
@@ -224,7 +317,7 @@ object BedwarsFetcher {
                     return FetchResult.TemporaryError("PARSE_ERROR")
                 }
                 handleRetryAfterHint("hypixel", retryAfterMillis)
-                FetchResult.Success(json)
+                FetchResult.Success(json, null)
             }
         } catch (ex: IOException) {
             notifyNetworkIssue(ex)
@@ -348,8 +441,8 @@ object BedwarsFetcher {
 
     private fun sendMessage(message: String) {
         Minecraft.getMinecraft().addScheduledTask {
-            // Using println for now - can be replaced with OneConfig's chat utilities later
-            println("[Levelhead] $message")
+            val player = Minecraft.getMinecraft().thePlayer ?: return@addScheduledTask
+            player.addChatMessage(ChatComponentText(message))
         }
     }
 
@@ -374,6 +467,13 @@ object BedwarsFetcher {
             val now = Instant.now()
             val millis = Duration.between(now, targetInstant).toMillis()
             if (millis <= 0) null else millis
+        }.getOrNull()
+    }
+
+    private fun parseHttpDateMillis(value: String?): Long? {
+        val raw = value?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        return kotlin.runCatching {
+            ZonedDateTime.parse(raw, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli()
         }.getOrNull()
     }
 

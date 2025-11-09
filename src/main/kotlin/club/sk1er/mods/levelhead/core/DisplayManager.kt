@@ -101,9 +101,31 @@ class DisplayManager {
         aboveHead.forEach { it.cache.clear() }
     }
 
-    fun setDisplay(playerName: String, displayText: String) {
-        // This method is used by the simplified Levelhead mod
-        // Could be enhanced to work with the display system
+    fun clearCache() = clearAll()
+
+    fun setDisplay(playerUuid: java.util.UUID, playerName: String, displayText: String) {
+        aboveHead
+            .filter { it.config.enabled }
+            .forEach { display ->
+                display.setDisplay(playerUuid, playerName, displayText)
+            }
+    }
+
+    fun checkCacheSizes() {
+        aboveHead.forEach { it.checkCacheSize() }
+    }
+
+    fun primaryDisplay(): AboveHeadDisplay? = aboveHead.firstOrNull()
+
+    fun setEnabled(enabled: Boolean): Boolean {
+        if (MasterConfig.enabled == enabled) {
+            return false
+        }
+        MasterConfig.enabled = enabled
+        if (!enabled) {
+            clearAll()
+        }
+        return true
     }
 
     // Helper class to hold player information

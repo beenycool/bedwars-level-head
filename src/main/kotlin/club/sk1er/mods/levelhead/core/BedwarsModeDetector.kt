@@ -5,8 +5,10 @@ import net.minecraft.client.Minecraft
 import net.minecraft.scoreboard.Score
 import net.minecraft.scoreboard.ScorePlayerTeam
 import net.minecraft.util.StringUtils
+import net.minecraftforge.client.event.ClientChatReceivedEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import net.minecraftforge.fml.common.gameevent.TickEvent
+import org.polyfrost.oneconfig.api.platform.v1.Platform
 import java.util.Locale
 
 object BedwarsModeDetector {
@@ -63,12 +65,21 @@ object BedwarsModeDetector {
     fun isInBedwars(): Boolean = currentContext().isBedwars
 
     fun shouldRequestData(): Boolean {
-        return Minecraft.getMinecraft().theWorld != null && Minecraft.getMinecraft().theWorld?.scoreboard != null && Minecraft.getMinecraft().theWorld?.scoreboard?.getObjectiveInDisplaySlot(1) != null
+        if (!isOnHypixel()) return false
+        val mc = Minecraft.getMinecraft()
+        val world = mc.theWorld ?: return false
+        val scoreboard = world.scoreboard ?: return false
+        return scoreboard.getObjectiveInDisplaySlot(1) != null
     }
 
     fun shouldRenderTags(): Boolean {
         currentContext()
         return shouldRequestData()
+    }
+
+    private fun isOnHypixel(): Boolean {
+        val address = Platform.getPlatform().currentServer?.address ?: return false
+        return address.contains("hypixel.net", ignoreCase = true)
     }
 
     private fun handleContextChange(old: Context, new: Context) {
@@ -170,7 +181,11 @@ object BedwarsModeDetector {
 
     @SubscribeEvent
     fun onChat(event: ClientChatReceivedEvent) {
-        if (!Minecraft.getMinecraft().theWorld?.scoreboard?.getObjectiveInDisplaySlot(1) != null) {
+        if (!isOnHypixel()) {
+            return
+        }
+        val world = Minecraft.getMinecraft().theWorld ?: return
+        if (world.scoreboard?.getObjectiveInDisplaySlot(1) == null) {
             return
         }
         val message = event.message ?: return

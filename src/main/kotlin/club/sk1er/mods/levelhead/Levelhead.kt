@@ -1,324 +1,265 @@
 package club.sk1er.mods.levelhead
 
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
+import club.sk1er.mods.levelhead.commands.LevelheadCommand
 import club.sk1er.mods.levelhead.config.ApiKeyStore
-import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.config.DisplayConfig
+import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.config.MasterConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
-import club.sk1er.mods.levelhead.core.DisplayManager
 import club.sk1er.mods.levelhead.core.BedwarsStar
-import club.sk1er.mods.levelhead.core.dashUUID
-import club.sk1er.mods.levelhead.display.LevelheadDisplay
-import club.sk1er.mods.levelhead.display.AboveHeadDisplay
-import club.sk1er.mods.levelhead.commands.LevelheadCommand
+import club.sk1er.mods.levelhead.core.DisplayManager
+import club.sk1er.mods.levelhead.core.RateLimiter
 import club.sk1er.mods.levelhead.render.AboveHeadRender
-import club.sk1er.mods.levelhead.util.Bedwars
-import com.google.gson.Gson
+import dev.deftu.omnicore.api.client.chat.OmniClientChat
 import net.minecraft.client.Minecraft
-import net.minecraft.client.settings.GameSettings
 import net.minecraft.client.settings.KeyBinding
+import net.minecraft.entity.player.EntityPlayer
 import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.fml.client.registry.ClientRegistry
-import net.minecraftforge.fml.common.Loader
 import net.minecraftforge.fml.common.Mod
 import net.minecraftforge.fml.common.event.FMLInitializationEvent
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent
+import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
+import net.minecraftforge.fml.common.gameevent.InputEvent
+import net.minecraftforge.fml.common.gameevent.TickEvent
 import net.minecraftforge.fml.relauncher.Side
 import net.minecraftforge.fml.relauncher.SideOnly
-import org.polyfrost.oneconfig.api.events.EventManager
-import org.polyfrost.oneconfig.api.mod.OneConfigMod
-import org.polyfrost.oneconfig.api.platform.v1.Platform
-import org.polyfrost.oneconfig.api.config.v1.Config
-import java.io.File
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledExecutorService
-import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
+import org.apache.logging.log4j.LogManager
+import org.polyfrost.oneconfig.api.config.v1.Config
+import org.polyfrost.oneconfig.api.mod.OneConfigMod
+import java.io.File
 import java.time.Duration
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.Dispatchers
 
-@Mod(modid = "levelhead", version = "2.0.0", clientSideOnly = true, modid = "levelhead", version = "2.0.0", clientSideOnly = true)
+@Mod(modid = "levelhead", version = "2.0.0", clientSideOnly = true)
 @SideOnly(Side.CLIENT)
 object Levelhead : OneConfigMod("levelhead") {
-    
-    // Keep the old properties for compatibility
     const val VERSION = "2.0.0"
     const val MODID = "levelhead"
-    
-    // Logger for compatibility
-    private val loggerImpl = org.apache.logging.log4j.LogManager.getLogger("Levelhead")
+
+    private val loggerImpl = LogManager.getLogger("Levelhead")
     val logger = object {
         fun error(msg: String, vararg args: Any?) = loggerImpl.error(msg, *args)
         fun warn(msg: String, vararg args: Any?) = loggerImpl.warn(msg, *args)
         fun info(msg: String, vararg args: Any?) = loggerImpl.info(msg, *args)
         fun debug(msg: String, vararg args: Any?) = loggerImpl.debug(msg, *args)
     }
-    
-    // HTTP client and JSON parser for compatibility
-    val okHttpClient = okhttp3.OkHttpClient.Builder()
+
+    val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
         .writeTimeout(5, TimeUnit.SECONDS)
         .build()
-    
+
     val gson = com.google.gson.Gson()
     val jsonParser = com.google.gson.JsonParser()
-    
-    // Simplified rate limiter for compatibility
-    val rateLimiter = club.sk1er.mods.levelhead.core.RateLimiter(150, java.time.Duration.ofMinutes(5))
-    
-    // Placeholder methods for compatibility
-    fun fetch(requests: List<LevelheadRequest>) {
-        // Simplified - just log the requests for now
-        // In a full implementation, this would trigger the display updates
-        println("Levelhead: Processing ${requests.size} fetch requests")
-    }
-    
-    fun clearCachedStars() {
-        // Simplified - clear any cached data
-        println("Levelhead: Clearing cached stars")
-    }
-    
+
+    val rateLimiter = RateLimiter(150, Duration.ofMinutes(5))
+
+    private val scopeJob = SupervisorJob()
+    val scope = CoroutineScope(Dispatchers.IO + scopeJob)
+
+    val bedwarsFetcher = BedwarsFetcher
+    val bedwarsModeDetector = BedwarsModeDetector
+    val bedwarsStar = BedwarsStar
+    lateinit var displayManager: DisplayManager
+
+    private var toggleKeybind: KeyBinding? = null
+    private var lastDisplayUpdateTime = 0L
+    private var rateLimiterNotified = false
+    private var serverCooldownNotified = false
+
+    data class StatusSnapshot(
+        val proxyEnabled: Boolean,
+        val proxyConfigured: Boolean,
+        val cacheSize: Int,
+        val starCacheTtlMinutes: Int,
+        val cacheMissesCold: Int,
+        val cacheMissesExpired: Int,
+        val lastAttemptAgeMillis: Long?,
+        val lastSuccessAgeMillis: Long?,
+        val rateLimitRemaining: Int,
+        val rateLimitResetMillis: Long?,
+        val serverCooldownMillis: Long?
+    )
+
     @Config(title = "Levelhead", description = "BedWars Levelhead Configuration")
-    object ConfigHandler {
-        // This is just a marker class - the actual config is in the LevelheadConfig object
-    }
-    
-    // Public properties for access by other classes
-    var bedwarsFetcher: BedwarsFetcher? = null
-    var displayManager: DisplayManager? = null
-    var bedwarsModeDetector: BedwarsModeDetector? = null
-    var bedwarsStar: BedwarsStar? = null
-    
-    private val scheduler: ScheduledExecutorService = Executors.newScheduledThreadPool(4)
-    private var updateThread: Thread? = null
-    private val updateRunnable = Runnable {
-        while (updateThread == Thread.currentThread()) {
-            try {
-                if (Minecraft.getMinecraft().thePlayer != null && MasterConfig.enabled) {
-                    bedwarsFetcher?.update()
-                }
-                Thread.sleep(1000)
-            } catch (e: InterruptedException) {
-                break
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
-        }
-    }
+    object ConfigHandler
 
     @Mod.EventHandler
     fun preInit(event: FMLPreInitializationEvent) {
-        // Initialize OneConfig
         OneConfigMod.initialize()
-        
-        // Register commands
         LevelheadCommand.register()
-        
-        // Initialize API key store
+
         val configDir = File(event.modConfigurationDirectory, "levelhead")
         if (!configDir.exists()) {
             configDir.mkdirs()
         }
         val apiKeyFile = File(configDir, "apikey.json")
         ApiKeyStore.initialize(apiKeyFile)
-        
-        // Initialize display system
+
         displayManager = DisplayManager()
-        bedwarsFetcher = BedwarsFetcher(this)
-        bedwarsModeDetector = BedwarsModeDetector(this)
-        bedwarsStar = BedwarsStar(this)
+        LevelheadConfig.initialize()
     }
 
     @Mod.EventHandler
     fun init(event: FMLInitializationEvent) {
-        // Register event handlers
+        MinecraftForge.EVENT_BUS.register(this)
         setupEventHandlers()
-        
-        // Register keybind
         registerKeybind()
-        
-        // Initialize API key from OneConfig if not already loaded
-        val apiKey = LevelheadConfig.General.getApiKey()
-        if (apiKey.isNotEmpty() && !apiKey.contentEquals(placeholder)) {
+
+        val apiKey = LevelheadConfig.General.apiKey
+        if (apiKey.isNotEmpty()) {
             ApiKeyStore.setApiKey(apiKey)
         }
-        
-        // Register for configuration updates
-        EventManager.subscribe(this::class.java, this::onConfigUpdate)
-        
-        // Start update thread
-        startUpdateThread()
-        
-        println("BedWars Levelhead mod initialized successfully")
+
+        logger.info("BedWars Levelhead mod initialised successfully")
     }
 
     private fun setupEventHandlers() {
-        // Register Forge events
         MinecraftForge.EVENT_BUS.register(AboveHeadRender())
-        MinecraftForge.EVENT_BUS.register(BedwarsModeDetector(this))
-        MinecraftForge.EVENT_BUS.register(DisplayManager())
-        
-        // Register OneConfig events
-        EventManager.subscribe("levelhead.tick", this::onTick)
-        EventManager.subscribe("levelhead.render", this::onRender)
-        EventManager.subscribe("levelhead.config", this::onConfigChange)
+        MinecraftForge.EVENT_BUS.register(displayManager)
+        MinecraftForge.EVENT_BUS.register(bedwarsModeDetector)
     }
 
     private fun registerKeybind() {
-        try {
-            val keybind = KeyBinding("Toggle Levelhead", 0, "BedWars Levelhead")
-            ClientRegistry.registerKeyBinding(keybind)
-            
-            // Register keypress event
-            EventManager.subscribe("levelhead.keypress", this::onKeyPress)
-        } catch (e: Exception) {
-            println("Failed to register keybind: ${e.message}")
-        }
+        val keybind = KeyBinding("Toggle Levelhead", 0, "BedWars Levelhead")
+        toggleKeybind = keybind
+        ClientRegistry.registerKeyBinding(keybind)
     }
 
-    private fun onTick() {
-        if (Minecraft.getMinecraft().thePlayer == null || !MasterConfig.enabled) {
-            return
-        }
-        
-        val player = Minecraft.getMinecraft().thePlayer
-        val worldName = Bedwars.getWorldName(player.worldScoreboard) ?: return
-        
-        // Update display based on current mode
-        val mode = bedwarsModeDetector?.getCurrentMode() ?: return
-        if (!bedwarsModeDetector?.isInGame() ?: return) {
-            return
-        }
-        
-        // Update player displays
-        updatePlayerDisplays()
+    @SubscribeEvent
+    fun handleClientTick(event: TickEvent.ClientTickEvent) {
+        if (event.phase != TickEvent.Phase.END) return
+        onTick()
     }
 
-    private fun onRender() {
-        if (!MasterConfig.enabled || !DisplayConfig.enabled) {
-            return
-        }
-        
-        // Rendering is handled by AboveHeadRender class
-    }
-
-    private fun onConfigChange() {
-        // Handle configuration changes
-        if (!MasterConfig.enabled) {
-            displayManager?.clearAll()
-        }
-        
-        // Update API key in secure store
-        val currentKey = ApiKeyStore.getApiKey() ?: ""
-        val newKey = LevelheadConfig.General.getApiKey()
-        if (currentKey != newKey && newKey.isNotEmpty() && newKey != placeholder) {
-            ApiKeyStore.setApiKey(newKey)
-        }
-    }
-
-    private fun onConfigUpdate(configData: Any?) {
-        // Handle OneConfig configuration updates
-        onConfigChange()
-    }
-
-    private fun onKeyPress(keyCode: Int) {
-        if (keyCode == GameSettings.getKeyDisplayOfFunction()?.keyCode) {
-            // Toggle display
+    @SubscribeEvent
+    fun handleKeyInput(event: InputEvent.KeyInputEvent) {
+        val keybind = toggleKeybind ?: return
+        if (keybind.isPressed) {
             DisplayConfig.enabled = !DisplayConfig.enabled
         }
     }
 
-    private fun updatePlayerDisplays() {
-        val player = Minecraft.getMinecraft().thePlayer ?: return
-        if (player.worldScoreboard == null) return
-        
-        val worldName = Bedwars.getWorldName(player.worldScoreboard) ?: return
-        val mode = bedwarsModeDetector?.getCurrentMode() ?: return
-        
-        // Update all player displays in the world
-        for (otherPlayer in player.world.getEntityList()) {
-            if (otherPlayer is net.minecraft.entity.player.EntityPlayer && otherPlayer != player) {
-                updatePlayerDisplay(otherPlayer, mode)
-            }
-        }
-    }
-
-    private fun updatePlayerDisplay(player: net.minecraft.entity.player.EntityPlayer, mode: String) {
-        val name = player.getName()
-        val level = bedwarsFetcher?.getLevel(name) ?: return
-        
-        // Skip if showing self is disabled and it's the local player
-        if (!DisplayConfig.showSelf && player == Minecraft.getMinecraft().thePlayer) {
+    private fun onTick() {
+        val mc = Minecraft.getMinecraft()
+        val player = mc.thePlayer ?: return
+        if (!MasterConfig.enabled || !DisplayConfig.enabled) {
             return
         }
-        
-        // Format and display the level
-        val displayText = formatLevelDisplay(level, mode)
-        if (displayText != null) {
-            displayManager?.setDisplay(player.getName(), displayText)
+
+        val now = System.currentTimeMillis()
+        if (now - lastDisplayUpdateTime < 1_000L) {
+            return
         }
+        lastDisplayUpdateTime = now
+
+        if (!bedwarsModeDetector.shouldRequestData()) {
+            return
+        }
+
+        updatePlayerDisplays(player)
+    }
+
+    private fun updatePlayerDisplays(localPlayer: EntityPlayer) {
+        val world = localPlayer.worldObj ?: return
+        val mode = DisplayConfig.type
+
+        if (DisplayConfig.showSelf) {
+            updatePlayerDisplay(localPlayer, mode)
+        }
+
+        world.playerEntities
+            .asSequence()
+            .filterIsInstance<EntityPlayer>()
+            .filter { it.uniqueID != localPlayer.uniqueID }
+            .forEach { updatePlayerDisplay(it, mode) }
+    }
+
+    private fun updatePlayerDisplay(player: EntityPlayer, mode: String) {
+        val star = bedwarsFetcher.getStar(player.name) ?: return
+        val displayText = formatLevelDisplay(star, mode) ?: return
+        displayManager.setDisplay(player.uniqueID, player.name, displayText)
     }
 
     private fun formatLevelDisplay(level: Int, mode: String): String? {
         if (!DisplayConfig.enabled) return null
-        
-        val color = when {
-            level < DisplayConfig.starThreshold -> "§7"
-            level < DisplayConfig.legendThreshold -> "§b"
-            level < DisplayConfig.grandmasterThreshold -> "§a"
-            level < DisplayConfig.gemThreshold -> "§d"
-            else -> "§5"
-        }
-        
-        val prefix = when {
-            level >= DisplayConfig.gemThreshold -> "§d[§5Gem§d] §5$level"
-            level >= DisplayConfig.grandmasterThreshold -> "§a[§2GM§a] §a$level"
-            level >= DisplayConfig.legendThreshold -> "§b[§9LEGEND§b] §9$level"
-            level >= DisplayConfig.starThreshold -> "§6★ §e$level"
-            else -> "§7$level"
-        }
-        
-        return if (DisplayConfig.showType) {
-            "§8[§7${mode.uppercase()}§8] $prefix"
-        } else {
-            prefix
-        }
+
+        val header = DisplayConfig.headerString.takeUnless { it.isBlank() }?.let { "$it: " } ?: ""
+        val footerTemplate = DisplayConfig.footerString ?: "%star%"
+        val footer = footerTemplate.replace("%star%", level.toString())
+        return "$header$footer"
     }
 
-    private fun startUpdateThread() {
-        updateThread = Thread(updateRunnable, "Levelhead-UpdateThread")
-        updateThread?.isDaemon = true
-        updateThread?.start()
-    }
+    private fun onConfigChange() {
+        if (!MasterConfig.enabled) {
+            displayManager.clearAll()
+        }
 
-    private fun stopUpdateThread() {
-        updateThread?.interrupt()
-        updateThread = null
+        val currentKey = ApiKeyStore.getApiKey() ?: ""
+        val newKey = LevelheadConfig.General.apiKey
+        if (currentKey != newKey && newKey.isNotEmpty()) {
+            ApiKeyStore.setApiKey(newKey)
+        }
     }
 
     override fun onConfigSaved() {
-        // OneConfig will call this when configuration is saved
         onConfigChange()
     }
-    
-    // Data class for compatibility
-    data class LevelheadRequest(
-        val uuid: String, 
-        val display: club.sk1er.mods.levelhead.display.LevelheadDisplay, 
-        val allowOverride: Boolean
-    )
-    
-    // Placeholder for rate limiter methods
+
+    fun resetWorldCoroutines() {
+        scopeJob.cancelChildren()
+    }
+
+    fun clearCachedStars() {
+        bedwarsFetcher.clearCache()
+        displayManager.clearCachesWithoutRefetch()
+    }
+
+    fun statusSnapshot(): StatusSnapshot {
+        val metrics = rateLimiter.metricsSnapshot()
+        return StatusSnapshot(
+            proxyEnabled = LevelheadConfig.proxyEnabledValue,
+            proxyConfigured = LevelheadConfig.proxyEnabledValue && LevelheadConfig.proxyBaseUrlValue.isNotBlank(),
+            cacheSize = bedwarsFetcher.cacheSize(),
+            starCacheTtlMinutes = LevelheadConfig.starCacheTtlMinutesValue,
+            cacheMissesCold = bedwarsFetcher.cacheMissesCold(),
+            cacheMissesExpired = bedwarsFetcher.cacheMissesExpired(),
+            lastAttemptAgeMillis = bedwarsFetcher.lastAttemptAgeMillis(),
+            lastSuccessAgeMillis = bedwarsFetcher.lastSuccessAgeMillis(),
+            rateLimitRemaining = metrics.remaining,
+            rateLimitResetMillis = metrics.resetIn.toMillis(),
+            serverCooldownMillis = metrics.serverCooldown?.toMillis()
+        )
+    }
+
     fun resetRateLimiterNotification() {
-        rateLimiter.resetState()
+        rateLimiterNotified = false
     }
-    
+
+    fun onRateLimiterBlocked(metrics: RateLimiter.Metrics) {
+        if (rateLimiterNotified) return
+        rateLimiterNotified = true
+        val seconds = metrics.resetIn.seconds.coerceAtLeast(0)
+        OmniClientChat.displayChatMessage("§eBedWars Levelhead requests paused for §6${seconds}s§e due to rate limiting.")
+    }
+
     fun onServerRetryAfter(duration: Duration) {
-        rateLimiter.registerServerCooldown(duration)
+        if (serverCooldownNotified) return
+        serverCooldownNotified = true
+        val seconds = duration.seconds.coerceAtLeast(0)
+        OmniClientChat.displayChatMessage("§eBackend requested cooldown for §6${seconds}s§e.")
     }
-    
+
     fun resetServerCooldownNotification() {
-        // Reset cooldown notification
+        serverCooldownNotified = false
     }
 }

@@ -2,6 +2,7 @@ package club.sk1er.mods.levelhead.display
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.DisplayConfig
+import club.sk1er.mods.levelhead.display.LevelheadTag
 import club.sk1er.mods.levelhead.core.isNPC
 import club.sk1er.mods.levelhead.core.trimmed
 import net.minecraft.client.Minecraft
@@ -20,6 +21,7 @@ class AboveHeadDisplay(config: DisplayConfig) : LevelheadDisplay(DisplayPosition
 
     override fun loadOrRender(player: EntityPlayer?): Boolean {
         if (player == null) return false
+        val localPlayer = Minecraft.getMinecraft().thePlayer ?: return false
         if (player.isPotionActive(
             //#if MC==10809
             Potion.invisibility
@@ -32,24 +34,24 @@ class AboveHeadDisplay(config: DisplayConfig) : LevelheadDisplay(DisplayPosition
         //$$ if (!player.getPassengers().isEmpty()) return false
         //#endif
         val min = min(4096, Levelhead.displayManager.config.renderDistance * Levelhead.displayManager.config.renderDistance)
-        return player.getDistanceSqToEntity(Minecraft.getMinecraft().thePlayer) <= min
+        return player.getDistanceSqToEntity(localPlayer) <= min
                 && (!player.hasCustomName() || player.customNameTag.isNotEmpty())
                 && player.displayNameString.isNotEmpty()
                 && super.loadOrRender(player)
                 && !player.isInvisible
-                && !player.isInvisibleToPlayer(Minecraft.getMinecraft().thePlayer)
+                && !player.isInvisibleToPlayer(localPlayer)
                 && !player.isSneaking
     }
 
     private fun renderFromTeam(player: EntityPlayer): Boolean {
         if (player.isUser) return true
         val team = player.team
-        val team1 = Minecraft.getMinecraft().thePlayer?.team
+        val localPlayerTeam = Minecraft.getMinecraft().thePlayer?.team
         if (team != null) {
             return when (team.nameTagVisibility) {
                 EnumVisible.NEVER -> false
-                EnumVisible.HIDE_FOR_OTHER_TEAMS -> team1 == null || team.isSameTeam(team1)
-                EnumVisible.HIDE_FOR_OWN_TEAM -> team1 == null || !team.isSameTeam(team1)
+                EnumVisible.HIDE_FOR_OTHER_TEAMS -> localPlayerTeam == null || team.isSameTeam(localPlayerTeam)
+                EnumVisible.HIDE_FOR_OWN_TEAM -> localPlayerTeam == null || !team.isSameTeam(localPlayerTeam)
                 EnumVisible.ALWAYS -> true
                 else -> true
             }
@@ -58,5 +60,20 @@ class AboveHeadDisplay(config: DisplayConfig) : LevelheadDisplay(DisplayPosition
     }
 
     override fun toString(): String = "head${Levelhead.displayManager.aboveHead.indexOf(this)+1}"
+
+    fun setDisplay(playerUuid: UUID, playerName: String, displayText: String) {
+        val tag = cache.computeIfAbsent(playerUuid) { LevelheadTag(playerUuid) }
+        val headerValue = if (config.headerString.isBlank()) "" else "${config.headerString}: "
+        tag.header.apply {
+            value = headerValue
+            color = java.awt.Color.WHITE
+            chroma = config.headerChroma
+        }
+        tag.footer.apply {
+            value = displayText
+            color = java.awt.Color.WHITE
+            chroma = config.footerChroma
+        }
+    }
 
 }

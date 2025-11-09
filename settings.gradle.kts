@@ -6,10 +6,13 @@ pluginManagement {
         maven("https://maven.architectury.dev/")
         maven("https://maven.minecraftforge.net")
         maven("https://repo.essential.gg/repository/maven-public")
+        maven("https://repo.polyfrost.club/releases")
     }
     plugins {
         val egtVersion = "0.1.10"
         id("gg.essential.multi-version.root") version egtVersion
+        id("org.polyfrost.oneconfig.multi-version") version "0.3.0"
+        id("org.polyfrost.oneconfig.defaults") version "0.3.0"
     }
 }
 

@@ -201,21 +201,26 @@ object LevelheadCommand {
     }
 
     private fun setEnabled(enabled: Boolean) {
-        val changed = Levelhead.displayManager.setEnabled(enabled)
+        if (MasterConfig.enabled == enabled) {
+            val stateText = if (enabled) "enabled" else "disabled"
+            val color = if (enabled) "§a" else "§c"
+            OmniClientChat.displayChatMessage("§fBedWars Levelhead is already ${color}$stateText§f.")
+            return
+        }
+        MasterConfig.enabled = enabled
+        if (!enabled) {
+            Levelhead.displayManager.clearAll()
+        }
         val stateText = if (enabled) "enabled" else "disabled"
         val color = if (enabled) "§a" else "§c"
-        val message = if (changed) {
-            "${color}BedWars Levelhead §fhas been ${color}$stateText§f."
-        } else {
-            "§fBedWars Levelhead is already ${color}$stateText§f."
-        }
-        OmniClientChat.displayChatMessage(message)
+        OmniClientChat.displayChatMessage("${color}BedWars Levelhead §fhas been ${color}$stateText§f.")
     }
 
     private fun resetBedwarsFetcher() {
         Levelhead.resetWorldCoroutines()
         Levelhead.rateLimiter.resetState()
         Levelhead.displayManager.clearCachesWithoutRefetch()
+        BedwarsFetcher.clearCache()
         BedwarsFetcher.resetWarnings()
     }
 

@@ -35,8 +35,9 @@ configurations.implementation.get().extendsFrom(embed)
 
 dependencies {
     compileOnly("org.polyfrost:oneconfig-$platform:0.3.0")
-    
+
     embed("com.squareup.okhttp3:okhttp:3.14.9")
+    embed("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     compileOnly("org.spongepowered:mixin:0.8.5-SNAPSHOT")
 }
 
