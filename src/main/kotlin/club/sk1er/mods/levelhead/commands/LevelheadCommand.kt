@@ -12,8 +12,8 @@ import gg.essential.api.EssentialAPI
 import gg.essential.api.commands.Command
 import gg.essential.api.commands.DefaultHandler
 import gg.essential.api.commands.SubCommand
-import gg.essential.universal.ChatColor
-import gg.essential.universal.UMinecraft
+import org.polyfrost.oneconfig.libs.universal.ChatColor
+import org.polyfrost.oneconfig.libs.universal.UMinecraft
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine

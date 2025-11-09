@@ -5,11 +5,12 @@ pluginManagement {
         maven("https://maven.fabricmc.net")
         maven("https://maven.architectury.dev/")
         maven("https://maven.minecraftforge.net")
-        maven("https://repo.essential.gg/repository/maven-public")
+        maven("https://repo.polyfrost.org/releases")
+        maven("https://jitpack.io")
     }
     plugins {
-        val egtVersion = "0.1.10"
-        id("gg.essential.multi-version.root") version egtVersion
+        val polyfrostVersion = "0.1.10"
+        id("org.polyfrost.multi-version.root") version polyfrostVersion
     }
 }
 

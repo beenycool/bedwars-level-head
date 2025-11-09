@@ -1,8 +1,8 @@
 package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.display.LevelheadDisplay
-import gg.essential.universal.ChatColor
-import gg.essential.universal.wrappers.UPlayer
+import org.polyfrost.oneconfig.libs.universal.ChatColor
+import org.polyfrost.oneconfig.libs.universal.UPlayer
 import net.minecraft.entity.player.EntityPlayer
 import java.awt.Color
 import java.util.*

@@ -2,7 +2,7 @@ package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.Levelhead
 import gg.essential.api.EssentialAPI
-import gg.essential.universal.UMinecraft
+import org.polyfrost.oneconfig.libs.universal.UMinecraft
 import net.minecraft.scoreboard.Score
 import net.minecraft.scoreboard.ScorePlayerTeam
 import net.minecraft.util.StringUtils

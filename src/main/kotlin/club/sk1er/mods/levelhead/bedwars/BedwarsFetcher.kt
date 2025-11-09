@@ -4,8 +4,8 @@ import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import com.google.gson.JsonObject
 import gg.essential.api.EssentialAPI
-import gg.essential.universal.ChatColor
-import gg.essential.universal.UMinecraft
+import org.polyfrost.oneconfig.libs.universal.ChatColor
+import org.polyfrost.oneconfig.libs.universal.UMinecraft
 import okhttp3.HttpUrl
 import okhttp3.Request
 import java.io.IOException

@@ -1,8 +1,8 @@
-import gg.essential.gradle.util.versionFromBuildIdAndBranch
+import org.polyfrost.gradle.util.versionFromBuildIdAndBranch
 
 plugins {
     kotlin("jvm") version "1.6.0" apply false
-    id("gg.essential.multi-version.root")
+    id("org.polyfrost.multi-version.root")
 }
 
 version = versionFromBuildIdAndBranch()

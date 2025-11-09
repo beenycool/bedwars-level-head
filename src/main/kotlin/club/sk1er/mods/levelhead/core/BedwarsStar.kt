@@ -2,7 +2,7 @@ package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import com.google.gson.JsonObject
-import gg.essential.universal.ChatColor
+import org.polyfrost.oneconfig.libs.universal.ChatColor
 import java.awt.Color
 
 object BedwarsStar {

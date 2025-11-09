@@ -5,13 +5,12 @@ import club.sk1er.mods.levelhead.Levelhead.displayManager
 import club.sk1er.mods.levelhead.display.LevelheadTag
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import gg.essential.api.EssentialAPI
-import gg.essential.elementa.utils.withAlpha
-import gg.essential.universal.UGraphics
-import gg.essential.universal.UMatrixStack
-import gg.essential.universal.UMinecraft
-import gg.essential.universal.UMinecraft.getFontRenderer
-import gg.essential.universal.UMinecraft.getMinecraft
-import gg.essential.universal.wrappers.UPlayer
+import org.polyfrost.oneconfig.libs.universal.UGraphics
+import org.polyfrost.oneconfig.libs.universal.UMatrixStack
+import org.polyfrost.oneconfig.libs.universal.UMinecraft
+import org.polyfrost.oneconfig.libs.universal.UMinecraft.getFontRenderer
+import org.polyfrost.oneconfig.libs.universal.UMinecraft.getMinecraft
+import org.polyfrost.oneconfig.libs.universal.UPlayer
 import net.minecraft.client.gui.FontRenderer
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats
 import net.minecraft.entity.EntityLivingBase
@@ -107,7 +106,9 @@ object AboveHeadRender {
         if (component.chroma) {
             renderer.drawString(component.value, x, 0, Levelhead.DarkChromaColor)
         } else {
-            renderer.drawString(component.value, x, 0, component.color.withAlpha(0.2f).rgb)
+            val alpha = (0.2f * 255).toInt().coerceIn(0, 255)
+            val colorWithAlpha = (component.color.rgb and 0xFFFFFF) or (alpha shl 24)
+            renderer.drawString(component.value, x, 0, colorWithAlpha)
         }
         UGraphics.enableDepth()
         UGraphics.depthMask(true)

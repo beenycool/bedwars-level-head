@@ -4,8 +4,8 @@ import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.DisplayConfig
 import club.sk1er.mods.levelhead.core.isNPC
 import club.sk1er.mods.levelhead.core.trimmed
-import gg.essential.universal.UMinecraft
-import gg.essential.universal.wrappers.UPlayer
+import org.polyfrost.oneconfig.libs.universal.UMinecraft
+import org.polyfrost.oneconfig.libs.universal.UPlayer
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.potion.Potion
 import net.minecraft.scoreboard.Team.EnumVisible

@@ -16,8 +16,8 @@ import club.sk1er.mods.levelhead.render.AboveHeadRender
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import gg.essential.api.EssentialAPI
-import gg.essential.universal.ChatColor
-import gg.essential.universal.UMinecraft
+import org.polyfrost.oneconfig.libs.universal.ChatColor
+import org.polyfrost.oneconfig.libs.universal.UMinecraft
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
