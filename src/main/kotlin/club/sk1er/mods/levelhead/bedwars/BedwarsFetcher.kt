@@ -18,6 +18,7 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.text.RegexOption
 
 object BedwarsFetcher {
@@ -48,8 +49,8 @@ object BedwarsFetcher {
     private val cache = java.util.concurrent.ConcurrentHashMap<String, CacheEntry>()
     @Volatile private var lastAttemptAt: Long? = null
     @Volatile private var lastSuccessAt: Long? = null
-    @Volatile private var coldMisses: Int = 0
-    @Volatile private var expiredMisses: Int = 0
+    private val coldMisses = AtomicInteger(0)
+    private val expiredMisses = AtomicInteger(0)
 
     sealed class FetchResult {
         data class Success(val payload: JsonObject, val lastModified: Long? = null) : FetchResult()
@@ -88,9 +89,9 @@ object BedwarsFetcher {
         }
 
         if (entry == null) {
-            coldMisses++
+            coldMisses.incrementAndGet()
         } else {
-            expiredMisses++
+            expiredMisses.incrementAndGet()
         }
 
         val result = if (shouldUseProxy()) {
@@ -128,15 +129,15 @@ object BedwarsFetcher {
 
     fun clearCache() {
         cache.clear()
-        coldMisses = 0
-        expiredMisses = 0
+        coldMisses.set(0)
+        expiredMisses.set(0)
     }
 
     fun cacheSize(): Int = cache.size
 
-    fun cacheMissesCold(): Int = coldMisses
+    fun cacheMissesCold(): Int = coldMisses.get()
 
-    fun cacheMissesExpired(): Int = expiredMisses
+    fun cacheMissesExpired(): Int = expiredMisses.get()
 
     fun lastAttemptAgeMillis(): Long? = lastAttemptAt?.let { System.currentTimeMillis() - it }
 

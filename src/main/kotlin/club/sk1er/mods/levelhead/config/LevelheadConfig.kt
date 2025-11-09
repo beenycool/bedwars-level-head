@@ -74,10 +74,6 @@ object LevelheadConfig {
         }
     }
     
-    // Computed properties for compatibility
-    val starCacheTtl: Duration
-        get() = Duration.ofMinutes(General.starCacheTtlMinutes.toLong())
-    
     // API functions for compatibility with existing code
     fun setApiKey(newKey: String) {
         General.apiKey = newKey
@@ -139,6 +135,25 @@ object LevelheadConfig {
         
     val starCacheTtlMinutesValue: Int
         get() = General.starCacheTtlMinutes
+    
+    // Direct property accessors for compatibility
+    val apiKey: String
+        get() = General.apiKey
+        
+    val proxyEnabled: Boolean
+        get() = General.proxyEnabled
+        
+    val proxyBaseUrl: String
+        get() = General.proxyBaseUrl
+        
+    val proxyAuthToken: String
+        get() = General.proxyAuthToken
+        
+    val installId: String
+        get() = General.installId
+        
+    val starCacheTtl: Duration
+        get() = Duration.ofMinutes(General.starCacheTtlMinutes.toLong())
     
     // Migration function to be called during mod initialization
     fun initialize() {

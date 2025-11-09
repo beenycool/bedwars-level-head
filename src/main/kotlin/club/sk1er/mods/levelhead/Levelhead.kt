@@ -75,6 +75,7 @@ object Levelhead : OneConfigMod("levelhead") {
     private var lastDisplayUpdateTime = 0L
     private var rateLimiterNotified = false
     private var serverCooldownNotified = false
+    private var previousApiKey: String = ""
 
     data class StatusSnapshot(
         val proxyEnabled: Boolean,
@@ -116,8 +117,9 @@ object Levelhead : OneConfigMod("levelhead") {
         registerKeybind()
 
         val apiKey = LevelheadConfig.General.apiKey
+        previousApiKey = apiKey
         if (apiKey.isNotEmpty()) {
-            ApiKeyStore.setApiKey(apiKey)
+            ApiKeyStore.saveToLegacy(apiKey)
         }
 
         logger.info("BedWars Levelhead mod initialised successfully")
@@ -204,10 +206,24 @@ object Levelhead : OneConfigMod("levelhead") {
             displayManager.clearAll()
         }
 
-        val currentKey = ApiKeyStore.getApiKey() ?: ""
+        val currentKey = previousApiKey
         val newKey = LevelheadConfig.General.apiKey
-        if (currentKey != newKey && newKey.isNotEmpty()) {
-            ApiKeyStore.setApiKey(newKey)
+        if (currentKey != newKey) {
+            if (newKey.isEmpty()) {
+                // Clear API key and flush all caches/rate-limiters
+                LevelheadConfig.clearApiKey()
+                clearCachedStars()
+                rateLimiter.resetState()
+                resetWorldCoroutines()
+                displayManager.clearAll()
+            } else {
+                // Set new API key and invalidate caches immediately
+                LevelheadConfig.setApiKey(newKey)
+                clearCachedStars()
+                rateLimiter.resetState()
+                resetWorldCoroutines()
+            }
+            previousApiKey = newKey
         }
     }
 

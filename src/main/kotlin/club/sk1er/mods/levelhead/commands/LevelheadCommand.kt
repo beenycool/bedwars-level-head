@@ -101,9 +101,9 @@ object LevelheadCommand {
     // General mod commands
     @Command(value = ["reload"])
     fun reload() {
-        Levelhead.resetWorldCoroutines()
+        Levelhead.clearCachedStars()
         Levelhead.rateLimiter.resetState()
-        Levelhead.displayManager.clearCache()
+        Levelhead.resetWorldCoroutines()
         OmniClientChat.displayChatMessage("§aReloaded BedWars star cache.")
     }
 
