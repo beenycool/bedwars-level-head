@@ -18,6 +18,16 @@ import statsRouter from './routes/stats';
 
 const app = express();
 
+function sanitizeUrlForLogs(target: string): string {
+  const queryIndex = target.indexOf('?');
+  if (queryIndex === -1) {
+    return target;
+  }
+
+  const path = target.slice(0, queryIndex);
+  return `${path}?<redacted>`;
+}
+
 app.disable('x-powered-by');
 app.set('trust proxy', TRUST_PROXY);
 app.use(express.json({ limit: '64kb' }));
@@ -36,7 +46,8 @@ app.use((req, res, next) => {
           : req.route?.path ?? req.path;
     observeRequest(req.method, routeLabel, res.statusCode, durationSeconds);
 
-    const target = req.originalUrl ?? req.url ?? routeLabel;
+    const rawTarget = req.originalUrl ?? req.url ?? routeLabel;
+    const target = sanitizeUrlForLogs(rawTarget);
     const message = `[request] ${req.method} ${target} -> ${res.statusCode} (${durationMs.toFixed(2)} ms)`;
     if (res.statusCode >= 500) {
       console.error(message);

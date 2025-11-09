@@ -10,7 +10,11 @@ services:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-qO", "-", "http://localhost:3000/healthz"]
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"require('http').get('http://localhost:3000/healthz', res => { if (res.statusCode && res.statusCode < 400) { res.resume(); process.exit(0); } res.resume(); process.exit(1); }).on('error', () => process.exit(1));\""
+        ]
       interval: 30s
       timeout: 5s
       retries: 3

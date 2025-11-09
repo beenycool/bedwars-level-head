@@ -218,7 +218,7 @@ object Levelhead : OneConfigMod("levelhead") {
                 displayManager.clearAll()
             } else {
                 // Set new API key and invalidate caches immediately
-                LevelheadConfig.setApiKey(newKey)
+                LevelahdConfig.setApiKey(newKey)
                 clearCachedStars()
                 rateLimiter.resetState()
                 resetWorldCoroutines()

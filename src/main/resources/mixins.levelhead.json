@@ -3,6 +3,6 @@
   "package": "club.sk1er.mods.levelhead.mixin",
   "refmap": "mixins.levelhead.refmap.json",
   "mixins": [],
-  "verbose": true,
+  "verbose": false,
   "client": []
 }

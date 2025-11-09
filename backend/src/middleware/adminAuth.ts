@@ -19,10 +19,6 @@ function extractAdminToken(req: Request): string | null {
     return customHeader.trim();
   }
 
-  if (typeof req.query.adminToken === 'string' && req.query.adminToken.trim().length > 0) {
-    return req.query.adminToken.trim();
-  }
-
   return null;
 }
 

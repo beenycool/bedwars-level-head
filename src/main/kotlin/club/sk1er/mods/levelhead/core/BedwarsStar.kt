@@ -5,6 +5,8 @@ import com.google.gson.JsonObject
 import java.awt.Color
 
 object BedwarsStar {
+    // XP values sourced from Hypixel's documented BedWars prestige math:
+    // https://hypixel.net/threads/guide-bed-wars-xp-prestiges-items-cosmetics-all-things-in-one-thread.2558003/
     private val FIRST_LEVEL_EXPERIENCE = longArrayOf(500L, 1000L, 2000L, 3500L)
     private const val EXPERIENCE_PER_LEVEL = 5000L
     private const val EXPERIENCE_PER_PRESTIGE = 487_000L

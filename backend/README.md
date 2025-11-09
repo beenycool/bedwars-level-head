@@ -78,6 +78,8 @@ The backend uses environment variables for all secrets and tunables. The `.env.e
 | `HYPIXEL_RETRY_DELAY_MIN_MS` | ❌ | Minimum retry backoff when calling the Hypixel API (defaults to `50`). |
 | `HYPIXEL_RETRY_DELAY_MAX_MS` | ❌ | Maximum retry backoff when calling the Hypixel API (defaults to `150`). |
 | `TRUST_PROXY` | ❌ | Express [trust proxy](https://expressjs.com/en/guide/behind-proxies.html) setting. Defaults to `false` to ignore forwarded IP headers. |
+| `BACKEND_VERSION` | ❌ | Overrides the version string used in outbound `User-Agent` headers and Prometheus build metrics. Defaults to `package.json` version. |
+| `BUILD_SHA` | ❌ | Optional revision/Git SHA included in outbound `User-Agent` headers and Prometheus build metrics. |
 
 Set these variables in your deployment environment or `.env` file.
 
@@ -87,9 +89,32 @@ Administrative endpoints require clients to present a valid API token via one of
 
 - `Authorization: Bearer <token>` header (recommended)
 - `X-Admin-Token: <token>` header
-- `adminToken=<token>` query parameter (useful for manual debugging only)
 
-Multiple tokens can be configured by providing a comma-separated list in `ADMIN_API_KEYS`.
+Query string authentication is explicitly rejected to avoid leaking secrets via logs, proxies, or browser history. Multiple tokens can be configured by providing a comma-separated list in `ADMIN_API_KEYS`.
+
+### Proxy awareness
+
+Set the `TRUST_PROXY` value to match your ingress/CDN topology so that rate limiting and logging see the correct client IP. Examples:
+
+- `TRUST_PROXY=false` (default) – use direct client IPs, ignoring `X-Forwarded-*`.
+- `TRUST_PROXY=loopback` – trust headers from local reverse proxies such as Nginx on the same host.
+- `TRUST_PROXY=1` – trust the first hop (Heroku-style single proxy).
+- `TRUST_PROXY=cloudflare` – trust Cloudflare’s published ranges.
+- `TRUST_PROXY=10.0.0.0/8` – trust requests forwarded by a known internal subnet.
+
+If you deploy behind Cloudflare Tunnel, Nginx, or another load balancer, document the exact value you use so future operators do not accidentally collapse all IPs to the proxy address.
+
+### Cache TTL and validators
+
+Cached player payloads honor validators (`ETag`, `Last-Modified`) returned by Hypixel. Clients should send `If-None-Match`/`If-Modified-Since` (and optionally `Cache-Control: max-age=0`) when reusing cached data so the proxy can respond with `304 Not Modified` instead of a full payload. The backend uses the same headers when calling upstream. The `CACHE_TTL_MS` setting defaults to 24 hours and is clamped between 1 hour (3,600,000 ms) and 24 hours (86,400,000 ms); shorter values are automatically rounded up to 1 hour.
+
+### Rate limiting scope
+
+The built-in rate limiter stores buckets in memory, so limits apply per process. When scaling horizontally you should either deploy a shared limiter (e.g., Redis) or note the per-instance behavior in your runbooks so operators can size fleets conservatively. Short-lived in-memory request deduplication also operates per instance, so duplicate cache fetches may occur briefly after scaling out.
+
+### Outbound identification
+
+Requests to Hypixel and Mojang include a `User-Agent` string of the form `Levelhead-Proxy/<version> (rev:<sha>)`. Set `BACKEND_VERSION` and `BUILD_SHA` to override these values when deploying custom builds so upstream providers can correlate traffic with your release.
 
 ## API Endpoints
 
