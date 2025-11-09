@@ -1,8 +1,8 @@
 package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.Levelhead
-import gg.essential.api.EssentialAPI
 import org.polyfrost.oneconfig.libs.universal.UMinecraft
+import org.polyfrost.oneconfig.utils.ServerUtils
 import net.minecraft.scoreboard.Score
 import net.minecraft.scoreboard.ScorePlayerTeam
 import net.minecraft.util.StringUtils
@@ -64,7 +64,7 @@ object BedwarsModeDetector {
     fun isInBedwars(): Boolean = currentContext().isBedwars
 
     fun shouldRequestData(): Boolean {
-        return EssentialAPI.getMinecraftUtil().isHypixel() && isInBedwars()
+        return ServerUtils.isHypixel() && isInBedwars()
     }
 
     fun shouldRenderTags(): Boolean {
@@ -171,7 +171,7 @@ object BedwarsModeDetector {
 
     @SubscribeEvent
     fun onChat(event: ClientChatReceivedEvent) {
-        if (!EssentialAPI.getMinecraftUtil().isHypixel()) {
+        if (!ServerUtils.isHypixel()) {
             return
         }
         val message = event.message ?: return

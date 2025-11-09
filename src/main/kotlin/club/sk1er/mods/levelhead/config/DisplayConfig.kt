@@ -1,7 +1,7 @@
 package club.sk1er.mods.levelhead.config
 
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
-import gg.essential.universal.ChatColor
+import org.polyfrost.oneconfig.libs.universal.ChatColor
 import java.awt.Color
 
 class DisplayConfig {

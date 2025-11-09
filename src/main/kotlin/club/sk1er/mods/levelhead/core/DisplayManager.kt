@@ -9,7 +9,7 @@ import club.sk1er.mods.levelhead.core.BedwarsModeDetector.Context
 import club.sk1er.mods.levelhead.display.AboveHeadDisplay
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
-import gg.essential.universal.UMinecraft
+import org.polyfrost.oneconfig.libs.universal.UMinecraft
 import net.minecraft.entity.player.EntityPlayer
 import org.apache.commons.io.FileUtils
 import java.io.File

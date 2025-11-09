@@ -15,9 +15,11 @@ import club.sk1er.mods.levelhead.display.LevelheadTag
 import club.sk1er.mods.levelhead.render.AboveHeadRender
 import com.google.gson.Gson
 import com.google.gson.JsonParser
-import gg.essential.api.EssentialAPI
 import org.polyfrost.oneconfig.libs.universal.ChatColor
 import org.polyfrost.oneconfig.libs.universal.UMinecraft
+import org.polyfrost.oneconfig.utils.ChatUtils
+import org.polyfrost.oneconfig.commands.CommandManager
+import club.sk1er.mods.levelhead.commands.LevelheadCommand
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -54,7 +56,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
 
-@Mod(modid = Levelhead.MODID, name = "BedWars Levelhead", version = Levelhead.VERSION, modLanguageAdapter = "gg.essential.api.utils.KotlinAdapter")
+@Mod(modid = Levelhead.MODID, name = "BedWars Levelhead", version = Levelhead.VERSION, modLanguageAdapter = "org.polyfrost.oneconfig.api.KotlinAdapter")
 object Levelhead {
     val logger: Logger = LogManager.getLogger()
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
@@ -130,9 +132,8 @@ object Levelhead {
                     }
                     val downloadUrl = "$MODRINTH_MOD_PAGE/versions"
                     UMinecraft.getMinecraft().addScheduledTask {
-                        EssentialAPI.getMinecraftUtil().sendMessage(
-                            "${ChatColor.AQUA}[Levelhead]",
-                            "${ChatColor.YELLOW}A new update is available: ${ChatColor.GOLD}$latestVersion${ChatColor.YELLOW} (current ${ChatColor.GOLD}$VERSION${ChatColor.YELLOW}). ${ChatColor.GREEN}Download: ${ChatColor.AQUA}$downloadUrl"
+                        ChatUtils.sendMessage(
+                            "${ChatColor.AQUA}[Levelhead] ${ChatColor.YELLOW}A new update is available: ${ChatColor.GOLD}$latestVersion${ChatColor.YELLOW} (current ${ChatColor.GOLD}$VERSION${ChatColor.YELLOW}). ${ChatColor.GREEN}Download: ${ChatColor.AQUA}$downloadUrl"
                         )
                     }
                 }
@@ -158,13 +159,9 @@ object Levelhead {
         LevelheadConfig.setWelcomeMessageShown(true)
         UMinecraft.getMinecraft().addScheduledTask {
             val prefix = "${ChatColor.AQUA}[Levelhead]"
-            EssentialAPI.getMinecraftUtil().sendMessage(
-                prefix,
-                "${ChatColor.GREEN}Thanks for installing Levelhead!",
-            )
-            EssentialAPI.getMinecraftUtil().sendMessage(
-                prefix,
-                "${ChatColor.YELLOW}The mod is in alpha, so bugs may occur. ${ChatColor.GOLD}Report issues on GitHub or message ${ChatColor.AQUA}beenyiscool${ChatColor.GOLD} on Discord to request new features.",
+            ChatUtils.sendMessage("$prefix ${ChatColor.GREEN}Thanks for installing Levelhead!")
+            ChatUtils.sendMessage(
+                "$prefix ${ChatColor.YELLOW}The mod is in alpha, so bugs may occur. ${ChatColor.GOLD}Report issues on GitHub or message ${ChatColor.AQUA}beenyiscool${ChatColor.GOLD} on Discord to request new features."
             )
         }
     }
@@ -188,7 +185,7 @@ object Levelhead {
         MinecraftForge.EVENT_BUS.register(AboveHeadRender)
         MinecraftForge.EVENT_BUS.register(BedwarsModeDetector)
         MinecraftForge.EVENT_BUS.register(this)
-        EssentialAPI.getCommandRegistry().registerCommand(LevelheadCommand())
+        CommandManager.registerCommand(LevelheadCommand())
         scheduleUpdateCheck()
         showWelcomeMessageIfNeeded()
     }
@@ -243,9 +240,8 @@ object Levelhead {
         if (rateLimiterNotified.compareAndSet(false, true)) {
             val resetText = formatCooldownDuration(metrics.resetIn)
             UMinecraft.getMinecraft().addScheduledTask {
-                EssentialAPI.getMinecraftUtil().sendMessage(
-                    "${ChatColor.AQUA}[Levelhead]",
-                    "${ChatColor.YELLOW}BedWars stats cooling down. ${ChatColor.GOLD}${metrics.remaining} requests remaining${ChatColor.YELLOW}. Reset in $resetText."
+                ChatUtils.sendMessage(
+                    "${ChatColor.AQUA}[Levelhead] ${ChatColor.YELLOW}BedWars stats cooling down. ${ChatColor.GOLD}${metrics.remaining} requests remaining${ChatColor.YELLOW}. Reset in $resetText."
                 )
             }
         }
@@ -266,9 +262,8 @@ object Levelhead {
             if (serverCooldownNotifiedUntil.compareAndSet(current, newDeadline)) {
                 val formatted = formatCooldownDuration(duration)
                 UMinecraft.getMinecraft().addScheduledTask {
-                    EssentialAPI.getMinecraftUtil().sendMessage(
-                        "${ChatColor.AQUA}[Levelhead]",
-                        "${ChatColor.YELLOW}Proxy asked us to pause BedWars stat requests for ${ChatColor.GOLD}$formatted${ChatColor.YELLOW}."
+                    ChatUtils.sendMessage(
+                        "${ChatColor.AQUA}[Levelhead] ${ChatColor.YELLOW}Proxy asked us to pause BedWars stat requests for ${ChatColor.GOLD}$formatted${ChatColor.YELLOW}."
                     )
                 }
                 return

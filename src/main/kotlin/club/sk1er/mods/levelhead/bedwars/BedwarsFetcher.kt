@@ -3,9 +3,9 @@ package club.sk1er.mods.levelhead.bedwars
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import com.google.gson.JsonObject
-import gg.essential.api.EssentialAPI
 import org.polyfrost.oneconfig.libs.universal.ChatColor
 import org.polyfrost.oneconfig.libs.universal.UMinecraft
+import org.polyfrost.oneconfig.utils.ChatUtils
 import okhttp3.HttpUrl
 import okhttp3.Request
 import java.io.IOException
@@ -350,7 +350,7 @@ object BedwarsFetcher {
 
     private fun sendMessage(message: String) {
         UMinecraft.getMinecraft().addScheduledTask {
-            EssentialAPI.getMinecraftUtil().sendMessage("${ChatColor.AQUA}[Levelhead]", message)
+            ChatUtils.sendMessage("${ChatColor.AQUA}[Levelhead] $message")
         }
     }
 
