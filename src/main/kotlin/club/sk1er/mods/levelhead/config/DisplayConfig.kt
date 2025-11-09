@@ -1,7 +1,6 @@
 package club.sk1er.mods.levelhead.config
 
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
-import gg.essential.universal.ChatColor
 import java.awt.Color
 
 class DisplayConfig {
@@ -9,11 +8,11 @@ class DisplayConfig {
     var showSelf: Boolean = true
     var type: String = BedwarsModeDetector.BEDWARS_STAR_TYPE
 
-    var headerColor: Color = ChatColor.AQUA.color!!
+    var headerColor: Color = Color.AQUA
     var headerChroma: Boolean = false
     var headerString: String = BedwarsModeDetector.DEFAULT_HEADER
 
-    var footerColor: Color = ChatColor.YELLOW.color!!
+    var footerColor: Color = Color.YELLOW
     var footerChroma: Boolean = false
     var footerString: String? = null
 }

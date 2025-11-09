@@ -9,7 +9,7 @@ import club.sk1er.mods.levelhead.core.BedwarsModeDetector.Context
 import club.sk1er.mods.levelhead.display.AboveHeadDisplay
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
-import gg.essential.universal.UMinecraft
+import net.minecraft.client.Minecraft
 import net.minecraft.entity.player.EntityPlayer
 import org.apache.commons.io.FileUtils
 import java.io.File
@@ -107,7 +107,6 @@ class DisplayManager(val file: File) {
         return migrated
     }
 
-    @OptIn(ExperimentalStdlibApi::class)
     fun joinWorld(resetDetector: Boolean = false) {
         if (resetDetector) {
             BedwarsModeDetector.onWorldJoin()
@@ -124,7 +123,6 @@ class DisplayManager(val file: File) {
         requestAllDisplays()
     }
 
-    @OptIn(ExperimentalStdlibApi::class)
     fun playerJoin(player: EntityPlayer) {
         if (!config.enabled) return
         if (player.isNPC) return
@@ -195,20 +193,21 @@ class DisplayManager(val file: File) {
         return true
     }
 
-    @OptIn(ExperimentalStdlibApi::class)
     fun requestAllDisplays() {
         if (!config.enabled) return
         if (!BedwarsModeDetector.shouldRequestData()) return
         val displays = aboveHead.filter { it.config.enabled }
         if (displays.isEmpty()) return
-        UMinecraft.getWorld()?.playerEntities
-            ?.map { playerInfo ->
+        val mc = Minecraft.getMinecraft()
+        val world = mc.theWorld ?: return
+        world.playerEntities
+            .map { playerInfo ->
                 displays.map { display ->
                     Levelhead.LevelheadRequest(playerInfo.uniqueID.trimmed, display, display.bottomValue)
                 }
             }
-            ?.flatten()
-            ?.chunked(20) { reqList ->
+            .flatten()
+            .chunked(20) { reqList ->
                 Levelhead.fetch(reqList)
             }
     }

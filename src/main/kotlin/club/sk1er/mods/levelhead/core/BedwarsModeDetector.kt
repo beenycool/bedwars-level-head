@@ -1,8 +1,7 @@
 package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.Levelhead
-import gg.essential.api.EssentialAPI
-import gg.essential.universal.UMinecraft
+import net.minecraft.client.Minecraft
 import net.minecraft.scoreboard.Score
 import net.minecraft.scoreboard.ScorePlayerTeam
 import net.minecraft.util.StringUtils
@@ -64,7 +63,7 @@ object BedwarsModeDetector {
     fun isInBedwars(): Boolean = currentContext().isBedwars
 
     fun shouldRequestData(): Boolean {
-        return EssentialAPI.getMinecraftUtil().isHypixel() && isInBedwars()
+        return isOnHypixel() && isInBedwars()
     }
 
     fun shouldRenderTags(): Boolean {
@@ -94,7 +93,7 @@ object BedwarsModeDetector {
     }
 
     private fun detectScoreboardContext(): Context? {
-        val mc = UMinecraft.getMinecraft()
+        val mc = Minecraft.getMinecraft()
         val world = mc.theWorld ?: return null
         val scoreboard = world.scoreboard ?: return null
         val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: return null
@@ -169,9 +168,16 @@ object BedwarsModeDetector {
         currentContext(force = true)
     }
 
+    private fun isOnHypixel(): Boolean {
+        val mc = Minecraft.getMinecraft()
+        val server = mc.currentServerData ?: return false
+        val ip = server.serverIP.lowercase(Locale.ROOT)
+        return ip.endsWith("hypixel.net") || ip.endsWith("hypixel.net:")
+    }
+
     @SubscribeEvent
     fun onChat(event: ClientChatReceivedEvent) {
-        if (!EssentialAPI.getMinecraftUtil().isHypixel()) {
+        if (!isOnHypixel()) {
             return
         }
         val message = event.message ?: return

@@ -2,7 +2,6 @@ package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import com.google.gson.JsonObject
-import gg.essential.universal.ChatColor
 import java.awt.Color
 
 object BedwarsStar {
@@ -21,7 +20,7 @@ object BedwarsStar {
         PrestigeStyle(Color.decode("#F535AA"), false), // Crystal
         PrestigeStyle(Color.decode("#000FFF"), false), // Opal
         PrestigeStyle(Color.decode("#800080"), false), // Amethyst
-        PrestigeStyle(Color.decode("#F75D59"), true), // Rainbow (gradient)
+        PrestigeStyle(Color.decode("#F75D59"), true),  // Rainbow (gradient)
         PrestigeStyle(Color.decode("#D1D5D8"), false), // Iron Prime
         PrestigeStyle(Color.decode("#F7DA64"), false), // Gold Prime
         PrestigeStyle(Color.decode("#00FFFF"), false), // Diamond Prime
@@ -61,14 +60,13 @@ object BedwarsStar {
         PrestigeStyle(Color.decode("#EFEFEF"), false), // Spinel
         PrestigeStyle(Color.decode("#6A1B9A"), false), // Autumn
         PrestigeStyle(Color.decode("#1B7920"), false), // Mystic
-        PrestigeStyle(Color.decode("#850000"), false) // Eternal
+        PrestigeStyle(Color.decode("#850000"), false)  // Eternal
     )
 
     data class PrestigeStyle(val color: Color, val chroma: Boolean)
 
     fun extractExperience(player: JsonObject?): Long? {
         player ?: return null
-
         return BedwarsFetcher.parseBedwarsExperience(player)
     }
 
@@ -98,7 +96,7 @@ object BedwarsStar {
 
     fun styleForStar(star: Int): PrestigeStyle {
         val prestigeIndex = (star / 100).coerceAtLeast(0)
-        val fallback = PrestigeStyle(ChatColor.GRAY.color ?: Color.GRAY, false)
+        val fallback = PrestigeStyle(Color.GRAY, false)
         val prestigeStyle = prestigeStyles.getOrNull(prestigeIndex) ?: prestigeStyles.lastOrNull() ?: fallback
         return prestigeStyle.copy()
     }

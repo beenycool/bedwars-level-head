@@ -3,9 +3,8 @@ package club.sk1er.mods.levelhead.bedwars
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import com.google.gson.JsonObject
-import gg.essential.api.EssentialAPI
-import gg.essential.universal.ChatColor
-import gg.essential.universal.UMinecraft
+import net.minecraft.client.Minecraft
+import net.minecraft.util.ChatComponentText
 import okhttp3.HttpUrl
 import okhttp3.Request
 import java.io.IOException
@@ -62,7 +61,7 @@ object BedwarsFetcher {
         if (!baseConfigured) {
             if (proxyMisconfiguredWarned.compareAndSet(false, true)) {
                 sendMessage(
-                    "${ChatColor.RED}Proxy enabled but missing base URL. ${ChatColor.YELLOW}Set the proxy base URL in Levelhead settings."
+                    "Proxy enabled but missing base URL. Set the proxy base URL in Levelhead settings."
                 )
             }
             return false
@@ -279,9 +278,7 @@ object BedwarsFetcher {
 
     private fun notifyMissingKey() {
         if (missingKeyWarned.compareAndSet(false, true)) {
-            sendMessage(
-                "${ChatColor.YELLOW}Set your Hypixel API key with ${ChatColor.GOLD}/levelhead apikey <key>${ChatColor.YELLOW} to enable BedWars stats."
-            )
+            sendMessage("Set your Hypixel API key with /levelhead apikey <key> to enable BedWars stats.")
         }
     }
 
@@ -299,20 +296,14 @@ object BedwarsFetcher {
     }
 
     private fun notifyInvalidKey(cause: String) {
-        if (cause.contains("api key", ignoreCase = true)) {
-            if (invalidKeyWarned.compareAndSet(false, true)) {
-                sendMessage(
-                    "${ChatColor.RED}Hypixel rejected your API key (${cause.trim()}). ${ChatColor.YELLOW}Update it with ${ChatColor.GOLD}/levelhead apikey <key>${ChatColor.YELLOW}."
-                )
-            }
-        } else {
-            Levelhead.logger.warn("Hypixel API returned error: {}", cause.sanitizeForLogs())
+        if (invalidKeyWarned.compareAndSet(false, true)) {
+            sendMessage("Hypixel rejected your API key (${cause.trim()}). Update it with /levelhead apikey <key>.")
         }
     }
 
     private fun notifyInvalidProxyToken(status: Int, body: String) {
         if (invalidProxyTokenWarned.compareAndSet(false, true)) {
-            sendMessage("${ChatColor.RED}Proxy authentication failed. ${ChatColor.YELLOW}Update your proxy token in Levelhead settings.")
+            sendMessage("Proxy authentication failed. Update your proxy token in Levelhead settings.")
         }
         Levelhead.logger.warn(
             "Proxy authentication failed with status {}: {}",
@@ -343,14 +334,15 @@ object BedwarsFetcher {
 
     private fun notifyNetworkIssue(ex: IOException) {
         if (networkIssueWarned.compareAndSet(false, true)) {
-            sendMessage("${ChatColor.RED}Stats offline (proxy/hypixel). ${ChatColor.YELLOW}Retrying in 60s.")
+            sendMessage("Stats offline (proxy/hypixel). Retrying in 60s.")
         }
         Levelhead.logger.error("Network error while fetching BedWars data", ex)
     }
 
     private fun sendMessage(message: String) {
-        UMinecraft.getMinecraft().addScheduledTask {
-            EssentialAPI.getMinecraftUtil().sendMessage("${ChatColor.AQUA}[Levelhead]", message)
+        val mc = Minecraft.getMinecraft()
+        mc.addScheduledTask {
+            mc.thePlayer?.addChatMessage(ChatComponentText(message))
         }
     }
 

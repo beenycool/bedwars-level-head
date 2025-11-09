@@ -15,9 +15,6 @@ import club.sk1er.mods.levelhead.display.LevelheadTag
 import club.sk1er.mods.levelhead.render.AboveHeadRender
 import com.google.gson.Gson
 import com.google.gson.JsonParser
-import gg.essential.api.EssentialAPI
-import gg.essential.universal.ChatColor
-import gg.essential.universal.UMinecraft
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -28,11 +25,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import net.minecraft.client.Minecraft
 import net.minecraft.client.entity.EntityPlayerSP
+import net.minecraft.command.ICommand
+import net.minecraft.command.ICommandManager
+import net.minecraft.command.ServerCommandManager
 import net.minecraft.entity.player.EntityPlayer
+import net.minecraft.util.ChatComponentText
 import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.event.entity.EntityJoinWorldEvent
 import net.minecraftforge.fml.common.Mod
+import net.minecraftforge.fml.common.event.FMLInitializationEvent
 import net.minecraftforge.fml.common.event.FMLPostInitializationEvent
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
@@ -53,8 +56,13 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
+import org.polyfrost.oneconfig.api.config.v1.ConfigManager
+import org.polyfrost.oneconfig.api.config.v1.ConfigProvider
+import org.polyfrost.oneconfig.api.ui.v1.UIManager
+import org.polyfrost.oneconfig.api.event.v1.EventManager
+import org.polyfrost.oneconfig.api.event.v1.events.InitializationEvent
 
-@Mod(modid = Levelhead.MODID, name = "BedWars Levelhead", version = Levelhead.VERSION, modLanguageAdapter = "gg.essential.api.utils.KotlinAdapter")
+@Mod(modid = Levelhead.MODID, name = "BedWars Levelhead", version = Levelhead.VERSION)
 object Levelhead {
     val logger: Logger = LogManager.getLogger()
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
@@ -65,7 +73,9 @@ object Levelhead {
     val gson = Gson()
     val jsonParser = JsonParser()
 
-    val displayManager: DisplayManager = DisplayManager(File(File(UMinecraft.getMinecraft().mcDataDir, "config"), "levelhead.json"))
+    lateinit var displayManager: DisplayManager
+        private set
+
     private val modJob: Job = SupervisorJob()
     val scope: CoroutineScope = CoroutineScope(modJob + Dispatchers.IO)
     private val worldScopeLock = Any()
@@ -129,11 +139,12 @@ object Levelhead {
                         return@use
                     }
                     val downloadUrl = "$MODRINTH_MOD_PAGE/versions"
-                    UMinecraft.getMinecraft().addScheduledTask {
-                        EssentialAPI.getMinecraftUtil().sendMessage(
-                            "${ChatColor.AQUA}[Levelhead]",
-                            "${ChatColor.YELLOW}A new update is available: ${ChatColor.GOLD}$latestVersion${ChatColor.YELLOW} (current ${ChatColor.GOLD}$VERSION${ChatColor.YELLOW}). ${ChatColor.GREEN}Download: ${ChatColor.AQUA}$downloadUrl"
-                        )
+                    Minecraft.getMinecraft().addScheduledTask {
+                        val commandManager = ServerCommandManager.instance
+                        val command = commandManager.getCommands().firstOrNull { it.commandName == "levelhead" } as? ICommand
+                        if (command != null) {
+                            commandManager.executeCommand(Minecraft.getMinecraft().thePlayer, "levelhead")
+                        }
                     }
                 }
             } catch (throwable: Throwable) {
@@ -151,22 +162,20 @@ object Levelhead {
     private fun String.encodeForUrl(): String =
         URLEncoder.encode(this, StandardCharsets.UTF_8.name()).replace("+", "%20")
 
+    private fun sendPrefixedChat(message: String) {
+        val mc = Minecraft.getMinecraft()
+        mc.addScheduledTask {
+            mc.thePlayer?.addChatMessage(ChatComponentText(message))
+        }
+    }
+
     private fun showWelcomeMessageIfNeeded() {
         if (LevelheadConfig.welcomeMessageShown) {
             return
         }
         LevelheadConfig.setWelcomeMessageShown(true)
-        UMinecraft.getMinecraft().addScheduledTask {
-            val prefix = "${ChatColor.AQUA}[Levelhead]"
-            EssentialAPI.getMinecraftUtil().sendMessage(
-                prefix,
-                "${ChatColor.GREEN}Thanks for installing Levelhead!",
-            )
-            EssentialAPI.getMinecraftUtil().sendMessage(
-                prefix,
-                "${ChatColor.YELLOW}The mod is in alpha, so bugs may occur (i suck at coding) ${ChatColor.GOLD}Report issues on GitHub or message ${ChatColor.AQUA}beenyiscool${ChatColor.GOLD} on Discord, or to request any new features.",
-            )
-        }
+        sendPrefixedChat("§b[Levelhead]§eThanks for installing Levelhead!")
+        sendPrefixedChat("§b[Levelhead]§eThe mod is in alpha, so bugs may occur. Report issues on GitHub or to beenyiscool on Discord.")
     }
 
     val DarkChromaColor: Int
@@ -178,17 +187,35 @@ object Levelhead {
 
     @Mod.EventHandler
     fun preInit(event: FMLPreInitializationEvent) {
-        val configDirectory = event.modConfigurationDirectory ?: File(UMinecraft.getMinecraft().mcDataDir, "config")
-        val configFile = File(configDirectory, "bedwars-level-head.cfg")
-        LevelheadConfig.initialize(configFile)
+        val configDirectory = event.modConfigurationDirectory ?: File(Minecraft.getMinecraft().mcDataDir, "config")
+        val jsonConfigFile = File(configDirectory, "bedwars-level-head.json")
+
+        // Register OneConfig config implementation
+        ConfigManager.register(object : ConfigProvider {
+            override fun getModId(): String = MODID
+            override fun getConfigInstance() = LevelheadConfig
+        })
+
+        LevelheadConfig.initialize(jsonConfigFile)
+
+        displayManager = DisplayManager(jsonConfigFile)
+    }
+
+    @Mod.EventHandler
+    fun init(@Suppress("UNUSED_PARAMETER") event: FMLInitializationEvent) {
+        MinecraftForge.EVENT_BUS.register(AboveHeadRender)
+        MinecraftForge.EVENT_BUS.register(BedwarsModeDetector)
+        MinecraftForge.EVENT_BUS.register(this)
+
+        // Ensure OneConfig UI is ready before using UI hooks
+        EventManager.register(InitializationEvent::class.java) {
+            // Hook to open our config screen via OneConfig menus if desired
+            UIManager.INSTANCE.registerConfig(MODID, "BedWars Levelhead") { LevelheadConfig }
+        }
     }
 
     @Mod.EventHandler
     fun postInit(@Suppress("UNUSED_PARAMETER") event: FMLPostInitializationEvent) {
-        MinecraftForge.EVENT_BUS.register(AboveHeadRender)
-        MinecraftForge.EVENT_BUS.register(BedwarsModeDetector)
-        MinecraftForge.EVENT_BUS.register(this)
-        EssentialAPI.getCommandRegistry().registerCommand(LevelheadCommand())
         scheduleUpdateCheck()
         showWelcomeMessageIfNeeded()
     }
@@ -242,12 +269,7 @@ object Levelhead {
     internal fun onRateLimiterBlocked(metrics: Metrics) {
         if (rateLimiterNotified.compareAndSet(false, true)) {
             val resetText = formatCooldownDuration(metrics.resetIn)
-            UMinecraft.getMinecraft().addScheduledTask {
-                EssentialAPI.getMinecraftUtil().sendMessage(
-                    "${ChatColor.AQUA}[Levelhead]",
-                    "${ChatColor.YELLOW}BedWars stats cooling down. ${ChatColor.GOLD}${metrics.remaining} requests remaining${ChatColor.YELLOW}. Reset in $resetText."
-                )
-            }
+            sendPrefixedChat("§b[Levelhead]§eBedWars stats cooling down. §6${metrics.remaining}§e requests remaining. Reset in $resetText.")
         }
     }
 
@@ -265,12 +287,7 @@ object Levelhead {
             }
             if (serverCooldownNotifiedUntil.compareAndSet(current, newDeadline)) {
                 val formatted = formatCooldownDuration(duration)
-                UMinecraft.getMinecraft().addScheduledTask {
-                    EssentialAPI.getMinecraftUtil().sendMessage(
-                        "${ChatColor.AQUA}[Levelhead]",
-                        "${ChatColor.YELLOW}Proxy asked us to pause BedWars stat requests for ${ChatColor.GOLD}$formatted${ChatColor.YELLOW}."
-                    )
-                }
+                sendPrefixedChat("§b[Levelhead]§eProxy asked us to pause BedWars stat requests for §6$formatted§e.")
                 return
             }
         }
