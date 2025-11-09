@@ -17,6 +17,7 @@ object LevelheadConfig : Config("bedwars_levelhead", "BedWars Levelhead") {
     const val MIN_STAR_CACHE_TTL_MINUTES = 5
     const val MAX_STAR_CACHE_TTL_MINUTES = 180
     const val DEFAULT_STAR_CACHE_TTL_MINUTES = 45
+    const val DEFAULT_PROXY_BASE_URL = "https://levelhead.beeny.cool"
 
     private val general: ConfigCategory = category("General")
     private val display: ConfigCategory = category("Display")
@@ -46,20 +47,20 @@ object LevelheadConfig : Config("bedwars_levelhead", "BedWars Levelhead") {
     @Option(
         type = OptionType.BOOLEAN,
         name = "Enable proxy",
-        description = "Use a backend proxy for BedWars stats.",
+        description = "Use the Levelhead backend for BedWars stats.",
         category = "Proxy"
     )
     @JvmField
-    var proxyEnabled: Boolean = false
+    var proxyEnabled: Boolean = true
 
     @Option(
         type = OptionType.STRING,
         name = "Proxy base URL",
-        description = "Base URL of the stats proxy, e.g. https://example.com",
+        description = "Base URL of the stats proxy. Defaults to the public Levelhead backend.",
         category = "Proxy"
     )
     @JvmField
-    var proxyBaseUrl: String = ""
+    var proxyBaseUrl: String = DEFAULT_PROXY_BASE_URL
 
     @Option(
         type = OptionType.STRING,
@@ -95,7 +96,13 @@ object LevelheadConfig : Config("bedwars_levelhead", "BedWars Levelhead") {
             }
         } ?: configFile.absoluteFile.parentFile ?: configFile
 
+        val legacyConfigExists = configFile.exists()
+
         load()
+
+        if (applyProxyDefaults(legacyConfigExists)) {
+            save()
+        }
 
         val keyStoreFile = File(persistenceDirectory, "bedwars-levelhead-apikey.json")
         ApiKeyStore.initialize(keyStoreFile)
@@ -132,7 +139,7 @@ object LevelheadConfig : Config("bedwars_levelhead", "BedWars Levelhead") {
     }
 
     fun setProxyBaseUrl(url: String) {
-        proxyBaseUrl = url.trim()
+        proxyBaseUrl = url.trim().trimEnd('/')
         save()
     }
 
@@ -164,6 +171,22 @@ object LevelheadConfig : Config("bedwars_levelhead", "BedWars Levelhead") {
             }
             else -> Unit
         }
+    }
+
+    private fun applyProxyDefaults(legacyConfigExists: Boolean): Boolean {
+        var mutated = false
+
+        if (proxyBaseUrl.isBlank()) {
+            proxyBaseUrl = DEFAULT_PROXY_BASE_URL
+            mutated = true
+        }
+
+        if (!legacyConfigExists && !proxyEnabled) {
+            proxyEnabled = true
+            mutated = true
+        }
+
+        return mutated
     }
 
     private fun readPersistedInstallId(): String {

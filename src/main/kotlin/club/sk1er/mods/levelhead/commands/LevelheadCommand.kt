@@ -167,8 +167,9 @@ class LevelheadCommand : CommandBase() {
         val snapshot = Levelhead.statusSnapshot()
         val proxyStatus = when {
             !snapshot.proxyEnabled -> "disabled"
-            snapshot.proxyConfigured -> "configured"
-            else -> "missing config"
+            LevelheadConfig.proxyBaseUrl.isBlank() -> "missing URL"
+            LevelheadConfig.proxyAuthToken.isBlank() -> "public backend"
+            else -> "private backend"
         }
         val lastAttempt = formatAge(snapshot.lastAttemptAgeMillis)
         val lastSuccess = formatAge(snapshot.lastSuccessAgeMillis)
@@ -219,8 +220,9 @@ class LevelheadCommand : CommandBase() {
         if (args.isEmpty()) {
             val status = when {
                 !LevelheadConfig.proxyEnabled -> "disabled"
-                LevelheadConfig.proxyBaseUrl.isBlank() || LevelheadConfig.proxyAuthToken.isBlank() -> "misconfigured"
-                else -> "configured"
+                LevelheadConfig.proxyBaseUrl.isBlank() -> "missing URL"
+                LevelheadConfig.proxyAuthToken.isBlank() -> "public backend"
+                else -> "private backend"
             }
             sendMessage("§eProxy is currently §6$status§e.")
             sendProxyHelp()
@@ -481,11 +483,12 @@ class LevelheadCommand : CommandBase() {
     }
 
     private fun sendProxyHelp() {
-        val baseUrl = LevelheadConfig.proxyBaseUrl.ifBlank { "not set" }
-        val tokenState = if (LevelheadConfig.proxyAuthToken.isBlank()) "not set" else "configured"
+        val baseUrl = LevelheadConfig.proxyBaseUrl.ifBlank { LevelheadConfig.DEFAULT_PROXY_BASE_URL }
+        val tokenState = if (LevelheadConfig.proxyAuthToken.isBlank()) "not set (public mode)" else "configured"
         val enabledState = formatToggle(LevelheadConfig.proxyEnabled)
-        sendMessage("§eOptions: enable/disable toggle usage ($enabledState), url to set the backend (§6$baseUrl§e), token to update auth (§6$tokenState§e).")
-        sendMessage("§eTry: §6/levelhead proxy enable§e, §6/levelhead proxy url https://example.com§e, §6/levelhead proxy token <token>§e.")
+        sendMessage("§eDefault backend: §6${LevelheadConfig.DEFAULT_PROXY_BASE_URL}§e (public, no token required).")
+        sendMessage("§eOptions: enable/disable toggle usage ($enabledState), URL override (§6$baseUrl§e), token for private/admin routes (§6$tokenState§e).")
+        sendMessage("§eTry: §6/levelhead proxy disable§e to fall back to Hypixel, §6/levelhead proxy url https://example.com§e to self-host, or §6/levelhead proxy token <token>§e for admin access.")
     }
 
     private fun sendAdminHelp() {

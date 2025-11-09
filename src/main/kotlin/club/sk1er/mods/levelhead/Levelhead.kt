@@ -409,7 +409,7 @@ object Levelhead {
         val starCacheSnapshot = starCacheMetrics.snapshot()
         return StatusSnapshot(
             proxyEnabled = LevelheadConfig.proxyEnabled,
-            proxyConfigured = LevelheadConfig.proxyEnabled && LevelheadConfig.proxyBaseUrl.isNotBlank() && LevelheadConfig.proxyAuthToken.isNotBlank(),
+            proxyConfigured = LevelheadConfig.proxyEnabled && LevelheadConfig.proxyBaseUrl.isNotBlank(),
             cacheSize = starCache.size,
             lastAttemptAgeMillis = attemptAge,
             lastSuccessAgeMillis = successAge,
