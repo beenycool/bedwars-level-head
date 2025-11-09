@@ -27,11 +27,9 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import net.minecraft.client.Minecraft
 import net.minecraft.client.entity.EntityPlayerSP
-import net.minecraft.command.ICommand
-import net.minecraft.command.ICommandManager
-import net.minecraft.command.ServerCommandManager
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.util.ChatComponentText
+import net.minecraftforge.client.ClientCommandHandler
 import net.minecraftforge.common.MinecraftForge
 import net.minecraftforge.event.entity.EntityJoinWorldEvent
 import net.minecraftforge.fml.common.Mod
@@ -72,6 +70,8 @@ object Levelhead {
         .build()
     val gson = Gson()
     val jsonParser = JsonParser()
+
+    private val levelheadCommand = LevelheadCommand()
 
     lateinit var displayManager: DisplayManager
         private set
@@ -140,11 +140,9 @@ object Levelhead {
                     }
                     val downloadUrl = "$MODRINTH_MOD_PAGE/versions"
                     Minecraft.getMinecraft().addScheduledTask {
-                        val commandManager = ServerCommandManager.instance
-                        val command = commandManager.getCommands().firstOrNull { it.commandName == "levelhead" } as? ICommand
-                        if (command != null) {
-                            commandManager.executeCommand(Minecraft.getMinecraft().thePlayer, "levelhead")
-                        }
+                        sendPrefixedChat(
+                            "§b[Levelhead]§eA new update is available: §6$latestVersion§e (current §6$VERSION§e). §aDownload: §b$downloadUrl"
+                        )
                     }
                 }
             } catch (throwable: Throwable) {
@@ -206,6 +204,7 @@ object Levelhead {
         MinecraftForge.EVENT_BUS.register(AboveHeadRender)
         MinecraftForge.EVENT_BUS.register(BedwarsModeDetector)
         MinecraftForge.EVENT_BUS.register(this)
+        ClientCommandHandler.instance.registerCommand(levelheadCommand)
 
         // Ensure OneConfig UI is ready before using UI hooks
         EventManager.register(InitializationEvent::class.java) {

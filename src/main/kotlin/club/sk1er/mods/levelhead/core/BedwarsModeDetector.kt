@@ -172,7 +172,8 @@ object BedwarsModeDetector {
         val mc = Minecraft.getMinecraft()
         val server = mc.currentServerData ?: return false
         val ip = server.serverIP.lowercase(Locale.ROOT)
-        return ip.endsWith("hypixel.net") || ip.endsWith("hypixel.net:")
+        val host = ip.split(":").firstOrNull() ?: ip
+        return host == "hypixel.net" || host.endsWith(".hypixel.net")
     }
 
     @SubscribeEvent

@@ -23,8 +23,7 @@ object AboveHeadRender {
         if (Minecraft.getMinecraft().gameSettings.hideGUI) return
         if (!BedwarsModeDetector.shouldRenderTags()) return
 
-        if (event.entity !is EntityPlayer) return
-        val player = event.entity as EntityPlayer
+        val player = event.entity
 
         val localPlayer = Minecraft.getMinecraft().thePlayer
 
@@ -75,7 +74,7 @@ object AboveHeadRender {
         val stringWidth = fontrenderer.getStringWidth(tag.getString()) shr 1
         val tessellator = Tessellator.instance
         val worldRenderer = tessellator.worldRenderer
-        worldRenderer.begin(DefaultVertexFormats.POSITION_COLOR, GL11.GL_QUADS)
+        worldRenderer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_COLOR)
         worldRenderer.pos(-stringWidth - 2, -1, 0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
         worldRenderer.pos(-stringWidth - 2, 8, 0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
         worldRenderer.pos(stringWidth + 1, 8, 0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()

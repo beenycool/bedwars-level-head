@@ -1,5 +1,6 @@
 package club.sk1er.mods.levelhead.config
 
+import club.sk1er.mods.levelhead.Levelhead
 import org.polyfrost.oneconfig.api.config.v1.Config
 import org.polyfrost.oneconfig.api.config.v1.ConfigCategory
 import org.polyfrost.oneconfig.api.config.v1.Option
@@ -8,12 +9,21 @@ import org.polyfrost.oneconfig.api.config.v1.options.BooleanOption
 import org.polyfrost.oneconfig.api.config.v1.options.NumberOption
 import org.polyfrost.oneconfig.api.config.v1.options.StringOption
 import java.io.File
+import java.time.Duration
+import java.util.UUID
 
 object LevelheadConfig : Config("bedwars_levelhead", "BedWars Levelhead") {
+
+    const val MIN_STAR_CACHE_TTL_MINUTES = 5
+    const val MAX_STAR_CACHE_TTL_MINUTES = 180
+    const val DEFAULT_STAR_CACHE_TTL_MINUTES = 45
 
     private val general: ConfigCategory = category("General")
     private val display: ConfigCategory = category("Display")
     private val proxy: ConfigCategory = category("Proxy")
+
+    private lateinit var persistenceDirectory: File
+    private lateinit var installIdFile: File
 
     @Option(
         type = OptionType.BOOLEAN,
@@ -64,26 +74,56 @@ object LevelheadConfig : Config("bedwars_levelhead", "BedWars Levelhead") {
         type = OptionType.NUMBER,
         name = "Star cache TTL (minutes)",
         description = "How long to cache fetched BedWars stars.",
-        min = 1.0,
-        max = 1440.0,
+        min = MIN_STAR_CACHE_TTL_MINUTES.toDouble(),
+        max = MAX_STAR_CACHE_TTL_MINUTES.toDouble(),
         category = "General"
     )
     @JvmField
-    var starCacheTtlMinutes: Int = 30
+    var starCacheTtlMinutes: Int = DEFAULT_STAR_CACHE_TTL_MINUTES
 
-    fun initialize(configFile: File) {
+    var installId: String = ""
+        private set
+
+    val starCacheTtl: Duration
+        get() = Duration.ofMinutes(starCacheTtlMinutes.toLong())
+
+    fun initialize(@Suppress("UNUSED_PARAMETER") configFile: File) {
         // For OneConfig, file path is managed by the library; this exists for legacy compatibility.
+        persistenceDirectory = (configFile.parentFile ?: configFile.absoluteFile.parentFile)?.apply {
+            if (!exists()) {
+                mkdirs()
+            }
+        } ?: configFile.absoluteFile.parentFile ?: configFile
+
         load()
+
+        val keyStoreFile = File(persistenceDirectory, "bedwars-levelhead-apikey.json")
+        ApiKeyStore.initialize(keyStoreFile)
+        synchronizePersistedApiKey()
+
+        installIdFile = File(persistenceDirectory, "bedwars-levelhead-install-id.txt")
+        installId = readPersistedInstallId()
+        if (installId.isBlank()) {
+            installId = UUID.randomUUID().toString().replace("-", "")
+            persistInstallId()
+        }
     }
 
     fun setApiKey(key: String) {
-        apiKey = key
+        val sanitized = key.trim()
+        apiKey = sanitized
         save()
+        if (sanitized.isBlank()) {
+            ApiKeyStore.clear()
+        } else {
+            ApiKeyStore.save(sanitized)
+        }
     }
 
     fun clearApiKey() {
         apiKey = ""
         save()
+        ApiKeyStore.clear()
     }
 
     fun setProxyEnabled(enabled: Boolean) {
@@ -92,22 +132,56 @@ object LevelheadConfig : Config("bedwars_levelhead", "BedWars Levelhead") {
     }
 
     fun setProxyBaseUrl(url: String) {
-        proxyBaseUrl = url
+        proxyBaseUrl = url.trim()
         save()
     }
 
     fun setProxyAuthToken(token: String) {
-        proxyAuthToken = token
+        proxyAuthToken = token.trim()
         save()
     }
 
     fun setStarCacheTtlMinutes(minutes: Int) {
-        starCacheTtlMinutes = minutes
+        starCacheTtlMinutes = minutes.coerceIn(MIN_STAR_CACHE_TTL_MINUTES, MAX_STAR_CACHE_TTL_MINUTES)
         save()
     }
 
     fun setWelcomeMessageShown(shown: Boolean) {
         welcomeMessageShown = shown
         save()
+    }
+
+    private fun synchronizePersistedApiKey() {
+        val persisted = ApiKeyStore.load()
+        val configured = apiKey.trim()
+        when {
+            !persisted.isNullOrBlank() && persisted != configured -> {
+                apiKey = persisted
+                save()
+            }
+            persisted.isNullOrBlank() && configured.isNotEmpty() -> {
+                ApiKeyStore.save(configured)
+            }
+            else -> Unit
+        }
+    }
+
+    private fun readPersistedInstallId(): String {
+        return kotlin.runCatching {
+            if (!::installIdFile.isInitialized || !installIdFile.exists()) {
+                return ""
+            }
+            installIdFile.readText().trim()
+        }.getOrElse { "" }
+    }
+
+    private fun persistInstallId() {
+        if (!::installIdFile.isInitialized) return
+        kotlin.runCatching {
+            installIdFile.parentFile?.takeIf { !it.exists() }?.mkdirs()
+            installIdFile.writeText(installId)
+        }.onFailure { throwable ->
+            Levelhead.logger.warn("Failed to persist Levelhead install ID", throwable)
+        }
     }
 }

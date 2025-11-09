@@ -20,6 +20,7 @@ import kotlin.text.RegexOption
 
 object BedwarsFetcher {
     private const val HYPIXEL_PLAYER_ENDPOINT = "https://api.hypixel.net/player"
+    private const val CHAT_PREFIX = "§b[Levelhead]§r "
 
     private val missingKeyWarned = AtomicBoolean(false)
     private val invalidKeyWarned = AtomicBoolean(false)
@@ -61,7 +62,7 @@ object BedwarsFetcher {
         if (!baseConfigured) {
             if (proxyMisconfiguredWarned.compareAndSet(false, true)) {
                 sendMessage(
-                    "Proxy enabled but missing base URL. Set the proxy base URL in Levelhead settings."
+                    "§cProxy enabled but missing base URL. §eSet the proxy base URL in Levelhead settings."
                 )
             }
             return false
@@ -203,7 +204,7 @@ object BedwarsFetcher {
                     val json = kotlin.runCatching { Levelhead.jsonParser.parse(body).asJsonObject }.getOrNull()
                     if (response.code() == 403 && json != null) {
                         val cause = json.get("cause")?.asString ?: "Unknown"
-                        notifyInvalidKey(cause.sanitizeForLogs())
+                        notifyInvalidKey(cause)
                         return FetchResult.PermanentError("INVALID_KEY")
                     }
                     invalidKeyWarned.set(false)
@@ -278,7 +279,7 @@ object BedwarsFetcher {
 
     private fun notifyMissingKey() {
         if (missingKeyWarned.compareAndSet(false, true)) {
-            sendMessage("Set your Hypixel API key with /levelhead apikey <key> to enable BedWars stats.")
+            sendMessage("§eSet your Hypixel API key with §6/levelhead apikey <key> §eto enable BedWars stats.")
         }
     }
 
@@ -296,14 +297,20 @@ object BedwarsFetcher {
     }
 
     private fun notifyInvalidKey(cause: String) {
-        if (invalidKeyWarned.compareAndSet(false, true)) {
-            sendMessage("Hypixel rejected your API key (${cause.trim()}). Update it with /levelhead apikey <key>.")
+        val trimmed = cause.trim()
+        if (trimmed.contains("api key", ignoreCase = true)) {
+            if (invalidKeyWarned.compareAndSet(false, true)) {
+                sendMessage("§cHypixel rejected your API key (§7$trimmed§c). §eUpdate it with §6/levelhead apikey <key>§e.")
+            }
+        } else {
+            invalidKeyWarned.set(false)
+            Levelhead.logger.warn("Hypixel API returned error: {}", trimmed.sanitizeForLogs())
         }
     }
 
     private fun notifyInvalidProxyToken(status: Int, body: String) {
         if (invalidProxyTokenWarned.compareAndSet(false, true)) {
-            sendMessage("Proxy authentication failed. Update your proxy token in Levelhead settings.")
+            sendMessage("§cProxy authentication failed. §eUpdate your proxy token in Levelhead settings.")
         }
         Levelhead.logger.warn(
             "Proxy authentication failed with status {}: {}",
@@ -334,7 +341,7 @@ object BedwarsFetcher {
 
     private fun notifyNetworkIssue(ex: IOException) {
         if (networkIssueWarned.compareAndSet(false, true)) {
-            sendMessage("Stats offline (proxy/hypixel). Retrying in 60s.")
+            sendMessage("§cBedWars stats are temporarily offline. §eRetrying in §660§e seconds.")
         }
         Levelhead.logger.error("Network error while fetching BedWars data", ex)
     }
@@ -342,7 +349,7 @@ object BedwarsFetcher {
     private fun sendMessage(message: String) {
         val mc = Minecraft.getMinecraft()
         mc.addScheduledTask {
-            mc.thePlayer?.addChatMessage(ChatComponentText(message))
+            mc.thePlayer?.addChatMessage(ChatComponentText(CHAT_PREFIX + message))
         }
     }
 

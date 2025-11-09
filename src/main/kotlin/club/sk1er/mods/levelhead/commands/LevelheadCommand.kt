@@ -41,6 +41,36 @@ class LevelheadCommand : CommandBase() {
         private const val MAX_DISPLAY_OFFSET = 3.0
         private val JSON_MEDIA_TYPE: MediaType = MediaType.parse("application/json; charset=utf-8")
             ?: error("Failed to initialise JSON media type")
+        private const val CHAT_PREFIX = "§b[Levelhead]§r "
+
+        private fun colorOf(rgb: Int) = Color((rgb shr 16) and 0xFF, (rgb shr 8) and 0xFF, rgb and 0xFF)
+
+        private val NAMED_COLORS: Map<String, Color> = mapOf(
+            "black" to colorOf(0x000000),
+            "dark_blue" to colorOf(0x0000AA),
+            "dark_green" to colorOf(0x00AA00),
+            "dark_aqua" to colorOf(0x00AAAA),
+            "dark_red" to colorOf(0xAA0000),
+            "dark_purple" to colorOf(0xAA00AA),
+            "purple" to colorOf(0xAA00AA),
+            "gold" to colorOf(0xFFAA00),
+            "orange" to colorOf(0xFFAA00),
+            "gray" to colorOf(0xAAAAAA),
+            "grey" to colorOf(0xAAAAAA),
+            "dark_gray" to colorOf(0x555555),
+            "dark_grey" to colorOf(0x555555),
+            "blue" to colorOf(0x5555FF),
+            "green" to colorOf(0x55FF55),
+            "lime" to colorOf(0x55FF55),
+            "aqua" to colorOf(0x55FFFF),
+            "cyan" to colorOf(0x55FFFF),
+            "red" to colorOf(0xFF5555),
+            "light_purple" to colorOf(0xFF55FF),
+            "magenta" to colorOf(0xFF55FF),
+            "pink" to colorOf(0xFF55FF),
+            "yellow" to colorOf(0xFFFF55),
+            "white" to colorOf(0xFFFFFF)
+        )
     }
 
     override fun getCommandName() = "levelhead"
@@ -54,23 +84,23 @@ class LevelheadCommand : CommandBase() {
             return
         }
         when (args[0].lowercase(Locale.ROOT)) {
-            "apikey", "setapikey" -> if (args.size >= 2) handleApiKey(args[1]) else sendMessage("Provide an API key.")
+            "apikey", "setapikey" -> if (args.size >= 2) handleApiKey(args[1]) else sendMessage("§cProvide an API key.")
             "clearapikey" -> handleClearApiKey()
             "reload" -> handleReload()
             "enable" -> handleEnable()
             "disable" -> handleDisable()
             "toggle" -> handleToggle()
-            "mod", "power" -> if (args.size >= 2) handleMod(args[1]) else sendMessage("Provide on/off.")
+            "mod", "power" -> if (args.size >= 2) handleMod(args[1]) else sendMessage("§cProvide on/off.")
             "gui" -> handleGui()
             "status" -> handleStatus()
-            "cachettl" -> if (args.size >= 2) handleCacheTtl(args[1]) else sendMessage("Provide TTL in minutes.")
+            "cachettl" -> if (args.size >= 2) handleCacheTtl(args[1]) else sendMessage("§cProvide TTL in minutes.")
             "display" -> handleDisplay(*args.drop(1).toTypedArray())
             "proxy" -> handleProxy(*args.drop(1).toTypedArray())
             "admin" -> handleAdmin(*args.drop(1).toTypedArray())
             "whois" -> handleWhois(*args.drop(1).toTypedArray())
             "debug" -> handleDebug()
             else -> {
-                sendMessage("Unknown subcommand. Run /levelhead for help.")
+                sendMessage("§cUnknown subcommand. Run /levelhead for help.")
                 sendDisplayUsage()
             }
         }
@@ -78,30 +108,31 @@ class LevelheadCommand : CommandBase() {
 
     private fun sendMessage(message: String) {
         val mc = Minecraft.getMinecraft()
-        mc.thePlayer?.addChatMessage(ChatComponentText(message))
+        val formatted = if (message.startsWith("§")) message else "§e$message"
+        mc.thePlayer?.addChatMessage(ChatComponentText(CHAT_PREFIX + formatted))
     }
 
     private fun handleApiKey(key: String) {
         if (key.equals("clear", ignoreCase = true)) {
             LevelheadConfig.clearApiKey()
-            sendMessage("Cleared stored Hypixel API key.")
+            sendMessage("§aCleared stored Hypixel API key.")
             resetBedwarsFetcher()
             return
         }
         val sanitized = key.trim()
         val normalized = sanitized.replace("-", "")
         if (!API_KEY_PATTERN.matches(normalized)) {
-            sendMessage("Invalid Hypixel API key. Keys should be 32 hexadecimal characters.")
+            sendMessage("§cInvalid Hypixel API key. Keys should be 32 hexadecimal characters.")
             return
         }
         LevelheadConfig.setApiKey(sanitized)
-        sendMessage("Saved Hypixel API key for BedWars stat fetching.")
+        sendMessage("§aSaved Hypixel API key for BedWars stat fetching.")
         resetBedwarsFetcher()
     }
 
     private fun handleClearApiKey() {
         LevelheadConfig.clearApiKey()
-        sendMessage("Cleared stored Hypixel API key.")
+        sendMessage("§aCleared stored Hypixel API key.")
         resetBedwarsFetcher()
     }
 
@@ -109,7 +140,7 @@ class LevelheadCommand : CommandBase() {
         Levelhead.resetWorldCoroutines()
         Levelhead.rateLimiter.resetState()
         Levelhead.displayManager.clearCache()
-        sendMessage("Reloaded BedWars star cache.")
+        sendMessage("§aReloaded BedWars star cache.")
     }
 
     private fun handleEnable() = updateEnabledState(true)
@@ -119,7 +150,7 @@ class LevelheadCommand : CommandBase() {
     private fun handleMod(state: String) {
         val toggle = parseToggle(state)
         if (toggle == null) {
-            sendMessage("Couldn't understand '$state'. Use /levelhead mod <on|off>.")
+            sendMessage("§cCouldn't understand '$state'. Use /levelhead mod <on|off>.")
             return
         }
         updateEnabledState(toggle)
@@ -158,13 +189,13 @@ class LevelheadCommand : CommandBase() {
         val parsed = minutesInput.trim().toIntOrNull()
         if (parsed == null) {
             val current = LevelheadConfig.starCacheTtlMinutes
-            sendMessage("Couldn't read '$minutesInput'. Choose minutes between ${LevelheadConfig.MIN_STAR_CACHE_TTL_MINUTES} and ${LevelheadConfig.MAX_STAR_CACHE_TTL_MINUTES}. Current TTL: $current.")
+            sendMessage("§cCouldn't read '$minutesInput'. Choose between §6${LevelheadConfig.MIN_STAR_CACHE_TTL_MINUTES}§c and §6${LevelheadConfig.MAX_STAR_CACHE_TTL_MINUTES}§c minutes. Current TTL: §6$current§c.")
             return
         }
         val clamped = parsed.coerceIn(LevelheadConfig.MIN_STAR_CACHE_TTL_MINUTES, LevelheadConfig.MAX_STAR_CACHE_TTL_MINUTES)
         LevelheadConfig.setStarCacheTtlMinutes(clamped)
         Levelhead.clearCachedStars()
-        sendMessage("Updated BedWars star cache TTL to $clamped minutes.")
+        sendMessage("§aUpdated BedWars star cache TTL to §6$clamped§a minutes.")
     }
 
     private fun handleDisplay(vararg args: String) {
@@ -178,7 +209,7 @@ class LevelheadCommand : CommandBase() {
             "offset" -> handleDisplayOffset(args.drop(1).toTypedArray())
             "showself" -> handleDisplayShowSelf(args.drop(1).toTypedArray())
             else -> {
-                sendMessage("Unknown display option '${args[0]}'.")
+                sendMessage("§cUnknown display option '${args[0]}'.")
                 sendDisplayUsage()
             }
         }
@@ -191,51 +222,51 @@ class LevelheadCommand : CommandBase() {
                 LevelheadConfig.proxyBaseUrl.isBlank() || LevelheadConfig.proxyAuthToken.isBlank() -> "misconfigured"
                 else -> "configured"
             }
-            sendMessage("Proxy is currently $status.")
+            sendMessage("§eProxy is currently §6$status§e.")
             sendProxyHelp()
             return
         }
         when (args[0].lowercase(Locale.ROOT)) {
             "enable", "on" -> {
                 LevelheadConfig.setProxyEnabled(true)
-                sendMessage("Enabled proxy usage for BedWars stats.")
+                sendMessage("§aEnabled proxy usage for BedWars stats.")
                 resetBedwarsFetcher()
             }
             "disable", "off" -> {
                 LevelheadConfig.setProxyEnabled(false)
-                sendMessage("Disabled proxy usage. Hypixel API key will be used directly.")
+                sendMessage("§aDisabled proxy usage. Hypixel API key will be used directly.")
                 resetBedwarsFetcher()
             }
             "url" -> {
                 val url = args.getOrNull(1)?.trim()
                 if (url.isNullOrEmpty()) {
                     val current = LevelheadConfig.proxyBaseUrl.ifBlank { "not set" }
-                    sendMessage("Provide the proxy base URL. Current URL: $current.")
+                    sendMessage("§cProvide the proxy base URL. Current URL: §6$current§c.")
                     return
                 }
                 val parsedUrl = HttpUrl.parse(url)
                 if (parsedUrl == null || parsedUrl.scheme() !in setOf("http", "https")) {
-                    sendMessage("Invalid proxy base URL. Use http or https.")
+                    sendMessage("§cInvalid proxy base URL. Use http or https.")
                     return
                 }
                 val sanitized = parsedUrl.newBuilder().query(null).fragment(null).build().toString().trimEnd('/')
                 LevelheadConfig.setProxyBaseUrl(sanitized)
-                sendMessage("Updated proxy base URL to $sanitized.")
+                sendMessage("§aUpdated proxy base URL to §6$sanitized§a.")
                 resetBedwarsFetcher()
             }
             "token" -> {
                 val token = args.getOrNull(1)?.trim()
                 if (token.isNullOrEmpty()) {
                     val currentState = if (LevelheadConfig.proxyAuthToken.isBlank()) "not set" else "configured"
-                    sendMessage("Provide the proxy auth token. Current token: $currentState.")
+                    sendMessage("§cProvide the proxy auth token. Current token: §6$currentState§c.")
                     return
                 }
                 LevelheadConfig.setProxyAuthToken(token)
-                sendMessage("Updated proxy token.")
+                sendMessage("§aUpdated proxy token.")
                 resetBedwarsFetcher()
             }
             else -> {
-                sendMessage("Unknown proxy option '${args[0]}'.")
+                sendMessage("§cUnknown proxy option '${args[0]}'.")
                 sendProxyHelp()
             }
         }
@@ -249,7 +280,7 @@ class LevelheadCommand : CommandBase() {
         when (args[0].lowercase(Locale.ROOT)) {
             "purgecache" -> handleAdminPurgeCache(args.drop(1).toTypedArray())
             else -> {
-                sendMessage("Unknown admin action '${args[0]}'.")
+                sendMessage("§cUnknown admin action '${args[0]}'.")
                 sendAdminHelp()
             }
         }
@@ -258,27 +289,28 @@ class LevelheadCommand : CommandBase() {
     private fun handleWhois(vararg args: String) {
         val identifier = args.joinToString(" ").trim()
         if (identifier.isEmpty()) {
-            sendMessage("Tell me who to inspect: /levelhead whois <player|uuid>.")
+            sendMessage("§cTell me who to inspect: §6/levelhead whois <player|uuid>§c.")
             return
         }
-        sendMessage("Looking up BedWars stats for $identifier...")
+        sendMessage("§eLooking up BedWars stats for §6$identifier§e...")
         Levelhead.scope.launch {
             try {
                 val result = lookupWhois(identifier)
                 Minecraft.getMinecraft().addScheduledTask {
-                    val starText = result.star?.let { "$it✪" } ?: "?"
-                    val experienceText = result.experience?.toString() ?: "unknown"
-                    val nickedText = if (result.nicked) " (nicked)" else ""
-                    sendMessage("${result.displayName}$nickedText is $starText (source=${result.source}, XP=$experienceText)")
+                    val starText = result.star?.let { "§6${it}✪" } ?: "§c?"
+                    val experienceText = result.experience?.let { "§6$it" } ?: "§cunavailable"
+                    val nickedText = if (result.nicked) " §c(nicked)§e" else ""
+                    sendMessage("§b${result.displayName}§e$nickedText is $starText§e (source=§6${result.source}§e, XP=$experienceText§e)")
                 }
             } catch (ex: CommandException) {
                 Minecraft.getMinecraft().addScheduledTask {
-                    sendMessage(ex.message ?: "Command failed.")
+                    val errorMessage = ex.message?.let { if (it.startsWith("§")) it else "§c$it" } ?: "§cCommand failed."
+                    sendMessage(errorMessage)
                 }
             } catch (throwable: Throwable) {
                 Levelhead.logger.error("Failed to resolve BedWars stats for {}", identifier, throwable)
                 Minecraft.getMinecraft().addScheduledTask {
-                    sendMessage("Unexpected error while fetching stats. Check logs for details.")
+                    sendMessage("§cUnexpected error while fetching stats. Check logs for details.")
                 }
             }
         }
@@ -304,7 +336,7 @@ class LevelheadCommand : CommandBase() {
             "text" -> {
                 val text = args.drop(1).joinToString(" ").trim()
                 if (text.isEmpty()) {
-                    sendMessage("Header text cannot be empty. Current header: ${currentHeaderText()}.")
+                    sendMessage("§cHeader text cannot be empty. Current header: §b${currentHeaderText()}§c.")
                     return
                 }
                 val sanitized = text.take(48)
@@ -315,9 +347,9 @@ class LevelheadCommand : CommandBase() {
                 }
                 if (changed) {
                     Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
-                    sendMessage("Updated header text to $sanitized.")
+                    sendMessage("§aUpdated header text to §b$sanitized§a.")
                 } else {
-                    sendMessage("Header text is already set to $sanitized.")
+                    sendMessage("§eHeader text is already set to §b$sanitized§e.")
                 }
             }
             "color" -> {
@@ -328,7 +360,7 @@ class LevelheadCommand : CommandBase() {
                 }
                 val color = parseColor(colorInput)
                 if (color == null) {
-                    sendMessage("Unable to parse color '$colorInput'. Try a hex code (e.g. #ff00ff), RGB (r,g,b), or a Minecraft color name. Current header color: ${formatColor(currentHeaderColor())}.")
+                    sendMessage("§cUnable to parse color '$colorInput'. Try a hex code (e.g. §b#ff00ff§c), RGB (r,g,b), or a Minecraft color name. Current header color: ${formatColor(currentHeaderColor())}.")
                     return
                 }
                 val changed = Levelhead.displayManager.updatePrimaryDisplay { config ->
@@ -338,15 +370,15 @@ class LevelheadCommand : CommandBase() {
                 }
                 if (changed) {
                     Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
-                    sendMessage("Updated header color to ${formatColor(color)}.")
+                    sendMessage("§aUpdated header color to ${formatColor(color)}§a.")
                 } else {
-                    sendMessage("Header color is already ${formatColor(color)}.")
+                    sendMessage("§eHeader color is already ${formatColor(color)}§e.")
                 }
             }
             "chroma" -> {
                 val toggle = args.getOrNull(1)?.let { parseToggle(it) }
                 if (toggle == null) {
-                    sendMessage("Specify whether chroma should be on or off. Current setting: ${formatToggle(currentHeaderChroma())}. Use /levelhead display header chroma <on|off>.")
+                    sendMessage("§cSpecify whether chroma should be on or off. Current setting: ${formatToggle(currentHeaderChroma())}. Use §6/levelhead display header chroma <on|off>§c.")
                     return
                 }
                 val changed = Levelhead.displayManager.updatePrimaryDisplay { config ->
@@ -356,13 +388,13 @@ class LevelheadCommand : CommandBase() {
                 }
                 if (changed) {
                     Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
-                    sendMessage("Header chroma ${if (toggle) "enabled" else "disabled"}.")
+                    sendMessage("§aHeader chroma ${if (toggle) "enabled" else "disabled"}.")
                 } else {
-                    sendMessage("Header chroma already ${if (toggle) "enabled" else "disabled"}.")
+                    sendMessage("§eHeader chroma already ${if (toggle) "enabled" else "disabled"}.")
                 }
             }
             else -> {
-                sendMessage("Unknown header option '${args[0]}'.")
+                sendMessage("§cUnknown header option '${args[0]}'.")
                 sendDisplayHeaderDetails()
             }
         }
@@ -378,12 +410,12 @@ class LevelheadCommand : CommandBase() {
         val clamped = parsed.coerceIn(MIN_DISPLAY_OFFSET, MAX_DISPLAY_OFFSET)
         val previous = Levelhead.displayManager.config.offset
         if (abs(previous - clamped) < 0.0001) {
-            sendMessage("Offset already set to ${String.format(Locale.ROOT, "%.2f", clamped)}.")
+            sendMessage("§eOffset already set to §6${String.format(Locale.ROOT, "%.2f", clamped)}§e.")
             return
         }
         Levelhead.displayManager.config.offset = clamped
         Levelhead.displayManager.saveConfig()
-        sendMessage("Updated display offset to ${String.format(Locale.ROOT, "%.2f", clamped)}.")
+        sendMessage("§aUpdated display offset to §6${String.format(Locale.ROOT, "%.2f", clamped)}§a.")
     }
 
     private fun handleDisplayShowSelf(args: Array<String>) {
@@ -393,7 +425,7 @@ class LevelheadCommand : CommandBase() {
         }
         val toggle = args.getOrNull(0)?.let { parseToggle(it) }
         if (toggle == null) {
-            sendMessage("Couldn't understand '${args[0]}'. Use /levelhead display showself <on|off>.")
+            sendMessage("§cCouldn't understand '${args[0]}'. Use §6/levelhead display showself <on|off>§c.")
             return
         }
         val changed = Levelhead.displayManager.updatePrimaryDisplay { config ->
@@ -402,15 +434,15 @@ class LevelheadCommand : CommandBase() {
             true
         }
         if (changed) {
-            sendMessage("Updated self display visibility to ${formatToggle(toggle)}.")
+            sendMessage("§aUpdated self display visibility to ${formatToggle(toggle)}")
         } else {
-            sendMessage("Self display visibility already ${formatToggle(toggle)}.")
+            sendMessage("§eSelf display visibility already ${formatToggle(toggle)}")
         }
     }
 
     private fun handleAdminPurgeCache(args: Array<String>) {
         if (!isProxyFullyConfigured()) {
-            sendMessage("Proxy must be enabled and configured to purge the backend cache.")
+            sendMessage("§cProxy must be enabled and configured to purge the backend cache.")
             return
         }
         val identifier = args.joinToString(" ").trim()
@@ -424,17 +456,18 @@ class LevelheadCommand : CommandBase() {
             try {
                 val purged = purgeProxyCache(identifier)
                 Minecraft.getMinecraft().addScheduledTask {
-                    val scopeText = identifier?.let { "for $it" } ?: "globally"
-                    sendMessage("Requested cache purge $scopeText ($purged entries).")
+                    val scopeText = identifier?.let { "§6$it" } ?: "§6globally"
+                    sendMessage("§aRequested cache purge $scopeText§a ($purged entries).")
                 }
             } catch (ex: CommandException) {
                 Minecraft.getMinecraft().addScheduledTask {
-                    sendMessage(ex.message ?: "Command failed.")
+                    val errorMessage = ex.message?.let { if (it.startsWith("§")) it else "§c$it" } ?: "§cCommand failed."
+                    sendMessage(errorMessage)
                 }
             } catch (throwable: Throwable) {
                 Levelhead.logger.error("Failed to purge proxy cache", throwable)
                 Minecraft.getMinecraft().addScheduledTask {
-                    sendMessage("Unexpected error while purging cache. Check logs for details.")
+                    sendMessage("§cUnexpected error while purging cache. Check logs for details.")
                 }
             }
         }
@@ -451,13 +484,13 @@ class LevelheadCommand : CommandBase() {
         val baseUrl = LevelheadConfig.proxyBaseUrl.ifBlank { "not set" }
         val tokenState = if (LevelheadConfig.proxyAuthToken.isBlank()) "not set" else "configured"
         val enabledState = formatToggle(LevelheadConfig.proxyEnabled)
-        sendMessage("Options: enable/disable toggle usage ($enabledState), url to set the backend ($baseUrl), token to update auth ($tokenState).")
-        sendMessage("Try: /levelhead proxy enable, /levelhead proxy url https://example.com, /levelhead proxy token <token>.")
+        sendMessage("§eOptions: enable/disable toggle usage ($enabledState), url to set the backend (§6$baseUrl§e), token to update auth (§6$tokenState§e).")
+        sendMessage("§eTry: §6/levelhead proxy enable§e, §6/levelhead proxy url https://example.com§e, §6/levelhead proxy token <token>§e.")
     }
 
     private fun sendAdminHelp() {
-        sendMessage("Admin commands control the proxy cache. Available: purgecache [player] to clear cached stats globally or for a specific player.")
-        sendMessage("Example: /levelhead admin purgecache (all) or /levelhead admin purgecache Notch.")
+        sendMessage("§eAdmin commands control the proxy cache. Available: §6purgecache [player]§e to clear cached stats globally or for a specific player.")
+        sendMessage("§eExample: §6/levelhead admin purgecache (all)§e or §6/levelhead admin purgecache Notch§e.")
     }
 
     private fun sendStatus(message: String) {
@@ -467,11 +500,12 @@ class LevelheadCommand : CommandBase() {
     private fun updateEnabledState(enabled: Boolean) {
         val changed = Levelhead.displayManager.setEnabled(enabled)
         val stateText = if (enabled) "enabled" else "disabled"
-        val color = if (enabled) Color.GREEN else Color.RED
+        val stateColor = if (enabled) "§a" else "§c"
+        val highlightedState = "$stateColor$stateText§e"
         val message = if (changed) {
-            "${color}BedWars Levelhead has been ${color}$stateText${ChatColor.YELLOW}."
+            "§aBedWars Levelhead has been $highlightedState."
         } else {
-            "${ChatColor.YELLOW}BedWars Levelhead is already ${color}$stateText${ChatColor.YELLOW}."
+            "§eBedWars Levelhead is already $highlightedState."
         }
         sendMessage(message)
     }
@@ -493,13 +527,13 @@ class LevelheadCommand : CommandBase() {
     private fun sendDisplayOverview() {
         val primaryDisplay = Levelhead.displayManager.primaryDisplay()
         val headerText = primaryDisplay?.config?.headerString ?: BedwarsModeDetector.DEFAULT_HEADER
-        val headerColor = primaryDisplay?.config?.headerColor ?: ChatColor.AQUA.color!!
+        val headerColor = primaryDisplay?.config?.headerColor ?: Color.CYAN
         val headerChroma = primaryDisplay?.config?.headerChroma ?: false
         val showSelf = primaryDisplay?.config?.showSelf ?: true
         val offset = Levelhead.displayManager.config.offset
 
-        sendMessage("Primary header: $headerText (${formatColor(headerColor)}, chroma ${formatToggle(headerChroma)}).")
-        sendMessage("Display offset: ${String.format(Locale.ROOT, "%.2f", offset)}, show self ${formatToggle(showSelf)}.")
+        sendMessage("§ePrimary header: §b$headerText§e (${formatColor(headerColor)}, chroma ${formatToggle(headerChroma)}).")
+        sendMessage("§eDisplay offset: §6${String.format(Locale.ROOT, "%.2f", offset)}§e, show self ${formatToggle(showSelf)}.")
     }
 
     private fun sendDisplayUsage() {
@@ -530,7 +564,7 @@ class LevelheadCommand : CommandBase() {
     }
 
     private fun currentHeaderColor(): Color {
-        return Levelhead.displayManager.primaryDisplay()?.config?.headerColor ?: ChatColor.AQUA.color!!
+        return Levelhead.displayManager.primaryDisplay()?.config?.headerColor ?: Color.CYAN
     }
 
     private fun currentHeaderChroma(): Boolean {
@@ -542,7 +576,7 @@ class LevelheadCommand : CommandBase() {
     }
 
     private fun formatToggle(value: Boolean): String {
-        return if (value) "${ChatColor.GREEN}on" else "${ChatColor.RED}off"
+        return if (value) "§aon§e" else "§coff§e"
     }
 
     private fun parseToggle(value: String): Boolean? {
@@ -566,12 +600,15 @@ class LevelheadCommand : CommandBase() {
             val blue = b.toInt().coerceIn(0, 255)
             return Color(red, green, blue)
         }
-        return ChatColor.values()
-            .firstOrNull { it.isColor() && it.name.equals(normalized.replace(" ", "_"), ignoreCase = true) }
-            ?.color
+        val namedKey = normalized.lowercase(Locale.ROOT).replace(" ", "_").replace("-", "_")
+        val named = NAMED_COLORS[namedKey]
+        if (named != null) {
+            return named
+        }
+        return null
     }
 
-    private fun formatColor(color: Color): String = "#%06X".format(Locale.ROOT, color.rgb and 0xFFFFFF)
+    private fun formatColor(color: Color): String = "§b#%06X§e".format(Locale.ROOT, color.rgb and 0xFFFFFF)
 
     private fun isProxyFullyConfigured(): Boolean {
         return LevelheadConfig.proxyEnabled && LevelheadConfig.proxyBaseUrl.isNotBlank() && LevelheadConfig.proxyAuthToken.isNotBlank()

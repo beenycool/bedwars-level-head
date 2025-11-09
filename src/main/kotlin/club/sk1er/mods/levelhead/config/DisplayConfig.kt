@@ -8,7 +8,7 @@ class DisplayConfig {
     var showSelf: Boolean = true
     var type: String = BedwarsModeDetector.BEDWARS_STAR_TYPE
 
-    var headerColor: Color = Color.AQUA
+    var headerColor: Color = Color.CYAN
     var headerChroma: Boolean = false
     var headerString: String = BedwarsModeDetector.DEFAULT_HEADER
 
