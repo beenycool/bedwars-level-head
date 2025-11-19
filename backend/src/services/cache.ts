@@ -1,4 +1,4 @@
-import { Pool } from 'pg';
+import { Pool, DatabaseError } from 'pg';
 import { CACHE_DB_URL, CACHE_DB_POOL_MAX, CACHE_DB_POOL_MIN } from '../config';
 import { recordCacheHit, recordCacheMiss } from './metrics';
 
@@ -35,6 +35,33 @@ pool.on('error', (error: unknown) => {
   console.error('[cache] unexpected database error', error);
 });
 
+async function ensureRateLimitTable(): Promise<void> {
+  try {
+    await pool.query(
+      `CREATE TABLE IF NOT EXISTS rate_limits (
+        key TEXT PRIMARY KEY,
+        count BIGINT NOT NULL,
+        window_start BIGINT NOT NULL
+      )`,
+    );
+  } catch (error) {
+    const dbError = error as DatabaseError | undefined;
+    if (dbError?.code !== '42P07') {
+      throw error;
+    }
+  }
+
+  const columnInfo = await pool.query<{ data_type: string }>(
+    `SELECT data_type FROM information_schema.columns
+     WHERE table_name = 'rate_limits' AND table_schema = current_schema() AND column_name = 'count'`,
+  );
+  const dataType = columnInfo.rows[0]?.data_type;
+  if (dataType && dataType.toLowerCase() !== 'bigint') {
+    await pool.query('ALTER TABLE rate_limits ALTER COLUMN count TYPE BIGINT USING count::BIGINT');
+    console.info('[cache] migrated rate_limits.count column to BIGINT');
+  }
+}
+
 const initialization = pool
   .query(
     `CREATE TABLE IF NOT EXISTS player_cache (
@@ -47,6 +74,9 @@ const initialization = pool
   )
   .then(async () => {
     console.info('[cache] player_cache table is ready');
+
+    await ensureRateLimitTable();
+    console.info('[cache] rate_limits table is ready');
 
     const alterStatements: Array<{ column: string; query: string }> = [
       { column: 'etag', query: 'ALTER TABLE player_cache ADD COLUMN IF NOT EXISTS etag TEXT' },
@@ -83,6 +113,15 @@ export async function purgeExpiredEntries(now: number = Date.now()): Promise<voi
   const purged = result.rowCount ?? 0;
   if (purged > 0) {
     console.info(`[cache] purged ${purged} expired entries`);
+  }
+
+  const staleRateLimitThreshold = now - 60 * 60 * 1000;
+  const rateLimitResult = await pool.query('DELETE FROM rate_limits WHERE window_start <= $1', [
+    staleRateLimitThreshold,
+  ]);
+  const purgedBuckets = rateLimitResult.rowCount ?? 0;
+  if (purgedBuckets > 0) {
+    console.info(`[cache] purged ${purgedBuckets} expired rate limit entries`);
   }
 }
 

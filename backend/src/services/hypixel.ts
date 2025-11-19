@@ -92,10 +92,21 @@ function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
 
   const bedwarsStats = response.player?.stats?.Bedwars ?? {};
   const experience = (bedwarsStats as any).bedwars_experience ?? (bedwarsStats as any).Experience;
+  const finalKillsRaw = (bedwarsStats as any).final_kills_bedwars;
+  const finalDeathsRaw = (bedwarsStats as any).final_deaths_bedwars;
+  const winstreakRaw = (bedwarsStats as any).winstreak;
+
+  const finalKills = Number(finalKillsRaw ?? 0);
+  const finalDeaths = Number(finalDeathsRaw ?? 0);
+  const winstreakNumber = Number(winstreakRaw);
+  const winstreak = Number.isFinite(winstreakNumber) ? winstreakNumber : undefined;
+  const fkdr = finalDeaths <= 0 ? finalKills : finalKills / finalDeaths;
 
   const shapedStats: Record<string, unknown> = {
     ...bedwarsStats,
     ...(experience !== undefined ? { bedwars_experience: experience, Experience: experience } : {}),
+    ...(Number.isFinite(fkdr) ? { fkdr } : {}),
+    ...(winstreak !== undefined ? { winstreak } : {}),
   };
 
   return {

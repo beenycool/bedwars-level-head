@@ -2,7 +2,6 @@ package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import com.google.gson.JsonObject
-import gg.essential.universal.ChatColor
 import java.awt.Color
 
 object BedwarsStar {
@@ -68,6 +67,25 @@ object BedwarsStar {
 
     data class PrestigeStyle(val color: Color, val chroma: Boolean)
 
+    enum class ThreatLevel(val color: Color) {
+        LOW(Color(170, 170, 170)),
+        NORMAL(Color(85, 255, 85)),
+        HIGH(Color(255, 85, 85)),
+        EXTREME(Color(139, 0, 0));
+
+        companion object {
+            fun determine(fkdr: Double?): ThreatLevel {
+                val ratio = fkdr ?: 0.0
+                return when {
+                    ratio > 10.0 -> EXTREME
+                    ratio > 3.0 -> HIGH
+                    ratio > 1.0 -> NORMAL
+                    else -> LOW
+                }
+            }
+        }
+    }
+
     fun extractExperience(player: JsonObject?): Long? {
         player ?: return null
 
@@ -100,7 +118,7 @@ object BedwarsStar {
 
     fun styleForStar(star: Int): PrestigeStyle {
         val prestigeIndex = (star / 100).coerceAtLeast(0)
-        val fallback = PrestigeStyle(ChatColor.GRAY.color ?: Color.GRAY, false)
+        val fallback = PrestigeStyle(Color.GRAY, false)
         val prestigeStyle = prestigeStyles.getOrNull(prestigeIndex) ?: prestigeStyles.lastOrNull() ?: fallback
         return prestigeStyle.copy()
     }

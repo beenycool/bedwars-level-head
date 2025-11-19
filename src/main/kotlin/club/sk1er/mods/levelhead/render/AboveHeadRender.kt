@@ -4,124 +4,125 @@ import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.Levelhead.displayManager
 import club.sk1er.mods.levelhead.display.LevelheadTag
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
-import gg.essential.api.EssentialAPI
-import gg.essential.elementa.utils.withAlpha
-import gg.essential.universal.UGraphics
-import gg.essential.universal.UMatrixStack
-import gg.essential.universal.UMinecraft
-import gg.essential.universal.UMinecraft.getFontRenderer
-import gg.essential.universal.UMinecraft.getMinecraft
-import gg.essential.universal.wrappers.UPlayer
+import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.FontRenderer
+import net.minecraft.client.renderer.GlStateManager
+import net.minecraft.client.renderer.Tessellator
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats
 import net.minecraft.entity.EntityLivingBase
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraftforge.client.event.RenderLivingEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import org.lwjgl.opengl.GL11
+import java.awt.Color
 
 object AboveHeadRender {
 
     @SubscribeEvent
     fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
         if (!displayManager.config.enabled) return
-        if (!EssentialAPI.getMinecraftUtil().isHypixel()) return
-        if (getMinecraft().gameSettings.hideGUI) return
+        if (!Levelhead.isOnHypixel()) return
+        val minecraft = Minecraft.getMinecraft()
+        if (minecraft.gameSettings.hideGUI) return
         if (!BedwarsModeDetector.shouldRenderTags()) return
 
-        if (event.entity !is EntityPlayer) return
-        val player = event.entity as EntityPlayer
-
-        val localPlayer = UMinecraft.getPlayer()
+        val player = event.entity as? EntityPlayer ?: return
+        val localPlayer = minecraft.thePlayer
 
         displayManager.aboveHead.forEachIndexed { index, display ->
-            if (!display.config.enabled || (player.isSelf && !display.config.showSelf)) return@forEachIndexed
-            val tag = display.cache[player.uniqueID]
-            if (display.loadOrRender(player) && tag != null) {
-                // increase offset if there's something in the above name slot for scoreboards
-                var offset = 0.3
-                val hasScoreboardObjective = player.worldScoreboard?.getObjectiveInDisplaySlot(2) != null
-                val isCloseToLocalPlayer = localPlayer?.let { player.getDistanceSqToEntity(it) < 100 } ?: false
-                if (hasScoreboardObjective && isCloseToLocalPlayer) {
-                    offset *= 2
-                }
-                if (player.isSelf) offset = 0.0
-                offset += displayManager.config.offset
-                renderName(tag, player, event.x, event.y + offset + index * 0.3, event.z)
+            if (!display.config.enabled || (player.isSelf() && !display.config.showSelf)) return@forEachIndexed
+            val tag = display.cache[player.uniqueID] ?: return@forEachIndexed
+            if (!display.loadOrRender(player)) return@forEachIndexed
+
+            var offset = 0.3
+            val hasScoreboardObjective = player.worldScoreboard?.getObjectiveInDisplaySlot(2) != null
+            val isCloseToLocalPlayer = localPlayer?.let { player.getDistanceSqToEntity(it) < 100 } ?: false
+            if (hasScoreboardObjective && isCloseToLocalPlayer) {
+                offset *= 2
             }
+            if (player.isSelf()) {
+                offset = 0.0
+            }
+            offset += displayManager.config.offset
+            renderName(tag, player, event.x, event.y + offset + index * 0.3, event.z)
         }
     }
 
-    private val EntityPlayer.isSelf: Boolean
-        get() = UPlayer.getUUID() == this.uniqueID
+    private fun EntityPlayer.isSelf(): Boolean {
+        val local = Minecraft.getMinecraft().thePlayer ?: return false
+        return local.uniqueID == this.uniqueID
+    }
 
-    private fun renderName(tag: LevelheadTag, entityIn: EntityPlayer, x: Double, y: Double, z: Double) {
-        val fontrenderer = getFontRenderer()
-        val textScale = 0.016666668f * 1.6f * displayManager.config.fontSize
-        UGraphics.GL.pushMatrix()
-        val mc = getMinecraft()
-        val xMultiplier = if (
-            mc.gameSettings?.let { it.thirdPersonView == 2 } == true
-        ) {
-            -1
-        } else {
-            1
-        }
-        UGraphics.GL.translate(x.toFloat() + 0.0f, y.toFloat() + entityIn.height + 0.5f, z.toFloat())
+    private fun renderName(tag: LevelheadTag, entity: EntityPlayer, x: Double, y: Double, z: Double) {
+        val mc = Minecraft.getMinecraft()
+        val renderer = mc.fontRendererObj
+        val scale = (0.016666668f * 1.6f * displayManager.config.fontSize).toFloat()
+        GlStateManager.pushMatrix()
+        GlStateManager.translate(x.toFloat(), (y + entity.height + 0.5).toFloat(), z.toFloat())
         GL11.glNormal3f(0.0f, 1.0f, 0.0f)
-        val renderManager = mc.renderManager
-        UGraphics.GL.rotate(-renderManager.playerViewY, 0.0f, 1.0f, 0.0f)
-        UGraphics.GL.rotate(renderManager.playerViewX * xMultiplier, 1.0f, 0.0f, 0.0f)
-        UGraphics.GL.scale(-textScale, -textScale, textScale)
-        UGraphics.disableLighting()
-        UGraphics.depthMask(false)
-        UGraphics.disableDepth()
-        UGraphics.enableBlend()
-        UGraphics.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO)
-        val stringWidth = fontrenderer.getStringWidth(tag.getString()) shr 1
-        val uGraphics = UGraphics.getFromTessellator().beginWithDefaultShader(UGraphics.DrawMode.QUADS, DefaultVertexFormats.POSITION_COLOR)
-        uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), -1.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
-        uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), 8.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
-        uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 1).toDouble(), 8.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
-        uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 1).toDouble(), -1.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
-        uGraphics.drawDirect()
-        renderString(fontrenderer, tag)
-        UGraphics.enableLighting()
-        UGraphics.disableBlend()
-        UGraphics.color4f(1.0f, 1.0f, 1.0f, 1.0f)
-        UGraphics.GL.popMatrix()
+        val view = mc.renderManager
+        val xMultiplier = if (mc.gameSettings.thirdPersonView == 2) -1 else 1
+        GlStateManager.rotate(-view.playerViewY, 0.0f, 1.0f, 0.0f)
+        GlStateManager.rotate(view.playerViewX * xMultiplier, 1.0f, 0.0f, 0.0f)
+        GlStateManager.scale(-scale, -scale, scale)
+        GlStateManager.disableLighting()
+        GlStateManager.depthMask(false)
+        GlStateManager.disableDepth()
+        GlStateManager.enableBlend()
+        GlStateManager.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO)
+
+        val halfWidth = renderer.getStringWidth(tag.getString()) / 2
+        drawBackground(halfWidth)
+        renderString(renderer, tag)
+
+        GlStateManager.enableLighting()
+        GlStateManager.disableBlend()
+        GlStateManager.color(1f, 1f, 1f, 1f)
+        GlStateManager.depthMask(true)
+        GlStateManager.enableDepth()
+        GlStateManager.popMatrix()
+    }
+
+    private fun drawBackground(halfWidth: Int) {
+        val tessellator = Tessellator.getInstance()
+        val buffer = tessellator.worldRenderer
+        buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_COLOR)
+        val left = -halfWidth - 2.0
+        val right = halfWidth + 1.0
+        buffer.pos(left, -1.0, 0.0).color(0f, 0f, 0f, 0.25f).endVertex()
+        buffer.pos(left, 8.0, 0.0).color(0f, 0f, 0f, 0.25f).endVertex()
+        buffer.pos(right, 8.0, 0.0).color(0f, 0f, 0f, 0.25f).endVertex()
+        buffer.pos(right, -1.0, 0.0).color(0f, 0f, 0f, 0.25f).endVertex()
+        tessellator.draw()
     }
 
     private fun renderString(renderer: FontRenderer, tag: LevelheadTag) {
-        var x = -(renderer.getStringWidth(tag.getString()) shr 1)
-        //Render header
-        render(renderer, tag.header, x)
+        var x = -(renderer.getStringWidth(tag.getString()) / 2)
+        renderComponent(renderer, tag.header, x)
         x += renderer.getStringWidth(tag.header.value)
-        //render footer
-        render(renderer, tag.footer, x)
+        renderComponent(renderer, tag.footer, x)
     }
 
-    private fun render(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int) {
-        UGraphics.disableDepth()
-        UGraphics.depthMask(false)
+    private fun renderComponent(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int) {
+        GlStateManager.disableDepth()
+        GlStateManager.depthMask(false)
         if (component.chroma) {
             renderer.drawString(component.value, x, 0, Levelhead.DarkChromaColor)
         } else {
-            renderer.drawString(component.value, x, 0, component.color.withAlpha(0.2f).rgb)
+            renderer.drawString(component.value, x, 0, component.color.withAlphaFactor(0.2f))
         }
-        UGraphics.enableDepth()
-        UGraphics.depthMask(true)
-        UGraphics.directColor3f(1.0f, 1.0f, 1.0f)
+        GlStateManager.enableDepth()
+        GlStateManager.depthMask(true)
         if (component.chroma) {
             renderer.drawString(component.value, x, 0, Levelhead.ChromaColor)
         } else {
-            UGraphics.color4f(
-                component.color.red / 255f,
-                component.color.green / 255f,
-                component.color.blue / 255f,
-                .5f
-            )
             renderer.drawString(component.value, x, 0, component.color.rgb)
         }
+    }
+
+    private fun Color.withAlphaFactor(alpha: Float): Int {
+        val clamped = alpha.coerceIn(0f, 1f)
+        val a = (clamped * 255f).toInt().coerceIn(0, 255)
+        return Color(red, green, blue, a).rgb
     }
 }
