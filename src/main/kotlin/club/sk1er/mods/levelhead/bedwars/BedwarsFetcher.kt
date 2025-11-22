@@ -291,7 +291,6 @@ object BedwarsFetcher {
         }
 
         val url = HttpUrl.parse(HYPIXEL_PLAYER_ENDPOINT)?.newBuilder()
-            ?.addQueryParameter("key", key)
             ?.addQueryParameter("uuid", uuid.toString().replace("-", ""))
             ?.build()
 
@@ -304,6 +303,7 @@ object BedwarsFetcher {
             .url(url)
             .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
             .header("Accept", "application/json")
+            .header("API-Key", key)
             .get()
             .build()
 

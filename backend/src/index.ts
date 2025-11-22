@@ -78,9 +78,10 @@ app.get('/healthz', async (_req, res) => {
     checkHypixelReachability(),
   ]);
 
-  const healthy = dbHealthy && hypixelHealthy;
+  const healthy = dbHealthy;
+  const status = healthy ? (hypixelHealthy ? 'ok' : 'degraded') : 'unhealthy';
   res.status(healthy ? 200 : 503).json({
-    status: healthy ? 'ok' : 'degraded',
+    status,
     checks: {
       database: dbHealthy,
       hypixel: hypixelHealthy,
@@ -118,7 +119,14 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
     return;
   }
 
-  console.error('Unexpected error', err);
+  if (err instanceof Error) {
+    console.error('Unexpected error:', err.message);
+    if (err.stack) {
+      console.error(err.stack);
+    }
+  } else {
+    console.error('Unexpected error (non-Error object):', String(err));
+  }
   res.status(500).json({ success: false, cause: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
 });
 

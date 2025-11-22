@@ -87,7 +87,15 @@ function getMemoized(prefix: string, value: string): ResolvedPlayer | null {
 
 function setMemoized(prefix: string, value: string, resolved: ResolvedPlayer): void {
   const key = memoKey(prefix, value);
-  memoizedResults.set(key, { expiresAt: Date.now() + MEMOIZED_TTL_MS, value: resolved });
+  const expiresAt = Date.now() + MEMOIZED_TTL_MS;
+  memoizedResults.set(key, { expiresAt, value: resolved });
+
+  setTimeout(() => {
+    const entry = memoizedResults.get(key);
+    if (entry && entry.expiresAt <= Date.now()) {
+      memoizedResults.delete(key);
+    }
+  }, MEMOIZED_TTL_MS);
 }
 
 function summarizeCacheEntry(entry: CacheEntry<ProxyPlayerPayload>): CacheMetadata {

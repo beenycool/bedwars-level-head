@@ -102,6 +102,7 @@ object Levelhead {
     private const val MODRINTH_API_BASE = "https://api.modrinth.com/v2"
     private const val TARGET_MC_VERSION = "1.8.9"
     private const val TARGET_LOADER = "forge"
+    private const val MAX_STATS_CACHE_ENTRIES = 500
 
     private val minecraft: Minecraft
         get() = Minecraft.getMinecraft()
@@ -489,6 +490,7 @@ object Levelhead {
     private fun handleStatsUpdate(uuid: UUID, entry: CachedBedwarsStats?) {
         if (entry != null) {
             statsCache[uuid] = entry
+            trimStatsCache()
         }
         val listeners = pendingDisplayRefreshes.remove(uuid) ?: return
         if (entry != null) {
@@ -496,6 +498,23 @@ object Levelhead {
                 .filter { it.config.enabled && it.cache.containsKey(uuid) }
                 .forEach { display -> updateDisplayCache(display, uuid, entry) }
         }
+    }
+
+    private fun trimStatsCache(now: Long = System.currentTimeMillis()) {
+        val expiredKeys = statsCache
+            .filterValues { it.isExpired(LevelheadConfig.starCacheTtl, now) }
+            .keys
+        expiredKeys.forEach { statsCache.remove(it) }
+
+        if (statsCache.size <= MAX_STATS_CACHE_ENTRIES) return
+
+        val overflow = statsCache.size - MAX_STATS_CACHE_ENTRIES
+        if (overflow <= 0) return
+
+        statsCache.entries
+            .sortedBy { it.value.fetchedAt }
+            .take(overflow)
+            .forEach { (key, _) -> statsCache.remove(key) }
     }
 
     private fun applyStatsToRequests(

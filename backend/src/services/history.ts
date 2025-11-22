@@ -121,6 +121,24 @@ export async function recordPlayerQuery(record: PlayerQueryRecord): Promise<void
       record.responseStatus,
     ],
   );
+
+  console.info(
+    '[history] recorded query',
+    {
+      identifier: record.identifier,
+      normalizedIdentifier: record.normalizedIdentifier,
+      lookupType: record.lookupType,
+      resolvedUuid: record.resolvedUuid,
+      resolvedUsername: record.resolvedUsername,
+      stars: record.stars,
+      nicked: record.nicked,
+      cacheSource: record.cacheSource,
+      cacheHit: record.cacheHit,
+      revalidated: record.revalidated,
+      installId: record.installId,
+      responseStatus: record.responseStatus,
+    },
+  );
 }
 
 export async function getRecentPlayerQueries(limit = 50): Promise<PlayerQuerySummary[]> {

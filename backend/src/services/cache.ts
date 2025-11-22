@@ -1,6 +1,11 @@
-import { Pool, DatabaseError } from 'pg';
+import { Pool } from 'pg';
 import { CACHE_DB_URL, CACHE_DB_POOL_MAX, CACHE_DB_POOL_MIN } from '../config';
 import { recordCacheHit, recordCacheMiss } from './metrics';
+
+interface DatabaseError extends Error {
+  code?: string;
+  constraint?: string;
+}
 
 interface CacheRow {
   payload: string;
@@ -93,6 +98,11 @@ const initialization = pool
           console.info(`[cache] ensured column ${column} exists on player_cache`);
         }
       } catch (error) {
+        const dbError = error as DatabaseError | undefined;
+        if (dbError?.code === '42701') {
+          console.info(`[cache] column ${column} already exists (concurrent migration handled)`);
+          continue;
+        }
         console.error(`[cache] failed to ensure column ${column} exists`, error);
         throw error;
       }
@@ -113,6 +123,14 @@ export async function purgeExpiredEntries(now: number = Date.now()): Promise<voi
   const purged = result.rowCount ?? 0;
   if (purged > 0) {
     console.info(`[cache] purged ${purged} expired entries`);
+  }
+
+  const historyResult = await pool.query(
+    "DELETE FROM player_query_history WHERE requested_at < NOW() - INTERVAL '30 days'",
+  );
+  const purgedHistory = historyResult.rowCount ?? 0;
+  if (purgedHistory > 0) {
+    console.info(`[cache] purged ${purgedHistory} historical query entries older than 30 days`);
   }
 
   const staleRateLimitThreshold = now - 60 * 60 * 1000;
