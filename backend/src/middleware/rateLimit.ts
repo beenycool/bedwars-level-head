@@ -69,6 +69,14 @@ export function createRateLimitMiddleware({
       const windowStart =
         typeof windowStartRaw === 'string' ? Number.parseInt(windowStartRaw, 10) : windowStartRaw;
 
+      console.info('[rate-limit] upsert', {
+        key,
+        count,
+        windowStart: new Date(windowStart).toISOString(),
+        windowMs,
+        max,
+      });
+
       if (count > max) {
         const retryAfterSeconds = Math.ceil((windowStart + windowMs - now) / 1000);
         const retryAfterHeader = retryAfterSeconds.toString();
