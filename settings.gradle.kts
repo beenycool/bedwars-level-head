@@ -5,6 +5,8 @@ pluginManagement {
         maven("https://maven.fabricmc.net")
         maven("https://maven.architectury.dev/")
         maven("https://maven.minecraftforge.net")
+        maven("https://repo.polyfrost.org/releases")
+        maven("https://repo.polyfrost.cc/releases")
         maven("https://maven.polyfrost.cc/releases")
     }
     plugins {

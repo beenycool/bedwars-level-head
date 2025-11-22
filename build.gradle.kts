@@ -29,6 +29,8 @@ loom {
 
 repositories {
     mavenCentral()
+    maven("https://repo.polyfrost.org/releases")
+    maven("https://repo.polyfrost.cc/releases")
     maven("https://maven.polyfrost.cc/releases")
     maven("https://repo.spongepowered.org/repository/maven-public/")
 }
