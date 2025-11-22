@@ -38,10 +38,14 @@ val embed by configurations.creating
 configurations.implementation.get().extendsFrom(embed)
 
 dependencies {
-    modCompileOnly("cc.polyfrost:oneconfig-$platform:0.2.2-alpha+")
-    include("cc.polyfrost:oneconfig-$platform:0.2.2-alpha+")
-    modCompileOnly("cc.polyfrost:universalcraft-$platform:298")
-    include("cc.polyfrost:universalcraft-$platform:298")
+    val oneconfig = "cc.polyfrost:oneconfig-$platform:0.2.2-alpha+"
+    val universalcraft = "cc.polyfrost:universalcraft-$platform:298"
+
+    modCompileOnly(oneconfig)
+    modImplementation(include(oneconfig)!!)
+
+    modCompileOnly(universalcraft)
+    modImplementation(include(universalcraft)!!)
 
     embed("com.squareup.okhttp3:okhttp:3.14.9")
     compileOnly("org.spongepowered:mixin:0.8.5-SNAPSHOT")
