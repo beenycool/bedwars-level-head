@@ -7,11 +7,10 @@ pluginManagement {
         maven("https://maven.minecraftforge.net")
         maven("https://repo.polyfrost.org/releases")
         maven("https://repo.polyfrost.cc/releases")
-        maven("https://maven.polyfrost.cc/releases")
     }
     plugins {
-        val toolkitVersion = "0.1.10"
-        id("org.polyfrost.multi-version.root") version toolkitVersion
+        val toolkitVersion = "0.1.25"
+        id("cc.polyfrost.multi-version.root") version toolkitVersion
     }
 }
 

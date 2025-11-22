@@ -1,6 +1,6 @@
 plugins {
     kotlin("jvm")
-    id("org.polyfrost.multi-version")
+    id("cc.polyfrost.multi-version")
     id("org.polyfrost.defaults.repo")
     id("org.polyfrost.defaults.java")
     id("org.polyfrost.defaults.loom")
@@ -31,7 +31,6 @@ repositories {
     mavenCentral()
     maven("https://repo.polyfrost.org/releases")
     maven("https://repo.polyfrost.cc/releases")
-    maven("https://maven.polyfrost.cc/releases")
     maven("https://repo.spongepowered.org/repository/maven-public/")
 }
 
