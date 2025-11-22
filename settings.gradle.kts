@@ -11,6 +11,7 @@ pluginManagement {
     plugins {
         val toolkitVersion = "0.1.25"
         id("cc.polyfrost.multi-version.root") version toolkitVersion
+        id("cc.polyfrost.multi-version") version toolkitVersion
     }
 }
 
