@@ -1,9 +1,9 @@
 plugins {
     kotlin("jvm")
     id("cc.polyfrost.multi-version")
-    id("org.polyfrost.defaults.repo")
-    id("org.polyfrost.defaults.java")
-    id("org.polyfrost.defaults.loom")
+    id("cc.polyfrost.defaults.repo")
+    id("cc.polyfrost.defaults.java")
+    id("cc.polyfrost.defaults.loom")
     id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
