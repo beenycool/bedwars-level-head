@@ -4,7 +4,7 @@ plugins {
     id("cc.polyfrost.defaults.repo")
     id("cc.polyfrost.defaults.java")
     id("cc.polyfrost.defaults.loom")
-    id("com.github.johnrengelman.shadow") version "8.1.1"
+    id("com.github.johnrengelman.shadow")
 }
 
 val modGroup: String by project
