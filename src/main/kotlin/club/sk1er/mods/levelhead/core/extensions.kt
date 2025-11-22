@@ -1,15 +1,15 @@
 package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.display.LevelheadDisplay
-import gg.essential.universal.ChatColor
-import gg.essential.universal.wrappers.UPlayer
+import net.minecraft.client.Minecraft
 import net.minecraft.entity.player.EntityPlayer
 import java.awt.Color
 import java.util.*
 
 
 fun LevelheadDisplay.update() {
-    this.cache[UPlayer.getUUID()]?.let { tag ->
+    val player = Minecraft.getMinecraft().thePlayer ?: return
+    this.cache[player.uniqueID]?.let { tag ->
         tag.header.let { header ->
             header.chroma = this.config.headerChroma
             header.color = this.config.headerColor
@@ -21,9 +21,6 @@ fun LevelheadDisplay.update() {
         }
     }
 }
-
-fun Color.tryToGetChatColor() =
-    ChatColor.values().filter { it.isColor() }.find { it.color!! == this }
 
 val String.dashUUID: UUID?
     get() {

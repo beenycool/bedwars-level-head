@@ -2,18 +2,18 @@ import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS, TRUST_PROXY_ENABLED } from '../config';
 import { HttpError } from '../util/httpError';
 import { rateLimitBlocksTotal } from '../services/metrics';
-
-type Bucket = {
-  count: number;
-  windowStartedAt: number;
-  lastUpdatedAt: number;
-};
+import { pool } from '../services/cache';
 
 export interface RateLimitOptions {
   windowMs: number;
   max: number;
   getBucketKey(req: Request): string;
   metricLabel?: string;
+}
+
+interface RateLimitRow {
+  count: number;
+  window_start: number | string;
 }
 
 export function getClientIpAddress(req: Request): string {
@@ -31,24 +31,7 @@ export function createRateLimitMiddleware({
   getBucketKey,
   metricLabel,
 }: RateLimitOptions): RequestHandler {
-  const buckets = new Map<string, Bucket>();
-  const bucketTtlMs = windowMs * 2;
-  const cleanupIntervalMs = windowMs;
-
-  const cleanupTimer = setInterval(() => {
-    const now = Date.now();
-    for (const [key, bucket] of buckets) {
-      if (now - bucket.lastUpdatedAt > bucketTtlMs) {
-        buckets.delete(key);
-      }
-    }
-  }, cleanupIntervalMs);
-
-  if (typeof cleanupTimer.unref === 'function') {
-    cleanupTimer.unref();
-  }
-
-  return (req: Request, _res: Response, next: NextFunction): void => {
+  return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
     const now = Date.now();
 
     let key: string;
@@ -59,37 +42,61 @@ export function createRateLimitMiddleware({
       return;
     }
 
-    const bucket = buckets.get(key);
-
-    if (!bucket) {
-      buckets.set(key, { count: 1, windowStartedAt: now, lastUpdatedAt: now });
-      next();
-      return;
-    }
-
-    const elapsed = now - bucket.windowStartedAt;
-    if (elapsed >= windowMs) {
-      buckets.set(key, { count: 1, windowStartedAt: now, lastUpdatedAt: now });
-      next();
-      return;
-    }
-
-    if (bucket.count >= max) {
-      const retryAfterSeconds = Math.ceil((bucket.windowStartedAt + windowMs - now) / 1000);
-      const retryAfterHeader = retryAfterSeconds.toString();
-      const labelValue = metricLabel ?? 'unknown';
-      rateLimitBlocksTotal.inc({ type: labelValue });
-      throw new HttpError(
-        429,
-        'RATE_LIMIT',
-        `Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`,
-        { 'Retry-After': retryAfterHeader },
+    try {
+      const windowStartCutoff = now - windowMs;
+      const result = await pool.query<RateLimitRow>(
+        `
+        INSERT INTO rate_limits (key, count, window_start)
+        VALUES ($1, 1, $2)
+        ON CONFLICT (key) DO UPDATE
+        SET
+          count = CASE
+            WHEN rate_limits.window_start < $3 THEN 1
+            ELSE rate_limits.count + 1
+          END,
+          window_start = CASE
+            WHEN rate_limits.window_start < $3 THEN $2
+            ELSE rate_limits.window_start
+          END
+        RETURNING count, window_start
+        `,
+        [key, now, windowStartCutoff],
       );
-    }
 
-    bucket.count += 1;
-    bucket.lastUpdatedAt = now;
-    next();
+      const row = result.rows[0];
+      const count = row.count;
+      const windowStartRaw = row.window_start;
+      const windowStart =
+        typeof windowStartRaw === 'string' ? Number.parseInt(windowStartRaw, 10) : windowStartRaw;
+
+      console.info('[rate-limit] upsert', {
+        key,
+        count,
+        windowStart: new Date(windowStart).toISOString(),
+        windowMs,
+        max,
+      });
+
+      if (count > max) {
+        const retryAfterSeconds = Math.ceil((windowStart + windowMs - now) / 1000);
+        const retryAfterHeader = retryAfterSeconds.toString();
+        const labelValue = metricLabel ?? 'unknown';
+        rateLimitBlocksTotal.inc({ type: labelValue });
+        next(
+          new HttpError(
+            429,
+            'RATE_LIMIT',
+            `Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`,
+            { 'Retry-After': retryAfterHeader },
+          ),
+        );
+        return;
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
   };
 }
 

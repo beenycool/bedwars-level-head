@@ -5,7 +5,6 @@ import club.sk1er.mods.levelhead.config.DisplayConfig
 import club.sk1er.mods.levelhead.core.isNPC
 import club.sk1er.mods.levelhead.core.trimmed
 import gg.essential.universal.UMinecraft
-import gg.essential.universal.wrappers.UPlayer
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.potion.Potion
 import net.minecraft.scoreboard.Team.EnumVisible
@@ -32,20 +31,23 @@ class AboveHeadDisplay(config: DisplayConfig) : LevelheadDisplay(DisplayPosition
         //#else
         //$$ if (!player.getPassengers().isEmpty()) return false
         //#endif
+        val localPlayer = UMinecraft.getPlayer() ?: return false
         val min = min(4096, Levelhead.displayManager.config.renderDistance * Levelhead.displayManager.config.renderDistance)
-        return player.getDistanceSqToEntity(UMinecraft.getPlayer()!!) <= min
-                && (!player.hasCustomName() || player.customNameTag.isNotEmpty())
+        val nearLocalPlayer = player.getDistanceSqToEntity(localPlayer) <= min
+        if (!nearLocalPlayer) return false
+
+        return (!player.hasCustomName() || player.customNameTag.isNotEmpty())
                 && player.displayNameString.isNotEmpty()
                 && super.loadOrRender(player)
                 && !player.isInvisible
-                && !player.isInvisibleToPlayer(UMinecraft.getMinecraft().thePlayer)
+                && !player.isInvisibleToPlayer(localPlayer)
                 && !player.isSneaking
     }
 
     private fun renderFromTeam(player: EntityPlayer): Boolean {
         if (player.isUser) return true
         val team = player.team
-        val team1 = UPlayer.getPlayer()?.team
+        val team1 = UMinecraft.getPlayer()?.team
         if (team != null) {
             return when (team.nameTagVisibility) {
                 EnumVisible.NEVER -> false

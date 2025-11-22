@@ -1,11 +1,14 @@
-import gg.essential.gradle.util.versionFromBuildIdAndBranch
-
 plugins {
     kotlin("jvm") version "1.6.0" apply false
-    id("gg.essential.multi-version.root")
+    id("org.polyfrost.multi-version.root")
 }
 
-version = versionFromBuildIdAndBranch()
+version = resolveVersion()
+
+fun resolveVersion(): String {
+    val buildId = (findProperty("BUILD_ID") as? String)?.takeIf { it.isNotBlank() }
+    return buildId ?: "local"
+}
 
 preprocess {
     "1.8.9"(10809, "srg")

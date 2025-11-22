@@ -9,7 +9,7 @@ import club.sk1er.mods.levelhead.core.BedwarsModeDetector.Context
 import club.sk1er.mods.levelhead.display.AboveHeadDisplay
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
-import gg.essential.universal.UMinecraft
+import net.minecraft.client.Minecraft
 import net.minecraft.entity.player.EntityPlayer
 import org.apache.commons.io.FileUtils
 import java.io.File
@@ -135,7 +135,7 @@ class DisplayManager(val file: File) {
                 Levelhead.LevelheadRequest(player.uniqueID.trimmed, display, display.bottomValue)
             }
             .ifEmpty { return }
-            .run { Levelhead.fetch(this) }
+            .run { Levelhead.fetchBatch(this) }
     }
 
     fun checkCacheSizes() {
@@ -146,7 +146,7 @@ class DisplayManager(val file: File) {
 
     fun clearCachesWithoutRefetch() {
         aboveHead.forEach { it.cache.clear() }
-        Levelhead.clearCachedStars()
+        Levelhead.clearCachedStats()
     }
 
     fun clearCache() {
@@ -201,7 +201,7 @@ class DisplayManager(val file: File) {
         if (!BedwarsModeDetector.shouldRequestData()) return
         val displays = aboveHead.filter { it.config.enabled }
         if (displays.isEmpty()) return
-        UMinecraft.getWorld()?.playerEntities
+        Minecraft.getMinecraft().theWorld?.playerEntities
             ?.map { playerInfo ->
                 displays.map { display ->
                     Levelhead.LevelheadRequest(playerInfo.uniqueID.trimmed, display, display.bottomValue)
@@ -209,7 +209,7 @@ class DisplayManager(val file: File) {
             }
             ?.flatten()
             ?.chunked(20) { reqList ->
-                Levelhead.fetch(reqList)
+                Levelhead.fetchBatch(reqList)
             }
     }
 }
