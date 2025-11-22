@@ -42,10 +42,12 @@ dependencies {
     val universalcraft = "cc.polyfrost:universalcraft-$platform:298"
 
     modCompileOnly(oneconfig)
-    modImplementation(include(oneconfig)!!)
+    modImplementation(oneconfig)
+    include(oneconfig)
 
     modCompileOnly(universalcraft)
-    modImplementation(include(universalcraft)!!)
+    modImplementation(universalcraft)
+    include(universalcraft)
 
     embed("com.squareup.okhttp3:okhttp:3.14.9")
     compileOnly("org.spongepowered:mixin:0.8.5-SNAPSHOT")
