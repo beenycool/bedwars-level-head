@@ -1,5 +1,6 @@
 package club.sk1er.mods.levelhead.config
 
+import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import cc.polyfrost.oneconfig.config.Config
 import cc.polyfrost.oneconfig.config.annotations.Color
 import cc.polyfrost.oneconfig.config.annotations.Header
@@ -8,8 +9,7 @@ import cc.polyfrost.oneconfig.config.annotations.Switch
 import cc.polyfrost.oneconfig.config.annotations.Text
 import cc.polyfrost.oneconfig.config.data.Mod
 import cc.polyfrost.oneconfig.config.data.ModType
-import cc.polyfrost.oneconfig.libs.universal.UColor
-import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
+import java.awt.Color as AwtColor
 import java.time.Duration
 import java.util.Locale
 import java.util.UUID
@@ -20,7 +20,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     const val MIN_STAR_CACHE_TTL_MINUTES = 5
     const val MAX_STAR_CACHE_TTL_MINUTES = 180
     const val DEFAULT_STAR_CACHE_TTL_MINUTES = 45
-
     @Header(text = "General")
     @Switch(name = "Enabled", description = "Toggle the BedWars Levelhead overlay")
     var enabled: Boolean = true
@@ -37,7 +36,12 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Text(name = "Proxy Auth Token", secure = true)
     var proxyAuthToken: String = ""
 
-    @Slider(name = "Star Cache TTL (minutes)", min = MIN_STAR_CACHE_TTL_MINUTES.toFloat(), max = MAX_STAR_CACHE_TTL_MINUTES.toFloat(), step = 1f)
+    @Slider(
+        name = "Star Cache TTL (minutes)",
+        min = 5f,
+        max = 180f,
+        step = 1f
+    )
     var starCacheTtlMinutes: Int = DEFAULT_STAR_CACHE_TTL_MINUTES
 
     @Switch(name = "Use Threat Colors", description = "Color stats based on FKDR")
@@ -48,13 +52,13 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var headerString: String = "BedWars Star"
 
     @Color(name = "Header Color")
-    var headerColor: UColor = UColor(85, 255, 255)
+    var headerColor: AwtColor = AwtColor(85, 255, 255)
 
     @Text(name = "Footer Template", description = "Supports %star%, %fkdr%, %ws%")
     var footerTemplate: String = "%star%"
 
     @Color(name = "Footer Color")
-    var footerColor: UColor = UColor(255, 255, 85)
+    var footerColor: AwtColor = AwtColor(255, 255, 85)
 
     @Switch(name = "Show Self")
     var showSelf: Boolean = true
@@ -65,10 +69,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Switch(name = "Header Chroma")
     var headerChroma: Boolean = false
 
-    @Switch(name = "Welcome Message Shown", hidden = true)
     var welcomeMessageShown: Boolean = false
 
-    @Text(name = "Install ID", hidden = true)
     var installId: String = ""
 
     val starCacheTtl: Duration

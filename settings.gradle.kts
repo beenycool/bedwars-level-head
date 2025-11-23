@@ -5,11 +5,17 @@ pluginManagement {
         maven("https://maven.fabricmc.net")
         maven("https://maven.architectury.dev/")
         maven("https://maven.minecraftforge.net")
-        maven("https://maven.polyfrost.cc/releases")
+        maven("https://repo.polyfrost.org/releases")
+        maven("https://repo.polyfrost.cc/releases")
     }
     plugins {
-        val toolkitVersion = "0.1.10"
-        id("org.polyfrost.multi-version.root") version toolkitVersion
+        val toolkitVersion = "0.1.25"
+        id("org.jetbrains.kotlin.jvm") version "1.9.10"
+        id("cc.polyfrost.multi-version.root") version toolkitVersion
+        id("cc.polyfrost.multi-version") version toolkitVersion
+        id("cc.polyfrost.defaults.repo") version toolkitVersion
+        id("cc.polyfrost.defaults.java") version toolkitVersion
+        id("cc.polyfrost.defaults.loom") version toolkitVersion
     }
 }
 

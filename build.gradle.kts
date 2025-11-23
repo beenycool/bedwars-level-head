@@ -1,10 +1,10 @@
 plugins {
     kotlin("jvm")
-    id("org.polyfrost.multi-version")
-    id("org.polyfrost.defaults.repo")
-    id("org.polyfrost.defaults.java")
-    id("org.polyfrost.defaults.loom")
-    id("com.github.johnrengelman.shadow") version "8.1.1"
+    id("cc.polyfrost.multi-version")
+    id("cc.polyfrost.defaults.repo")
+    id("cc.polyfrost.defaults.java")
+    id("cc.polyfrost.defaults.loom")
+    id("com.github.johnrengelman.shadow")
 }
 
 val modGroup: String by project
@@ -29,19 +29,32 @@ loom {
 
 repositories {
     mavenCentral()
-    maven("https://maven.polyfrost.cc/releases")
+    maven("https://repo.polyfrost.org/releases")
+    maven("https://repo.polyfrost.cc/releases")
     maven("https://repo.spongepowered.org/repository/maven-public/")
 }
 
 val embed by configurations.creating
 configurations.implementation.get().extendsFrom(embed)
 
-dependencies {
-    modCompileOnly("cc.polyfrost:oneconfig-$platform:0.2.2-alpha+")
-    include("cc.polyfrost:oneconfig-$platform:0.2.2-alpha+")
-    modCompileOnly("cc.polyfrost:universalcraft-$platform:298")
-    include("cc.polyfrost:universalcraft-$platform:298")
+configurations.configureEach {
+    exclude(group = "me.djtheredstoner", module = "DevAuth-common")
+    exclude(group = "com.electronwill.night-config", module = "core")
+    exclude(group = "com.electronwill.night-config", module = "toml")
+}
 
+dependencies {
+    val oneconfig = "cc.polyfrost:oneconfig-$platform:0.2.2-alpha+"
+    val universalcraft = "cc.polyfrost:universalcraft-$platform:246"
+
+    modCompileOnly(oneconfig)
+    modImplementation(oneconfig)
+
+    modCompileOnly(universalcraft)
+    modImplementation(universalcraft)
+
+    embed(kotlin("stdlib"))
+    embed("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     embed("com.squareup.okhttp3:okhttp:3.14.9")
     compileOnly("org.spongepowered:mixin:0.8.5-SNAPSHOT")
 }

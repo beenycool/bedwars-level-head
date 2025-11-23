@@ -1,6 +1,6 @@
 plugins {
-    kotlin("jvm") version "1.6.0" apply false
-    id("org.polyfrost.multi-version.root")
+    kotlin("jvm") version "1.9.10" apply false
+    id("cc.polyfrost.multi-version.root") version "0.1.25"
 }
 
 version = resolveVersion()

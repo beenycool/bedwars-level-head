@@ -4,6 +4,7 @@ import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
+import com.google.gson.JsonPrimitive
 import okhttp3.HttpUrl
 import okhttp3.MediaType
 import okhttp3.Request
@@ -22,7 +23,7 @@ import net.minecraft.util.EnumChatFormatting as ChatColor
 
 object BedwarsFetcher {
     private const val HYPIXEL_PLAYER_ENDPOINT = "https://api.hypixel.net/player"
-    private val JSON_MEDIA_TYPE: MediaType = MediaType.parse("application/json; charset=utf-8")
+    private val JSON_MEDIA_TYPE: MediaType = MediaType.get("application/json; charset=utf-8")
 
     private val missingKeyWarned = AtomicBoolean(false)
     private val invalidKeyWarned = AtomicBoolean(false)
@@ -213,7 +214,7 @@ object BedwarsFetcher {
 
         val jsonPayload = JsonObject().apply {
             val array = JsonArray()
-            sanitized.forEach { array.add(it) }
+            sanitized.forEach { array.add(JsonPrimitive(it)) }
             add("uuids", array)
         }
 
