@@ -34,6 +34,8 @@ repositories {
     maven("https://repo.spongepowered.org/repository/maven-public/")
 }
 
+configurations.register("include")
+
 val embed by configurations.creating
 configurations.implementation.get().extendsFrom(embed)
 
