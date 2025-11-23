@@ -1,5 +1,6 @@
 package club.sk1er.mods.levelhead.config
 
+import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import cc.polyfrost.oneconfig.config.Config
 import cc.polyfrost.oneconfig.config.annotations.Color
 import cc.polyfrost.oneconfig.config.annotations.Header
@@ -8,8 +9,7 @@ import cc.polyfrost.oneconfig.config.annotations.Switch
 import cc.polyfrost.oneconfig.config.annotations.Text
 import cc.polyfrost.oneconfig.config.data.Mod
 import cc.polyfrost.oneconfig.config.data.ModType
-import gg.essential.universal.UColor
-import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
+import java.awt.Color as AwtColor
 import java.time.Duration
 import java.util.Locale
 import java.util.UUID
@@ -48,13 +48,13 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var headerString: String = "BedWars Star"
 
     @Color(name = "Header Color")
-    var headerColor: UColor = UColor(85, 255, 255)
+    var headerColor: AwtColor = AwtColor(85, 255, 255)
 
     @Text(name = "Footer Template", description = "Supports %star%, %fkdr%, %ws%")
     var footerTemplate: String = "%star%"
 
     @Color(name = "Footer Color")
-    var footerColor: UColor = UColor(255, 255, 85)
+    var footerColor: AwtColor = AwtColor(255, 255, 85)
 
     @Switch(name = "Show Self")
     var showSelf: Boolean = true
