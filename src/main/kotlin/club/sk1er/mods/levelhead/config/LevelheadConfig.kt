@@ -8,7 +8,7 @@ import cc.polyfrost.oneconfig.config.annotations.Switch
 import cc.polyfrost.oneconfig.config.annotations.Text
 import cc.polyfrost.oneconfig.config.data.Mod
 import cc.polyfrost.oneconfig.config.data.ModType
-import cc.polyfrost.oneconfig.libs.universal.UColor
+import cc.polyfrost.universal.UColor
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import java.time.Duration
 import java.util.Locale
@@ -65,10 +65,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Switch(name = "Header Chroma")
     var headerChroma: Boolean = false
 
-    @Switch(name = "Welcome Message Shown", hidden = true)
     var welcomeMessageShown: Boolean = false
 
-    @Text(name = "Install ID", hidden = true)
     var installId: String = ""
 
     val starCacheTtl: Duration

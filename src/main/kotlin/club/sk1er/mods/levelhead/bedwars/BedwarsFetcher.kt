@@ -22,7 +22,7 @@ import net.minecraft.util.EnumChatFormatting as ChatColor
 
 object BedwarsFetcher {
     private const val HYPIXEL_PLAYER_ENDPOINT = "https://api.hypixel.net/player"
-    private val JSON_MEDIA_TYPE: MediaType = MediaType.parse("application/json; charset=utf-8")
+    private val JSON_MEDIA_TYPE: MediaType = MediaType.get("application/json; charset=utf-8")
 
     private val missingKeyWarned = AtomicBoolean(false)
     private val invalidKeyWarned = AtomicBoolean(false)
