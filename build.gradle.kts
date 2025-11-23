@@ -34,22 +34,18 @@ repositories {
     maven("https://repo.spongepowered.org/repository/maven-public/")
 }
 
-configurations.register("include")
-
 val embed by configurations.creating
 configurations.implementation.get().extendsFrom(embed)
 
 dependencies {
     val oneconfig = "cc.polyfrost:oneconfig-$platform:0.2.2-alpha+"
-    val universalcraft = "cc.polyfrost:universalcraft-$platform:298"
+    val universalcraft = "cc.polyfrost:universalcraft-$platform:246"
 
     modCompileOnly(oneconfig)
     modImplementation(oneconfig)
-    add("include", oneconfig)
 
     modCompileOnly(universalcraft)
     modImplementation(universalcraft)
-    add("include", universalcraft)
 
     embed("com.squareup.okhttp3:okhttp:3.14.9")
     compileOnly("org.spongepowered:mixin:0.8.5-SNAPSHOT")
