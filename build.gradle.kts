@@ -43,11 +43,11 @@ dependencies {
 
     modCompileOnly(oneconfig)
     modImplementation(oneconfig)
-    include(oneconfig)
+    add("include", oneconfig)
 
     modCompileOnly(universalcraft)
     modImplementation(universalcraft)
-    include(universalcraft)
+    add("include", universalcraft)
 
     embed("com.squareup.okhttp3:okhttp:3.14.9")
     compileOnly("org.spongepowered:mixin:0.8.5-SNAPSHOT")
