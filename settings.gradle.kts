@@ -10,6 +10,7 @@ pluginManagement {
     }
     plugins {
         val toolkitVersion = "0.1.25"
+        id("org.jetbrains.kotlin.jvm") version "1.9.10"
         id("cc.polyfrost.multi-version.root") version toolkitVersion
         id("cc.polyfrost.multi-version") version toolkitVersion
         id("cc.polyfrost.defaults.repo") version toolkitVersion

@@ -37,6 +37,12 @@ repositories {
 val embed by configurations.creating
 configurations.implementation.get().extendsFrom(embed)
 
+configurations.configureEach {
+    exclude(group = "me.djtheredstoner", module = "DevAuth-common")
+    exclude(group = "com.electronwill.night-config", module = "core")
+    exclude(group = "com.electronwill.night-config", module = "toml")
+}
+
 dependencies {
     val oneconfig = "cc.polyfrost:oneconfig-$platform:0.2.2-alpha+"
     val universalcraft = "cc.polyfrost:universalcraft-$platform:246"
@@ -47,6 +53,8 @@ dependencies {
     modCompileOnly(universalcraft)
     modImplementation(universalcraft)
 
+    embed(kotlin("stdlib"))
+    embed("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     embed("com.squareup.okhttp3:okhttp:3.14.9")
     compileOnly("org.spongepowered:mixin:0.8.5-SNAPSHOT")
 }
