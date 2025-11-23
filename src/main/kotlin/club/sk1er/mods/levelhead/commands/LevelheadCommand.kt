@@ -92,8 +92,8 @@ class LevelheadCommand {
         )
     }
 
-    @SubCommand(value = "apikey", aliases = ["setapikey"])
-    fun handleApiKey(key: String) {
+    @SubCommand(aliases = ["setapikey"])
+    fun apikey(key: String) {
         if (key.equals("clear", ignoreCase = true)) {
             LevelheadConfig.clearApiKey()
             sendMessage("${ChatColor.GREEN}Cleared stored Hypixel API key.")
@@ -113,38 +113,38 @@ class LevelheadCommand {
         resetBedwarsFetcher()
     }
 
-    @SubCommand(value = "clearapikey")
-    fun handleClearApiKey() {
+    @SubCommand
+    fun clearapikey() {
         LevelheadConfig.clearApiKey()
         sendMessage("${ChatColor.GREEN}Cleared stored Hypixel API key.")
         resetBedwarsFetcher()
     }
 
-    @SubCommand(value = "reload")
-    fun handleReload() {
+    @SubCommand
+    fun reload() {
         Levelhead.resetWorldCoroutines()
         Levelhead.rateLimiter.resetState()
         Levelhead.displayManager.clearCache()
         sendMessage("${ChatColor.GREEN}Reloaded BedWars star cache.")
     }
 
-    @SubCommand(value = "enable")
-    fun handleEnable() {
+    @SubCommand
+    fun enable() {
         updateEnabledState(true)
     }
 
-    @SubCommand(value = "disable")
-    fun handleDisable() {
+    @SubCommand
+    fun disable() {
         updateEnabledState(false)
     }
 
-    @SubCommand(value = "toggle")
-    fun handleToggle() {
+    @SubCommand
+    fun toggle() {
         updateEnabledState(!Levelhead.displayManager.config.enabled)
     }
 
-    @SubCommand(value = "mod", aliases = ["power"])
-    fun handleMod(state: String) {
+    @SubCommand(aliases = ["power"])
+    fun mod(state: String) {
         val toggle = parseToggle(state)
         if (toggle == null) {
             sendMessage(
@@ -155,16 +155,16 @@ class LevelheadCommand {
         updateEnabledState(toggle)
     }
 
-    @SubCommand(value = "gui")
-    fun handleGui() {
+    @SubCommand
+    fun gui() {
         val minecraft = Minecraft.getMinecraft()
         minecraft.addScheduledTask {
             LevelheadConfig.openGui()
         }
     }
 
-    @SubCommand(value = "status")
-    fun handleStatus() {
+    @SubCommand
+    fun status() {
         val snapshot = Levelhead.statusSnapshot()
         val proxyStatus = when {
             !snapshot.proxyEnabled -> "${ChatColor.GRAY}disabled"
@@ -194,8 +194,8 @@ class LevelheadCommand {
         }
     }
 
-    @SubCommand(value = "cachettl")
-    fun handleCacheTtl(minutesInput: String) {
+    @SubCommand
+    fun cachettl(minutesInput: String) {
         val sanitized = minutesInput.trim()
         val parsed = sanitized.toIntOrNull()
         if (parsed == null) {
@@ -212,8 +212,8 @@ class LevelheadCommand {
         sendMessage("${ChatColor.GREEN}Updated BedWars star cache TTL to ${ChatColor.GOLD}${clamped} minutes${ChatColor.GREEN}.")
     }
 
-    @SubCommand(value = "display")
-    fun handleDisplay(vararg args: String) {
+    @SubCommand
+    fun display(vararg args: String) {
         if (args.isEmpty()) {
             sendDisplayOverview()
             sendDisplayUsage()
@@ -230,8 +230,8 @@ class LevelheadCommand {
         }
     }
 
-    @SubCommand(value = "proxy")
-    fun handleProxy(vararg args: String) {
+    @SubCommand
+    fun proxy(vararg args: String) {
         if (args.isEmpty()) {
             val status = when {
                 !LevelheadConfig.proxyEnabled -> "${ChatColor.GRAY}disabled"
@@ -300,8 +300,8 @@ class LevelheadCommand {
         }
     }
 
-    @SubCommand(value = "admin")
-    fun handleAdmin(vararg args: String) {
+    @SubCommand
+    fun admin(vararg args: String) {
         if (args.isEmpty()) {
             sendAdminHelp()
             return
@@ -315,8 +315,8 @@ class LevelheadCommand {
         }
     }
 
-    @SubCommand(value = "whois")
-    fun handleWhois(vararg args: String) {
+    @SubCommand
+    fun whois(vararg args: String) {
         val identifier = args.joinToString(" ").trim()
         if (identifier.isEmpty()) {
             sendMessage(
@@ -350,8 +350,8 @@ class LevelheadCommand {
         }
     }
 
-    @SubCommand(value = "debug")
-    fun handleDebug() {
+    @SubCommand
+    fun debug() {
         val context = BedwarsModeDetector.currentContext()
         val snapshot = Levelhead.statusSnapshot()
         val displayCache = Levelhead.displayManager.aboveHead.sumOf { it.cache.size }
