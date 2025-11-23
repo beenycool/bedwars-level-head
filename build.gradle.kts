@@ -1,3 +1,6 @@
+import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.jvm.tasks.Jar
+
 plugins {
     kotlin("jvm")
     id("cc.polyfrost.multi-version")
@@ -63,6 +66,10 @@ tasks.compileKotlin {
     kotlinOptions {
         freeCompilerArgs += listOf("-Xno-param-assertions", "-Xjvm-default=all-compatibility")
     }
+}
+
+tasks.withType<Jar> {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 }
 
 tasks.jar {
