@@ -20,6 +20,9 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     const val MIN_STAR_CACHE_TTL_MINUTES = 5
     const val MAX_STAR_CACHE_TTL_MINUTES = 180
     const val DEFAULT_STAR_CACHE_TTL_MINUTES = 45
+    private const val MIN_STAR_CACHE_TTL_MINUTES_F = 5f
+    private const val MAX_STAR_CACHE_TTL_MINUTES_F = 180f
+    private const val STAR_CACHE_TTL_STEP_MINUTES_F = 1f
 
     @Header(text = "General")
     @Switch(name = "Enabled", description = "Toggle the BedWars Levelhead overlay")
@@ -37,7 +40,12 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Text(name = "Proxy Auth Token", secure = true)
     var proxyAuthToken: String = ""
 
-    @Slider(name = "Star Cache TTL (minutes)", min = MIN_STAR_CACHE_TTL_MINUTES, max = MAX_STAR_CACHE_TTL_MINUTES, step = 1)
+    @Slider(
+        name = "Star Cache TTL (minutes)",
+        min = MIN_STAR_CACHE_TTL_MINUTES_F,
+        max = MAX_STAR_CACHE_TTL_MINUTES_F,
+        step = STAR_CACHE_TTL_STEP_MINUTES_F
+    )
     var starCacheTtlMinutes: Int = DEFAULT_STAR_CACHE_TTL_MINUTES
 
     @Switch(name = "Use Threat Colors", description = "Color stats based on FKDR")
