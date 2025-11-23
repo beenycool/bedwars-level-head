@@ -19,6 +19,7 @@ loom {
     mixin {
         defaultRefmapName.set("mixins.levelhead.refmap.json")
     }
+    remapArchives.set(true)
     launchConfigs {
         getByName("client") {
             property("mixin.debug.verbose", "true")

@@ -72,7 +72,8 @@ object Levelhead {
     val gson = Gson()
     val jsonParser = JsonParser()
 
-    val displayManager: DisplayManager = DisplayManager(File(File(Minecraft.getMinecraft().mcDataDir, "config"), "levelhead.json"))
+    private val configFile by lazy { File(File(minecraft.mcDataDir, "config"), "levelhead.json") }
+    val displayManager: DisplayManager by lazy { DisplayManager(configFile) }
     private val modJob: Job = SupervisorJob()
     val scope: CoroutineScope = CoroutineScope(modJob + Dispatchers.IO)
     private val worldScopeLock = Any()
