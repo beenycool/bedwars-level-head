@@ -40,7 +40,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         name = "Star Cache TTL (minutes)",
         min = 5f,
         max = 180f,
-        step = 1f
+        step = 1
     )
     var starCacheTtlMinutes: Int = DEFAULT_STAR_CACHE_TTL_MINUTES
 
@@ -95,7 +95,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         }
     }
 
-    fun setApiKey(newKey: String) {
+    fun updateApiKey(newKey: String) {
         apiKey = newKey.trim()
         save()
         BedwarsFetcher.resetWarnings()
@@ -109,25 +109,25 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         }
     }
 
-    fun setProxyEnabled(enabled: Boolean) {
+    fun updateProxyEnabled(enabled: Boolean) {
         proxyEnabled = enabled
         save()
         BedwarsFetcher.resetWarnings()
     }
 
-    fun setProxyBaseUrl(url: String) {
+    fun updateProxyBaseUrl(url: String) {
         proxyBaseUrl = url.trim()
         save()
         BedwarsFetcher.resetWarnings()
     }
 
-    fun setProxyAuthToken(token: String) {
+    fun updateProxyAuthToken(token: String) {
         proxyAuthToken = token.trim()
         save()
         BedwarsFetcher.resetWarnings()
     }
 
-    fun setStarCacheTtlMinutes(minutes: Int) {
+    fun updateStarCacheTtlMinutes(minutes: Int) {
         val clamped = minutes.coerceIn(MIN_STAR_CACHE_TTL_MINUTES, MAX_STAR_CACHE_TTL_MINUTES)
         starCacheTtlMinutes = clamped
         save()

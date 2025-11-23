@@ -108,7 +108,7 @@ class LevelheadCommand {
             return
         }
 
-        LevelheadConfig.setApiKey(sanitized)
+        LevelheadConfig.updateApiKey(sanitized)
         sendMessage("${ChatColor.GREEN}Saved Hypixel API key for BedWars stat fetching.")
         resetBedwarsFetcher()
     }
@@ -207,7 +207,7 @@ class LevelheadCommand {
         }
 
         val clamped = parsed.coerceIn(LevelheadConfig.MIN_STAR_CACHE_TTL_MINUTES, LevelheadConfig.MAX_STAR_CACHE_TTL_MINUTES)
-        LevelheadConfig.setStarCacheTtlMinutes(clamped)
+        LevelheadConfig.updateStarCacheTtlMinutes(clamped)
         Levelhead.clearCachedStats()
         sendMessage("${ChatColor.GREEN}Updated BedWars star cache TTL to ${ChatColor.GOLD}${clamped} minutes${ChatColor.GREEN}.")
     }
@@ -245,12 +245,12 @@ class LevelheadCommand {
 
         when (args[0].lowercase(Locale.ROOT)) {
             "enable", "on" -> {
-                LevelheadConfig.setProxyEnabled(true)
+                LevelheadConfig.updateProxyEnabled(true)
                 sendMessage("${ChatColor.GREEN}Enabled proxy usage for BedWars stats.")
                 resetBedwarsFetcher()
             }
             "disable", "off" -> {
-                LevelheadConfig.setProxyEnabled(false)
+                LevelheadConfig.updateProxyEnabled(false)
                 sendMessage("${ChatColor.YELLOW}Disabled proxy usage. Hypixel API key will be used directly.")
                 resetBedwarsFetcher()
             }
@@ -276,7 +276,7 @@ class LevelheadCommand {
                     .build()
                     .toString()
                     .trimEnd('/')
-                LevelheadConfig.setProxyBaseUrl(sanitized)
+                LevelheadConfig.updateProxyBaseUrl(sanitized)
                 sendMessage("${ChatColor.GREEN}Updated proxy base URL to ${ChatColor.GOLD}$sanitized${ChatColor.GREEN}.")
                 resetBedwarsFetcher()
             }
@@ -289,7 +289,7 @@ class LevelheadCommand {
                     )
                     return
                 }
-                LevelheadConfig.setProxyAuthToken(token)
+                LevelheadConfig.updateProxyAuthToken(token)
                 sendMessage("${ChatColor.GREEN}Updated proxy token.")
                 resetBedwarsFetcher()
             }
