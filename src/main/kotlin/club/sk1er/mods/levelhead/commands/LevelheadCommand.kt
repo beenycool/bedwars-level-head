@@ -29,7 +29,7 @@ import kotlin.math.abs
 import kotlin.text.RegexOption
 import kotlin.coroutines.resume
 
-@Command("levelhead", aliases = ["lh"])
+@Command(value = "levelhead", aliases = ["lh"])
 class LevelheadCommand {
 
     companion object {
@@ -92,7 +92,7 @@ class LevelheadCommand {
         )
     }
 
-    @SubCommand("apikey", aliases = ["setapikey"])
+    @SubCommand(value = "apikey", aliases = ["setapikey"])
     fun handleApiKey(key: String) {
         if (key.equals("clear", ignoreCase = true)) {
             LevelheadConfig.clearApiKey()
@@ -113,14 +113,14 @@ class LevelheadCommand {
         resetBedwarsFetcher()
     }
 
-    @SubCommand("clearapikey")
+    @SubCommand(value = "clearapikey")
     fun handleClearApiKey() {
         LevelheadConfig.clearApiKey()
         sendMessage("${ChatColor.GREEN}Cleared stored Hypixel API key.")
         resetBedwarsFetcher()
     }
 
-    @SubCommand("reload")
+    @SubCommand(value = "reload")
     fun handleReload() {
         Levelhead.resetWorldCoroutines()
         Levelhead.rateLimiter.resetState()
@@ -128,22 +128,22 @@ class LevelheadCommand {
         sendMessage("${ChatColor.GREEN}Reloaded BedWars star cache.")
     }
 
-    @SubCommand("enable")
+    @SubCommand(value = "enable")
     fun handleEnable() {
         updateEnabledState(true)
     }
 
-    @SubCommand("disable")
+    @SubCommand(value = "disable")
     fun handleDisable() {
         updateEnabledState(false)
     }
 
-    @SubCommand("toggle")
+    @SubCommand(value = "toggle")
     fun handleToggle() {
         updateEnabledState(!Levelhead.displayManager.config.enabled)
     }
 
-    @SubCommand("mod", aliases = ["power"])
+    @SubCommand(value = "mod", aliases = ["power"])
     fun handleMod(state: String) {
         val toggle = parseToggle(state)
         if (toggle == null) {
@@ -155,7 +155,7 @@ class LevelheadCommand {
         updateEnabledState(toggle)
     }
 
-    @SubCommand("gui")
+    @SubCommand(value = "gui")
     fun handleGui() {
         val minecraft = Minecraft.getMinecraft()
         minecraft.addScheduledTask {
@@ -163,7 +163,7 @@ class LevelheadCommand {
         }
     }
 
-    @SubCommand("status")
+    @SubCommand(value = "status")
     fun handleStatus() {
         val snapshot = Levelhead.statusSnapshot()
         val proxyStatus = when {
@@ -194,7 +194,7 @@ class LevelheadCommand {
         }
     }
 
-    @SubCommand("cachettl")
+    @SubCommand(value = "cachettl")
     fun handleCacheTtl(minutesInput: String) {
         val sanitized = minutesInput.trim()
         val parsed = sanitized.toIntOrNull()
@@ -212,7 +212,7 @@ class LevelheadCommand {
         sendMessage("${ChatColor.GREEN}Updated BedWars star cache TTL to ${ChatColor.GOLD}${clamped} minutes${ChatColor.GREEN}.")
     }
 
-    @SubCommand("display")
+    @SubCommand(value = "display")
     fun handleDisplay(vararg args: String) {
         if (args.isEmpty()) {
             sendDisplayOverview()
@@ -230,7 +230,7 @@ class LevelheadCommand {
         }
     }
 
-    @SubCommand("proxy")
+    @SubCommand(value = "proxy")
     fun handleProxy(vararg args: String) {
         if (args.isEmpty()) {
             val status = when {
@@ -300,7 +300,7 @@ class LevelheadCommand {
         }
     }
 
-    @SubCommand("admin")
+    @SubCommand(value = "admin")
     fun handleAdmin(vararg args: String) {
         if (args.isEmpty()) {
             sendAdminHelp()
@@ -315,7 +315,7 @@ class LevelheadCommand {
         }
     }
 
-    @SubCommand("whois")
+    @SubCommand(value = "whois")
     fun handleWhois(vararg args: String) {
         val identifier = args.joinToString(" ").trim()
         if (identifier.isEmpty()) {
@@ -350,7 +350,7 @@ class LevelheadCommand {
         }
     }
 
-    @SubCommand("debug")
+    @SubCommand(value = "debug")
     fun handleDebug() {
         val context = BedwarsModeDetector.currentContext()
         val snapshot = Levelhead.statusSnapshot()

@@ -4,6 +4,7 @@ import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
+import com.google.gson.JsonPrimitive
 import okhttp3.HttpUrl
 import okhttp3.MediaType
 import okhttp3.Request
@@ -213,7 +214,7 @@ object BedwarsFetcher {
 
         val jsonPayload = JsonObject().apply {
             val array = JsonArray()
-            sanitized.forEach { array.add(it) }
+            sanitized.forEach { array.add(JsonPrimitive(it)) }
             add("uuids", array)
         }
 

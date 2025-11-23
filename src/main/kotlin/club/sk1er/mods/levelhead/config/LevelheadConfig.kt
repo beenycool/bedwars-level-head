@@ -8,7 +8,7 @@ import cc.polyfrost.oneconfig.config.annotations.Switch
 import cc.polyfrost.oneconfig.config.annotations.Text
 import cc.polyfrost.oneconfig.config.data.Mod
 import cc.polyfrost.oneconfig.config.data.ModType
-import cc.polyfrost.universal.UColor
+import gg.essential.universal.UColor
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import java.time.Duration
 import java.util.Locale
