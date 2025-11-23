@@ -38,9 +38,9 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     @Slider(
         name = "Star Cache TTL (minutes)",
-        min = 5f,
-        max = 180f,
-        step = 1f
+        min = 5,
+        max = 180,
+        step = 1
     )
     var starCacheTtlMinutes: Int = DEFAULT_STAR_CACHE_TTL_MINUTES
 
