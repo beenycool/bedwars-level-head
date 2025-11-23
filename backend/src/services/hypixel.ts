@@ -5,6 +5,7 @@ import {
   HYPIXEL_RETRY_DELAY_MAX_MS,
   HYPIXEL_RETRY_DELAY_MIN_MS,
   HYPIXEL_TIMEOUT_MS,
+  OUTBOUND_USER_AGENT,
 } from '../config';
 import { HttpError } from '../util/httpError';
 
@@ -12,7 +13,7 @@ const hypixelClient = axios.create({
   baseURL: HYPIXEL_API_BASE_URL,
   timeout: HYPIXEL_TIMEOUT_MS,
   headers: {
-    'User-Agent': 'Levelhead-Proxy/1.0',
+    'User-Agent': OUTBOUND_USER_AGENT,
   },
 });
 
@@ -91,10 +92,21 @@ function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
 
   const bedwarsStats = response.player?.stats?.Bedwars ?? {};
   const experience = (bedwarsStats as any).bedwars_experience ?? (bedwarsStats as any).Experience;
+  const finalKillsRaw = (bedwarsStats as any).final_kills_bedwars;
+  const finalDeathsRaw = (bedwarsStats as any).final_deaths_bedwars;
+  const winstreakRaw = (bedwarsStats as any).winstreak;
+
+  const finalKills = Number(finalKillsRaw ?? 0);
+  const finalDeaths = Number(finalDeathsRaw ?? 0);
+  const winstreakNumber = Number(winstreakRaw);
+  const winstreak = Number.isFinite(winstreakNumber) ? winstreakNumber : undefined;
+  const fkdr = finalDeaths <= 0 ? finalKills : finalKills / finalDeaths;
 
   const shapedStats: Record<string, unknown> = {
     ...bedwarsStats,
     ...(experience !== undefined ? { bedwars_experience: experience, Experience: experience } : {}),
+    ...(Number.isFinite(fkdr) ? { fkdr } : {}),
+    ...(winstreak !== undefined ? { winstreak } : {}),
   };
 
   return {

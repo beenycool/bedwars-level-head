@@ -1,67 +1,111 @@
-import type { Request, Response, NextFunction } from 'express';
-import { RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS } from '../config';
+import type { NextFunction, Request, RequestHandler, Response } from 'express';
+import { RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS, TRUST_PROXY_ENABLED } from '../config';
 import { HttpError } from '../util/httpError';
 import { rateLimitBlocksTotal } from '../services/metrics';
+import { pool } from '../services/cache';
 
-type Bucket = {
+export interface RateLimitOptions {
+  windowMs: number;
+  max: number;
+  getBucketKey(req: Request): string;
+  metricLabel?: string;
+}
+
+interface RateLimitRow {
   count: number;
-  windowStartedAt: number;
-  lastUpdatedAt: number;
-};
+  window_start: number | string;
+}
 
-const buckets = new Map<string, Bucket>();
-const BUCKET_TTL_MS = RATE_LIMIT_WINDOW_MS * 2;
-const CLEANUP_INTERVAL_MS = RATE_LIMIT_WINDOW_MS;
+export function getClientIpAddress(req: Request): string {
+  const ip = TRUST_PROXY_ENABLED ? req.ip : req.socket.remoteAddress ?? '';
+  if (!ip) {
+    throw new HttpError(400, 'INVALID_REQUEST', 'Unable to identify client IP address');
+  }
 
-const cleanupTimer = setInterval(() => {
-  const now = Date.now();
-  for (const [key, bucket] of buckets) {
-    if (now - bucket.lastUpdatedAt > BUCKET_TTL_MS) {
-      buckets.delete(key);
+  return ip;
+}
+
+export function createRateLimitMiddleware({
+  windowMs,
+  max,
+  getBucketKey,
+  metricLabel,
+}: RateLimitOptions): RequestHandler {
+  return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
+    const now = Date.now();
+
+    let key: string;
+    try {
+      key = getBucketKey(req);
+    } catch (error) {
+      next(error);
+      return;
     }
-  }
-}, CLEANUP_INTERVAL_MS);
 
-if (typeof cleanupTimer.unref === 'function') {
-  cleanupTimer.unref();
+    try {
+      const windowStartCutoff = now - windowMs;
+      const result = await pool.query<RateLimitRow>(
+        `
+        INSERT INTO rate_limits (key, count, window_start)
+        VALUES ($1, 1, $2)
+        ON CONFLICT (key) DO UPDATE
+        SET
+          count = CASE
+            WHEN rate_limits.window_start < $3 THEN 1
+            ELSE rate_limits.count + 1
+          END,
+          window_start = CASE
+            WHEN rate_limits.window_start < $3 THEN $2
+            ELSE rate_limits.window_start
+          END
+        RETURNING count, window_start
+        `,
+        [key, now, windowStartCutoff],
+      );
+
+      const row = result.rows[0];
+      const count = row.count;
+      const windowStartRaw = row.window_start;
+      const windowStart =
+        typeof windowStartRaw === 'string' ? Number.parseInt(windowStartRaw, 10) : windowStartRaw;
+
+      console.info('[rate-limit] upsert', {
+        key,
+        count,
+        windowStart: new Date(windowStart).toISOString(),
+        windowMs,
+        max,
+      });
+
+      if (count > max) {
+        const retryAfterSeconds = Math.ceil((windowStart + windowMs - now) / 1000);
+        const retryAfterHeader = retryAfterSeconds.toString();
+        const labelValue = metricLabel ?? 'unknown';
+        rateLimitBlocksTotal.inc({ type: labelValue });
+        next(
+          new HttpError(
+            429,
+            'RATE_LIMIT',
+            `Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`,
+            { 'Retry-After': retryAfterHeader },
+          ),
+        );
+        return;
+      }
+
+      next();
+    } catch (error) {
+      next(error);
+    }
+  };
 }
 
-function getBucketKey(req: Request): string {
-  return req.installId;
-}
-
-export function enforceRateLimit(req: Request, res: Response, next: NextFunction): void {
-  const now = Date.now();
-  const key = getBucketKey(req);
-  const bucket = buckets.get(key);
-
-  if (!bucket) {
-    buckets.set(key, { count: 1, windowStartedAt: now, lastUpdatedAt: now });
-    next();
-    return;
-  }
-
-  const elapsed = now - bucket.windowStartedAt;
-  if (elapsed >= RATE_LIMIT_WINDOW_MS) {
-    buckets.set(key, { count: 1, windowStartedAt: now, lastUpdatedAt: now });
-    next();
-    return;
-  }
-
-  if (bucket.count >= RATE_LIMIT_MAX) {
-    const retryAfterSeconds = Math.ceil((bucket.windowStartedAt + RATE_LIMIT_WINDOW_MS - now) / 1000);
-    const retryAfterHeader = retryAfterSeconds.toString();
-    res.set('Retry-After', retryAfterHeader);
-    rateLimitBlocksTotal.inc();
-    throw new HttpError(
-      429,
-      'RATE_LIMIT',
-      `Rate limit exceeded. Try again in ${retryAfterSeconds} seconds.`,
-      { 'Retry-After': retryAfterHeader },
-    );
-  }
-
-  bucket.count += 1;
-  bucket.lastUpdatedAt = now;
-  next();
-}
+export const enforceRateLimit = createRateLimitMiddleware({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_MAX,
+  getBucketKey(req: Request) {
+    const ip = getClientIpAddress(req);
+    return `private:${ip}`;
+  },
+  metricLabel: 'private',
+});

@@ -87,7 +87,15 @@ function getMemoized(prefix: string, value: string): ResolvedPlayer | null {
 
 function setMemoized(prefix: string, value: string, resolved: ResolvedPlayer): void {
   const key = memoKey(prefix, value);
-  memoizedResults.set(key, { expiresAt: Date.now() + MEMOIZED_TTL_MS, value: resolved });
+  const expiresAt = Date.now() + MEMOIZED_TTL_MS;
+  memoizedResults.set(key, { expiresAt, value: resolved });
+
+  setTimeout(() => {
+    const entry = memoizedResults.get(key);
+    if (entry && entry.expiresAt <= Date.now()) {
+      memoizedResults.delete(key);
+    }
+  }, MEMOIZED_TTL_MS);
 }
 
 function summarizeCacheEntry(entry: CacheEntry<ProxyPlayerPayload>): CacheMetadata {
@@ -200,11 +208,15 @@ async function fetchByIgn(ign: string): Promise<ResolvedPlayer> {
   const now = Date.now();
   if (cacheEntry && cacheEntry.expiresAt > now) {
     const payload = cacheEntry.value;
-    const payloadPlayer = (payload as Record<string, unknown> | undefined)?.player;
-    const payloadUuidRaw =
-      payloadPlayer && typeof payloadPlayer === 'object' && typeof (payloadPlayer as Record<string, unknown>).uuid === 'string'
-        ? ((payloadPlayer as Record<string, unknown>).uuid as string)
-        : null;
+    const payloadPlayer =
+      payload && typeof payload === 'object' && 'player' in payload
+        ? (payload as { player?: unknown }).player
+        : undefined;
+    const payloadUuidCandidate =
+      payloadPlayer && typeof payloadPlayer === 'object' && payloadPlayer !== null && 'uuid' in payloadPlayer
+        ? (payloadPlayer as { uuid?: unknown }).uuid
+        : undefined;
+    const payloadUuidRaw = typeof payloadUuidCandidate === 'string' ? payloadUuidCandidate : null;
     const payloadUuid = payloadUuidRaw ? payloadUuidRaw.replace(/-/g, '').toLowerCase() : null;
 
     const resolved: ResolvedPlayer = {

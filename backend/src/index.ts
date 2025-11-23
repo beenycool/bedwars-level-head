@@ -1,5 +1,6 @@
 import express from 'express';
 import playerRouter from './routes/player';
+import playerPublicRouter from './routes/playerPublic';
 import { HttpError } from './util/httpError';
 import {
   SERVER_HOST,
@@ -7,6 +8,7 @@ import {
   CLOUD_FLARE_TUNNEL,
   CACHE_DB_POOL_MAX,
   CACHE_DB_POOL_MIN,
+  TRUST_PROXY,
 } from './config';
 import { purgeExpiredEntries, closeCache, pool as cachePool } from './services/cache';
 import { observeRequest, registry } from './services/metrics';
@@ -16,8 +18,18 @@ import statsRouter from './routes/stats';
 
 const app = express();
 
+function sanitizeUrlForLogs(target: string): string {
+  const queryIndex = target.indexOf('?');
+  if (queryIndex === -1) {
+    return target;
+  }
+
+  const path = target.slice(0, queryIndex);
+  return `${path}?<redacted>`;
+}
+
 app.disable('x-powered-by');
-app.set('trust proxy', 1);
+app.set('trust proxy', TRUST_PROXY);
 app.use(express.json({ limit: '64kb' }));
 
 app.use((req, res, next) => {
@@ -34,7 +46,8 @@ app.use((req, res, next) => {
           : req.route?.path ?? req.path;
     observeRequest(req.method, routeLabel, res.statusCode, durationSeconds);
 
-    const target = req.originalUrl ?? req.url ?? routeLabel;
+    const rawTarget = req.originalUrl ?? req.url ?? routeLabel;
+    const target = sanitizeUrlForLogs(rawTarget);
     const message = `[request] ${req.method} ${target} -> ${res.statusCode} (${durationMs.toFixed(2)} ms)`;
     if (res.statusCode >= 500) {
       console.error(message);
@@ -47,6 +60,7 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use('/api/public/player', playerPublicRouter);
 app.use('/api/player', playerRouter);
 app.use('/api/admin', adminRouter);
 app.use('/stats', statsRouter);
@@ -64,9 +78,10 @@ app.get('/healthz', async (_req, res) => {
     checkHypixelReachability(),
   ]);
 
-  const healthy = dbHealthy && hypixelHealthy;
+  const healthy = dbHealthy;
+  const status = healthy ? (hypixelHealthy ? 'ok' : 'degraded') : 'unhealthy';
   res.status(healthy ? 200 : 503).json({
-    status: healthy ? 'ok' : 'degraded',
+    status,
     checks: {
       database: dbHealthy,
       hypixel: hypixelHealthy,
@@ -104,7 +119,14 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
     return;
   }
 
-  console.error('Unexpected error', err);
+  if (err instanceof Error) {
+    console.error('Unexpected error:', err.message);
+    if (err.stack) {
+      console.error(err.stack);
+    }
+  } else {
+    console.error('Unexpected error (non-Error object):', String(err));
+  }
   res.status(500).json({ success: false, cause: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
 });
 

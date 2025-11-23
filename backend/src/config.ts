@@ -1,4 +1,6 @@
 import { config as loadEnv } from 'dotenv';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 
 loadEnv();
 
@@ -12,17 +14,50 @@ function requiredEnv(name: string): string {
 
 export const HYPIXEL_API_KEY = requiredEnv('HYPIXEL_API_KEY');
 
-const rawTokens = process.env.PROXY_AUTH_TOKENS ?? '';
-export const PROXY_AUTH_TOKENS = new Set(
-  rawTokens
+function requiredStringListEnv(name: string): string[] {
+  const raw = requiredEnv(name);
+  const values = raw
     .split(',')
-    .map((token) => token.trim())
-    .filter((token) => token.length > 0)
-);
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
 
-if (PROXY_AUTH_TOKENS.size === 0) {
-  throw new Error('PROXY_AUTH_TOKENS must include at least one token.');
+  if (values.length === 0) {
+    throw new Error(`Environment variable ${name} must contain at least one value`);
+  }
+
+  return values;
 }
+
+type TrustProxyValue = false | true | number | string;
+
+function parseTrustProxyEnv(value: string | undefined): TrustProxyValue {
+  if (value === undefined) {
+    return false;
+  }
+
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    return false;
+  }
+
+  const lower = normalized.toLowerCase();
+  if (lower === 'false' || lower === '0') {
+    return false;
+  }
+
+  if (lower === 'true') {
+    return true;
+  }
+
+  const asNumber = Number(normalized);
+  if (!Number.isNaN(asNumber)) {
+    return asNumber;
+  }
+
+  return normalized;
+}
+
+export const ADMIN_API_KEYS = requiredStringListEnv('ADMIN_API_KEYS');
 
 function parseIntEnv(name: string, defaultValue: number): number {
   const raw = process.env[name];
@@ -40,9 +75,13 @@ function parseIntEnv(name: string, defaultValue: number): number {
 
 export const RATE_LIMIT_WINDOW_MS = parseIntEnv('RATE_LIMIT_WINDOW_MS', 5 * 60 * 1000);
 export const RATE_LIMIT_MAX = parseIntEnv('RATE_LIMIT_MAX', 300);
+export const PUBLIC_RATE_LIMIT_WINDOW_MS = parseIntEnv('PUBLIC_RATE_LIMIT_WINDOW_MS', 60 * 1000);
+export const PUBLIC_RATE_LIMIT_MAX = parseIntEnv('PUBLIC_RATE_LIMIT_MAX', 60);
 
 export const SERVER_PORT = parseIntEnv('PORT', 3000);
 export const SERVER_HOST = process.env.HOST ?? '0.0.0.0';
+export const TRUST_PROXY: TrustProxyValue = parseTrustProxyEnv(process.env.TRUST_PROXY);
+export const TRUST_PROXY_ENABLED = TRUST_PROXY !== false;
 
 export const HYPIXEL_API_BASE_URL = process.env.HYPIXEL_API_BASE_URL ?? 'https://api.hypixel.net';
 
@@ -64,3 +103,43 @@ export const HYPIXEL_RETRY_DELAY_MIN_MS = parseIntEnv('HYPIXEL_RETRY_DELAY_MIN_M
 export const HYPIXEL_RETRY_DELAY_MAX_MS = parseIntEnv('HYPIXEL_RETRY_DELAY_MAX_MS', 150);
 
 export const CACHE_DB_URL = requiredEnv('CACHE_DB_URL');
+
+function readPackageVersion(): string {
+  const override = process.env.BACKEND_VERSION?.trim();
+  if (override) {
+    return override;
+  }
+
+  try {
+    const packageJsonPath = path.resolve(__dirname, '..', 'package.json');
+    const raw = readFileSync(packageJsonPath, 'utf8');
+    const parsed = JSON.parse(raw) as { version?: string };
+    if (typeof parsed.version === 'string' && parsed.version.trim().length > 0) {
+      return parsed.version.trim();
+    }
+  } catch (error) {
+    console.warn('Unable to read backend package version for user-agent metadata', error);
+  }
+
+  return 'dev';
+}
+
+function resolveRevision(): string {
+  const revision =
+    process.env.BUILD_SHA ??
+    process.env.GIT_REVISION ??
+    process.env.COMMIT_SHA ??
+    process.env.SOURCE_VERSION ??
+    '';
+  return revision.trim();
+}
+
+function buildUserAgent(version: string, revision: string): string {
+  const normalizedVersion = version || 'dev';
+  const normalizedRevision = revision || 'unknown';
+  return `Levelhead-Proxy/${normalizedVersion} (rev:${normalizedRevision})`;
+}
+
+export const BACKEND_VERSION = readPackageVersion();
+export const BUILD_REVISION = resolveRevision();
+export const OUTBOUND_USER_AGENT = buildUserAgent(BACKEND_VERSION, BUILD_REVISION);

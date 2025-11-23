@@ -16,14 +16,6 @@ function formatStars(stars: number | null): string {
   return `${stars}`;
 }
 
-function formatInstallId(installId: string | null): string {
-  if (!installId) {
-    return '--';
-  }
-
-  return `${installId.slice(0, 12)}...`;
-}
-
 router.get('/', async (_req, res, next) => {
   try {
     const history = await getRecentPlayerQueries(50);
@@ -44,7 +36,6 @@ router.get('/', async (_req, res, next) => {
           <td>${escapeHtml(resolved)}</td>
           <td class="stars">${escapeHtml(formatStars(entry.stars))}</td>
           <td>${escapeHtml(cacheSource)}${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
-          <td>${escapeHtml(formatInstallId(entry.installId))}</td>
           <td>${entry.responseStatus}</td>
         </tr>`;
       })
@@ -141,12 +132,11 @@ router.get('/', async (_req, res, next) => {
           <th>Resolved</th>
           <th>Stars</th>
           <th>Source</th>
-          <th>Install</th>
           <th>Status</th>
         </tr>
       </thead>
       <tbody>
-        ${rows || '<tr><td colspan="7">No lookups recorded yet.</td></tr>'}
+        ${rows || '<tr><td colspan="6">No lookups recorded yet.</td></tr>'}
       </tbody>
     </table>
   </body>

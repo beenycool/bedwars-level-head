@@ -2,12 +2,13 @@ package club.sk1er.mods.levelhead.bedwars
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
+import com.google.gson.JsonArray
 import com.google.gson.JsonObject
-import gg.essential.api.EssentialAPI
-import gg.essential.universal.ChatColor
-import gg.essential.universal.UMinecraft
+import com.google.gson.JsonPrimitive
 import okhttp3.HttpUrl
+import okhttp3.MediaType
 import okhttp3.Request
+import okhttp3.RequestBody
 import java.io.IOException
 import java.time.Duration
 import java.time.Instant
@@ -18,9 +19,11 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.text.RegexOption
+import net.minecraft.util.EnumChatFormatting as ChatColor
 
 object BedwarsFetcher {
     private const val HYPIXEL_PLAYER_ENDPOINT = "https://api.hypixel.net/player"
+    private val JSON_MEDIA_TYPE: MediaType = MediaType.get("application/json; charset=utf-8")
 
     private val missingKeyWarned = AtomicBoolean(false)
     private val invalidKeyWarned = AtomicBoolean(false)
@@ -35,21 +38,20 @@ object BedwarsFetcher {
         data class PermanentError(val reason: String? = null) : FetchResult()
     }
 
+    sealed class BatchFetchResult {
+        data class Success(val payloads: Map<String, JsonObject>) : BatchFetchResult()
+        data class TemporaryError(val reason: String? = null) : BatchFetchResult()
+        data class PermanentError(val reason: String? = null) : BatchFetchResult()
+    }
+
     fun fetchPlayer(uuid: UUID, lastFetchedAt: Long?): FetchResult {
-        var fallback: FetchResult? = null
         if (shouldUseProxy()) {
             val identifier = uuid.toString().replace("-", "")
-            when (val proxyResult = fetchProxy(identifier, lastFetchedAt)) {
-                is FetchResult.Success, FetchResult.NotModified -> return proxyResult
-                else -> fallback = proxyResult
-            }
+            return fetchProxy(identifier, lastFetchedAt)
         }
 
         val hypixelResult = fetchFromHypixel(uuid)
-        return when (hypixelResult) {
-            is FetchResult.Success, FetchResult.NotModified -> hypixelResult
-            else -> fallback ?: hypixelResult
-        }
+        return hypixelResult
     }
 
     fun fetchProxyPlayer(identifier: String, lastFetchedAt: Long? = null): FetchResult {
@@ -59,6 +61,10 @@ object BedwarsFetcher {
         return fetchProxy(identifier, lastFetchedAt)
     }
 
+    fun proxyBatchSupported(): Boolean {
+        return LevelheadConfig.proxyEnabled && LevelheadConfig.proxyBaseUrl.isNotBlank()
+    }
+
     private fun shouldUseProxy(): Boolean {
         if (!LevelheadConfig.proxyEnabled) {
             proxyMisconfiguredWarned.set(false)
@@ -66,11 +72,10 @@ object BedwarsFetcher {
         }
 
         val baseConfigured = LevelheadConfig.proxyBaseUrl.isNotBlank()
-        val tokenConfigured = LevelheadConfig.proxyAuthToken.isNotBlank()
-        if (!baseConfigured || !tokenConfigured) {
+        if (!baseConfigured) {
             if (proxyMisconfiguredWarned.compareAndSet(false, true)) {
                 sendMessage(
-                    "${ChatColor.RED}Proxy enabled but misconfigured. ${ChatColor.YELLOW}Set both a base URL and auth token in Levelhead settings."
+                    "${ChatColor.RED}Proxy enabled but missing base URL. ${ChatColor.YELLOW}Set the proxy base URL in Levelhead settings."
                 )
             }
             return false
@@ -83,9 +88,11 @@ object BedwarsFetcher {
     private fun fetchProxy(identifierInput: String, lastFetchedAt: Long?): FetchResult {
         val baseUrl = LevelheadConfig.proxyBaseUrl.trim()
         val identifier = sanitizeProxyIdentifier(identifierInput)
+        val isPublic = LevelheadConfig.proxyAuthToken.isBlank()
         val url = HttpUrl.parse(baseUrl)
             ?.newBuilder()
             ?.addPathSegment("api")
+            ?.apply { if (isPublic) addPathSegment("public") }
             ?.addPathSegment("player")
             ?.addPathSegment(identifier)
             ?.build()
@@ -177,6 +184,106 @@ object BedwarsFetcher {
         }
     }
 
+    fun fetchBatch(identifiersInput: List<String>): BatchFetchResult {
+        if (identifiersInput.isEmpty()) {
+            return BatchFetchResult.Success(emptyMap())
+        }
+
+        if (!shouldUseProxy()) {
+            return BatchFetchResult.PermanentError("PROXY_DISABLED")
+        }
+
+        val baseUrl = LevelheadConfig.proxyBaseUrl.trim()
+        val sanitized = identifiersInput.map { sanitizeProxyIdentifier(it) }
+        val isPublic = LevelheadConfig.proxyAuthToken.isBlank()
+        val url = HttpUrl.parse(baseUrl)
+            ?.newBuilder()
+            ?.addPathSegment("api")
+            ?.apply { if (isPublic) addPathSegment("public") }
+            ?.addPathSegment("player")
+            ?.addPathSegment("batch")
+            ?.build()
+
+        if (url == null) {
+            Levelhead.logger.error(
+                "Failed to build proxy batch endpoint URL from base '{}'",
+                LevelheadConfig.proxyBaseUrl.sanitizeForLogs()
+            )
+            return BatchFetchResult.PermanentError("INVALID_PROXY_URL")
+        }
+
+        val jsonPayload = JsonObject().apply {
+            val array = JsonArray()
+            sanitized.forEach { array.add(JsonPrimitive(it)) }
+            add("uuids", array)
+        }
+
+        val request = Request.Builder()
+            .url(url)
+            .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
+            .header("Accept", "application/json")
+            .header("X-Levelhead-Install", LevelheadConfig.installId)
+            .apply {
+                if (!isPublic) {
+                    header("Authorization", "Bearer ${LevelheadConfig.proxyAuthToken}")
+                }
+            }
+            .post(RequestBody.create(JSON_MEDIA_TYPE, jsonPayload.toString()))
+            .build()
+
+        return try {
+            Levelhead.okHttpClient.newCall(request).execute().use { response ->
+                val body = response.body()?.string().orEmpty()
+                val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
+
+                if (!response.isSuccessful) {
+                    if (response.code() == 401 || response.code() == 403) {
+                        notifyInvalidProxyToken(response.code(), body)
+                        return BatchFetchResult.PermanentError("PROXY_AUTH")
+                    }
+                    if (response.code() == 429) {
+                        handleRetryAfterHint("proxy", retryAfterMillis)
+                    }
+                    return BatchFetchResult.TemporaryError("PROXY_${response.code()}")
+                }
+
+                invalidProxyTokenWarned.set(false)
+                networkIssueWarned.set(false)
+                handleRetryAfterHint("proxy", retryAfterMillis)
+
+                val json = kotlin.runCatching { Levelhead.jsonParser.parse(body).asJsonObject }.getOrElse {
+                    Levelhead.logger.error("Failed to parse proxy batch response", it)
+                    return BatchFetchResult.TemporaryError("PARSE_ERROR")
+                }
+
+                val success = json.get("success")?.let { element ->
+                    kotlin.runCatching { element.asBoolean }.getOrNull()
+                } ?: false
+
+                if (!success) {
+                    val cause = json.get("cause")?.asString ?: "UNKNOWN"
+                    return BatchFetchResult.TemporaryError(cause)
+                }
+
+                val dataObject = json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject ?: JsonObject()
+                val payloads = mutableMapOf<String, JsonObject>()
+                dataObject.entrySet().forEach { (key, value) ->
+                    if (value.isJsonObject) {
+                        payloads[key] = value.asJsonObject
+                    }
+                }
+
+                BatchFetchResult.Success(payloads)
+            }
+        } catch (ex: IOException) {
+            notifyNetworkIssue(ex)
+            BatchFetchResult.TemporaryError(ex.message)
+        } catch (ex: Exception) {
+            Levelhead.logger.error("Failed to fetch batch BedWars data", ex)
+            BatchFetchResult.TemporaryError(ex.message)
+        }
+    }
+
     private fun fetchFromHypixel(uuid: UUID): FetchResult {
         val key = LevelheadConfig.apiKey
         if (key.isBlank()) {
@@ -185,7 +292,6 @@ object BedwarsFetcher {
         }
 
         val url = HttpUrl.parse(HYPIXEL_PLAYER_ENDPOINT)?.newBuilder()
-            ?.addQueryParameter("key", key)
             ?.addQueryParameter("uuid", uuid.toString().replace("-", ""))
             ?.build()
 
@@ -198,6 +304,7 @@ object BedwarsFetcher {
             .url(url)
             .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
             .header("Accept", "application/json")
+            .header("API-Key", key)
             .get()
             .build()
 
@@ -252,25 +359,30 @@ object BedwarsFetcher {
     }
 
     fun parseBedwarsExperience(json: JsonObject): Long? {
-        json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
-            ?.get("bedwars")?.takeIf { it.isJsonObject }?.asJsonObject
-            ?.let { parseExperienceFromBedwars(it) }
-            ?.let { return it }
-
-        json.get("bedwars")?.takeIf { it.isJsonObject }?.asJsonObject
-            ?.let { parseExperienceFromBedwars(it) }
-            ?.let { return it }
-
-        val playerContainer = when {
-            json.get("player")?.isJsonObject == true -> json.getAsJsonObject("player")
-            json.get("stats")?.isJsonObject == true -> json
-            else -> null
-        } ?: return null
-
-        val stats = playerContainer.get("stats")?.takeIf { it.isJsonObject }?.asJsonObject ?: return null
-        val bedwars = stats.get("Bedwars")?.takeIf { it.isJsonObject }?.asJsonObject ?: return null
-
+        val bedwars = findBedwarsStats(json) ?: return null
         return parseExperienceFromBedwars(bedwars)
+    }
+
+    fun parseBedwarsFkdr(json: JsonObject): Double? {
+        val bedwars = findBedwarsStats(json) ?: return null
+        val fkdrElement = bedwars.get("fkdr")
+        if (fkdrElement != null && !fkdrElement.isJsonNull) {
+            return kotlin.runCatching { fkdrElement.asDouble }.getOrNull()
+        }
+
+        val finalKills = bedwars.numberValue("final_kills_bedwars") ?: 0.0
+        val finalDeaths = bedwars.numberValue("final_deaths_bedwars") ?: 0.0
+        if (finalKills == 0.0 && finalDeaths == 0.0) {
+            return null
+        }
+        return if (finalDeaths <= 0) finalKills else finalKills / finalDeaths
+    }
+
+    fun parseBedwarsWinstreak(json: JsonObject): Int? {
+        val bedwars = findBedwarsStats(json) ?: return null
+        val element = bedwars.get("winstreak") ?: return null
+        if (element.isJsonNull) return null
+        return kotlin.runCatching { element.asInt }.getOrNull()
     }
 
     private fun parseExperienceFromBedwars(bedwars: JsonObject): Long? {
@@ -281,6 +393,30 @@ object BedwarsFetcher {
             ?.value
             ?.takeIf { !it.isJsonNull }
             ?.let { kotlin.runCatching { it.asLong }.getOrNull() }
+    }
+
+    private fun findBedwarsStats(json: JsonObject): JsonObject? {
+        json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
+            ?.get("bedwars")?.takeIf { it.isJsonObject }?.asJsonObject
+            ?.let { return it }
+
+        json.get("bedwars")?.takeIf { it.isJsonObject }?.asJsonObject
+            ?.let { return it }
+
+        val playerContainer = when {
+            json.get("player")?.isJsonObject == true -> json.getAsJsonObject("player")
+            json.get("stats")?.isJsonObject == true -> json
+            else -> null
+        } ?: return null
+
+        val stats = playerContainer.get("stats")?.takeIf { it.isJsonObject }?.asJsonObject ?: return null
+        return stats.get("Bedwars")?.takeIf { it.isJsonObject }?.asJsonObject
+    }
+
+    private fun JsonObject.numberValue(key: String): Double? {
+        val element = get(key) ?: return null
+        if (element.isJsonNull) return null
+        return kotlin.runCatching { element.asDouble }.getOrNull()
     }
 
     private fun notifyMissingKey() {
@@ -355,9 +491,7 @@ object BedwarsFetcher {
     }
 
     private fun sendMessage(message: String) {
-        UMinecraft.getMinecraft().addScheduledTask {
-            EssentialAPI.getMinecraftUtil().sendMessage("${ChatColor.AQUA}[Levelhead]", message)
-        }
+        Levelhead.sendChat(message)
     }
 
     private fun handleRetryAfterHint(source: String, retryAfterMillis: Long?) {

@@ -6,14 +6,13 @@ import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import club.sk1er.mods.levelhead.core.BedwarsStar
 import club.sk1er.mods.levelhead.core.dashUUID
-import club.sk1er.mods.levelhead.gui.LevelheadToggleScreen
+import cc.polyfrost.oneconfig.utils.commands.annotations.Command
+import cc.polyfrost.oneconfig.utils.commands.annotations.Main
+import cc.polyfrost.oneconfig.utils.commands.annotations.SubCommand
 import com.google.gson.JsonObject
-import gg.essential.api.EssentialAPI
-import gg.essential.api.commands.Command
-import gg.essential.api.commands.DefaultHandler
-import gg.essential.api.commands.SubCommand
-import gg.essential.universal.ChatColor
-import gg.essential.universal.UMinecraft
+import net.minecraft.client.Minecraft
+import net.minecraft.util.ChatComponentText
+import net.minecraft.util.EnumChatFormatting as ChatColor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -30,7 +29,8 @@ import kotlin.math.abs
 import kotlin.text.RegexOption
 import kotlin.coroutines.resume
 
-class LevelheadCommand : Command("levelhead") {
+@Command(value = "levelhead", aliases = ["lh"])
+class LevelheadCommand {
 
     companion object {
         private val API_KEY_PATTERN = Regex("^[a-f0-9]{32}$", RegexOption.IGNORE_CASE)
@@ -43,9 +43,27 @@ class LevelheadCommand : Command("levelhead") {
         private const val MAX_DISPLAY_OFFSET = 3.0
         private val JSON_MEDIA_TYPE: MediaType = MediaType.parse("application/json; charset=utf-8")
             ?: error("Failed to initialise JSON media type")
+        private val NAMED_COLORS: Map<String, Color> = mapOf(
+            "black" to Color(0, 0, 0),
+            "dark_blue" to Color(0, 0, 170),
+            "dark_green" to Color(0, 170, 0),
+            "dark_aqua" to Color(0, 170, 170),
+            "dark_red" to Color(170, 0, 0),
+            "dark_purple" to Color(170, 0, 170),
+            "gold" to Color(255, 170, 0),
+            "gray" to Color(170, 170, 170),
+            "dark_gray" to Color(85, 85, 85),
+            "blue" to Color(85, 85, 255),
+            "green" to Color(85, 255, 85),
+            "aqua" to Color(85, 255, 255),
+            "red" to Color(255, 85, 85),
+            "light_purple" to Color(255, 85, 255),
+            "yellow" to Color(255, 255, 85),
+            "white" to Color(255, 255, 255)
+        )
     }
 
-    @DefaultHandler
+    @Main
     fun handle() {
         val enabled = Levelhead.displayManager.config.enabled
         val enabledColor = if (enabled) ChatColor.GREEN else ChatColor.RED
@@ -74,8 +92,8 @@ class LevelheadCommand : Command("levelhead") {
         )
     }
 
-    @SubCommand(value = "apikey", aliases = ["setapikey"])
-    fun handleApiKey(key: String) {
+    @SubCommand(aliases = ["setapikey"])
+    fun apikey(key: String) {
         if (key.equals("clear", ignoreCase = true)) {
             LevelheadConfig.clearApiKey()
             sendMessage("${ChatColor.GREEN}Cleared stored Hypixel API key.")
@@ -95,38 +113,38 @@ class LevelheadCommand : Command("levelhead") {
         resetBedwarsFetcher()
     }
 
-    @SubCommand(value = "clearapikey")
-    fun handleClearApiKey() {
+    @SubCommand
+    fun clearapikey() {
         LevelheadConfig.clearApiKey()
         sendMessage("${ChatColor.GREEN}Cleared stored Hypixel API key.")
         resetBedwarsFetcher()
     }
 
-    @SubCommand(value = "reload")
-    fun handleReload() {
+    @SubCommand
+    fun reload() {
         Levelhead.resetWorldCoroutines()
         Levelhead.rateLimiter.resetState()
         Levelhead.displayManager.clearCache()
         sendMessage("${ChatColor.GREEN}Reloaded BedWars star cache.")
     }
 
-    @SubCommand(value = "enable")
-    fun handleEnable() {
+    @SubCommand
+    fun enable() {
         updateEnabledState(true)
     }
 
-    @SubCommand(value = "disable")
-    fun handleDisable() {
+    @SubCommand
+    fun disable() {
         updateEnabledState(false)
     }
 
-    @SubCommand(value = "toggle")
-    fun handleToggle() {
+    @SubCommand
+    fun toggle() {
         updateEnabledState(!Levelhead.displayManager.config.enabled)
     }
 
-    @SubCommand(value = "mod", aliases = ["power"])
-    fun handleMod(state: String) {
+    @SubCommand(aliases = ["power"])
+    fun mod(state: String) {
         val toggle = parseToggle(state)
         if (toggle == null) {
             sendMessage(
@@ -137,16 +155,16 @@ class LevelheadCommand : Command("levelhead") {
         updateEnabledState(toggle)
     }
 
-    @SubCommand(value = "gui")
-    fun handleGui() {
-        val minecraft = UMinecraft.getMinecraft()
+    @SubCommand
+    fun gui() {
+        val minecraft = Minecraft.getMinecraft()
         minecraft.addScheduledTask {
-            minecraft.displayGuiScreen(LevelheadToggleScreen())
+            LevelheadConfig.openGui()
         }
     }
 
-    @SubCommand(value = "status")
-    fun handleStatus() {
+    @SubCommand
+    fun status() {
         val snapshot = Levelhead.statusSnapshot()
         val proxyStatus = when {
             !snapshot.proxyEnabled -> "${ChatColor.GRAY}disabled"
@@ -176,8 +194,8 @@ class LevelheadCommand : Command("levelhead") {
         }
     }
 
-    @SubCommand(value = "cachettl")
-    fun handleCacheTtl(minutesInput: String) {
+    @SubCommand
+    fun cachettl(minutesInput: String) {
         val sanitized = minutesInput.trim()
         val parsed = sanitized.toIntOrNull()
         if (parsed == null) {
@@ -190,12 +208,12 @@ class LevelheadCommand : Command("levelhead") {
 
         val clamped = parsed.coerceIn(LevelheadConfig.MIN_STAR_CACHE_TTL_MINUTES, LevelheadConfig.MAX_STAR_CACHE_TTL_MINUTES)
         LevelheadConfig.setStarCacheTtlMinutes(clamped)
-        Levelhead.clearCachedStars()
+        Levelhead.clearCachedStats()
         sendMessage("${ChatColor.GREEN}Updated BedWars star cache TTL to ${ChatColor.GOLD}${clamped} minutes${ChatColor.GREEN}.")
     }
 
-    @SubCommand(value = "display")
-    fun handleDisplay(vararg args: String) {
+    @SubCommand
+    fun display(vararg args: String) {
         if (args.isEmpty()) {
             sendDisplayOverview()
             sendDisplayUsage()
@@ -212,8 +230,8 @@ class LevelheadCommand : Command("levelhead") {
         }
     }
 
-    @SubCommand(value = "proxy")
-    fun handleProxy(vararg args: String) {
+    @SubCommand
+    fun proxy(vararg args: String) {
         if (args.isEmpty()) {
             val status = when {
                 !LevelheadConfig.proxyEnabled -> "${ChatColor.GRAY}disabled"
@@ -282,8 +300,8 @@ class LevelheadCommand : Command("levelhead") {
         }
     }
 
-    @SubCommand(value = "admin")
-    fun handleAdmin(vararg args: String) {
+    @SubCommand
+    fun admin(vararg args: String) {
         if (args.isEmpty()) {
             sendAdminHelp()
             return
@@ -297,8 +315,8 @@ class LevelheadCommand : Command("levelhead") {
         }
     }
 
-    @SubCommand(value = "whois")
-    fun handleWhois(vararg args: String) {
+    @SubCommand
+    fun whois(vararg args: String) {
         val identifier = args.joinToString(" ").trim()
         if (identifier.isEmpty()) {
             sendMessage(
@@ -311,7 +329,7 @@ class LevelheadCommand : Command("levelhead") {
         Levelhead.scope.launch {
             try {
                 val result = lookupWhois(identifier)
-                UMinecraft.getMinecraft().addScheduledTask {
+                Minecraft.getMinecraft().addScheduledTask {
                     val starText = result.star?.let { "${ChatColor.GOLD}$it✪" } ?: "${ChatColor.RED}?"
                     val experienceText = result.experience?.let { "${ChatColor.GOLD}$it" } ?: "${ChatColor.GRAY}unknown"
                     val nickedText = if (result.nicked) " ${ChatColor.GRAY}(nicked)" else ""
@@ -320,20 +338,20 @@ class LevelheadCommand : Command("levelhead") {
                     )
                 }
             } catch (ex: CommandException) {
-                UMinecraft.getMinecraft().addScheduledTask {
+                Minecraft.getMinecraft().addScheduledTask {
                     sendMessage("${ChatColor.RED}${ex.message}")
                 }
             } catch (throwable: Throwable) {
                 Levelhead.logger.error("Failed to resolve BedWars stats for {}", identifier, throwable)
-                UMinecraft.getMinecraft().addScheduledTask {
+                Minecraft.getMinecraft().addScheduledTask {
                     sendMessage("${ChatColor.RED}Unexpected error while fetching stats. Check logs for details.")
                 }
             }
         }
     }
 
-    @SubCommand(value = "debug")
-    fun handleDebug() {
+    @SubCommand
+    fun debug() {
         val context = BedwarsModeDetector.currentContext()
         val snapshot = Levelhead.statusSnapshot()
         val displayCache = Levelhead.displayManager.aboveHead.sumOf { it.cache.size }
@@ -480,17 +498,17 @@ class LevelheadCommand : Command("levelhead") {
         Levelhead.scope.launch {
             try {
                 val purged = purgeProxyCache(identifier)
-                UMinecraft.getMinecraft().addScheduledTask {
+                Minecraft.getMinecraft().addScheduledTask {
                     val scopeText = identifier?.let { "for ${ChatColor.GOLD}$it${ChatColor.YELLOW}" } ?: "globally"
                     sendMessage("${ChatColor.GREEN}Requested cache purge $scopeText (${ChatColor.GOLD}$purged${ChatColor.GREEN} entries).")
                 }
             } catch (ex: CommandException) {
-                UMinecraft.getMinecraft().addScheduledTask {
+                Minecraft.getMinecraft().addScheduledTask {
                     sendMessage("${ChatColor.RED}${ex.message}")
                 }
             } catch (throwable: Throwable) {
                 Levelhead.logger.error("Failed to purge proxy cache", throwable)
-                UMinecraft.getMinecraft().addScheduledTask {
+                Minecraft.getMinecraft().addScheduledTask {
                     sendMessage("${ChatColor.RED}Unexpected error while purging cache. Check logs for details.")
                 }
             }
@@ -526,7 +544,7 @@ class LevelheadCommand : Command("levelhead") {
     }
 
     private fun sendStatus(message: String) {
-        EssentialAPI.getMinecraftUtil().sendMessage("${ChatColor.AQUA}[Levelhead]", message)
+        sendMessage(message)
     }
 
     private fun updateEnabledState(enabled: Boolean) {
@@ -556,13 +574,17 @@ class LevelheadCommand : Command("levelhead") {
     }
 
     private fun sendMessage(message: String) {
-        EssentialAPI.getMinecraftUtil().sendMessage("${ChatColor.AQUA}[Levelhead]", message)
+        val minecraft = Minecraft.getMinecraft()
+        val formatted = "${ChatColor.AQUA}[Levelhead] ${ChatColor.RESET}$message"
+        minecraft.addScheduledTask {
+            minecraft.thePlayer?.addChatMessage(ChatComponentText(formatted))
+        }
     }
 
     private fun sendDisplayOverview() {
         val primaryDisplay = Levelhead.displayManager.primaryDisplay()
         val headerText = primaryDisplay?.config?.headerString ?: BedwarsModeDetector.DEFAULT_HEADER
-        val headerColor = primaryDisplay?.config?.headerColor ?: ChatColor.AQUA.color!!
+        val headerColor = primaryDisplay?.config?.headerColor ?: Color(85, 255, 255)
         val headerChroma = primaryDisplay?.config?.headerChroma ?: false
         val showSelf = primaryDisplay?.config?.showSelf ?: true
         val offset = Levelhead.displayManager.config.offset
@@ -615,7 +637,7 @@ class LevelheadCommand : Command("levelhead") {
     }
 
     private fun currentHeaderColor(): Color {
-        return Levelhead.displayManager.primaryDisplay()?.config?.headerColor ?: ChatColor.AQUA.color!!
+        return Levelhead.displayManager.primaryDisplay()?.config?.headerColor ?: Color(85, 255, 255)
     }
 
     private fun currentHeaderChroma(): Boolean {
@@ -651,9 +673,8 @@ class LevelheadCommand : Command("levelhead") {
             val blue = b.toInt().coerceIn(0, 255)
             return Color(red, green, blue)
         }
-        return ChatColor.values()
-            .firstOrNull { it.isColor() && it.name.equals(normalized.replace(" ", "_"), ignoreCase = true) }
-            ?.color
+        val key = normalized.replace(" ", "_").lowercase(Locale.ROOT)
+        return NAMED_COLORS[key]
     }
 
     private fun formatColor(color: Color): String = "#%06X".format(Locale.ROOT, color.rgb and 0xFFFFFF)
@@ -784,10 +805,10 @@ class LevelheadCommand : Command("levelhead") {
     }
 
     private suspend fun resolveLocalPlayer(trimmed: String): EntityPlayer? = suspendCancellableCoroutine { continuation ->
-        val minecraft = UMinecraft.getMinecraft()
+        val minecraft = Minecraft.getMinecraft()
 
         minecraft.addScheduledTask {
-            val match = UMinecraft.getWorld()
+            val match = Minecraft.getMinecraft().theWorld
                 ?.playerEntities
                 ?.firstOrNull { player ->
                     player.name.equals(trimmed, true) || player.gameProfile?.name?.equals(trimmed, true) == true

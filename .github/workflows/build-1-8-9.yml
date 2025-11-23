@@ -1,5 +1,7 @@
-name: Build (on release or manual)
+name: Build (on push, release or manual)
 on:
+  push:
+    branches: [master]
   release:
     types: [published]
   workflow_dispatch:

@@ -1,14 +1,23 @@
 import axios from 'axios';
 import { HttpError } from '../util/httpError';
+import { OUTBOUND_USER_AGENT } from '../config';
 
 const mojangClient = axios.create({
   baseURL: 'https://api.mojang.com',
   timeout: 5000,
   headers: {
-    'User-Agent': 'Levelhead-Proxy/1.0',
+    'User-Agent': OUTBOUND_USER_AGENT,
   },
   validateStatus: (status) => status >= 200 && status < 500,
 });
+
+function normalizeRetryAfter(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    return value.find((entry) => typeof entry === 'string');
+  }
+
+  return typeof value === 'string' ? value : undefined;
+}
 
 export interface MojangProfileResponse {
   id: string;
@@ -30,11 +39,30 @@ export async function lookupProfileByUsername(username: string): Promise<MojangP
       return null;
     }
 
+    if (response.status === 429) {
+      const retryAfter = normalizeRetryAfter(response.headers['retry-after']);
+      throw new HttpError(
+        429,
+        'MOJANG_RATE_LIMITED',
+        'Mojang rate limit exceeded.',
+        retryAfter ? { 'Retry-After': retryAfter } : undefined,
+      );
+    }
+
     throw new HttpError(502, 'MOJANG_ERROR', `Mojang responded with status ${response.status}.`);
   } catch (error) {
     if (axios.isAxiosError(error)) {
       if (error.response) {
         const status = error.response.status;
+        if (status === 429) {
+          const retryAfter = normalizeRetryAfter(error.response.headers?.['retry-after']);
+          throw new HttpError(
+            429,
+            'MOJANG_RATE_LIMITED',
+            'Mojang rate limit exceeded.',
+            retryAfter ? { 'Retry-After': retryAfter } : undefined,
+          );
+        }
         throw new HttpError(502, 'MOJANG_ERROR', `Mojang responded with status ${status}.`);
       }
 
