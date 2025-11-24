@@ -54,6 +54,8 @@ dependencies {
     modCompileOnly(oneconfig)
     modImplementation(oneconfig)
 
+    embed(oneconfig)
+
     modCompileOnly(universalcraft)
     modImplementation(universalcraft)
 
