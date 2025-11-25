@@ -92,6 +92,7 @@ tasks.jar {
 tasks.named<ShadowJar>("shadowJar") {
     configurations = listOf(embed)
     archiveClassifier.set("dev")
+    destinationDirectory.set(layout.buildDirectory.dir("dev-libs"))
     manifest.attributes(manifestAttributes)
 }
 
