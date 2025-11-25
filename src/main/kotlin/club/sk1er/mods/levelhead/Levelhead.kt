@@ -60,8 +60,19 @@ import kotlin.random.Random
     modid = Levelhead.MODID,
     name = "BedWars Levelhead",
     version = Levelhead.VERSION,
-    modLanguageAdapter = "cc.polyfrost.oneconfig.utils.KotlinAdapter",
 )
+class LevelheadMod {
+    @Mod.EventHandler
+    fun preInit(event: FMLPreInitializationEvent) {
+        Levelhead.preInit(event)
+    }
+
+    @Mod.EventHandler
+    fun postInit(event: FMLPostInitializationEvent) {
+        Levelhead.postInit(event)
+    }
+}
+
 object Levelhead {
     val logger: Logger = LogManager.getLogger()
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
@@ -194,12 +205,10 @@ object Levelhead {
     val chromaColor: Color
         get() = Color(ChromaColor)
 
-    @Mod.EventHandler
     fun preInit(@Suppress("UNUSED_PARAMETER") event: FMLPreInitializationEvent) {
         LevelheadConfig
     }
 
-    @Mod.EventHandler
     fun postInit(@Suppress("UNUSED_PARAMETER") event: FMLPostInitializationEvent) {
         MinecraftForge.EVENT_BUS.register(AboveHeadRender)
         MinecraftForge.EVENT_BUS.register(BedwarsModeDetector)
