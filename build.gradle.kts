@@ -1,3 +1,8 @@
+import com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar
+import net.fabricmc.loom.task.RemapJarTask
+import org.gradle.api.file.DuplicatesStrategy
+import org.gradle.jvm.tasks.Jar
+
 plugins {
     kotlin("jvm")
     id("cc.polyfrost.multi-version")
@@ -16,6 +21,7 @@ loom {
     mixin {
         defaultRefmapName.set("mixins.levelhead.refmap.json")
     }
+    remapArchives.set(true)
     launchConfigs {
         getByName("client") {
             property("mixin.debug.verbose", "true")
@@ -50,6 +56,8 @@ dependencies {
     modCompileOnly(oneconfig)
     modImplementation(oneconfig)
 
+    embed(oneconfig)
+
     modCompileOnly(universalcraft)
     modImplementation(universalcraft)
 
@@ -59,22 +67,37 @@ dependencies {
     compileOnly("org.spongepowered:mixin:0.8.5-SNAPSHOT")
 }
 
+val manifestAttributes = mapOf(
+    "ModSide" to "CLIENT",
+    "FMLCorePluginContainsFMLMod" to "Yes, yes it does",
+    "TweakClass" to "cc.polyfrost.oneconfig.loader.stage0.LaunchWrapperTweaker",
+    "TweakOrder" to "0",
+    "MixinConfigs" to "mixins.levelhead.json"
+)
+
 tasks.compileKotlin {
     kotlinOptions {
         freeCompilerArgs += listOf("-Xno-param-assertions", "-Xjvm-default=all-compatibility")
     }
 }
 
-tasks.jar {
-    from(embed.files.map { zipTree(it) })
+tasks.withType<Jar> {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
 
-    manifest.attributes(
-        mapOf(
-            "ModSide" to "CLIENT",
-            "FMLCorePluginContainsFMLMod" to "Yes, yes it does",
-            "TweakClass" to "cc.polyfrost.oneconfig.loader.stage0.LaunchWrapperTweaker",
-            "TweakOrder" to "0",
-            "MixinConfigs" to "mixins.levelhead.json"
-        )
-    )
+tasks.jar {
+    manifest.attributes(manifestAttributes)
+}
+
+tasks.named<ShadowJar>("shadowJar") {
+    configurations = listOf(embed)
+    archiveClassifier.set("dev")
+    destinationDirectory.set(layout.buildDirectory.dir("dev-libs"))
+    manifest.attributes(manifestAttributes)
+}
+
+tasks.named<RemapJarTask>("remapJar") {
+    input.set(tasks.named<ShadowJar>("shadowJar").flatMap { it.archiveFile })
+    dependsOn(tasks.named("shadowJar"))
+    archiveClassifier.set("")
 }
