@@ -302,15 +302,18 @@ class LevelheadCommand {
     }
 
     @SubCommand
-    fun admin(vararg args: String) {
-        if (args.isEmpty()) {
+    fun admin(@Greedy args: String) {
+        val parsedArgs = args.split(" ")
+            .mapNotNull { it.takeIf(String::isNotBlank) }
+
+        if (parsedArgs.isEmpty()) {
             sendAdminHelp()
             return
         }
-        when (args[0].lowercase(Locale.ROOT)) {
-            "purgecache" -> handleAdminPurgeCache(args.drop(1).toTypedArray())
+        when (parsedArgs[0].lowercase(Locale.ROOT)) {
+            "purgecache" -> handleAdminPurgeCache(parsedArgs.drop(1).toTypedArray())
             else -> {
-                sendMessage("${ChatColor.RED}Unknown admin action '${args[0]}'.")
+                sendMessage("${ChatColor.RED}Unknown admin action '${parsedArgs[0]}'.")
                 sendAdminHelp()
             }
         }
