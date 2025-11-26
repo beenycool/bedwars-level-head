@@ -7,6 +7,7 @@ import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import club.sk1er.mods.levelhead.core.BedwarsStar
 import club.sk1er.mods.levelhead.core.dashUUID
 import cc.polyfrost.oneconfig.utils.commands.annotations.Command
+import cc.polyfrost.oneconfig.utils.commands.annotations.Greedy
 import cc.polyfrost.oneconfig.utils.commands.annotations.Main
 import cc.polyfrost.oneconfig.utils.commands.annotations.SubCommand
 import com.google.gson.JsonObject
@@ -316,19 +317,19 @@ class LevelheadCommand {
     }
 
     @SubCommand
-    fun whois(vararg args: String) {
-        val identifier = args.joinToString(" ").trim()
-        if (identifier.isEmpty()) {
+    fun whois(@Greedy identifier: String) {
+        val trimmedIdentifier = identifier.trim()
+        if (trimmedIdentifier.isEmpty()) {
             sendMessage(
                 "${ChatColor.RED}Tell me who to inspect.${ChatColor.YELLOW} Run ${ChatColor.GOLD}/levelhead whois <player|uuid>${ChatColor.YELLOW} using an in-game name, UUID, or someone nearby."
             )
             return
         }
 
-        sendMessage("${ChatColor.YELLOW}Looking up BedWars stats for ${ChatColor.GOLD}$identifier${ChatColor.YELLOW}...")
+        sendMessage("${ChatColor.YELLOW}Looking up BedWars stats for ${ChatColor.GOLD}$trimmedIdentifier${ChatColor.YELLOW}...")
         Levelhead.scope.launch {
             try {
-                val result = lookupWhois(identifier)
+                val result = lookupWhois(trimmedIdentifier)
                 Minecraft.getMinecraft().addScheduledTask {
                     val starText = result.star?.let { "${ChatColor.GOLD}$it✪" } ?: "${ChatColor.RED}?"
                     val experienceText = result.experience?.let { "${ChatColor.GOLD}$it" } ?: "${ChatColor.GRAY}unknown"
