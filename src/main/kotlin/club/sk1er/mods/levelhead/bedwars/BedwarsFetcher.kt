@@ -58,22 +58,13 @@ object BedwarsFetcher {
             return false
         }
 
-        val baseConfigured = LevelheadConfig.proxyBaseUrl.isNotBlank()
-        if (!baseConfigured) {
-            if (proxyMisconfiguredWarned.compareAndSet(false, true)) {
-                sendMessage(
-                    "${ChatColor.RED}Proxy enabled but missing base URL. ${ChatColor.YELLOW}Set the proxy base URL in Levelhead settings."
-                )
-            }
-            return false
-        }
-
         proxyMisconfiguredWarned.set(false)
         return true
     }
 
     private fun fetchProxy(identifierInput: String, lastFetchedAt: Long?): FetchResult {
-        val baseUrl = LevelheadConfig.proxyBaseUrl.trim()
+        val configUrl = LevelheadConfig.proxyBaseUrl.trim()
+        val baseUrl = if (configUrl.isBlank()) LevelheadConfig.DEFAULT_PROXY_URL else configUrl
         val identifier = sanitizeProxyIdentifier(identifierInput)
         val isPublic = LevelheadConfig.proxyAuthToken.isBlank()
         val url = HttpUrl.parse(baseUrl)

@@ -15,7 +15,7 @@ import java.util.Locale
 import java.util.UUID
 
 object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedwars-levelhead.json") {
-    private const val DEFAULT_PROXY_URL = "https://beeny.hackclub.app"
+    const val DEFAULT_PROXY_URL = "https://beeny.hackclub.app"
 
     const val MIN_STAR_CACHE_TTL_MINUTES = 5
     const val MAX_STAR_CACHE_TTL_MINUTES = 180
@@ -31,7 +31,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var proxyEnabled: Boolean = true
 
     @Text(name = "Proxy Base URL", placeholder = DEFAULT_PROXY_URL)
-    var proxyBaseUrl: String = DEFAULT_PROXY_URL
+    var proxyBaseUrl: String = ""
 
     @Text(name = "Proxy Auth Token", secure = true)
     var proxyAuthToken: String = ""
@@ -48,7 +48,19 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var useThreatColor: Boolean = false
 
     @Header(text = "Display")
-    @Text(name = "Header Text")
+    @Text(name = "Display Offset", description = "Vertical offset for the stats tag (-1.5 to 3.0)")
+    var offset: String = "0.3"
+
+    val offsetValue: Double
+        get() = offset.toDoubleOrNull() ?: 0.3
+
+    @Switch(name = "Use Custom Icon")
+    var customIcon: Boolean = false
+
+    @Text(name = "Custom Icon Path", placeholder = "icon.png")
+    var customIconPath: String = ""
+
+    @Text(name = "Star Prefix (Header)")
     var headerString: String = "BedWars Star"
 
     @Color(name = "Header Color")

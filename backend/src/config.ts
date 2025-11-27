@@ -88,10 +88,10 @@ export const HYPIXEL_API_BASE_URL = process.env.HYPIXEL_API_BASE_URL ?? 'https:/
 export const CLOUD_FLARE_TUNNEL = process.env.CLOUDFLARE_TUNNEL ?? '';
 
 const HOURS = 60 * 60 * 1000;
-const defaultCacheTtl = 24 * HOURS;
+const defaultCacheTtl = 72 * HOURS;
 const rawCacheTtl = parseIntEnv('CACHE_TTL_MS', defaultCacheTtl);
 const minimumCacheTtl = 1 * HOURS;
-const maximumCacheTtl = 24 * HOURS;
+const maximumCacheTtl = 72 * HOURS;
 
 export const CACHE_TTL_MS = Math.min(Math.max(rawCacheTtl, minimumCacheTtl), maximumCacheTtl);
 

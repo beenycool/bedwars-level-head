@@ -105,7 +105,7 @@ object Levelhead {
     private var worldJob: Job = SupervisorJob(modJob)
     @Volatile
     private var worldScope: CoroutineScope = CoroutineScope(worldJob + Dispatchers.IO)
-    val rateLimiter: RateLimiter = RateLimiter(150, Duration.ofMinutes(5))
+    val rateLimiter: RateLimiter = RateLimiter(600, Duration.ofMinutes(5))
 
     private val statsCache: ConcurrentHashMap<UUID, CachedBedwarsStats> = ConcurrentHashMap()
     private val inFlightStatsRequests: ConcurrentHashMap<UUID, Deferred<CachedBedwarsStats?>> = ConcurrentHashMap()
@@ -259,10 +259,21 @@ object Levelhead {
             if (!BedwarsModeDetector.shouldRequestData()) return@launch
             if (requests.isEmpty()) return@launch
 
+            val localPlayer = minecraft.thePlayer
+            val sortedRequests = if (localPlayer != null) {
+                requests.sortedBy { req ->
+                    req.uuid.dashUUID?.let { uuid ->
+                        minecraft.theWorld.getPlayerEntityByUUID(uuid)?.getDistanceSqToEntity(localPlayer)
+                    } ?: Double.MAX_VALUE
+                }
+            } else {
+                requests
+            }
+
             val now = System.currentTimeMillis()
             val pending = mutableListOf<PendingStatsRequest>()
 
-            requests
+            sortedRequests
                 .groupBy { it.uuid }
                 .forEach { (trimmedUuid, groupedRequests) ->
                     val uuid = trimmedUuid.dashUUID ?: return@forEach
@@ -500,14 +511,31 @@ object Levelhead {
 
     private fun updateDisplayCache(display: LevelheadDisplay, uuid: UUID, starData: CachedBedwarsStats?) {
         if (!display.config.enabled) return
+
+        val isPrimary = display == displayManager.primaryDisplay()
+        val headerString = if (isPrimary) LevelheadConfig.headerString else (display.config.headerString)
+        val headerColor = if (isPrimary) Color(LevelheadConfig.headerColor.rgb) else display.config.headerColor
+        val headerChroma = if (isPrimary) LevelheadConfig.headerChroma else display.config.headerChroma
+
+        val footerTemplate = if (isPrimary) LevelheadConfig.footerTemplate else (display.config.footerString?.takeIf { it.isNotBlank() } ?: "%star%")
+        val footerColor = if (isPrimary) Color(LevelheadConfig.footerColor.rgb) else display.config.footerColor
+        val footerChroma = if (isPrimary) LevelheadConfig.footerChroma else display.config.footerChroma
+        val useThreatColor = if (isPrimary) LevelheadConfig.useThreatColor else display.config.useThreatColor
+
         val starValue = starData?.star
         val starString = starValue?.let { "$it✪" } ?: "?"
         val fkdrString = starData?.fkdr?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "?"
         val winstreakString = starData?.winstreak?.toString() ?: "?"
-        val footerTemplate = display.config.footerString?.takeIf { it.isNotBlank() } ?: "%star%"
+
         var footerValue = footerTemplate
-        if (footerValue.contains("%star%", ignoreCase = true)) {
-            footerValue = footerValue.replace("%star%", starString, true)
+        if (isPrimary && LevelheadConfig.customIcon) {
+            if (footerValue.contains("%star%", ignoreCase = true)) {
+                footerValue = footerValue.replace("%star%", "", true)
+            }
+        } else {
+            if (footerValue.contains("%star%", ignoreCase = true)) {
+                footerValue = footerValue.replace("%star%", starString, true)
+            }
         }
         if (footerValue.contains("%fkdr%", ignoreCase = true)) {
             footerValue = footerValue.replace("%fkdr%", fkdrString, true)
@@ -516,18 +544,18 @@ object Levelhead {
             footerValue = footerValue.replace("%ws%", winstreakString, true)
         }
         val baseStyle = starValue?.let { BedwarsStar.styleForStar(it) }
-            ?: BedwarsStar.PrestigeStyle(display.config.footerColor, display.config.footerChroma)
-        val style = if (display.config.useThreatColor) {
+            ?: BedwarsStar.PrestigeStyle(footerColor, footerChroma)
+        val style = if (useThreatColor) {
             val color = BedwarsStar.ThreatLevel.determine(starData?.fkdr).color
-            baseStyle.copy(color = color, chroma = display.config.footerChroma)
+            baseStyle.copy(color = color, chroma = footerChroma)
         } else {
             baseStyle
         }
         val tag = LevelheadTag.build(uuid) {
             header {
-                value = "${display.config.headerString}: "
-                color = display.config.headerColor
-                chroma = display.config.headerChroma
+                value = "$headerString: "
+                color = headerColor
+                chroma = headerChroma
             }
             footer {
                 value = footerValue

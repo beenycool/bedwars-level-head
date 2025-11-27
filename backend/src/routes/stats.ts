@@ -25,9 +25,9 @@ router.get('/', async (_req, res, next) => {
         const resolved =
           entry.nicked === true
             ? '(nicked)'
-            : entry.resolvedUuid
-              ? entry.resolvedUuid
-              : entry.resolvedUsername ?? 'unknown';
+            : entry.resolvedUsername
+              ? entry.resolvedUsername
+              : entry.resolvedUuid ?? 'unknown';
         const cacheSource = entry.cacheHit ? 'Cache' : entry.cacheSource === 'network' ? 'Network' : entry.cacheSource;
 
         return `<tr>
