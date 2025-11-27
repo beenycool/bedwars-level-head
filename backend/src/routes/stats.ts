@@ -1,5 +1,8 @@
 import { Router } from 'express';
 import { getRecentPlayerQueries } from '../services/history';
+import { getCacheEntry } from '../services/cache';
+import { ProxyPlayerPayload } from '../services/hypixel';
+import { buildPlayerCacheKey, extractDisplayName } from '../services/player';
 import { escapeHtml } from '../util/html';
 
 const router = Router();
@@ -16,24 +19,55 @@ function formatStars(stars: number | null): string {
   return `${stars}`;
 }
 
+function normalizeUuid(uuid: string): string {
+  return uuid.replace(/-/g, '').toLowerCase();
+}
+
+async function hydrateMissingUsernames(history: Awaited<ReturnType<typeof getRecentPlayerQueries>>) {
+  const missingUuidList = history
+    .filter((entry) => entry.resolvedUuid && !entry.resolvedUsername && entry.nicked !== true)
+    .map((entry) => normalizeUuid(entry.resolvedUuid!));
+
+  const uniqueUuids = Array.from(new Set(missingUuidList));
+  const resolvedNames = new Map<string, string>();
+
+  await Promise.all(
+    uniqueUuids.map(async (uuid) => {
+      const cacheKey = buildPlayerCacheKey(uuid);
+      const cacheEntry = await getCacheEntry<ProxyPlayerPayload>(cacheKey, true);
+      if (!cacheEntry) {
+        return;
+      }
+
+      const displayName = extractDisplayName(cacheEntry.value);
+      if (displayName) {
+        resolvedNames.set(uuid, displayName);
+      }
+    }),
+  );
+
+  return resolvedNames;
+}
+
 router.get('/', async (_req, res, next) => {
   try {
     const history = await getRecentPlayerQueries(50);
+    const cachedNames = await hydrateMissingUsernames(history);
     const rows = history
       .map((entry) => {
         const lookup = `${entry.lookupType.toUpperCase()}: ${entry.identifier}`;
+        const normalizedUuid = entry.resolvedUuid ? normalizeUuid(entry.resolvedUuid) : null;
+        const resolvedFromCache = normalizedUuid ? cachedNames.get(normalizedUuid) : null;
         const resolved =
           entry.nicked === true
             ? '(nicked)'
-            : entry.resolvedUuid
-              ? entry.resolvedUuid
-              : entry.resolvedUsername ?? 'unknown';
+            : resolvedFromCache ?? entry.resolvedUsername ?? entry.resolvedUuid ?? 'unknown';
         const cacheSource = entry.cacheHit ? 'Cache' : entry.cacheSource === 'network' ? 'Network' : entry.cacheSource;
 
         return `<tr>
           <td>${escapeHtml(formatDate(entry.requestedAt))}</td>
           <td>${escapeHtml(lookup)}</td>
-          <td>${escapeHtml(resolved)}</td>
+          <td data-uuid="${escapeHtml(normalizedUuid ?? '')}" data-missing-name="${resolvedFromCache ? 'false' : 'true'}">${escapeHtml(resolved)}</td>
           <td class="stars">${escapeHtml(formatStars(entry.stars))}</td>
           <td>${escapeHtml(cacheSource)}${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
           <td>${entry.responseStatus}</td>
@@ -139,6 +173,30 @@ router.get('/', async (_req, res, next) => {
         ${rows || '<tr><td colspan="6">No lookups recorded yet.</td></tr>'}
       </tbody>
     </table>
+    <script>
+      (() => {
+        const cells = Array.from(document.querySelectorAll('td[data-uuid][data-missing-name="true"]'));
+        const seen = new Set();
+        cells.forEach((cell) => {
+          const uuid = (cell.getAttribute('data-uuid') || '').replace(/-/g, '').toLowerCase();
+          if (!uuid || seen.has(uuid)) {
+            return;
+          }
+          seen.add(uuid);
+          fetch(`https://api.ashcon.app/mojang/v2/user/${uuid}`)
+            .then((response) => (response.ok ? response.json() : null))
+            .then((data) => {
+              const name = data?.username;
+              if (!name) return;
+              document.querySelectorAll(`td[data-uuid="${uuid}"]`).forEach((target) => {
+                target.textContent = name;
+                target.setAttribute('data-missing-name', 'false');
+              });
+            })
+            .catch(() => {});
+        });
+      })();
+    </script>
   </body>
 </html>`;
 
