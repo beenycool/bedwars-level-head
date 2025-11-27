@@ -74,7 +74,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         name = "Y Offset",
         min = -2f,
         max = 3f,
-        step = 0.05f
+        step = 1
     )
     var offset: Float = 0.5f
 
