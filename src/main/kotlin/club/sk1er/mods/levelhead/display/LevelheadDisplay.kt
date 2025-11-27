@@ -2,10 +2,8 @@ package club.sk1er.mods.levelhead.display
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.DisplayConfig
-import com.google.gson.JsonObject
-import net.minecraft.client.Minecraft
 import net.minecraft.entity.player.EntityPlayer
-import java.util.*
+import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
 
@@ -15,11 +13,14 @@ abstract class LevelheadDisplay(val displayPosition: DisplayPosition, val config
     fun checkCacheSize() {
         val max = max(150, Levelhead.displayManager.config.purgeSize)
         if (cache.size > max) {
-            val world = Minecraft.getMinecraft().theWorld ?: return
-            val uuids = world.playerEntities.mapTo(mutableSetOf<UUID>()) { it.uniqueID }
-            val cache2ElectricBoogaloo = cache.filter { uuids.contains(it.key) }
-            this.cache.clear()
-            this.cache.putAll(cache2ElectricBoogaloo)
+            val now = System.currentTimeMillis()
+            cache.entries.removeIf { (_, tag) -> (now - tag.lastRendered) > 5 * 60 * 1000 }
+
+            if (cache.size > max) {
+                val sortedByRecent = cache.entries.sortedBy { it.value.lastRendered }
+                val toRemove = sortedByRecent.take(cache.size - max)
+                toRemove.forEach { cache.remove(it.key) }
+            }
         }
     }
 

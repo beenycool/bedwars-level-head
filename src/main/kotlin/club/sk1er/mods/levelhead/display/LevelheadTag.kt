@@ -8,6 +8,7 @@ import java.util.*
 class LevelheadTag(val owner: UUID) {
     var header: LevelheadComponent = LevelheadComponent()
     var footer: LevelheadComponent = LevelheadComponent()
+    var lastRendered: Long = System.currentTimeMillis()
 
     fun getString() = "${header.value}${footer.value}"
 

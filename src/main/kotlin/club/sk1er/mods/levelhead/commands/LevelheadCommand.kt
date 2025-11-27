@@ -6,6 +6,7 @@ import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import club.sk1er.mods.levelhead.core.BedwarsStar
 import club.sk1er.mods.levelhead.core.dashUUID
+import cc.polyfrost.oneconfig.config.core.OneColor
 import cc.polyfrost.oneconfig.utils.commands.annotations.Command
 import cc.polyfrost.oneconfig.utils.commands.annotations.Greedy
 import cc.polyfrost.oneconfig.utils.commands.annotations.Main
@@ -40,7 +41,7 @@ class LevelheadCommand {
         private val IGN_PATTERN = Regex("^[a-zA-Z0-9_]{1,16}$")
         private val HEX_COLOR_PATTERN = Regex("^#?[0-9a-fA-F]{6}$")
         private val RGB_COLOR_PATTERN = Regex("^(\\d{1,3}),(\\d{1,3}),(\\d{1,3})$")
-        private const val MIN_DISPLAY_OFFSET = -1.5
+        private const val MIN_DISPLAY_OFFSET = -2.0
         private const val MAX_DISPLAY_OFFSET = 3.0
         private val JSON_MEDIA_TYPE: MediaType = MediaType.parse("application/json; charset=utf-8")
             ?: error("Failed to initialise JSON media type")
@@ -66,12 +67,11 @@ class LevelheadCommand {
 
     @Main
     fun handle() {
-        val enabled = Levelhead.displayManager.config.enabled
+        val enabled = LevelheadConfig.enabled
         val enabledColor = if (enabled) ChatColor.GREEN else ChatColor.RED
-        val primaryDisplay = Levelhead.displayManager.primaryDisplay()
-        val header = primaryDisplay?.config?.headerString ?: BedwarsModeDetector.DEFAULT_HEADER
-        val showSelf = primaryDisplay?.config?.showSelf ?: true
-        val offset = Levelhead.displayManager.config.offset
+        val header = LevelheadConfig.headerString.ifBlank { BedwarsModeDetector.DEFAULT_HEADER }
+        val showSelf = LevelheadConfig.showSelf
+        val offset = LevelheadConfig.offset.toDouble()
         val proxyState = when {
             !LevelheadConfig.proxyEnabled -> "${ChatColor.GRAY}disabled"
             LevelheadConfig.proxyBaseUrl.isBlank() || LevelheadConfig.proxyAuthToken.isBlank() -> "${ChatColor.RED}misconfigured"
@@ -141,7 +141,7 @@ class LevelheadCommand {
 
     @SubCommand
     fun toggle() {
-        updateEnabledState(!Levelhead.displayManager.config.enabled)
+        updateEnabledState(!LevelheadConfig.enabled)
     }
 
     @SubCommand(aliases = ["power"])
@@ -149,7 +149,7 @@ class LevelheadCommand {
         val toggle = parseToggle(state)
         if (toggle == null) {
             sendMessage(
-                "${ChatColor.RED}Couldn't understand '$state'.${ChatColor.YELLOW} Toggle the mod with ${ChatColor.GOLD}/levelhead mod <on|off>${ChatColor.YELLOW}. Current state: ${formatToggle(Levelhead.displayManager.config.enabled)}${ChatColor.YELLOW}."
+                "${ChatColor.RED}Couldn't understand '$state'.${ChatColor.YELLOW} Toggle the mod with ${ChatColor.GOLD}/levelhead mod <on|off>${ChatColor.YELLOW}. Current state: ${formatToggle(LevelheadConfig.enabled)}${ChatColor.YELLOW}."
             )
             return
         }
@@ -367,7 +367,7 @@ class LevelheadCommand {
         val displayCache = Levelhead.displayManager.aboveHead.sumOf { it.cache.size }
         sendMessage("${ChatColor.GREEN}Debug info:")
         sendMessage("${ChatColor.YELLOW}Context: ${ChatColor.GOLD}${context.name.lowercase(Locale.ROOT)}")
-        sendMessage("${ChatColor.YELLOW}Mod enabled: ${formatToggle(Levelhead.displayManager.config.enabled)}${ChatColor.YELLOW}, show self: ${formatToggle(Levelhead.displayManager.primaryDisplay()?.config?.showSelf ?: true)}")
+        sendMessage("${ChatColor.YELLOW}Mod enabled: ${formatToggle(LevelheadConfig.enabled)}${ChatColor.YELLOW}, show self: ${formatToggle(LevelheadConfig.showSelf)}")
         sendMessage("${ChatColor.YELLOW}Star cache entries: ${ChatColor.GOLD}${snapshot.cacheSize}${ChatColor.YELLOW}, display cache entries: ${ChatColor.GOLD}$displayCache")
         sendMessage("${ChatColor.YELLOW}Rate limiter remaining: ${ChatColor.GOLD}${snapshot.rateLimitRemaining}${ChatColor.YELLOW}, proxy: ${if (snapshot.proxyEnabled) ChatColor.GREEN else ChatColor.GRAY}${if (snapshot.proxyEnabled) "enabled" else "disabled"}${ChatColor.YELLOW}")
     }
@@ -385,13 +385,10 @@ class LevelheadCommand {
                     return
                 }
                 val sanitized = text.take(48)
-                val changed = Levelhead.displayManager.updatePrimaryDisplay { config ->
-                    if (config.headerString == sanitized) return@updatePrimaryDisplay false
-                    config.headerString = sanitized
-                    true
-                }
+                val changed = LevelheadConfig.headerString != sanitized
+                LevelheadConfig.headerString = sanitized
+                LevelheadConfig.save()
                 if (changed) {
-                    Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
                     sendMessage("${ChatColor.GREEN}Updated header text to ${ChatColor.GOLD}$sanitized${ChatColor.GREEN}.")
                 } else {
                     sendMessage("${ChatColor.YELLOW}Header text is already set to ${ChatColor.GOLD}$sanitized${ChatColor.YELLOW}.")
@@ -410,13 +407,11 @@ class LevelheadCommand {
                     )
                     return
                 }
-                val changed = Levelhead.displayManager.updatePrimaryDisplay { config ->
-                    if (config.headerColor == color) return@updatePrimaryDisplay false
-                    config.headerColor = color
-                    true
-                }
+                val desired = OneColor(color.red, color.green, color.blue, color.alpha)
+                val changed = LevelheadConfig.headerColor.rgb != desired.rgb
+                LevelheadConfig.headerColor = desired
+                LevelheadConfig.save()
                 if (changed) {
-                    Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
                     sendMessage("${ChatColor.GREEN}Updated header color to ${ChatColor.GOLD}${formatColor(color)}${ChatColor.GREEN}.")
                 } else {
                     sendMessage("${ChatColor.YELLOW}Header color is already ${ChatColor.GOLD}${formatColor(color)}${ChatColor.YELLOW}.")
@@ -430,13 +425,10 @@ class LevelheadCommand {
                     )
                     return
                 }
-                val changed = Levelhead.displayManager.updatePrimaryDisplay { config ->
-                    if (config.headerChroma == toggle) return@updatePrimaryDisplay false
-                    config.headerChroma = toggle
-                    true
-                }
+                val changed = LevelheadConfig.headerChroma != toggle
+                LevelheadConfig.headerChroma = toggle
+                LevelheadConfig.save()
                 if (changed) {
-                    Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
                     sendMessage("${ChatColor.GREEN}Header chroma ${if (toggle) "enabled" else "disabled"}.")
                 } else {
                     sendMessage("${ChatColor.YELLOW}Header chroma already ${if (toggle) "enabled" else "disabled"}.")
@@ -459,13 +451,13 @@ class LevelheadCommand {
             return
         }
         val clamped = parsed.coerceIn(MIN_DISPLAY_OFFSET, MAX_DISPLAY_OFFSET)
-        val previous = Levelhead.displayManager.config.offset
+        val previous = LevelheadConfig.offset.toDouble()
         if (abs(previous - clamped) < 0.0001) {
             sendMessage("${ChatColor.YELLOW}Offset already set to ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", clamped)}${ChatColor.YELLOW}.")
             return
         }
-        Levelhead.displayManager.config.offset = clamped
-        Levelhead.displayManager.saveConfig()
+        LevelheadConfig.offset = clamped.toFloat()
+        LevelheadConfig.save()
         sendMessage("${ChatColor.GREEN}Updated display offset to ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", clamped)}${ChatColor.GREEN}.")
     }
 
@@ -481,11 +473,9 @@ class LevelheadCommand {
             )
             return
         }
-        val changed = Levelhead.displayManager.updatePrimaryDisplay { config ->
-            if (config.showSelf == toggle) return@updatePrimaryDisplay false
-            config.showSelf = toggle
-            true
-        }
+        val changed = LevelheadConfig.showSelf != toggle
+        LevelheadConfig.showSelf = toggle
+        LevelheadConfig.save()
         if (changed) {
             sendMessage("${ChatColor.GREEN}Updated self display visibility to ${formatToggle(toggle)}${ChatColor.GREEN}.")
         } else {
@@ -558,7 +548,9 @@ class LevelheadCommand {
     }
 
     private fun updateEnabledState(enabled: Boolean) {
-        val changed = Levelhead.displayManager.setEnabled(enabled)
+        val changed = LevelheadConfig.enabled != enabled
+        LevelheadConfig.enabled = enabled
+        LevelheadConfig.save()
         val stateText = if (enabled) "enabled" else "disabled"
         val color = if (enabled) ChatColor.GREEN else ChatColor.RED
         val message = if (changed) {
@@ -592,12 +584,11 @@ class LevelheadCommand {
     }
 
     private fun sendDisplayOverview() {
-        val primaryDisplay = Levelhead.displayManager.primaryDisplay()
-        val headerText = primaryDisplay?.config?.headerString ?: BedwarsModeDetector.DEFAULT_HEADER
-        val headerColor = primaryDisplay?.config?.headerColor ?: Color(85, 255, 255)
-        val headerChroma = primaryDisplay?.config?.headerChroma ?: false
-        val showSelf = primaryDisplay?.config?.showSelf ?: true
-        val offset = Levelhead.displayManager.config.offset
+        val headerText = LevelheadConfig.headerString.ifBlank { BedwarsModeDetector.DEFAULT_HEADER }
+        val headerColor = Color(LevelheadConfig.headerColor.rgb, true)
+        val headerChroma = LevelheadConfig.headerChroma
+        val showSelf = LevelheadConfig.showSelf
+        val offset = LevelheadConfig.offset.toDouble()
 
         sendMessage(
             "${ChatColor.YELLOW}Primary header: ${ChatColor.GOLD}$headerText${ChatColor.YELLOW} (${ChatColor.GOLD}${formatColor(headerColor)}${ChatColor.YELLOW}, chroma ${formatToggle(headerChroma)}${ChatColor.YELLOW})."
@@ -630,7 +621,7 @@ class LevelheadCommand {
     }
 
     private fun sendDisplayOffsetDetails() {
-        val offset = Levelhead.displayManager.config.offset
+        val offset = LevelheadConfig.offset.toDouble()
         sendMessage(
             "${ChatColor.YELLOW}Current display offset: ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", offset)}${ChatColor.YELLOW}. Provide a value between ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.1f", MIN_DISPLAY_OFFSET)}${ChatColor.YELLOW} and ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.1f", MAX_DISPLAY_OFFSET)}${ChatColor.YELLOW}."
         )
@@ -643,19 +634,19 @@ class LevelheadCommand {
     }
 
     private fun currentHeaderText(): String {
-        return Levelhead.displayManager.primaryDisplay()?.config?.headerString ?: BedwarsModeDetector.DEFAULT_HEADER
+        return LevelheadConfig.headerString.ifBlank { BedwarsModeDetector.DEFAULT_HEADER }
     }
 
     private fun currentHeaderColor(): Color {
-        return Levelhead.displayManager.primaryDisplay()?.config?.headerColor ?: Color(85, 255, 255)
+        return Color(LevelheadConfig.headerColor.rgb, true)
     }
 
     private fun currentHeaderChroma(): Boolean {
-        return Levelhead.displayManager.primaryDisplay()?.config?.headerChroma ?: false
+        return LevelheadConfig.headerChroma
     }
 
     private fun currentShowSelf(): Boolean {
-        return Levelhead.displayManager.primaryDisplay()?.config?.showSelf ?: true
+        return LevelheadConfig.showSelf
     }
 
     private fun formatToggle(value: Boolean): String {

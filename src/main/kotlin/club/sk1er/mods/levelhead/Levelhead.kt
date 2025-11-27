@@ -14,6 +14,7 @@ import club.sk1er.mods.levelhead.core.trimmed
 import club.sk1er.mods.levelhead.display.LevelheadDisplay
 import club.sk1er.mods.levelhead.display.LevelheadTag
 import club.sk1er.mods.levelhead.render.AboveHeadRender
+import club.sk1er.mods.levelhead.render.TextureManager
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -58,6 +59,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
+import kotlin.math.abs
 
 @Mod(
     modid = Levelhead.MODID,
@@ -115,6 +117,7 @@ object Levelhead {
     private val statsCacheMetrics = StatsCacheMetrics()
     private val serverCooldownNotifiedUntil = AtomicLong(0L)
     private val updateCheckScheduled = AtomicBoolean(false)
+    private var lastAppliedDisplaySettings: DisplaySettingsSnapshot? = null
     @Volatile
     private var lastFetchAttemptAt: Long = 0L
     @Volatile
@@ -218,8 +221,127 @@ object Levelhead {
     val chromaColor: Color
         get() = Color(ChromaColor)
 
+    private data class DisplaySettingsSnapshot(
+        val enabled: Boolean,
+        val offset: Double,
+        val showSelf: Boolean,
+        val headerString: String,
+        val headerColor: Int,
+        val headerChroma: Boolean,
+        val footerTemplate: String,
+        val footerColor: Int,
+        val footerChroma: Boolean,
+        val useThreatColor: Boolean,
+        val customIconEnabled: Boolean,
+        val customIconPath: String
+    )
+
+    fun applyDisplayConfigFromSettings() {
+        val snapshot = DisplaySettingsSnapshot(
+            enabled = LevelheadConfig.enabled,
+            offset = LevelheadConfig.offset.toDouble(),
+            showSelf = LevelheadConfig.showSelf,
+            headerString = LevelheadConfig.headerString,
+            headerColor = LevelheadConfig.headerColor.rgb,
+            headerChroma = LevelheadConfig.headerChroma,
+            footerTemplate = LevelheadConfig.footerTemplate,
+            footerColor = LevelheadConfig.footerColor.rgb,
+            footerChroma = LevelheadConfig.footerChroma,
+            useThreatColor = LevelheadConfig.useThreatColor,
+            customIconEnabled = LevelheadConfig.customIconEnabled,
+            customIconPath = LevelheadConfig.customIconPath
+        )
+
+        val previousSnapshot = lastAppliedDisplaySettings
+        if (previousSnapshot == snapshot) {
+            return
+        }
+
+        val manager = displayManager
+        val master = manager.config
+        var masterConfigChanged = false
+        var displayConfigChanged = false
+
+        if (master.enabled != snapshot.enabled) {
+            manager.setEnabled(snapshot.enabled)
+        }
+
+        if (abs(master.offset - snapshot.offset) > 0.0001) {
+            master.offset = snapshot.offset
+            masterConfigChanged = true
+        }
+
+        val primaryDisplay = manager.primaryDisplay()
+        if (primaryDisplay != null) {
+            val display = primaryDisplay.config
+            val headerColor = Color(snapshot.headerColor, true)
+            val footerColor = Color(snapshot.footerColor, true)
+
+            if (display.showSelf != snapshot.showSelf) {
+                display.showSelf = snapshot.showSelf
+                displayConfigChanged = true
+            }
+
+            if (display.headerString != snapshot.headerString) {
+                display.headerString = snapshot.headerString
+                displayConfigChanged = true
+            }
+
+            if (display.headerColor.rgb != headerColor.rgb) {
+                display.headerColor = headerColor
+                displayConfigChanged = true
+            }
+
+            if (display.headerChroma != snapshot.headerChroma) {
+                display.headerChroma = snapshot.headerChroma
+                displayConfigChanged = true
+            }
+
+            if (display.footerString != snapshot.footerTemplate) {
+                display.footerString = snapshot.footerTemplate
+                displayConfigChanged = true
+            }
+
+            if (display.footerColor.rgb != footerColor.rgb) {
+                display.footerColor = footerColor
+                displayConfigChanged = true
+            }
+
+            if (display.footerChroma != snapshot.footerChroma) {
+                display.footerChroma = snapshot.footerChroma
+                displayConfigChanged = true
+            }
+
+            if (display.useThreatColor != snapshot.useThreatColor) {
+                display.useThreatColor = snapshot.useThreatColor
+                displayConfigChanged = true
+            }
+        }
+
+        if (masterConfigChanged || displayConfigChanged) {
+            manager.saveConfig()
+        }
+
+        if (displayConfigChanged) {
+            manager.applyPrimaryDisplayConfigToCache()
+            if (BedwarsModeDetector.shouldRequestData()) {
+                manager.requestAllDisplays()
+            }
+        }
+
+        if (
+            previousSnapshot?.customIconEnabled != snapshot.customIconEnabled ||
+            previousSnapshot?.customIconPath != snapshot.customIconPath
+        ) {
+            TextureManager.invalidateCustomIcon()
+        }
+
+        lastAppliedDisplaySettings = snapshot
+    }
+
     fun preInit(@Suppress("UNUSED_PARAMETER") event: FMLPreInitializationEvent) {
         LevelheadConfig
+        applyDisplayConfigFromSettings()
     }
 
     fun postInit(@Suppress("UNUSED_PARAMETER") event: FMLPostInitializationEvent) {

@@ -1,6 +1,5 @@
 package club.sk1er.mods.levelhead.config
 
-import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import cc.polyfrost.oneconfig.config.Config
 import cc.polyfrost.oneconfig.config.annotations.Color
 import cc.polyfrost.oneconfig.config.annotations.Header
@@ -10,6 +9,8 @@ import cc.polyfrost.oneconfig.config.annotations.Text
 import cc.polyfrost.oneconfig.config.core.OneColor
 import cc.polyfrost.oneconfig.config.data.Mod
 import cc.polyfrost.oneconfig.config.data.ModType
+import club.sk1er.mods.levelhead.Levelhead
+import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import java.time.Duration
 import java.util.Locale
 import java.util.UUID
@@ -68,6 +69,24 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     @Switch(name = "Header Chroma")
     var headerChroma: Boolean = false
+
+    @Slider(
+        name = "Y Offset",
+        min = -2f,
+        max = 3f,
+        step = 0.05f
+    )
+    var offset: Float = 0.5f
+
+    @Switch(name = "Use Custom Icon", description = "Render a local PNG instead of the star text")
+    var customIconEnabled: Boolean = false
+
+    @Text(
+        name = "Custom Icon Path",
+        placeholder = "C:/Users/You/Pictures/icon.png",
+        description = "Absolute path to a PNG file"
+    )
+    var customIconPath: String = ""
 
     var welcomeMessageShown: Boolean = false
 
@@ -132,5 +151,10 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         starCacheTtlMinutes = clamped
         save()
         BedwarsFetcher.resetWarnings()
+    }
+
+    override fun save() {
+        super.save()
+        Levelhead.applyDisplayConfigFromSettings()
     }
 }
