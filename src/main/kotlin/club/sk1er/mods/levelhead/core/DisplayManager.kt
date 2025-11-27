@@ -208,8 +208,6 @@ class DisplayManager(val file: File) {
                 }
             }
             ?.flatten()
-            ?.chunked(20) { reqList ->
-                Levelhead.fetchBatch(reqList)
-            }
+            ?.let { Levelhead.fetchBatch(it) }
     }
 }
