@@ -528,15 +528,20 @@ object Levelhead {
         val winstreakString = starData?.winstreak?.toString() ?: "?"
 
         var footerValue = footerTemplate
-        if (footerValue.contains("%star%", ignoreCase = true)) {
-            val starReplacement = if (isPrimary && LevelheadConfig.customIcon) "" else starString
-            footerValue = footerValue.replace("%star%", starReplacement, true)
+        if (isPrimary && LevelheadConfig.customIcon) {
+            if (footerValue.contains("%star%", ignoreCase = true)) {
+                footerValue = footerValue.replace("%star%", "", ignoreCase = true)
+            }
+        } else {
+            if (footerValue.contains("%star%", ignoreCase = true)) {
+                footerValue = footerValue.replace("%star%", starString, ignoreCase = true)
+            }
         }
         if (footerValue.contains("%fkdr%", ignoreCase = true)) {
-            footerValue = footerValue.replace("%fkdr%", fkdrString, true)
+            footerValue = footerValue.replace("%fkdr%", fkdrString, ignoreCase = true)
         }
         if (footerValue.contains("%ws%", ignoreCase = true)) {
-            footerValue = footerValue.replace("%ws%", winstreakString, true)
+            footerValue = footerValue.replace("%ws%", winstreakString, ignoreCase = true)
         }
         val baseStyle = starValue?.let { BedwarsStar.styleForStar(it) }
             ?: BedwarsStar.PrestigeStyle(footerColor, footerChroma)

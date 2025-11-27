@@ -56,6 +56,8 @@ object AboveHeadRender {
                 if (player == localPlayer && !display.config.showSelf) return@forEach
 
                 val tag = display.cache[player.uniqueID] ?: return@forEach
+                
+                // loadOrRender performs additional checks (distance, etc)
                 if (!display.loadOrRender(player)) return@forEach
 
                 // Interpolate position
@@ -75,6 +77,7 @@ object AboveHeadRender {
 
                 offset += LevelheadConfig.offsetValue
 
+                // Pass index == 0 to ensure custom icons only render on the primary (top) tag
                 renderName(tag, player, x, y + offset + index * 0.3, z, index == 0)
             }
         }
