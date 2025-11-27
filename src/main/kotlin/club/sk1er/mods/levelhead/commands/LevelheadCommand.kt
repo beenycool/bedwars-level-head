@@ -71,10 +71,10 @@ class LevelheadCommand {
         val primaryDisplay = Levelhead.displayManager.primaryDisplay()
         val header = primaryDisplay?.config?.headerString ?: BedwarsModeDetector.DEFAULT_HEADER
         val showSelf = primaryDisplay?.config?.showSelf ?: true
-        val offset = Levelhead.displayManager.config.offset
+        val offset = LevelheadConfig.offsetValue
         val proxyState = when {
             !LevelheadConfig.proxyEnabled -> "${ChatColor.GRAY}disabled"
-            LevelheadConfig.proxyBaseUrl.isBlank() || LevelheadConfig.proxyAuthToken.isBlank() -> "${ChatColor.RED}misconfigured"
+            LevelheadConfig.proxyAuthToken.isBlank() -> "${ChatColor.RED}misconfigured"
             else -> "${ChatColor.GREEN}configured"
         }
 
@@ -242,7 +242,7 @@ class LevelheadCommand {
         if (parsedArgs.isEmpty()) {
             val status = when {
                 !LevelheadConfig.proxyEnabled -> "${ChatColor.GRAY}disabled"
-                LevelheadConfig.proxyBaseUrl.isBlank() || LevelheadConfig.proxyAuthToken.isBlank() -> "${ChatColor.RED}misconfigured"
+                LevelheadConfig.proxyAuthToken.isBlank() -> "${ChatColor.RED}misconfigured"
                 else -> "${ChatColor.GREEN}configured"
             }
             sendMessage("${ChatColor.YELLOW}Proxy is currently $status${ChatColor.YELLOW}.")
@@ -459,13 +459,13 @@ class LevelheadCommand {
             return
         }
         val clamped = parsed.coerceIn(MIN_DISPLAY_OFFSET, MAX_DISPLAY_OFFSET)
-        val previous = Levelhead.displayManager.config.offset
+        val previous = LevelheadConfig.offsetValue
         if (abs(previous - clamped) < 0.0001) {
             sendMessage("${ChatColor.YELLOW}Offset already set to ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", clamped)}${ChatColor.YELLOW}.")
             return
         }
-        Levelhead.displayManager.config.offset = clamped
-        Levelhead.displayManager.saveConfig()
+        LevelheadConfig.offset = clamped.toString()
+        LevelheadConfig.save()
         sendMessage("${ChatColor.GREEN}Updated display offset to ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", clamped)}${ChatColor.GREEN}.")
     }
 
@@ -597,7 +597,7 @@ class LevelheadCommand {
         val headerColor = primaryDisplay?.config?.headerColor ?: Color(85, 255, 255)
         val headerChroma = primaryDisplay?.config?.headerChroma ?: false
         val showSelf = primaryDisplay?.config?.showSelf ?: true
-        val offset = Levelhead.displayManager.config.offset
+        val offset = LevelheadConfig.offsetValue
 
         sendMessage(
             "${ChatColor.YELLOW}Primary header: ${ChatColor.GOLD}$headerText${ChatColor.YELLOW} (${ChatColor.GOLD}${formatColor(headerColor)}${ChatColor.YELLOW}, chroma ${formatToggle(headerChroma)}${ChatColor.YELLOW})."
@@ -630,7 +630,7 @@ class LevelheadCommand {
     }
 
     private fun sendDisplayOffsetDetails() {
-        val offset = Levelhead.displayManager.config.offset
+        val offset = LevelheadConfig.offsetValue
         sendMessage(
             "${ChatColor.YELLOW}Current display offset: ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", offset)}${ChatColor.YELLOW}. Provide a value between ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.1f", MIN_DISPLAY_OFFSET)}${ChatColor.YELLOW} and ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.1f", MAX_DISPLAY_OFFSET)}${ChatColor.YELLOW}."
         )
@@ -690,7 +690,7 @@ class LevelheadCommand {
     private fun formatColor(color: Color): String = "#%06X".format(Locale.ROOT, color.rgb and 0xFFFFFF)
 
     private fun isProxyFullyConfigured(): Boolean {
-        return LevelheadConfig.proxyEnabled && LevelheadConfig.proxyBaseUrl.isNotBlank() && LevelheadConfig.proxyAuthToken.isNotBlank()
+        return LevelheadConfig.proxyEnabled && LevelheadConfig.proxyAuthToken.isNotBlank()
     }
 
     private suspend fun purgeProxyCache(identifier: String?): Int = withContext(Dispatchers.IO) {
