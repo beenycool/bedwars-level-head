@@ -74,7 +74,7 @@ class LevelheadCommand {
         val offset = LevelheadConfig.offsetValue
         val proxyState = when {
             !LevelheadConfig.proxyEnabled -> "${ChatColor.GRAY}disabled"
-            LevelheadConfig.proxyBaseUrl.isBlank() || LevelheadConfig.proxyAuthToken.isBlank() -> "${ChatColor.RED}misconfigured"
+            LevelheadConfig.proxyAuthToken.isBlank() -> "${ChatColor.RED}misconfigured"
             else -> "${ChatColor.GREEN}configured"
         }
 
@@ -242,7 +242,7 @@ class LevelheadCommand {
         if (parsedArgs.isEmpty()) {
             val status = when {
                 !LevelheadConfig.proxyEnabled -> "${ChatColor.GRAY}disabled"
-                LevelheadConfig.proxyBaseUrl.isBlank() || LevelheadConfig.proxyAuthToken.isBlank() -> "${ChatColor.RED}misconfigured"
+                LevelheadConfig.proxyAuthToken.isBlank() -> "${ChatColor.RED}misconfigured"
                 else -> "${ChatColor.GREEN}configured"
             }
             sendMessage("${ChatColor.YELLOW}Proxy is currently $status${ChatColor.YELLOW}.")
@@ -690,7 +690,7 @@ class LevelheadCommand {
     private fun formatColor(color: Color): String = "#%06X".format(Locale.ROOT, color.rgb and 0xFFFFFF)
 
     private fun isProxyFullyConfigured(): Boolean {
-        return LevelheadConfig.proxyEnabled && LevelheadConfig.proxyBaseUrl.isNotBlank() && LevelheadConfig.proxyAuthToken.isNotBlank()
+        return LevelheadConfig.proxyEnabled && LevelheadConfig.proxyAuthToken.isNotBlank()
     }
 
     private suspend fun purgeProxyCache(identifier: String?): Int = withContext(Dispatchers.IO) {

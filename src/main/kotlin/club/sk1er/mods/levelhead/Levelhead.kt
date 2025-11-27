@@ -447,7 +447,7 @@ object Levelhead {
         val statsCacheSnapshot = statsCacheMetrics.snapshot()
         return StatusSnapshot(
             proxyEnabled = LevelheadConfig.proxyEnabled,
-            proxyConfigured = LevelheadConfig.proxyEnabled && LevelheadConfig.proxyBaseUrl.isNotBlank(),
+            proxyConfigured = LevelheadConfig.proxyEnabled && LevelheadConfig.proxyAuthToken.isNotBlank(),
             cacheSize = statsCache.size,
             lastAttemptAgeMillis = attemptAge,
             lastSuccessAgeMillis = successAge,
@@ -530,18 +530,18 @@ object Levelhead {
         var footerValue = footerTemplate
         if (isPrimary && LevelheadConfig.customIcon) {
             if (footerValue.contains("%star%", ignoreCase = true)) {
-                footerValue = footerValue.replace("%star%", "", true)
+                footerValue = footerValue.replace("%star%", "", ignoreCase = true)
             }
         } else {
             if (footerValue.contains("%star%", ignoreCase = true)) {
-                footerValue = footerValue.replace("%star%", starString, true)
+                footerValue = footerValue.replace("%star%", starString, ignoreCase = true)
             }
         }
         if (footerValue.contains("%fkdr%", ignoreCase = true)) {
-            footerValue = footerValue.replace("%fkdr%", fkdrString, true)
+            footerValue = footerValue.replace("%fkdr%", fkdrString, ignoreCase = true)
         }
         if (footerValue.contains("%ws%", ignoreCase = true)) {
-            footerValue = footerValue.replace("%ws%", winstreakString, true)
+            footerValue = footerValue.replace("%ws%", winstreakString, ignoreCase = true)
         }
         val baseStyle = starValue?.let { BedwarsStar.styleForStar(it) }
             ?: BedwarsStar.PrestigeStyle(footerColor, footerChroma)

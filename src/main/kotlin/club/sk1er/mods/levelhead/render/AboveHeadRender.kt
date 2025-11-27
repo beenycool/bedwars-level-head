@@ -19,12 +19,14 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import org.lwjgl.opengl.GL11
 import java.awt.Color
 import java.io.File
+import java.util.Collections
+import java.util.concurrent.ConcurrentHashMap
 import javax.imageio.ImageIO
 
 object AboveHeadRender {
 
-    private val iconCache = mutableMapOf<String, ResourceLocation>()
-    private val loadingIcons = mutableSetOf<String>()
+    private val iconCache = ConcurrentHashMap<String, ResourceLocation>()
+    private val loadingIcons: MutableSet<String> = Collections.newSetFromMap(ConcurrentHashMap())
 
     @SubscribeEvent
     fun render(event: RenderWorldLastEvent) {
@@ -43,17 +45,18 @@ object AboveHeadRender {
         val viewerZ = minecraft.renderManager.viewerPosZ
 
         displayManager.aboveHead.forEachIndexed { index, display ->
-            if (!display.config.enabled || (display.config.showSelf == false && !display.config.showSelf)) return@forEachIndexed
+            if (!display.config.enabled) return@forEachIndexed
 
             players.forEach { player ->
                 if (player.isInvisible || player.isInvisibleToPlayer(localPlayer)) return@forEach
                 if (player.isSpectator) return@forEach
-                if (player.isSneaking) return@forEach // Match AboveHeadDisplay logic
+                if (player.isSneaking) return@forEach
 
                 if (player == localPlayer && !LevelheadConfig.showSelf) return@forEach
                 if (player == localPlayer && !display.config.showSelf) return@forEach
 
                 val tag = display.cache[player.uniqueID] ?: return@forEach
+                
                 // loadOrRender performs additional checks (distance, etc)
                 if (!display.loadOrRender(player)) return@forEach
 
@@ -72,15 +75,15 @@ object AboveHeadRender {
                     offset = 0.0
                 }
 
-                // Use LevelheadConfig offset
                 offset += LevelheadConfig.offsetValue
 
-                renderName(tag, player, x, y + offset + index * 0.3, z)
+                // Pass index == 0 to ensure custom icons only render on the primary (top) tag
+                renderName(tag, player, x, y + offset + index * 0.3, z, index == 0)
             }
         }
     }
 
-    private fun renderName(tag: LevelheadTag, entity: EntityPlayer, x: Double, y: Double, z: Double) {
+    private fun renderName(tag: LevelheadTag, entity: EntityPlayer, x: Double, y: Double, z: Double, isPrimary: Boolean) {
         val mc = Minecraft.getMinecraft()
         val renderer = mc.fontRendererObj
         val scale = (0.016666668f * 1.6f * displayManager.config.fontSize).toFloat()
@@ -100,7 +103,7 @@ object AboveHeadRender {
         GlStateManager.enableBlend()
         GlStateManager.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO)
 
-        val icon = if (LevelheadConfig.customIcon) getCustomIcon(LevelheadConfig.customIconPath) else null
+        val icon = if (LevelheadConfig.customIcon && isPrimary) getCustomIcon(LevelheadConfig.customIconPath) else null
 
         val iconWidth = if (icon != null) 10 else 0
         val spacer = if (icon != null) 2 else 0
@@ -204,7 +207,7 @@ object AboveHeadRender {
                             val location = Minecraft.getMinecraft().renderManager.renderEngine.getDynamicTextureLocation("levelhead_icon_${path.hashCode()}", texture)
                             iconCache[path] = location
                         } catch (e: Exception) {
-                            e.printStackTrace()
+                            Levelhead.logger.error("Failed to register custom icon texture for path: $path", e)
                         } finally {
                             loadingIcons.remove(path)
                         }
