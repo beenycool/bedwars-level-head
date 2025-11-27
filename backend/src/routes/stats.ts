@@ -67,7 +67,7 @@ router.get('/', async (_req, res, next) => {
         return `<tr>
           <td>${escapeHtml(formatDate(entry.requestedAt))}</td>
           <td>${escapeHtml(lookup)}</td>
-          <td data-uuid="${escapeHtml(normalizedUuid ?? '')}" data-missing-name="${resolvedFromCache ? 'false' : 'true'}">${escapeHtml(resolved)}</td>
+          <td data-uuid="${escapeHtml(normalizedUuid ?? '')}" data-missing-name="${(resolvedFromCache || entry.resolvedUsername) ? 'false' : 'true'}">${escapeHtml(resolved)}</td>
           <td class="stars">${escapeHtml(formatStars(entry.stars))}</td>
           <td>${escapeHtml(cacheSource)}${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
           <td>${entry.responseStatus}</td>
@@ -183,12 +183,12 @@ router.get('/', async (_req, res, next) => {
             return;
           }
           seen.add(uuid);
-          fetch(`https://api.ashcon.app/mojang/v2/user/${uuid}`)
+          fetch('https://api.ashcon.app/mojang/v2/user/' + uuid)
             .then((response) => (response.ok ? response.json() : null))
             .then((data) => {
               const name = data?.username;
               if (!name) return;
-              document.querySelectorAll(`td[data-uuid="${uuid}"]`).forEach((target) => {
+              document.querySelectorAll('td[data-uuid="' + uuid + '"]').forEach((target) => {
                 target.textContent = name;
                 target.setAttribute('data-missing-name', 'false');
               });
