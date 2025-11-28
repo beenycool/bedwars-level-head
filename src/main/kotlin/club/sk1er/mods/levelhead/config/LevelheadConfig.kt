@@ -23,6 +23,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     const val DEFAULT_STAR_CACHE_TTL_MINUTES = 45
     @Header(text = "General")
     @Switch(name = "Enabled", description = "Toggle the BedWars Levelhead overlay")
+    @JvmField
     var enabled: Boolean = true
 
     @Text(name = "Hypixel API Key", placeholder = "Run /api new", secure = true)
