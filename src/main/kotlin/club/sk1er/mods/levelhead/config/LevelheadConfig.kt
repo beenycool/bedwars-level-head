@@ -4,12 +4,10 @@ import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import cc.polyfrost.oneconfig.config.Config
 import cc.polyfrost.oneconfig.config.annotations.Button
-import cc.polyfrost.oneconfig.config.annotations.Color
 import cc.polyfrost.oneconfig.config.annotations.Header
 import cc.polyfrost.oneconfig.config.annotations.Slider
 import cc.polyfrost.oneconfig.config.annotations.Switch
 import cc.polyfrost.oneconfig.config.annotations.Text
-import cc.polyfrost.oneconfig.config.core.OneColor
 import cc.polyfrost.oneconfig.config.data.Mod
 import cc.polyfrost.oneconfig.config.data.ModType
 import java.time.Duration
@@ -62,22 +60,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         description = "Developer option: adjust cache duration. Do not change this unless you know what you are doing."
     )
     var starCacheTtlMinutes: Int = DEFAULT_STAR_CACHE_TTL_MINUTES
-
-    @Header(text = "Display")
-    @Text(name = "Header Text")
-    var headerString: String = "BedWars Star"
-
-    @Color(name = "Header Color")
-    var headerColor: OneColor = OneColor(85, 255, 255)
-
-    @Text(name = "Footer Template", description = "Supports %star%, %fkdr%, %ws%")
-    var footerTemplate: String = "%star%"
-
-    @Color(name = "Footer Color")
-    var footerColor: OneColor = OneColor(255, 255, 85)
-
-    @Switch(name = "Show Self")
-    var showSelf: Boolean = true
 
     @Button(
         name = "Reset Settings",
@@ -153,11 +135,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         proxyBaseUrl = DEFAULT_PROXY_URL
         proxyAuthToken = ""
         starCacheTtlMinutes = DEFAULT_STAR_CACHE_TTL_MINUTES
-        headerString = "BedWars Star"
-        headerColor = OneColor(85, 255, 255)
-        footerTemplate = "%star%"
-        footerColor = OneColor(255, 255, 85)
-        showSelf = true
         save()
         BedwarsFetcher.resetWarnings()
         Levelhead.displayManager.resetToDefaults()

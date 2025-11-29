@@ -16,13 +16,17 @@ BedWars Levelhead is a lightweight reimagining of the classic **Levelhead** mod 
 - `/levelhead color <#RRGGBB|name>` – Choose a color for the header.
 - `/levelhead offset <value>` – Adjust the vertical offset of the display.
 - `/levelhead self <on|off>` – Control whether you see your own tag.
-- `/levelhead proxy <url>` / `/levelhead proxy clear` – Configure or reset the backend endpoint.
-- `/levelhead proxy auth <username> <password>` – Supply proxy authentication credentials.
 - `/levelhead cache purge [player]` – Clear cache entries globally or for a specific player.
 - `/levelhead status` – Show backend latency, cache state, and rate limit information.
 - `/levelhead whois <player|uuid>` – Fetch BedWars stats from the proxy or Hypixel directly.
-- `/levelhead apikey <key>` / `clearapikey` – Manage a local Hypixel API key fallback.
 - `/levelhead reload` – Invalidate all cached displays and re-fetch fresh data.
+
+#### Developer Commands (Advanced)
+> ⚠️ The following commands are for advanced configuration. Incorrect usage may cause display issues.
+
+- `/levelhead proxy <url>` / `/levelhead proxy clear` – Configure or reset the backend endpoint.
+- `/levelhead proxy auth <username> <password>` – Supply proxy authentication credentials.
+- `/levelhead apikey <key>` / `clearapikey` – Manage a local Hypixel API key fallback.
 
 > **Tip:** Run `/levelhead help` or `/levelhead` with no arguments in-game to see live documentation tailored to your configuration.
 
@@ -30,6 +34,8 @@ BedWars Levelhead is a lightweight reimagining of the classic **Levelhead** mod 
 
 ### Advanced Configuration
 For fine-grained control, edit `config/levelhead.json` in your `.minecraft` directory. This file exposes header text, colors, offsets, proxy details, and more. If you migrate from an older Levelhead config, ensure the `"type"` field is set to `"BEDWARS_STAR"`.
+
+To restore the mod to its original settings, open the BedWars Levelhead configuration screen (via OneConfig) and click **Reset Settings**. This resets both general options and display settings back to their defaults.
 
 
 ### Credits & License
