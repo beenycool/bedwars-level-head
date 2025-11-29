@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getPlayerQueryCount, getPlayerQueryPage } from '../services/history';
+import { getPlayerQueryCount, getPlayerQueryPage, getRecentPlayerQueries } from '../services/history';
 import { escapeHtml } from '../util/html';
 
 const router = Router();
@@ -57,10 +57,11 @@ router.get('/', async (req, res, next) => {
     const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
     const page = Math.min(safePage, totalPages);
     const pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search, totalCountOverride: totalCount });
+    const recentActivity = await getRecentPlayerQueries(200);
 
-    // Serialise the current page data to JSON so the frontend script can use it
+    // Serialise the recent activity so the frontend script can use it
     // Securely escape < characters to prevent XSS via script injection
-    const jsonForFrontend = JSON.stringify(pageData.rows).replace(/</g, '\\\\u003c');
+    const jsonForFrontend = JSON.stringify(recentActivity).replace(/</g, '\\\\u003c');
 
     const rows = pageData.rows
       .map((entry) => {
@@ -103,6 +104,7 @@ router.get('/', async (req, res, next) => {
         font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         background: #0f172a;
         color: #e2e8f0;
+        --chart-height: 320px;
       }
       body {
         padding: 1.5rem 1rem;
@@ -119,6 +121,57 @@ router.get('/', async (req, res, next) => {
         color: #94a3b8;
         font-size: 0.9rem;
       }
+      p.meta.hero {
+        font-size: 1rem;
+        color: #cbd5f5;
+        margin-bottom: 0.75rem;
+      }
+
+      .stat-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 1rem;
+        margin: 1rem 0 2rem;
+      }
+      .stat-card {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(34, 211, 238, 0.08));
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        box-shadow: 0 10px 30px rgba(15, 23, 42, 0.35);
+      }
+      .stat-label {
+        color: #94a3b8;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.75rem;
+        margin: 0;
+      }
+      .stat-value {
+        font-size: 1.65rem;
+        font-weight: 700;
+        margin: 0;
+      }
+      .stat-sub {
+        margin: 0;
+        color: #cbd5f5;
+        font-size: 0.85rem;
+      }
+      .progress {
+        height: 6px;
+        background: rgba(148, 163, 184, 0.2);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+      .progress span {
+        display: block;
+        height: 100%;
+        background: linear-gradient(90deg, #22d3ee, #3b82f6);
+        width: 0;
+        transition: width 0.4s ease;
+      }
 
       /* NEW CSS FOR GRAPHS */
       .dashboard-grid {
@@ -126,6 +179,31 @@ router.get('/', async (req, res, next) => {
         grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
         gap: 1.5rem;
         margin-bottom: 2rem;
+      }
+      .chart-toolbar {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        background: rgba(30, 41, 59, 0.6);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 10px;
+        margin-bottom: 1rem;
+      }
+      .chart-toolbar label {
+        color: #cbd5f5;
+        font-weight: 600;
+      }
+      .chart-toolbar input[type="range"] {
+        accent-color: #38bdf8;
+      }
+      .chart-shell {
+        position: relative;
+        height: var(--chart-height);
+      }
+      .chart-shell canvas {
+        width: 100% !important;
+        height: 100% !important;
       }
       .card {
         background: rgba(30, 41, 59, 0.5);
@@ -244,16 +322,56 @@ router.get('/', async (req, res, next) => {
   </head>
   <body>
     <h1>Levelhead Analytics</h1>
+    <p class="meta hero">Live snapshot of recent BedWars lookups (rendered locally, no external dashboards).</p>
+
+    <div class="stat-grid">
+      <div class="card stat-card">
+        <p class="stat-label">Total Lookups</p>
+        <p class="stat-value" id="totalLookupsValue">--</p>
+        <p class="stat-sub">Last 200 lookups</p>
+      </div>
+      <div class="card stat-card">
+        <p class="stat-label">Cache Hit Rate</p>
+        <p class="stat-value" id="cacheHitRateValue">--</p>
+        <div class="progress"><span id="cacheHitProgress"></span></div>
+        <p class="stat-sub">Measured from recent lookups</p>
+      </div>
+      <div class="card stat-card">
+        <p class="stat-label">Success Rate</p>
+        <p class="stat-value" id="successRateValue">--</p>
+        <div class="progress"><span id="successRateProgress"></span></div>
+        <p class="stat-sub">Based on HTTP status codes</p>
+      </div>
+      <div class="card stat-card">
+        <p class="stat-label">Latency (p95)</p>
+        <p class="stat-value" id="latencyP95Value">--</p>
+        <p class="stat-sub">Derived from real latency samples</p>
+      </div>
+    </div>
+
+    <div class="chart-toolbar">
+      <label for="chartHeightRange">Chart height</label>
+      <input id="chartHeightRange" type="range" min="200" max="500" value="320" step="20" />
+      <span id="chartHeightValue">320px</span>
+    </div>
 
     <div class="dashboard-grid">
-        <div class="card">
-            <h2>Cache Performance (Current Page)</h2>
-            <canvas id="cacheChart"></canvas>
-        </div>
-        <div class="card">
-            <h2>Star Distribution (Current Page)</h2>
-            <canvas id="starChart"></canvas>
-        </div>
+      <div class="card">
+        <h2>Cache Performance (Recent Activity)</h2>
+        <div class="chart-shell"><canvas id="cacheChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Star Distribution (Recent Activity)</h2>
+        <div class="chart-shell"><canvas id="starChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Latency Pulse</h2>
+        <div class="chart-shell"><canvas id="latencyChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Status Breakdown</h2>
+        <div class="chart-shell"><canvas id="statusChart"></canvas></div>
+      </div>
     </div>
 
     <h2>Recent Player Lookups</h2>
@@ -302,31 +420,129 @@ router.get('/', async (req, res, next) => {
 
     <script>
       const data = ${jsonForFrontend};
+      const charts = [];
 
-      // 1. Prepare Cache Data
-      const cacheHits = data.filter(d => d.cacheHit).length;
+      const chartHeightControl = document.getElementById('chartHeightRange');
+      const chartHeightValue = document.getElementById('chartHeightValue');
+      const defaultChartHeight = Number(chartHeightControl?.value ?? 320);
+      let currentChartHeight = defaultChartHeight;
+
+      function applyChartHeight(px) {
+        const numeric = Number(px);
+        const clamped = Number.isFinite(numeric) ? Math.min(500, Math.max(200, numeric)) : defaultChartHeight;
+        currentChartHeight = clamped;
+        document.documentElement.style.setProperty('--chart-height', clamped + 'px');
+        if (chartHeightControl) chartHeightControl.value = clamped.toString();
+        if (chartHeightValue) chartHeightValue.textContent = clamped + 'px';
+        charts.forEach((chart) => chart.resize());
+        try {
+          window.localStorage.setItem('chartHeightPx', clamped.toString());
+        } catch {
+          // ignore persistence errors
+        }
+        return clamped;
+      }
+
+      const savedHeight = (() => {
+        try {
+          return Number.parseInt(window.localStorage.getItem('chartHeightPx') ?? '', 10);
+        } catch {
+          return Number.NaN;
+        }
+      })();
+
+      applyChartHeight(Number.isFinite(savedHeight) && savedHeight > 0 ? savedHeight : defaultChartHeight);
+
+      chartHeightControl?.addEventListener('input', (event) => {
+        applyChartHeight((event.target)?.value ?? defaultChartHeight);
+      });
+
+      // Helper: percentile for latency stats
+      function percentile(values, p) {
+        if (values.length === 0) return null;
+        const sorted = [...values].sort((a, b) => a - b);
+        const rank = (p / 100) * (sorted.length - 1);
+        const lower = Math.floor(rank);
+        const upper = Math.ceil(rank);
+        if (lower === upper) return sorted[lower];
+        const weight = rank - lower;
+        return sorted[lower] * (1 - weight) + sorted[upper] * weight;
+      }
+
+      // 1. Prepare Cache + traffic data
+      const cacheHits = data.filter((d) => d.cacheHit).length;
       const cacheMisses = data.length - cacheHits;
 
-      // 2. Prepare Star Data (Group by range)
-      // Added 'Unknown' category for null values
-      const starRanges = { 'Unknown': 0, '0-10': 0, '11-50': 0, '51-100': 0, '100+': 0 };
+      // 2. Prepare star data (group by range)
+      const starRanges = { Unknown: 0, '0-10': 0, '11-50': 0, '51-100': 0, '100+': 0 };
 
-      data.forEach(d => {
-        // Strict check: if it's null, undefined, or negative, count as Unknown
+      data.forEach((d) => {
         if (d.stars === null || d.stars === undefined || d.stars < 0) {
-            starRanges['Unknown']++;
-            return;
+          starRanges.Unknown++;
+          return;
         }
 
         const s = d.stars;
-        if(s <= 10) starRanges['0-10']++;
-        else if(s <= 50) starRanges['11-50']++;
-        else if(s <= 100) starRanges['51-100']++;
+        if (s <= 10) starRanges['0-10']++;
+        else if (s <= 50) starRanges['11-50']++;
+        else if (s <= 100) starRanges['51-100']++;
         else starRanges['100+']++;
       });
 
+      // 3. Build headline metrics from recent activity
+      const totalLookups = data.length;
+      const successCount = data.filter((d) => d.responseStatus >= 200 && d.responseStatus < 400).length;
+      const successRate = totalLookups === 0 ? 0 : Math.round((successCount / totalLookups) * 1000) / 10;
+      const cacheHitRate = totalLookups === 0 ? 0 : Math.round((cacheHits / totalLookups) * 1000) / 10;
+
+      const latencyValues = data
+        .map((d) => (typeof d.latencyMs === 'number' && d.latencyMs >= 0 ? d.latencyMs : null))
+        .filter((v) => v !== null);
+      const latencyP95 = percentile(latencyValues, 95);
+      const latencyAvg = latencyValues.length
+        ? latencyValues.reduce((sum, value) => sum + (value ?? 0), 0) / latencyValues.length
+        : null;
+
+      const statusBuckets = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, Other: 0 };
+      data.forEach((d) => {
+        if (d.responseStatus >= 200 && d.responseStatus < 300) statusBuckets['2xx']++;
+        else if (d.responseStatus >= 300 && d.responseStatus < 400) statusBuckets['3xx']++;
+        else if (d.responseStatus >= 400 && d.responseStatus < 500) statusBuckets['4xx']++;
+        else if (d.responseStatus >= 500 && d.responseStatus < 600) statusBuckets['5xx']++;
+        else statusBuckets.Other++;
+      });
+
+      const sortedByRequestTime = [...data].sort(
+        (a, b) => new Date(a.requestedAt).getTime() - new Date(b.requestedAt).getTime(),
+      );
+      const latencySeries = sortedByRequestTime.map((d) => ({
+        x: new Date(d.requestedAt),
+        y: typeof d.latencyMs === 'number' && d.latencyMs >= 0 ? d.latencyMs : null,
+      }));
+
+      function setMetric(id, value) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+      }
+
+      function setProgress(id, percentage) {
+        const el = document.getElementById(id);
+        if (el) el.style.width = Math.max(0, Math.min(100, percentage)) + '%';
+      }
+
+      setMetric('totalLookupsValue', totalLookups.toLocaleString());
+      setMetric('cacheHitRateValue', cacheHitRate.toFixed(1) + '%');
+      setProgress('cacheHitProgress', cacheHitRate);
+      setMetric('successRateValue', successRate.toFixed(1) + '%');
+      setProgress('successRateProgress', successRate);
+      const latencyDisplay = latencyP95 ?? latencyAvg;
+      setMetric(
+        'latencyP95Value',
+        latencyDisplay === null ? '--' : Math.round(latencyDisplay).toLocaleString() + ' ms',
+      );
+
       // Render Pie Chart (Cache)
-      new Chart(document.getElementById('cacheChart'), {
+      charts.push(new Chart(document.getElementById('cacheChart'), {
         type: 'doughnut',
         data: {
           labels: ['Cache Hit', 'Network Fetch'],
@@ -338,15 +554,16 @@ router.get('/', async (req, res, next) => {
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: { position: 'bottom', labels: { color: '#cbd5f5' } },
                 title: { display: false }
             }
         }
-      });
+      }));
 
       // Render Bar Chart (Stars)
-      new Chart(document.getElementById('starChart'), {
+      charts.push(new Chart(document.getElementById('starChart'), {
         type: 'bar',
         data: {
           labels: Object.keys(starRanges),
@@ -364,6 +581,7 @@ router.get('/', async (req, res, next) => {
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             scales: {
                 y: {
                     ticks: { color: '#94a3b8', precision: 0 },
@@ -377,7 +595,69 @@ router.get('/', async (req, res, next) => {
             },
             plugins: { legend: { display: false } }
         }
+      }));
+
+      const latencyLabels = sortedByRequestTime.map((d, index) => {
+        const asDate = new Date(d.requestedAt);
+        if (Number.isNaN(asDate.getTime())) return 'Lookup ' + (index + 1);
+        return asDate.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
       });
+
+      charts.push(new Chart(document.getElementById('latencyChart'), {
+        type: 'line',
+        data: {
+          labels: latencyLabels,
+          datasets: [{
+            label: 'Latency (ms)',
+            data: latencySeries.map((point) => point.y),
+            borderColor: '#38bdf8',
+            backgroundColor: 'rgba(56, 189, 248, 0.2)',
+            tension: 0.35,
+            spanGaps: true,
+            pointRadius: 0,
+            pointHitRadius: 6,
+            fill: true,
+          }],
+        },
+        options: {
+          responsive: true,
+          scales: {
+            y: {
+              ticks: { color: '#94a3b8' },
+              grid: { color: '#1f2937' },
+              beginAtZero: true,
+            },
+            x: {
+              ticks: { color: '#94a3b8', maxRotation: 45, minRotation: 0 },
+              grid: { display: false },
+            },
+          },
+          plugins: { legend: { display: false } },
+          maintainAspectRatio: false,
+        },
+      }));
+
+      charts.push(new Chart(document.getElementById('statusChart'), {
+        type: 'doughnut',
+        data: {
+          labels: Object.keys(statusBuckets),
+          datasets: [{
+            data: Object.values(statusBuckets),
+            backgroundColor: ['#22c55e', '#22d3ee', '#facc15', '#ef4444', '#a855f7'],
+            borderWidth: 0,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom', labels: { color: '#cbd5f5' } },
+            title: { display: false },
+          },
+        },
+      }));
+
+      applyChartHeight(currentChartHeight);
     </script>
   </body>
 </html>`;
