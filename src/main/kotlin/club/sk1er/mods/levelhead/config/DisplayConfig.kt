@@ -9,11 +9,8 @@ class DisplayConfig {
     var type: String = BedwarsModeDetector.BEDWARS_STAR_TYPE
 
     var headerColor: Color = Color(85, 255, 255)
-    var headerChroma: Boolean = false
     var headerString: String = BedwarsModeDetector.DEFAULT_HEADER
 
     var footerColor: Color = Color(255, 255, 85)
-    var footerChroma: Boolean = false
     var footerString: String? = null
-    var useThreatColor: Boolean = false
 }

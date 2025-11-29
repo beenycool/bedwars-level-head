@@ -3,7 +3,6 @@ package club.sk1er.mods.levelhead.core
 import club.sk1er.mods.levelhead.display.LevelheadDisplay
 import net.minecraft.client.Minecraft
 import net.minecraft.entity.player.EntityPlayer
-import java.awt.Color
 import java.util.*
 
 
@@ -11,12 +10,10 @@ fun LevelheadDisplay.update() {
     val player = Minecraft.getMinecraft().thePlayer ?: return
     this.cache[player.uniqueID]?.let { tag ->
         tag.header.let { header ->
-            header.chroma = this.config.headerChroma
             header.color = this.config.headerColor
             header.value = "${this.config.headerString}: "
         }
         tag.footer.let { footer ->
-            footer.chroma = this.config.footerChroma
             footer.color = this.config.footerColor
         }
     }

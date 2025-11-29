@@ -422,26 +422,6 @@ class LevelheadCommand {
                     sendMessage("${ChatColor.YELLOW}Header color is already ${ChatColor.GOLD}${formatColor(color)}${ChatColor.YELLOW}.")
                 }
             }
-            "chroma" -> {
-                val toggle = args.getOrNull(1)?.let { parseToggle(it) }
-                if (toggle == null) {
-                    sendMessage(
-                        "${ChatColor.RED}Specify whether chroma should be on or off.${ChatColor.YELLOW} Current setting: ${formatToggle(currentHeaderChroma())}${ChatColor.YELLOW}."
-                    )
-                    return
-                }
-                val changed = Levelhead.displayManager.updatePrimaryDisplay { config ->
-                    if (config.headerChroma == toggle) return@updatePrimaryDisplay false
-                    config.headerChroma = toggle
-                    true
-                }
-                if (changed) {
-                    Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
-                    sendMessage("${ChatColor.GREEN}Header chroma ${if (toggle) "enabled" else "disabled"}.")
-                } else {
-                    sendMessage("${ChatColor.YELLOW}Header chroma already ${if (toggle) "enabled" else "disabled"}.")
-                }
-            }
             else -> {
                 sendMessage(
                     "${ChatColor.RED}Unknown header option '${args[0]}'."
@@ -595,12 +575,11 @@ class LevelheadCommand {
         val primaryDisplay = Levelhead.displayManager.primaryDisplay()
         val headerText = primaryDisplay?.config?.headerString ?: BedwarsModeDetector.DEFAULT_HEADER
         val headerColor = primaryDisplay?.config?.headerColor ?: Color(85, 255, 255)
-        val headerChroma = primaryDisplay?.config?.headerChroma ?: false
         val showSelf = primaryDisplay?.config?.showSelf ?: true
         val offset = Levelhead.displayManager.config.offset
 
         sendMessage(
-            "${ChatColor.YELLOW}Primary header: ${ChatColor.GOLD}$headerText${ChatColor.YELLOW} (${ChatColor.GOLD}${formatColor(headerColor)}${ChatColor.YELLOW}, chroma ${formatToggle(headerChroma)}${ChatColor.YELLOW})."
+            "${ChatColor.YELLOW}Primary header: ${ChatColor.GOLD}$headerText${ChatColor.YELLOW} (${ChatColor.GOLD}${formatColor(headerColor)}${ChatColor.YELLOW})."
         )
         sendMessage(
             "${ChatColor.YELLOW}Display offset: ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", offset)}${ChatColor.YELLOW}, show self ${formatToggle(showSelf)}${ChatColor.YELLOW}."
@@ -609,7 +588,7 @@ class LevelheadCommand {
 
     private fun sendDisplayUsage() {
         sendMessage(
-            "${ChatColor.GRAY}Use ${ChatColor.GOLD}/levelhead display header <text|color|chroma>${ChatColor.GRAY}, ${ChatColor.GOLD}/levelhead display offset <value>${ChatColor.GRAY}, ${ChatColor.GOLD}/levelhead display showself <on|off>${ChatColor.GRAY} to make changes."
+            "${ChatColor.GRAY}Use ${ChatColor.GOLD}/levelhead display header <text|color>${ChatColor.GRAY}, ${ChatColor.GOLD}/levelhead display offset <value>${ChatColor.GRAY}, ${ChatColor.GOLD}/levelhead display showself <on|off>${ChatColor.GRAY} to make changes."
         )
     }
 
@@ -618,9 +597,6 @@ class LevelheadCommand {
             "${ChatColor.YELLOW}Current header text: ${ChatColor.GOLD}${currentHeaderText()}${ChatColor.YELLOW}. Use ${ChatColor.GOLD}/levelhead display header text <value>${ChatColor.YELLOW} to change it."
         )
         sendDisplayHeaderColorHelp()
-        sendMessage(
-            "${ChatColor.YELLOW}Header chroma: ${formatToggle(currentHeaderChroma())}${ChatColor.YELLOW}. Use ${ChatColor.GOLD}/levelhead display header chroma <on|off>${ChatColor.YELLOW} to toggle it."
-        )
     }
 
     private fun sendDisplayHeaderColorHelp() {
@@ -648,10 +624,6 @@ class LevelheadCommand {
 
     private fun currentHeaderColor(): Color {
         return Levelhead.displayManager.primaryDisplay()?.config?.headerColor ?: Color(85, 255, 255)
-    }
-
-    private fun currentHeaderChroma(): Boolean {
-        return Levelhead.displayManager.primaryDisplay()?.config?.headerChroma ?: false
     }
 
     private fun currentShowSelf(): Boolean {
