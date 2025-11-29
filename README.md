@@ -13,8 +13,7 @@ BedWars Levelhead is a lightweight reimagining of the classic **Levelhead** mod 
 ### Command Reference
 - `/levelhead` – Displays status (backend URL, cache health, install ID) and explains all subcommands.
 - `/levelhead header <text>` – Set the header line displayed above stars.
-- `/levelhead color <#RRGGBB|name>` – Choose a color for the header; `chroma` enables rainbow cycling.
-- `/levelhead chroma <on|off>` – Toggle chroma animation on the header text.
+- `/levelhead color <#RRGGBB|name>` – Choose a color for the header.
 - `/levelhead offset <value>` – Adjust the vertical offset of the display.
 - `/levelhead self <on|off>` – Control whether you see your own tag.
 - `/levelhead proxy <url>` / `/levelhead proxy clear` – Configure or reset the backend endpoint.

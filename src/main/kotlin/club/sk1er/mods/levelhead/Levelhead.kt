@@ -211,13 +211,6 @@ object Levelhead {
         )
     }
 
-    val DarkChromaColor: Int
-        get() = Color.HSBtoRGB(System.currentTimeMillis() % 1000 / 1000f, 0.8f, 0.2f)
-    val ChromaColor: Int
-        get() = Color.HSBtoRGB(System.currentTimeMillis() % 1000 / 1000f, 0.8f, 0.8f)
-    val chromaColor: Color
-        get() = Color(ChromaColor)
-
     fun preInit(@Suppress("UNUSED_PARAMETER") event: FMLPreInitializationEvent) {
         LevelheadConfig
     }
@@ -516,18 +509,13 @@ object Levelhead {
             footerValue = footerValue.replace("%ws%", winstreakString, true)
         }
         val baseStyle = starValue?.let { BedwarsStar.styleForStar(it) }
-            ?: BedwarsStar.PrestigeStyle(display.config.footerColor, display.config.footerChroma)
-        val style = if (display.config.useThreatColor) {
-            val color = BedwarsStar.ThreatLevel.determine(starData?.fkdr).color
-            baseStyle.copy(color = color, chroma = display.config.footerChroma)
-        } else {
-            baseStyle
-        }
+            ?: BedwarsStar.PrestigeStyle(display.config.footerColor, false)
+        val style = baseStyle.copy(chroma = false)
         val tag = LevelheadTag.build(uuid) {
             header {
                 value = "${display.config.headerString}: "
                 color = display.config.headerColor
-                chroma = display.config.headerChroma
+                chroma = false
             }
             footer {
                 value = footerValue

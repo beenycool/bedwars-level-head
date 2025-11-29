@@ -106,18 +106,10 @@ object AboveHeadRender {
     private fun renderComponent(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int) {
         GlStateManager.disableDepth()
         GlStateManager.depthMask(false)
-        if (component.chroma) {
-            renderer.drawString(component.value, x, 0, Levelhead.DarkChromaColor)
-        } else {
-            renderer.drawString(component.value, x, 0, component.color.withAlphaFactor(0.2f))
-        }
+        renderer.drawString(component.value, x, 0, component.color.withAlphaFactor(0.2f))
         GlStateManager.enableDepth()
         GlStateManager.depthMask(true)
-        if (component.chroma) {
-            renderer.drawString(component.value, x, 0, Levelhead.ChromaColor)
-        } else {
-            renderer.drawString(component.value, x, 0, component.color.rgb)
-        }
+        renderer.drawString(component.value, x, 0, component.color.rgb)
     }
 
     private fun Color.withAlphaFactor(alpha: Float): Int {
