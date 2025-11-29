@@ -39,12 +39,15 @@ import net.minecraftforge.fml.common.event.FMLPostInitializationEvent
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import net.minecraftforge.fml.common.network.FMLNetworkEvent
+import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.apache.logging.log4j.LogManager
 import org.apache.logging.log4j.Logger
 import java.awt.Color
 import java.io.File
+import java.net.Inet4Address
+import java.net.UnknownHostException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.time.Duration
@@ -75,10 +78,20 @@ class LevelheadMod {
 
 object Levelhead {
     val logger: Logger = LogManager.getLogger()
+    private val ipv4OnlyDns = Dns { hostname ->
+        val addresses = Dns.SYSTEM.lookup(hostname).filterIsInstance<Inet4Address>()
+        if (addresses.isEmpty()) {
+            throw UnknownHostException("No IPv4 addresses for $hostname")
+        }
+        addresses
+    }
+
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
+        .dns(ipv4OnlyDns)
         .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
-        .writeTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(10, TimeUnit.SECONDS)
+        .writeTimeout(10, TimeUnit.SECONDS)
+        .callTimeout(15, TimeUnit.SECONDS)
         .build()
     val gson = Gson()
     val jsonParser = JsonParser()
@@ -198,13 +211,6 @@ object Levelhead {
         )
     }
 
-    val DarkChromaColor: Int
-        get() = Color.HSBtoRGB(System.currentTimeMillis() % 1000 / 1000f, 0.8f, 0.2f)
-    val ChromaColor: Int
-        get() = Color.HSBtoRGB(System.currentTimeMillis() % 1000 / 1000f, 0.8f, 0.8f)
-    val chromaColor: Color
-        get() = Color(ChromaColor)
-
     fun preInit(@Suppress("UNUSED_PARAMETER") event: FMLPreInitializationEvent) {
         LevelheadConfig
     }
@@ -272,14 +278,7 @@ object Levelhead {
 
             if (pending.isEmpty()) return@launch
 
-            val resolvedByBatch = if (BedwarsFetcher.proxyBatchSupported()) {
-                fetchViaProxyBatch(pending)
-            } else {
-                emptySet()
-            }
-
-            val remaining = pending.filterNot { resolvedByBatch.contains(it.uuid) }
-            remaining.forEach { entry ->
+            pending.forEach { entry ->
                 val fetched = ensureStatsFetch(entry.uuid, entry.cached, entry.displays, entry.registerForRefresh).await()
                 applyStatsToRequests(entry.uuid, entry.requests, fetched)
             }
@@ -393,51 +392,6 @@ object Levelhead {
 
         deferred.invokeOnCompletion { inFlightStatsRequests.remove(uuid, deferred) }
         return deferred
-    }
-
-    private suspend fun fetchViaProxyBatch(pending: List<PendingStatsRequest>): Set<UUID> {
-        val resolved = mutableSetOf<UUID>()
-        if (pending.isEmpty()) {
-            return resolved
-        }
-
-        pending.chunked(20).forEach { chunk ->
-            val identifiers = chunk.map { it.trimmedUuid }
-            starFetchSemaphore.withPermit {
-                try {
-                    lastFetchAttemptAt = System.currentTimeMillis()
-                    rateLimiter.consume()
-                    when (val result = BedwarsFetcher.fetchBatch(identifiers)) {
-                        is BedwarsFetcher.BatchFetchResult.Success -> {
-                            lastFetchSuccessAt = System.currentTimeMillis()
-                            val payloads = result.payloads
-                            chunk.forEach { entry ->
-                                val payload = payloads[entry.trimmedUuid]
-                                if (payload != null) {
-                                    val statsEntry = buildCachedStats(payload)
-                                    handleStatsUpdate(entry.uuid, statsEntry)
-                                    applyStatsToRequests(entry.uuid, entry.requests, statsEntry)
-                                    resolved.add(entry.uuid)
-                                }
-                            }
-                        }
-                        is BedwarsFetcher.BatchFetchResult.TemporaryError -> {
-                            chunk.forEach { entry -> handleStatsUpdate(entry.uuid, entry.cached) }
-                            return resolved
-                        }
-                        is BedwarsFetcher.BatchFetchResult.PermanentError -> {
-                            chunk.forEach { entry -> handleStatsUpdate(entry.uuid, entry.cached) }
-                            return resolved
-                        }
-                    }
-                } catch (throwable: Throwable) {
-                    chunk.forEach { entry -> handleStatsUpdate(entry.uuid, entry.cached) }
-                    return resolved
-                }
-            }
-        }
-
-        return resolved
     }
 
     private fun buildCachedStats(payload: JsonObject): CachedBedwarsStats {
@@ -555,18 +509,13 @@ object Levelhead {
             footerValue = footerValue.replace("%ws%", winstreakString, true)
         }
         val baseStyle = starValue?.let { BedwarsStar.styleForStar(it) }
-            ?: BedwarsStar.PrestigeStyle(display.config.footerColor, display.config.footerChroma)
-        val style = if (display.config.useThreatColor) {
-            val color = BedwarsStar.ThreatLevel.determine(starData?.fkdr).color
-            baseStyle.copy(color = color, chroma = display.config.footerChroma)
-        } else {
-            baseStyle
-        }
+            ?: BedwarsStar.PrestigeStyle(display.config.footerColor, false)
+        val style = baseStyle.copy(chroma = false)
         val tag = LevelheadTag.build(uuid) {
             header {
                 value = "${display.config.headerString}: "
                 color = display.config.headerColor
-                chroma = display.config.headerChroma
+                chroma = false
             }
             footer {
                 value = footerValue
@@ -622,7 +571,7 @@ object Levelhead {
     )
 
     private enum class CacheMissReason { COLD, EXPIRED }
-
+// trigger rebuild
     private class StatsCacheMetrics {
         private val coldMisses = AtomicLong(0L)
         private val expiredMisses = AtomicLong(0L)

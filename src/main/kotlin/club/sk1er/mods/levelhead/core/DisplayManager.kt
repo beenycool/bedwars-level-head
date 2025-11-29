@@ -174,7 +174,6 @@ class DisplayManager(val file: File) {
         display.cache.values.forEach { tag ->
             tag.header.value = headerValue
             tag.header.color = display.config.headerColor
-            tag.header.chroma = display.config.headerChroma
         }
     }
 
@@ -208,8 +207,18 @@ class DisplayManager(val file: File) {
                 }
             }
             ?.flatten()
-            ?.chunked(20) { reqList ->
-                Levelhead.fetchBatch(reqList)
-            }
+            ?.let { Levelhead.fetchBatch(it) }
+    }
+
+    fun resetToDefaults() {
+        config = MasterConfig()
+        aboveHead.clear()
+        aboveHead.add(AboveHeadDisplay(DisplayConfig()))
+        adjustIndices()
+        saveConfig()
+        clearCachesWithoutRefetch()
+        if (config.enabled && BedwarsModeDetector.shouldRequestData()) {
+            requestAllDisplays()
+        }
     }
 }

@@ -22,7 +22,7 @@ object BedwarsStar {
         PrestigeStyle(Color.decode("#F535AA"), false), // Crystal
         PrestigeStyle(Color.decode("#000FFF"), false), // Opal
         PrestigeStyle(Color.decode("#800080"), false), // Amethyst
-        PrestigeStyle(Color.decode("#F75D59"), true), // Rainbow (gradient)
+        PrestigeStyle(Color.decode("#F75D59"), false), // Rainbow (gradient)
         PrestigeStyle(Color.decode("#D1D5D8"), false), // Iron Prime
         PrestigeStyle(Color.decode("#F7DA64"), false), // Gold Prime
         PrestigeStyle(Color.decode("#00FFFF"), false), // Diamond Prime

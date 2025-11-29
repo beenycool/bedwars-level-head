@@ -1,13 +1,13 @@
 package club.sk1er.mods.levelhead.config
 
+import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import cc.polyfrost.oneconfig.config.Config
-import cc.polyfrost.oneconfig.config.annotations.Color
+import cc.polyfrost.oneconfig.config.annotations.Button
 import cc.polyfrost.oneconfig.config.annotations.Header
 import cc.polyfrost.oneconfig.config.annotations.Slider
 import cc.polyfrost.oneconfig.config.annotations.Switch
 import cc.polyfrost.oneconfig.config.annotations.Text
-import cc.polyfrost.oneconfig.config.core.OneColor
 import cc.polyfrost.oneconfig.config.data.Mod
 import cc.polyfrost.oneconfig.config.data.ModType
 import java.time.Duration
@@ -27,47 +27,48 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Text(name = "Hypixel API Key", placeholder = "Run /api new", secure = true)
     var apiKey: String = ""
 
-    @Switch(name = "Use Proxy", description = "Route requests through the Levelhead backend")
+    @Header(text = "Developer Options", category = "Developer")
+    @Switch(
+        name = "Use Proxy",
+        description = "Developer option: route requests through the Levelhead backend. Do not change this unless you know what you are doing.",
+        category = "Developer"
+    )
     var proxyEnabled: Boolean = true
 
-    @Text(name = "Proxy Base URL", placeholder = DEFAULT_PROXY_URL)
+    @Text(
+        name = "Proxy Base URL",
+        placeholder = DEFAULT_PROXY_URL,
+        description = "Developer option: backend base URL. Do not change this unless you know what you are doing.",
+        category = "Developer"
+    )
     var proxyBaseUrl: String = DEFAULT_PROXY_URL
 
-    @Text(name = "Proxy Auth Token", secure = true)
+    @Text(
+        name = "Proxy Auth Token",
+        secure = true,
+        description = "Developer option: authentication token. Do not change this unless you know what you are doing.",
+        category = "Developer"
+    )
     var proxyAuthToken: String = ""
 
     @Slider(
         name = "Star Cache TTL (minutes)",
         min = 5f,
         max = 180f,
-        step = 1
+        step = 1,
+        category = "Developer",
+        description = "Developer option: adjust cache duration. Do not change this unless you know what you are doing."
     )
     var starCacheTtlMinutes: Int = DEFAULT_STAR_CACHE_TTL_MINUTES
 
-    @Switch(name = "Use Threat Colors", description = "Color stats based on FKDR")
-    var useThreatColor: Boolean = false
-
-    @Header(text = "Display")
-    @Text(name = "Header Text")
-    var headerString: String = "BedWars Star"
-
-    @Color(name = "Header Color")
-    var headerColor: OneColor = OneColor(85, 255, 255)
-
-    @Text(name = "Footer Template", description = "Supports %star%, %fkdr%, %ws%")
-    var footerTemplate: String = "%star%"
-
-    @Color(name = "Footer Color")
-    var footerColor: OneColor = OneColor(255, 255, 85)
-
-    @Switch(name = "Show Self")
-    var showSelf: Boolean = true
-
-    @Switch(name = "Footer Chroma")
-    var footerChroma: Boolean = false
-
-    @Switch(name = "Header Chroma")
-    var headerChroma: Boolean = false
+    @Button(
+        name = "Reset Settings",
+        text = "Reset to Defaults",
+        description = "Restore BedWars Levelhead settings to their defaults."
+    )
+    fun resetToDefaultsButton() {
+        resetToDefaults()
+    }
 
     var welcomeMessageShown: Boolean = false
 
@@ -125,6 +126,18 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         proxyAuthToken = token.trim()
         save()
         BedwarsFetcher.resetWarnings()
+    }
+
+    private fun resetToDefaults() {
+        enabled = true
+        apiKey = ""
+        proxyEnabled = true
+        proxyBaseUrl = DEFAULT_PROXY_URL
+        proxyAuthToken = ""
+        starCacheTtlMinutes = DEFAULT_STAR_CACHE_TTL_MINUTES
+        save()
+        BedwarsFetcher.resetWarnings()
+        Levelhead.displayManager.resetToDefaults()
     }
 
     fun updateStarCacheTtlMinutes(minutes: Int) {
