@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getPlayerQueryPage } from '../services/history';
+import { getPlayerQueryCount, getPlayerQueryPage } from '../services/history';
 import { escapeHtml } from '../util/html';
 
 const router = Router();
@@ -31,13 +31,10 @@ router.get('/', async (req, res, next) => {
     const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const safePage = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
 
-    let page = safePage;
-    let pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search });
-    const totalPages = Math.max(1, Math.ceil(pageData.totalCount / PAGE_SIZE));
-    if (page > totalPages) {
-      page = totalPages;
-      pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search });
-    }
+    const totalCount = await getPlayerQueryCount({ search });
+    const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+    const page = Math.min(safePage, totalPages);
+    const pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search, totalCountOverride: totalCount });
 
     const rows = pageData.rows
       .map((entry) => {
@@ -46,12 +43,7 @@ router.get('/', async (req, res, next) => {
             ? entry.resolvedUsername
             : entry.identifier;
         const lookup = `${entry.lookupType.toUpperCase()}: ${lookupIdentifier}`;
-        const resolved =
-          entry.nicked === true
-            ? '(nicked)'
-            : entry.resolvedUsername
-              ? entry.resolvedUsername
-              : entry.resolvedUuid ?? 'unknown';
+        const resolved = entry.nicked === true ? '(nicked)' : entry.resolvedUsername ?? entry.resolvedUuid ?? 'unknown';
         const cacheSource = entry.cacheHit ? 'Cache' : entry.cacheSource === 'network' ? 'Network' : entry.cacheSource;
 
         return `<tr>

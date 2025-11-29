@@ -147,13 +147,13 @@ export async function recordPlayerQuery(record: PlayerQueryRecord): Promise<void
       resolvedUsername: record.resolvedUsername,
       stars: record.stars,
       nicked: record.nicked,
-    cacheSource: record.cacheSource,
-    cacheHit: record.cacheHit,
-    revalidated: record.revalidated,
-    installId: record.installId,
-    responseStatus: record.responseStatus,
-    latencyMs: record.latencyMs ?? null,
-  },
+      cacheSource: record.cacheSource,
+      cacheHit: record.cacheHit,
+      revalidated: record.revalidated,
+      installId: record.installId,
+      responseStatus: record.responseStatus,
+      latencyMs: record.latencyMs ?? null,
+    },
   );
 }
 
@@ -205,10 +205,41 @@ function escapeSearchTerm(term: string): string {
   return term.replace(/[%_\\]/g, (match) => `\\${match}`);
 }
 
+function buildSearchClause(searchTerm: string | undefined, startIndex: number): { clause: string; params: string[] } {
+  if (!searchTerm) {
+    return { clause: '', params: [] };
+  }
+
+  const placeholder = `$${startIndex}`;
+  const searchValue = `%${escapeSearchTerm(searchTerm)}%`;
+  const clause = `WHERE normalized_identifier ILIKE ${placeholder} ESCAPE '\\\\' OR resolved_username ILIKE ${placeholder} ESCAPE '\\\\' OR resolved_uuid ILIKE ${placeholder} ESCAPE '\\\\'`;
+
+  return { clause, params: [searchValue] };
+}
+
+export async function getPlayerQueryCount(params: { search?: string }): Promise<number> {
+  await ensureInitialized();
+
+  const searchTerm = params.search?.trim();
+  const { clause, params: searchParams } = buildSearchClause(searchTerm, 1);
+
+  const countResult = await pool.query<{ count: string }>(
+    `
+      SELECT COUNT(*) AS count
+      FROM player_query_history
+      ${clause}
+    `,
+    searchParams,
+  );
+
+  return Number.parseInt(countResult.rows[0]?.count ?? '0', 10);
+}
+
 export async function getPlayerQueryPage(params: {
   page: number;
   pageSize: number;
   search?: string;
+  totalCountOverride?: number;
 }): Promise<PlayerQueryPage> {
   await ensureInitialized();
 
@@ -218,11 +249,7 @@ export async function getPlayerQueryPage(params: {
 
   const searchTerm = params.search?.trim();
   const hasSearch = Boolean(searchTerm);
-  const searchValue = hasSearch ? `%${escapeSearchTerm(searchTerm!)}%` : null;
-
-  const whereClause = hasSearch
-    ? "WHERE normalized_identifier ILIKE $3 ESCAPE '\\\\' OR resolved_username ILIKE $3 ESCAPE '\\\\' OR resolved_uuid ILIKE $3 ESCAPE '\\\\'"
-    : '';
+  const { clause: whereClause, params: searchParams } = buildSearchClause(searchTerm, 3);
 
   const rowsResult = await pool.query<PlayerQueryHistoryRow>(
     `
@@ -247,19 +274,23 @@ export async function getPlayerQueryPage(params: {
       LIMIT $1
       OFFSET $2
     `,
-    hasSearch ? [pageSize, offset, searchValue] : [pageSize, offset],
+    hasSearch ? [pageSize, offset, ...searchParams] : [pageSize, offset],
   );
 
-  const countResult = await pool.query<{ count: string }>(
-    `
-      SELECT COUNT(*) AS count
-      FROM player_query_history
-      ${whereClause}
-    `,
-    hasSearch ? [searchValue] : [],
-  );
+  let totalCount = params.totalCountOverride;
+  if (totalCount === undefined) {
+    const { clause: countWhereClause, params: countParams } = buildSearchClause(searchTerm, 1);
+    const countResult = await pool.query<{ count: string }>(
+      `
+        SELECT COUNT(*) AS count
+        FROM player_query_history
+        ${countWhereClause}
+      `,
+      countParams,
+    );
 
-  const totalCount = Number.parseInt(countResult.rows[0]?.count ?? '0', 10);
+    totalCount = Number.parseInt(countResult.rows[0]?.count ?? '0', 10);
+  }
 
   return {
     rows: rowsResult.rows.map((row) => ({
