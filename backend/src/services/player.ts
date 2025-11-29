@@ -6,6 +6,7 @@ import { lookupProfileByUsername } from './mojang';
 import { recordCacheMiss } from './metrics';
 
 const uuidRegex = /^[0-9a-f]{32}$/i;
+const dashedUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ignRegex = /^[a-zA-Z0-9_]{1,16}$/;
 
 function buildCacheKey(prefix: string, value: string): string {
@@ -294,7 +295,8 @@ export async function resolvePlayer(
   identifier: string,
   options?: PlayerResolutionOptions,
 ): Promise<ResolvedPlayer> {
-  const key = identifier.toLowerCase();
+  const normalizedIdentifier = dashedUuidRegex.test(identifier) ? identifier.replace(/-/g, '') : identifier;
+  const key = normalizedIdentifier.toLowerCase();
   const inFlightKey = uuidRegex.test(key) ? `uuid:${key}` : ignRegex.test(key) ? `ign:${key}` : null;
   if (inFlightKey) {
     const pending = inFlightRequests.get(inFlightKey);
@@ -306,8 +308,8 @@ export async function resolvePlayer(
   const conditional = normalizeConditionalHeaders(options);
 
   const executor = async (): Promise<ResolvedPlayer> => {
-    if (uuidRegex.test(identifier)) {
-      return fetchByUuid(identifier, conditional);
+    if (uuidRegex.test(key)) {
+      return fetchByUuid(key, conditional);
     }
 
     if (ignRegex.test(identifier)) {
