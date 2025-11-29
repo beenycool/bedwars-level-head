@@ -11,17 +11,24 @@ function formatDate(date: Date): string {
 
 function timeAgo(date: Date): string {
   const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
-  let interval = seconds / 31536000;
-  if (interval > 1) return Math.floor(interval) + " years ago";
-  interval = seconds / 2592000;
-  if (interval > 1) return Math.floor(interval) + " months ago";
-  interval = seconds / 86400;
-  if (interval > 1) return Math.floor(interval) + " days ago";
-  interval = seconds / 3600;
-  if (interval > 1) return Math.floor(interval) + " hours ago";
-  interval = seconds / 60;
-  if (interval > 1) return Math.floor(interval) + " mins ago";
-  return Math.floor(seconds) + " seconds ago";
+  if (seconds < 0) return "just now";
+
+  const intervals = [
+    { label: 'year', seconds: 31536000 },
+    { label: 'month', seconds: 2592000 },
+    { label: 'day', seconds: 86400 },
+    { label: 'hour', seconds: 3600 },
+    { label: 'minute', seconds: 60 }
+  ];
+
+  for (const interval of intervals) {
+    const count = Math.floor(seconds / interval.seconds);
+    if (count >= 1) {
+      return `${count} ${interval.label}${count !== 1 ? 's' : ''} ago`;
+    }
+  }
+
+  return `${Math.floor(seconds)} second${Math.floor(seconds) !== 1 ? 's' : ''} ago`;
 }
 
 function formatStars(stars: number | null): string {
@@ -52,7 +59,8 @@ router.get('/', async (req, res, next) => {
     const pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search, totalCountOverride: totalCount });
 
     // Serialise the current page data to JSON so the frontend script can use it
-    const jsonForFrontend = JSON.stringify(pageData.rows);
+    // Securely escape < characters to prevent XSS via script injection
+    const jsonForFrontend = JSON.stringify(pageData.rows).replace(/</g, '\\\\u003c');
 
     const rows = pageData.rows
       .map((entry) => {
@@ -64,13 +72,15 @@ router.get('/', async (req, res, next) => {
         const resolved = entry.nicked === true ? '(nicked)' : entry.resolvedUsername ?? entry.resolvedUuid ?? 'unknown';
         const cacheSource = entry.cacheHit ? 'Cache' : entry.cacheSource === 'network' ? 'Network' : entry.cacheSource;
 
+        // URL encode the identifier to prevent XSS in href
+        const encodedIdentifier = encodeURIComponent(entry.identifier);
         const lookupLink = entry.lookupType === 'uuid'
-          ? `https://namemc.com/profile/${entry.identifier}`
-          : `https://namemc.com/search?q=${entry.identifier}`;
+          ? `https://namemc.com/profile/${encodedIdentifier}`
+          : `https://namemc.com/search?q=${encodedIdentifier}`;
 
         return `<tr>
           <td title="${escapeHtml(formatDate(entry.requestedAt))}">${escapeHtml(timeAgo(entry.requestedAt))}</td>
-          <td><a href="${lookupLink}" target="_blank" style="color: #60a5fa; text-decoration: none;">${escapeHtml(lookup)}</a></td>
+          <td><a href="${lookupLink}" target="_blank" class="lookup-link">${escapeHtml(lookup)}</a></td>
           <td>${escapeHtml(resolved)}</td>
           <td class="stars">${escapeHtml(formatStars(entry.stars))}</td>
           <td>${escapeHtml(cacheSource)}${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
@@ -85,7 +95,7 @@ router.get('/', async (req, res, next) => {
   <head>
     <meta charset="utf-8" />
     <title>Levelhead Player Stats</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.js" integrity="sha384-22kHZA1dYqStO89cK3yY9s6bF585h5c2Xg3LwH1T2iOz2L4i/l7SgA2fVdrS2Xg/" crossorigin="anonymous"></script>
     <style>
       :root {
         color-scheme: dark;
@@ -94,7 +104,6 @@ router.get('/', async (req, res, next) => {
         color: #e2e8f0;
       }
       body {
-        margin: 0;
         padding: 2rem;
         max-width: 1200px;
         margin: 0 auto;
@@ -123,6 +132,11 @@ router.get('/', async (req, res, next) => {
         padding: 1rem;
       }
       h2 { font-size: 1rem; color: #94a3b8; margin-top: 0; }
+
+      .lookup-link {
+        color: #60a5fa;
+        text-decoration: none;
+      }
 
       table {
         width: 100%;
@@ -240,7 +254,7 @@ router.get('/', async (req, res, next) => {
         </div>
     </div>
 
-    <h1>Recent Player Lookups</h1>
+    <h2>Recent Player Lookups</h2>
     <p class="meta">${pageData.totalCount === 0 ? 'No lookups recorded yet.' : `Showing page ${page} of ${totalPages} (${pageData.totalCount} total lookups).`}</p>
     <div class="controls">
       <form class="search-box" method="GET">
@@ -296,8 +310,8 @@ router.get('/', async (req, res, next) => {
       const starRanges = { 'Unknown': 0, '0-10': 0, '11-50': 0, '51-100': 0, '100+': 0 };
 
       data.forEach(d => {
-        // Strict check: if it's null or undefined, count as Unknown
-        if (d.stars === null || d.stars === undefined) {
+        // Strict check: if it's null, undefined, or negative, count as Unknown
+        if (d.stars === null || d.stars === undefined || d.stars < 0) {
             starRanges['Unknown']++;
             return;
         }
@@ -339,8 +353,9 @@ router.get('/', async (req, res, next) => {
             data: Object.values(starRanges),
             // Use a grey color for 'Unknown' to distinguish it, green for valid ranks
             backgroundColor: (ctx) => {
-                if (ctx.raw === undefined) return '#10b981';
-                return ctx.dataIndex === 0 ? '#64748b' : '#10b981';
+                // Check the label from the chart data to be robust
+                const label = ctx.chart.data.labels[ctx.dataIndex];
+                return label === 'Unknown' ? '#64748b' : '#10b981';
             },
             borderRadius: 4
           }]
