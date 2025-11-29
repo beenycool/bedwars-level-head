@@ -95,7 +95,8 @@ router.get('/', async (req, res, next) => {
   <head>
     <meta charset="utf-8" />
     <title>Levelhead Player Stats</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.js" integrity="sha384-22kHZA1dYqStO89cK3yY9s6bF585h5c2Xg3LwH1T2iOz2L4i/l7SgA2fVdrS2Xg/" crossorigin="anonymous"></script>
+    <link rel="icon" href="data:," />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.js" integrity="sha384-tgbB5AKnszdcfwcZtTfuhR3Ko1XZdlDfsLtkxiiAZiVkkXCkFmp+FQFh+V/UTo54" crossorigin="anonymous"></script>
     <style>
       :root {
         color-scheme: dark;
@@ -104,9 +105,10 @@ router.get('/', async (req, res, next) => {
         color: #e2e8f0;
       }
       body {
-        padding: 2rem;
-        max-width: 1200px;
-        margin: 0 auto;
+        padding: 1.5rem 1rem;
+        margin: 0;
+        max-width: none;
+        width: 100%;
       }
       h1 {
         font-size: 1.75rem;
