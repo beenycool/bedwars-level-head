@@ -14,6 +14,7 @@ interface PlayerQueryHistoryRow {
   revalidated: boolean;
   install_id: string | null;
   response_status: number;
+  latency_ms: number | null;
   requested_at: Date;
 }
 
@@ -30,6 +31,7 @@ export interface PlayerQueryRecord {
   revalidated: boolean;
   installId: string | null;
   responseStatus: number;
+  latencyMs?: number | null;
 }
 
 export interface PlayerQuerySummary {
@@ -45,7 +47,13 @@ export interface PlayerQuerySummary {
   revalidated: boolean;
   installId: string | null;
   responseStatus: number;
+  latencyMs: number | null;
   requestedAt: Date;
+}
+
+export interface PlayerQueryPage {
+  rows: PlayerQuerySummary[];
+  totalCount: number;
 }
 
 const initialization = (async () => {
@@ -65,8 +73,13 @@ const initialization = (async () => {
         revalidated BOOLEAN NOT NULL DEFAULT FALSE,
         install_id TEXT,
         response_status INTEGER NOT NULL,
+        latency_ms INTEGER,
         requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       )
+    `);
+    await pool.query(`
+      ALTER TABLE player_query_history
+      ADD COLUMN IF NOT EXISTS latency_ms INTEGER
     `);
     await pool.query(`
       CREATE INDEX IF NOT EXISTS idx_player_query_history_requested_at
@@ -102,9 +115,10 @@ export async function recordPlayerQuery(record: PlayerQueryRecord): Promise<void
         cache_hit,
         revalidated,
         install_id,
-        response_status
+        response_status,
+        latency_ms
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
     `,
     [
       record.identifier,
@@ -119,6 +133,7 @@ export async function recordPlayerQuery(record: PlayerQueryRecord): Promise<void
       record.revalidated,
       record.installId,
       record.responseStatus,
+      record.latencyMs ?? null,
     ],
   );
 
@@ -132,12 +147,13 @@ export async function recordPlayerQuery(record: PlayerQueryRecord): Promise<void
       resolvedUsername: record.resolvedUsername,
       stars: record.stars,
       nicked: record.nicked,
-      cacheSource: record.cacheSource,
-      cacheHit: record.cacheHit,
-      revalidated: record.revalidated,
-      installId: record.installId,
-      responseStatus: record.responseStatus,
-    },
+    cacheSource: record.cacheSource,
+    cacheHit: record.cacheHit,
+    revalidated: record.revalidated,
+    installId: record.installId,
+    responseStatus: record.responseStatus,
+    latencyMs: record.latencyMs ?? null,
+  },
   );
 }
 
@@ -158,6 +174,7 @@ export async function getRecentPlayerQueries(limit = 50): Promise<PlayerQuerySum
         revalidated,
         install_id,
         response_status,
+        latency_ms,
         requested_at
       FROM player_query_history
       ORDER BY requested_at DESC
@@ -179,6 +196,88 @@ export async function getRecentPlayerQueries(limit = 50): Promise<PlayerQuerySum
     revalidated: row.revalidated,
     installId: row.install_id,
     responseStatus: row.response_status,
+    latencyMs: row.latency_ms ?? null,
     requestedAt: new Date(row.requested_at),
   }));
+}
+
+function escapeSearchTerm(term: string): string {
+  return term.replace(/[%_\\]/g, (match) => `\\${match}`);
+}
+
+export async function getPlayerQueryPage(params: {
+  page: number;
+  pageSize: number;
+  search?: string;
+}): Promise<PlayerQueryPage> {
+  await ensureInitialized();
+
+  const page = Number.isFinite(params.page) && params.page > 0 ? Math.floor(params.page) : 1;
+  const pageSize = Math.min(Math.max(Math.floor(params.pageSize) || 1, 1), 200);
+  const offset = (page - 1) * pageSize;
+
+  const searchTerm = params.search?.trim();
+  const hasSearch = Boolean(searchTerm);
+  const searchValue = hasSearch ? `%${escapeSearchTerm(searchTerm!)}%` : null;
+
+  const whereClause = hasSearch
+    ? "WHERE normalized_identifier ILIKE $3 ESCAPE '\\\\' OR resolved_username ILIKE $3 ESCAPE '\\\\' OR resolved_uuid ILIKE $3 ESCAPE '\\\\'"
+    : '';
+
+  const rowsResult = await pool.query<PlayerQueryHistoryRow>(
+    `
+      SELECT
+        identifier,
+        normalized_identifier,
+        lookup_type,
+        resolved_uuid,
+        resolved_username,
+        stars,
+        nicked,
+        cache_source,
+        cache_hit,
+        revalidated,
+        install_id,
+        response_status,
+        latency_ms,
+        requested_at
+      FROM player_query_history
+      ${whereClause}
+      ORDER BY requested_at DESC
+      LIMIT $1
+      OFFSET $2
+    `,
+    hasSearch ? [pageSize, offset, searchValue] : [pageSize, offset],
+  );
+
+  const countResult = await pool.query<{ count: string }>(
+    `
+      SELECT COUNT(*) AS count
+      FROM player_query_history
+      ${whereClause}
+    `,
+    hasSearch ? [searchValue] : [],
+  );
+
+  const totalCount = Number.parseInt(countResult.rows[0]?.count ?? '0', 10);
+
+  return {
+    rows: rowsResult.rows.map((row) => ({
+      identifier: row.identifier,
+      normalizedIdentifier: row.normalized_identifier,
+      lookupType: row.lookup_type,
+      resolvedUuid: row.resolved_uuid,
+      resolvedUsername: row.resolved_username,
+      stars: row.stars,
+      nicked: row.nicked,
+      cacheSource: row.cache_source as 'cache' | 'network',
+      cacheHit: row.cache_hit,
+      revalidated: row.revalidated,
+      installId: row.install_id,
+      responseStatus: row.response_status,
+      latencyMs: row.latency_ms ?? null,
+      requestedAt: new Date(row.requested_at),
+    })),
+    totalCount,
+  };
 }

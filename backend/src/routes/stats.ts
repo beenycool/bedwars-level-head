@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import { getRecentPlayerQueries } from '../services/history';
+import { getPlayerQueryPage } from '../services/history';
 import { escapeHtml } from '../util/html';
 
 const router = Router();
+const PAGE_SIZE = 25;
 
 function formatDate(date: Date): string {
   return date.toISOString();
@@ -16,18 +17,41 @@ function formatStars(stars: number | null): string {
   return `${stars}`;
 }
 
-router.get('/', async (_req, res, next) => {
+function formatLatency(latency: number | null): string {
+  if (latency === null || Number.isNaN(latency) || latency < 0) {
+    return '--';
+  }
+
+  return `${latency.toLocaleString()} ms`;
+}
+
+router.get('/', async (req, res, next) => {
   try {
-    const history = await getRecentPlayerQueries(50);
-    const rows = history
+    const requestedPage = Number.parseInt((req.query.page as string) ?? '1', 10);
+    const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const safePage = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+
+    let page = safePage;
+    let pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search });
+    const totalPages = Math.max(1, Math.ceil(pageData.totalCount / PAGE_SIZE));
+    if (page > totalPages) {
+      page = totalPages;
+      pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search });
+    }
+
+    const rows = pageData.rows
       .map((entry) => {
-        const lookup = `${entry.lookupType.toUpperCase()}: ${entry.identifier}`;
+        const lookupIdentifier =
+          entry.lookupType === 'uuid' && entry.resolvedUsername
+            ? entry.resolvedUsername
+            : entry.identifier;
+        const lookup = `${entry.lookupType.toUpperCase()}: ${lookupIdentifier}`;
         const resolved =
           entry.nicked === true
             ? '(nicked)'
-            : entry.resolvedUuid
-              ? entry.resolvedUuid
-              : entry.resolvedUsername ?? 'unknown';
+            : entry.resolvedUsername
+              ? entry.resolvedUsername
+              : entry.resolvedUuid ?? 'unknown';
         const cacheSource = entry.cacheHit ? 'Cache' : entry.cacheSource === 'network' ? 'Network' : entry.cacheSource;
 
         return `<tr>
@@ -37,6 +61,7 @@ router.get('/', async (_req, res, next) => {
           <td class="stars">${escapeHtml(formatStars(entry.stars))}</td>
           <td>${escapeHtml(cacheSource)}${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
           <td>${entry.responseStatus}</td>
+          <td class="latency">${escapeHtml(formatLatency(entry.latencyMs))}</td>
         </tr>`;
       })
       .join('\n');
@@ -100,6 +125,10 @@ router.get('/', async (_req, res, next) => {
         font-weight: 600;
         font-variant-numeric: tabular-nums;
       }
+      .latency {
+        font-variant-numeric: tabular-nums;
+        color: #cbd5f5;
+      }
       .tag {
         display: inline-flex;
         align-items: center;
@@ -119,11 +148,79 @@ router.get('/', async (_req, res, next) => {
           padding: 0.6rem 0.75rem;
         }
       }
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 0.75rem;
+      }
+      .search-box {
+        display: flex;
+        gap: 0.5rem;
+      }
+      .search-box input {
+        padding: 0.5rem 0.75rem;
+        border-radius: 8px;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        background: rgba(30, 41, 59, 0.5);
+        color: #e2e8f0;
+      }
+      .search-box button,
+      .pager button {
+        padding: 0.5rem 0.85rem;
+        border-radius: 8px;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        background: rgba(59, 130, 246, 0.15);
+        color: #cbd5f5;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .pager {
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+      }
+      .pager button[disabled] {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .muted {
+        color: #94a3b8;
+        font-size: 0.9rem;
+        margin: 0;
+      }
     </style>
   </head>
   <body>
     <h1>Recent Player Lookups</h1>
-    <p class="meta">Showing the ${history.length} most recent queries recorded by the cache layer.</p>
+    <p class="meta">${pageData.totalCount === 0 ? 'No lookups recorded yet.' : `Showing page ${page} of ${totalPages} (${pageData.totalCount} total lookups).`}</p>
+    <div class="controls">
+      <form class="search-box" method="GET">
+        <input
+          type="text"
+          name="q"
+          placeholder="Search by username or UUID"
+          value="${escapeHtml(search)}"
+        />
+        <input type="hidden" name="page" value="1" />
+        <button type="submit">Search</button>
+      </form>
+      <div class="pager">
+        <form method="GET">
+          <input type="hidden" name="page" value="${page - 1}" />
+          <input type="hidden" name="q" value="${escapeHtml(search)}" />
+          <button type="submit" ${page <= 1 ? 'disabled' : ''}>Previous</button>
+        </form>
+        <p class="muted">Page ${page} of ${totalPages}</p>
+        <form method="GET">
+          <input type="hidden" name="page" value="${page + 1}" />
+          <input type="hidden" name="q" value="${escapeHtml(search)}" />
+          <button type="submit" ${page >= totalPages ? 'disabled' : ''}>Next</button>
+        </form>
+      </div>
+    </div>
     <table>
       <thead>
         <tr>
@@ -133,10 +230,11 @@ router.get('/', async (_req, res, next) => {
           <th>Stars</th>
           <th>Source</th>
           <th>Status</th>
+          <th>Latency</th>
         </tr>
       </thead>
       <tbody>
-        ${rows || '<tr><td colspan="6">No lookups recorded yet.</td></tr>'}
+        ${rows || '<tr><td colspan="7">No lookups recorded yet.</td></tr>'}
       </tbody>
     </table>
   </body>

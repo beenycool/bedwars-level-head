@@ -41,6 +41,7 @@ router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
   const ifNoneMatch = req.header('if-none-match')?.trim();
   const ifModifiedSince = parseIfModifiedSince(req.header('if-modified-since'));
   res.locals.metricsRoute = '/api/player/:identifier';
+  const startedAt = process.hrtime.bigint();
 
   try {
     const resolved = await resolvePlayer(identifier, {
@@ -75,6 +76,7 @@ router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
       revalidated: resolved.revalidated,
       installId: null,
       responseStatus,
+      latencyMs: Number((process.hrtime.bigint() - startedAt) / BigInt(1_000_000)),
     });
 
     if (notModified) {
@@ -130,6 +132,7 @@ router.post('/batch', enforceRateLimit, async (req, res, next) => {
     const results = await Promise.all(
       uniqueUuids.map(async (identifier) => {
         try {
+          const startedAt = process.hrtime.bigint();
           const resolved = await resolvePlayer(identifier);
           const experience = extractBedwarsExperience(resolved.payload);
           const stars = experience === null ? null : computeBedwarsStar(experience);
@@ -147,6 +150,7 @@ router.post('/batch', enforceRateLimit, async (req, res, next) => {
             revalidated: resolved.revalidated,
             installId: null,
             responseStatus: 200,
+            latencyMs: Number((process.hrtime.bigint() - startedAt) / BigInt(1_000_000)),
           });
 
           return { identifier, payload: resolved.payload };
