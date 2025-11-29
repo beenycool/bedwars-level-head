@@ -9,6 +9,21 @@ function formatDate(date: Date): string {
   return date.toISOString();
 }
 
+function timeAgo(date: Date): string {
+  const seconds = Math.floor((new Date().getTime() - date.getTime()) / 1000);
+  let interval = seconds / 31536000;
+  if (interval > 1) return Math.floor(interval) + " years ago";
+  interval = seconds / 2592000;
+  if (interval > 1) return Math.floor(interval) + " months ago";
+  interval = seconds / 86400;
+  if (interval > 1) return Math.floor(interval) + " days ago";
+  interval = seconds / 3600;
+  if (interval > 1) return Math.floor(interval) + " hours ago";
+  interval = seconds / 60;
+  if (interval > 1) return Math.floor(interval) + " mins ago";
+  return Math.floor(seconds) + " seconds ago";
+}
+
 function formatStars(stars: number | null): string {
   if (stars === null || Number.isNaN(stars)) {
     return '--';
@@ -36,6 +51,9 @@ router.get('/', async (req, res, next) => {
     const page = Math.min(safePage, totalPages);
     const pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search, totalCountOverride: totalCount });
 
+    // Serialise the current page data to JSON so the frontend script can use it
+    const jsonForFrontend = JSON.stringify(pageData.rows);
+
     const rows = pageData.rows
       .map((entry) => {
         const lookupIdentifier =
@@ -46,9 +64,13 @@ router.get('/', async (req, res, next) => {
         const resolved = entry.nicked === true ? '(nicked)' : entry.resolvedUsername ?? entry.resolvedUuid ?? 'unknown';
         const cacheSource = entry.cacheHit ? 'Cache' : entry.cacheSource === 'network' ? 'Network' : entry.cacheSource;
 
+        const lookupLink = entry.lookupType === 'uuid'
+          ? `https://namemc.com/profile/${entry.identifier}`
+          : `https://namemc.com/search?q=${entry.identifier}`;
+
         return `<tr>
-          <td>${escapeHtml(formatDate(entry.requestedAt))}</td>
-          <td>${escapeHtml(lookup)}</td>
+          <td title="${escapeHtml(formatDate(entry.requestedAt))}">${escapeHtml(timeAgo(entry.requestedAt))}</td>
+          <td><a href="${lookupLink}" target="_blank" style="color: #60a5fa; text-decoration: none;">${escapeHtml(lookup)}</a></td>
           <td>${escapeHtml(resolved)}</td>
           <td class="stars">${escapeHtml(formatStars(entry.stars))}</td>
           <td>${escapeHtml(cacheSource)}${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
@@ -63,6 +85,7 @@ router.get('/', async (req, res, next) => {
   <head>
     <meta charset="utf-8" />
     <title>Levelhead Player Stats</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
       :root {
         color-scheme: dark;
@@ -73,6 +96,8 @@ router.get('/', async (req, res, next) => {
       body {
         margin: 0;
         padding: 2rem;
+        max-width: 1200px;
+        margin: 0 auto;
       }
       h1 {
         font-size: 1.75rem;
@@ -83,6 +108,22 @@ router.get('/', async (req, res, next) => {
         color: #94a3b8;
         font-size: 0.9rem;
       }
+
+      /* NEW CSS FOR GRAPHS */
+      .dashboard-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 1.5rem;
+        margin-bottom: 2rem;
+      }
+      .card {
+        background: rgba(30, 41, 59, 0.5);
+        border: 1px solid rgba(148, 163, 184, 0.15);
+        border-radius: 12px;
+        padding: 1rem;
+      }
+      h2 { font-size: 1rem; color: #94a3b8; margin-top: 0; }
+
       table {
         width: 100%;
         border-collapse: collapse;
@@ -186,6 +227,19 @@ router.get('/', async (req, res, next) => {
     </style>
   </head>
   <body>
+    <h1>Levelhead Analytics</h1>
+
+    <div class="dashboard-grid">
+        <div class="card">
+            <h2>Cache Performance (Current Page)</h2>
+            <canvas id="cacheChart"></canvas>
+        </div>
+        <div class="card">
+            <h2>Star Distribution (Current Page)</h2>
+            <canvas id="starChart"></canvas>
+        </div>
+    </div>
+
     <h1>Recent Player Lookups</h1>
     <p class="meta">${pageData.totalCount === 0 ? 'No lookups recorded yet.' : `Showing page ${page} of ${totalPages} (${pageData.totalCount} total lookups).`}</p>
     <div class="controls">
@@ -216,7 +270,7 @@ router.get('/', async (req, res, next) => {
     <table>
       <thead>
         <tr>
-          <th>Queried At (UTC)</th>
+          <th>Queried At</th>
           <th>Lookup</th>
           <th>Resolved</th>
           <th>Stars</th>
@@ -229,6 +283,85 @@ router.get('/', async (req, res, next) => {
         ${rows || '<tr><td colspan="7">No lookups recorded yet.</td></tr>'}
       </tbody>
     </table>
+
+    <script>
+      const data = ${jsonForFrontend};
+
+      // 1. Prepare Cache Data
+      const cacheHits = data.filter(d => d.cacheHit).length;
+      const cacheMisses = data.length - cacheHits;
+
+      // 2. Prepare Star Data (Group by range)
+      // Added 'Unknown' category for null values
+      const starRanges = { 'Unknown': 0, '0-10': 0, '11-50': 0, '51-100': 0, '100+': 0 };
+
+      data.forEach(d => {
+        // Strict check: if it's null or undefined, count as Unknown
+        if (d.stars === null || d.stars === undefined) {
+            starRanges['Unknown']++;
+            return;
+        }
+
+        const s = d.stars;
+        if(s <= 10) starRanges['0-10']++;
+        else if(s <= 50) starRanges['11-50']++;
+        else if(s <= 100) starRanges['51-100']++;
+        else starRanges['100+']++;
+      });
+
+      // Render Pie Chart (Cache)
+      new Chart(document.getElementById('cacheChart'), {
+        type: 'doughnut',
+        data: {
+          labels: ['Cache Hit', 'Network Fetch'],
+          datasets: [{
+            data: [cacheHits, cacheMisses],
+            backgroundColor: ['#3b82f6', '#ef4444'], // Blue / Red
+            borderWidth: 0
+          }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: { position: 'bottom', labels: { color: '#cbd5f5' } },
+                title: { display: false }
+            }
+        }
+      });
+
+      // Render Bar Chart (Stars)
+      new Chart(document.getElementById('starChart'), {
+        type: 'bar',
+        data: {
+          labels: Object.keys(starRanges),
+          datasets: [{
+            label: 'Player Count',
+            data: Object.values(starRanges),
+            // Use a grey color for 'Unknown' to distinguish it, green for valid ranks
+            backgroundColor: (ctx) => {
+                if (ctx.raw === undefined) return '#10b981';
+                return ctx.dataIndex === 0 ? '#64748b' : '#10b981';
+            },
+            borderRadius: 4
+          }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    ticks: { color: '#94a3b8', precision: 0 },
+                    grid: { color: '#334155' },
+                    beginAtZero: true
+                },
+                x: {
+                    ticks: { color: '#94a3b8' },
+                    grid: { display: false }
+                }
+            },
+            plugins: { legend: { display: false } }
+        }
+      });
+    </script>
   </body>
 </html>`;
 
