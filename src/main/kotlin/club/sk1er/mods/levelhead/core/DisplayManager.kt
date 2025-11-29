@@ -175,6 +175,8 @@ class DisplayManager(val file: File) {
             tag.header.value = headerValue
             tag.header.color = display.config.headerColor
             tag.header.chroma = display.config.headerChroma
+            tag.footer.color = display.config.footerColor
+            tag.footer.chroma = display.config.footerChroma
         }
     }
 

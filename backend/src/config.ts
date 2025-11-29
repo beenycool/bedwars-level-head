@@ -91,7 +91,7 @@ const HOURS = 60 * 60 * 1000;
 const defaultCacheTtl = 24 * HOURS;
 const rawCacheTtl = parseIntEnv('CACHE_TTL_MS', defaultCacheTtl);
 const minimumCacheTtl = 1 * HOURS;
-const maximumCacheTtl = 24 * HOURS;
+const maximumCacheTtl = 72 * HOURS;
 
 export const CACHE_TTL_MS = Math.min(Math.max(rawCacheTtl, minimumCacheTtl), maximumCacheTtl);
 

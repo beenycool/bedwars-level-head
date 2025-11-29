@@ -12,6 +12,10 @@ function buildCacheKey(prefix: string, value: string): string {
   return `${prefix}:${value}`;
 }
 
+export function buildPlayerCacheKey(uuid: string): string {
+  return buildCacheKey('player', uuid);
+}
+
 const memoizedResults = new Map<string, { expiresAt: number; value: ResolvedPlayer }>();
 const MEMOIZED_TTL_MS = 2_000;
 
@@ -22,7 +26,7 @@ export function clearInMemoryPlayerCache(): void {
   inFlightRequests.clear();
 }
 
-function extractDisplayName(payload: ProxyPlayerPayload): string | null {
+export function extractDisplayName(payload: ProxyPlayerPayload): string | null {
   if (payload.display && typeof payload.display === 'string') {
     return payload.display;
   }
