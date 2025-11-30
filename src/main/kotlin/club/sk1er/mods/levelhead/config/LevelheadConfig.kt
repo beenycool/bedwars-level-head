@@ -12,6 +12,7 @@ import cc.polyfrost.oneconfig.config.annotations.Text
 import cc.polyfrost.oneconfig.config.core.OneColor
 import cc.polyfrost.oneconfig.config.data.Mod
 import cc.polyfrost.oneconfig.config.data.ModType
+import java.awt.Color
 import java.time.Duration
 import java.util.Locale
 import java.util.UUID
@@ -54,6 +55,185 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         description = "When enabled, uses the custom Star Color instead of prestige-based colors."
     )
     var useCustomColor: Boolean = false
+
+    @Switch(
+        name = "Show Self",
+        category = "Display",
+        description = "Toggle showing your own levelhead above your head."
+    )
+    var showSelf: Boolean = true
+        get() = Levelhead.displayManager.primaryDisplay()?.config?.showSelf ?: true
+        set(value) {
+            field = value
+            Levelhead.displayManager.updatePrimaryDisplay { config ->
+                val changed = config.showSelf != value
+                config.showSelf = value
+                changed
+            }
+            save()
+        }
+
+    @Slider(
+        name = "Display Offset",
+        min = -2.0f,
+        max = 2.0f,
+        step = 10,
+        category = "Display",
+        description = "Vertical position adjustment for the levelhead display."
+    )
+    var displayOffset: Float = 0.0f
+        get() = Levelhead.displayManager.config.offset.toFloat()
+        set(value) {
+            field = value.coerceIn(-2.0f, 2.0f)
+            Levelhead.displayManager.config.offset = field.toDouble()
+            Levelhead.displayManager.saveConfig()
+            save()
+        }
+
+    @Slider(
+        name = "Render Distance",
+        min = 16f,
+        max = 128f,
+        step = 8,
+        category = "Display",
+        description = "Maximum distance (in blocks) to render levelhead tags."
+    )
+    var renderDistance: Int = 64
+        get() = Levelhead.displayManager.config.renderDistance
+        set(value) {
+            field = value.coerceIn(16, 128)
+            Levelhead.displayManager.config.renderDistance = field
+            Levelhead.displayManager.saveConfig()
+            save()
+        }
+
+    @Slider(
+        name = "Background Opacity",
+        min = 0f,
+        max = 100f,
+        step = 5,
+        category = "Display",
+        description = "Background transparency percentage (0 = transparent, 100 = opaque)."
+    )
+    var backgroundOpacity: Float = 25.0f
+        get() = (Levelhead.displayManager.config.backgroundOpacity * 100f).coerceIn(0f, 100f)
+        set(value) {
+            field = value.coerceIn(0f, 100f)
+            Levelhead.displayManager.config.backgroundOpacity = (field / 100f).coerceIn(0f, 1f)
+            Levelhead.displayManager.saveConfig()
+            save()
+        }
+
+    @Switch(
+        name = "Show Background",
+        category = "Display",
+        description = "Toggle the semi-transparent background behind the text."
+    )
+    var showBackground: Boolean = true
+        get() = Levelhead.displayManager.config.showBackground
+        set(value) {
+            field = value
+            Levelhead.displayManager.config.showBackground = value
+            Levelhead.displayManager.saveConfig()
+            save()
+        }
+
+    @Header(text = "Text Customization", category = "Text")
+    
+    @Text(
+        name = "Header Text",
+        category = "Text",
+        description = "Customize the header text displayed before the star value."
+    )
+    var headerText: String = "BedWars"
+        get() = Levelhead.displayManager.primaryDisplay()?.config?.headerString ?: "BedWars"
+        set(value) {
+            field = value.trim()
+            Levelhead.displayManager.updatePrimaryDisplay { config ->
+                val changed = config.headerString != field
+                config.headerString = field
+                changed
+            }
+            save()
+        }
+
+    @Color(
+        name = "Header Color",
+        category = "Text",
+        description = "Color for the header text."
+    )
+    var headerColor: OneColor = OneColor(85, 255, 255)
+        get() {
+            val color = Levelhead.displayManager.primaryDisplay()?.config?.headerColor
+            return if (color != null) {
+                OneColor(color.red, color.green, color.blue)
+            } else {
+                OneColor(85, 255, 255)
+            }
+        }
+        set(value) {
+            field = value
+            val javaColor = java.awt.Color(value.rgb)
+            Levelhead.displayManager.updatePrimaryDisplay { config ->
+                val changed = config.headerColor != javaColor
+                config.headerColor = javaColor
+                changed
+            }
+            save()
+        }
+
+    @Text(
+        name = "Footer Template",
+        category = "Text",
+        description = "Footer template with placeholders: %star% (star value), %fkdr% (FKDR), %ws% (winstreak)."
+    )
+    var footerTemplate: String = "%star%"
+        get() = Levelhead.displayManager.primaryDisplay()?.config?.footerString ?: "%star%"
+        set(value) {
+            field = value.trim()
+            Levelhead.displayManager.updatePrimaryDisplay { config ->
+                val changed = config.footerString != field
+                config.footerString = field
+                changed
+            }
+            save()
+        }
+
+    @Header(text = "Performance", category = "Performance")
+    
+    @Slider(
+        name = "Cache Purge Size",
+        min = 100f,
+        max = 2000f,
+        step = 50,
+        category = "Performance",
+        description = "Maximum cache entries before purging old entries."
+    )
+    var cachePurgeSize: Int = 500
+        get() = Levelhead.displayManager.config.purgeSize
+        set(value) {
+            field = value.coerceIn(100, 2000)
+            Levelhead.displayManager.config.purgeSize = field
+            Levelhead.displayManager.saveConfig()
+            save()
+        }
+
+    @Slider(
+        name = "Render Throttle (ms)",
+        min = 0f,
+        max = 100f,
+        step = 5,
+        category = "Performance",
+        description = "Minimum time between render updates per player (0 = no throttling)."
+    )
+    var renderThrottleMs: Long = 0L
+        get() = Levelhead.displayManager.config.renderThrottleMs
+        set(value) {
+            field = value.coerceIn(0L, 100L)
+            Levelhead.displayManager.config.renderThrottleMs = field
+            Levelhead.displayManager.saveConfig()
+            save()
+        }
 
     @Header(text = "Developer Options", category = "Developer")
     @Switch(
@@ -162,6 +342,16 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         textScale = 1.0f
         starColor = OneColor(255, 215, 0)
         useCustomColor = false
+        showSelf = true
+        displayOffset = 0.0f
+        renderDistance = 64
+        backgroundOpacity = 25.0f
+        showBackground = true
+        headerText = "BedWars"
+        headerColor = OneColor(85, 255, 255)
+        footerTemplate = "%star%"
+        cachePurgeSize = 500
+        renderThrottleMs = 0L
         proxyEnabled = true
         proxyBaseUrl = DEFAULT_PROXY_URL
         proxyAuthToken = ""

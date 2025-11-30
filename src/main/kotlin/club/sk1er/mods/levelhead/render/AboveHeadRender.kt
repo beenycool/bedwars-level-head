@@ -69,8 +69,10 @@ object AboveHeadRender {
         GlStateManager.rotate(-renderManager.playerViewY, 0.0f, 1.0f, 0.0f)
         GlStateManager.rotate(renderManager.playerViewX, 1.0f, 0.0f, 0.0f)
 
-        // Apply scaling with config value
-        val scale = 0.025f * LevelheadConfig.textScale
+        // Apply scaling with config value, guard against zero or negative values
+        val MIN_SCALE_EPSILON = 0.001f
+        val effectiveScale = kotlin.math.max(kotlin.math.abs(LevelheadConfig.textScale), MIN_SCALE_EPSILON)
+        val scale = 0.025f * effectiveScale
         GlStateManager.scale(-scale, -scale, scale)
 
         // Setup OpenGL state for text rendering
@@ -81,8 +83,14 @@ object AboveHeadRender {
         GlStateManager.disableTexture2D()
 
         val fontRenderer = minecraft.fontRendererObj
-        val width = fontRenderer.getStringWidth(text)
-        val halfWidth = width / 2
+        
+        // Calculate widths for proper centering
+        val headerText = tag.header.value
+        val footerText = tag.footer.value
+        val headerWidth = fontRenderer.getStringWidth(headerText)
+        val footerWidth = fontRenderer.getStringWidth(footerText)
+        val totalWidth = headerWidth + footerWidth
+        val halfWidth = totalWidth / 2
 
         // Draw semi-transparent background
         val backgroundColor = 0x40000000 // 25% opacity black
@@ -91,16 +99,27 @@ object AboveHeadRender {
         // Re-enable textures for text rendering
         GlStateManager.enableTexture2D()
 
-        // Determine the color to use
-        val color = if (LevelheadConfig.useCustomColor) {
+        // Determine colors to use - preserve per-section colors
+        val headerColor = if (LevelheadConfig.useCustomColor) {
             LevelheadConfig.starColor.rgb
         } else {
-            // Use the tag's footer color (prestige-based)
+            tag.header.color.rgb
+        }
+        
+        val footerColor = if (LevelheadConfig.useCustomColor) {
+            LevelheadConfig.starColor.rgb
+        } else {
             tag.footer.color.rgb
         }
 
-        // Draw the text centered with shadow
-        fontRenderer.drawStringWithShadow(text, -halfWidth.toFloat(), 0f, color)
+        // Draw header and footer separately with their respective colors
+        val startX = -halfWidth.toFloat()
+        if (headerText.isNotBlank()) {
+            fontRenderer.drawStringWithShadow(headerText, startX, 0f, headerColor)
+        }
+        if (footerText.isNotBlank()) {
+            fontRenderer.drawStringWithShadow(footerText, startX + headerWidth, 0f, footerColor)
+        }
 
         // Cleanup OpenGL state
         GlStateManager.depthMask(true)

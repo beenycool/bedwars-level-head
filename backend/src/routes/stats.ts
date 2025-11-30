@@ -71,10 +71,12 @@ router.get('/', async (req, res, next) => {
     const validStartDate = startDate && !Number.isNaN(startDate.getTime()) ? startDate : undefined;
     const validEndDate = endDate && !Number.isNaN(endDate.getTime()) ? endDate : undefined;
     const MAX_ALLOWED_LIMIT = 10000;
+    const DEFAULT_CHART_LIMIT = 200; // Default to 200 rows if no limit specified to prevent loading entire table
     const validLimit = Number.isFinite(limit)
       ? Math.min(Math.max(limit, 1), MAX_ALLOWED_LIMIT)
       : undefined;
     const hasTimeFilter = Boolean(validStartDate || validEndDate);
+    // But if time filters are present, use MAX_ALLOWED_LIMIT to show all data in range
     const effectiveLimit = validLimit ?? (hasTimeFilter ? MAX_ALLOWED_LIMIT : DEFAULT_CHART_LIMIT);
 
     const totalCount = await getPlayerQueryCount({ search });
@@ -83,9 +85,6 @@ router.get('/', async (req, res, next) => {
     const pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search, totalCountOverride: totalCount });
     
     // Fetch filtered data for charts
-    // Default to 200 rows if no limit specified to prevent loading entire table
-    // But if time filters are present, use MAX_ALLOWED_LIMIT to show all data in range
-    const DEFAULT_CHART_LIMIT = 200;
     const [chartData, topPlayers] = await Promise.all([
       getPlayerQueriesWithFilters({
         startDate: validStartDate,
@@ -653,6 +652,7 @@ router.get('/', async (req, res, next) => {
               const localTo = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
               toDateInput.value = localTo.toISOString().slice(0, 16);
             }
+            if (limitInput) limitInput.value = '';
           } else if (preset === '24h') {
             const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
             if (fromDateInput) {
@@ -663,6 +663,7 @@ router.get('/', async (req, res, next) => {
               const localTo = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
               toDateInput.value = localTo.toISOString().slice(0, 16);
             }
+            if (limitInput) limitInput.value = '';
           } else if (preset === '7d') {
             const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
             if (fromDateInput) {
@@ -673,6 +674,7 @@ router.get('/', async (req, res, next) => {
               const localTo = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
               toDateInput.value = localTo.toISOString().slice(0, 16);
             }
+            if (limitInput) limitInput.value = '';
           } else if (preset === 'all') {
             if (fromDateInput) fromDateInput.value = '';
             if (toDateInput) toDateInput.value = '';

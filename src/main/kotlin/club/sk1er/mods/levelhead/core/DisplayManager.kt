@@ -212,8 +212,20 @@ class DisplayManager(val file: File) {
 
     fun resetToDefaults() {
         config = MasterConfig()
+        // Ensure defaults match LevelheadConfig defaults
+        config.renderDistance = 64
+        config.purgeSize = 500
+        config.backgroundOpacity = 0.25f
+        config.showBackground = true
+        config.renderThrottleMs = 0L
         aboveHead.clear()
-        aboveHead.add(AboveHeadDisplay(DisplayConfig()))
+        val defaultDisplay = AboveHeadDisplay(DisplayConfig())
+        // Ensure DisplayConfig defaults match LevelheadConfig defaults
+        defaultDisplay.config.showSelf = true
+        defaultDisplay.config.headerString = "BedWars"
+        defaultDisplay.config.headerColor = java.awt.Color(85, 255, 255)
+        defaultDisplay.config.footerString = "%star%"
+        aboveHead.add(defaultDisplay)
         adjustIndices()
         saveConfig()
         clearCachesWithoutRefetch()
