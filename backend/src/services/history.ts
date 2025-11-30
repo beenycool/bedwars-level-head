@@ -63,6 +63,7 @@ export interface TopPlayer {
 }
 
 const DEFAULT_PLAYER_QUERIES_LIMIT = 200;
+const MAX_ALLOWED_LIMIT = 10000;
 
 const initialization = (async () => {
   try {
@@ -250,9 +251,12 @@ export async function getPlayerQueriesWithFilters(params: {
     1,
   );
 
+  // If time filters are present but no limit specified, use MAX_ALLOWED_LIMIT
+  // to show all data within the time range. Otherwise, use default limit.
+  const hasTimeFilters = params.startDate !== undefined || params.endDate !== undefined;
   const requestedLimit = params.limit !== undefined && params.limit > 0
-    ? params.limit
-    : DEFAULT_PLAYER_QUERIES_LIMIT;
+    ? Math.min(params.limit, MAX_ALLOWED_LIMIT)
+    : (hasTimeFilters ? MAX_ALLOWED_LIMIT : DEFAULT_PLAYER_QUERIES_LIMIT);
   const limitClause = `LIMIT $${dateParams.length + 1}`;
   const queryParams = [...dateParams, requestedLimit];
 
