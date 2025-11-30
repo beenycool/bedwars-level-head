@@ -73,10 +73,35 @@ function parseIntEnv(name: string, defaultValue: number): number {
   return parsed;
 }
 
+function parseBooleanEnv(name: string, defaultValue: boolean): boolean {
+  const raw = process.env[name];
+  if (raw === undefined) {
+    return defaultValue;
+  }
+
+  const normalized = raw.trim().toLowerCase();
+  if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on') {
+    return true;
+  }
+
+  if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'off') {
+    return false;
+  }
+
+  return defaultValue;
+}
+
 export const RATE_LIMIT_WINDOW_MS = parseIntEnv('RATE_LIMIT_WINDOW_MS', 5 * 60 * 1000);
 export const RATE_LIMIT_MAX = parseIntEnv('RATE_LIMIT_MAX', 300);
 export const PUBLIC_RATE_LIMIT_WINDOW_MS = parseIntEnv('PUBLIC_RATE_LIMIT_WINDOW_MS', 60 * 1000);
 export const PUBLIC_RATE_LIMIT_MAX = parseIntEnv('PUBLIC_RATE_LIMIT_MAX', 60);
+export const DYNAMIC_RATE_LIMIT_ENABLED = parseBooleanEnv('DYNAMIC_RATE_LIMIT_ENABLED', true);
+export const DYNAMIC_RATE_LIMIT_MIN = Math.max(1, parseIntEnv('DYNAMIC_RATE_LIMIT_MIN', 10));
+export const DYNAMIC_RATE_LIMIT_MAX = Math.max(
+  DYNAMIC_RATE_LIMIT_MIN,
+  parseIntEnv('DYNAMIC_RATE_LIMIT_MAX', RATE_LIMIT_MAX),
+);
+export const DYNAMIC_RATE_LIMIT_CACHE_TTL_MS = Math.max(1000, parseIntEnv('DYNAMIC_RATE_LIMIT_CACHE_TTL_MS', 10000));
 
 export const SERVER_PORT = parseIntEnv('PORT', 3000);
 export const SERVER_HOST = process.env.HOST ?? '0.0.0.0';

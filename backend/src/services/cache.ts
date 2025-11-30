@@ -107,13 +107,24 @@ const initialization = pool
         throw error;
       }
     }
+    await pool.query(
+      `CREATE TABLE IF NOT EXISTS hypixel_api_calls (
+        id BIGSERIAL PRIMARY KEY,
+        called_at BIGINT NOT NULL,
+        uuid TEXT NOT NULL
+      )`,
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_hypixel_calls_time ON hypixel_api_calls (called_at)',
+    );
+    console.info('[cache] hypixel_api_calls table is ready');
   })
   .catch((error: unknown) => {
     console.error('Failed to initialize cache table', error);
     throw error;
   });
 
-async function ensureInitialized(): Promise<void> {
+export async function ensureInitialized(): Promise<void> {
   await initialization;
 }
 
@@ -140,6 +151,14 @@ export async function purgeExpiredEntries(now: number = Date.now()): Promise<voi
   const purgedBuckets = rateLimitResult.rowCount ?? 0;
   if (purgedBuckets > 0) {
     console.info(`[cache] purged ${purgedBuckets} expired rate limit entries`);
+  }
+  const hypixelCutoff = now - 5 * 60 * 1000;
+  const hypixelResult = await pool.query('DELETE FROM hypixel_api_calls WHERE called_at <= $1', [
+    hypixelCutoff,
+  ]);
+  const purgedCalls = hypixelResult.rowCount ?? 0;
+  if (purgedCalls > 0) {
+    console.info(`[cache] purged ${purgedCalls} expired hypixel_api_calls entries`);
   }
 }
 
@@ -263,4 +282,34 @@ export async function closeCache(): Promise<void> {
   await ensureInitialized();
   await pool.end();
   console.info('[cache] PostgreSQL pool closed');
+}
+
+export async function getActivePrivateUserCount(since: number): Promise<number> {
+  await ensureInitialized();
+  const result = await pool.query<{ count: string }>(
+    `
+    SELECT COUNT(*) AS count
+    FROM rate_limits
+    WHERE key LIKE 'private:%' AND window_start >= $1
+    `,
+    [since],
+  );
+  const raw = result.rows[0]?.count ?? '0';
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+export async function getPrivateRequestCount(since: number): Promise<number> {
+  await ensureInitialized();
+  const result = await pool.query<{ total: string | null }>(
+    `
+    SELECT COALESCE(SUM(count), 0) AS total
+    FROM rate_limits
+    WHERE key LIKE 'private:%' AND window_start >= $1
+    `,
+    [since],
+  );
+  const raw = result.rows[0]?.total ?? '0';
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
