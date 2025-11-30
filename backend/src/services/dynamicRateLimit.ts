@@ -3,6 +3,7 @@ import {
   DYNAMIC_RATE_LIMIT_MAX,
   DYNAMIC_RATE_LIMIT_MIN,
   DYNAMIC_RATE_LIMIT_CACHE_TTL_MS,
+  HYPIXEL_API_QUOTA,
   RATE_LIMIT_MAX,
   RATE_LIMIT_WINDOW_MS,
 } from '../config';
@@ -30,7 +31,7 @@ export async function calculateDynamicRateLimit(): Promise<number> {
   const activeUsers = await getActivePrivateUserCount(windowCutoff);
   const requestCount = await getPrivateRequestCount(windowCutoff);
   const hypixelCalls = await getHypixelCallCount();
-  const remainingQuota = Math.max(0, RATE_LIMIT_MAX - hypixelCalls);
+  const remainingQuota = Math.max(0, HYPIXEL_API_QUOTA - hypixelCalls);
   const cacheHitRatio = getCacheHitRatio();
   const cacheMissRate = Math.max(1 - cacheHitRatio, Number.EPSILON);
   const availableForNewRequests = remainingQuota / cacheMissRate;

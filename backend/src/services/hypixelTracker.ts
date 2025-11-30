@@ -2,12 +2,8 @@ import { pool, ensureInitialized } from './cache';
 
 const HYPIXEL_API_CALL_WINDOW_MS = 5 * 60 * 1000;
 
-async function ensureTrackerReady(): Promise<void> {
-  await ensureInitialized();
-}
-
 export async function recordHypixelApiCall(uuid: string, calledAt: number = Date.now()): Promise<void> {
-  await ensureTrackerReady();
+  await ensureInitialized();
   await pool.query(
     `
     INSERT INTO hypixel_api_calls (called_at, uuid)
@@ -21,7 +17,7 @@ export async function getHypixelCallCount(
   windowMs: number = HYPIXEL_API_CALL_WINDOW_MS,
   now: number = Date.now(),
 ): Promise<number> {
-  await ensureTrackerReady();
+  await ensureInitialized();
   const cutoff = now - windowMs;
   const result = await pool.query<{ count: string }>(
     `

@@ -1,5 +1,6 @@
 import { Pool } from 'pg';
 import { CACHE_DB_URL, CACHE_DB_POOL_MAX, CACHE_DB_POOL_MIN } from '../config';
+import { HYPIXEL_API_CALL_WINDOW_MS } from './hypixelTracker';
 import { recordCacheHit, recordCacheMiss } from './metrics';
 
 interface DatabaseError extends Error {
@@ -152,7 +153,7 @@ export async function purgeExpiredEntries(now: number = Date.now()): Promise<voi
   if (purgedBuckets > 0) {
     console.info(`[cache] purged ${purgedBuckets} expired rate limit entries`);
   }
-  const hypixelCutoff = now - 5 * 60 * 1000;
+  const hypixelCutoff = now - HYPIXEL_API_CALL_WINDOW_MS;
   const hypixelResult = await pool.query('DELETE FROM hypixel_api_calls WHERE called_at <= $1', [
     hypixelCutoff,
   ]);

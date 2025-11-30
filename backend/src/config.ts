@@ -80,11 +80,11 @@ function parseBooleanEnv(name: string, defaultValue: boolean): boolean {
   }
 
   const normalized = raw.trim().toLowerCase();
-  if (normalized === 'true' || normalized === '1' || normalized === 'yes' || normalized === 'on') {
+  if (['true', '1', 'yes', 'on'].includes(normalized)) {
     return true;
   }
 
-  if (normalized === 'false' || normalized === '0' || normalized === 'no' || normalized === 'off') {
+  if (['false', '0', 'no', 'off'].includes(normalized)) {
     return false;
   }
 
@@ -102,6 +102,7 @@ export const DYNAMIC_RATE_LIMIT_MAX = Math.max(
   parseIntEnv('DYNAMIC_RATE_LIMIT_MAX', RATE_LIMIT_MAX),
 );
 export const DYNAMIC_RATE_LIMIT_CACHE_TTL_MS = Math.max(1000, parseIntEnv('DYNAMIC_RATE_LIMIT_CACHE_TTL_MS', 10000));
+export const HYPIXEL_API_QUOTA = parseIntEnv('HYPIXEL_API_QUOTA', 120);
 
 export const SERVER_PORT = parseIntEnv('PORT', 3000);
 export const SERVER_HOST = process.env.HOST ?? '0.0.0.0';

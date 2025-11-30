@@ -101,22 +101,17 @@ export const rateLimitBlocksTotal = new client.Counter({
 let cacheHits = 0;
 let cacheMisses = 0;
 
-function updateCacheRatio(): void {
+function computeCacheHitRatio(): number {
   const total = cacheHits + cacheMisses;
-  if (total === 0) {
-    cacheHitRatioGauge.set(0);
-    return;
-  }
+  return total === 0 ? 0 : cacheHits / total;
+}
 
-  cacheHitRatioGauge.set(cacheHits / total);
+function updateCacheRatio(): void {
+  cacheHitRatioGauge.set(computeCacheHitRatio());
 }
 
 export function getCacheHitRatio(): number {
-  const total = cacheHits + cacheMisses;
-  if (total === 0) {
-    return 0;
-  }
-  return cacheHits / total;
+  return computeCacheHitRatio();
 }
 
 export function recordCacheHit(): void {
