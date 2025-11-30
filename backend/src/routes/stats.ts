@@ -70,7 +70,10 @@ router.get('/', async (req, res, next) => {
     // Validate dates
     const validStartDate = startDate && !Number.isNaN(startDate.getTime()) ? startDate : undefined;
     const validEndDate = endDate && !Number.isNaN(endDate.getTime()) ? endDate : undefined;
-    const validLimit = limit && Number.isFinite(limit) && limit > 0 ? limit : undefined;
+    const MAX_ALLOWED_LIMIT = 10000;
+    const validLimit = limit && Number.isFinite(limit) && limit > 0
+      ? Math.min(limit, MAX_ALLOWED_LIMIT)
+      : undefined;
 
     const totalCount = await getPlayerQueryCount({ search });
     const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
@@ -80,18 +83,18 @@ router.get('/', async (req, res, next) => {
     // Fetch filtered data for charts
     // Default to 200 rows if no limit specified to prevent loading entire table
     const DEFAULT_CHART_LIMIT = 200;
-    const chartData = await getPlayerQueriesWithFilters({
-      startDate: validStartDate,
-      endDate: validEndDate,
-      limit: validLimit ?? DEFAULT_CHART_LIMIT,
-    });
-
-    // Fetch top players
-    const topPlayers = await getTopPlayersByQueryCount({
-      startDate: validStartDate,
-      endDate: validEndDate,
-      limit: 20,
-    });
+    const [chartData, topPlayers] = await Promise.all([
+      getPlayerQueriesWithFilters({
+        startDate: validStartDate,
+        endDate: validEndDate,
+        limit: validLimit ?? DEFAULT_CHART_LIMIT,
+      }),
+      getTopPlayersByQueryCount({
+        startDate: validStartDate,
+        endDate: validEndDate,
+        limit: 20,
+      }),
+    ]);
 
     // Serialise the data so the frontend script can use it
     // Securely escape < characters to prevent XSS via script injection
@@ -103,7 +106,7 @@ router.get('/', async (req, res, next) => {
         to: validEndDate?.toISOString(),
         limit: validLimit,
       },
-    }).replace(/</g, '\u003c');
+    }).replace(/</g, '\\u003c');
 
     const rows = pageData.rows
       .map((entry) => {
@@ -639,16 +642,34 @@ router.get('/', async (req, res, next) => {
           const now = new Date();
           if (preset === '1h') {
             const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-            if (fromDateInput) fromDateInput.value = oneHourAgo.toISOString().slice(0, 16);
-            if (toDateInput) toDateInput.value = now.toISOString().slice(0, 16);
+            if (fromDateInput) {
+              const localFrom = new Date(oneHourAgo.getTime() - oneHourAgo.getTimezoneOffset() * 60000);
+              fromDateInput.value = localFrom.toISOString().slice(0, 16);
+            }
+            if (toDateInput) {
+              const localTo = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+              toDateInput.value = localTo.toISOString().slice(0, 16);
+            }
           } else if (preset === '24h') {
             const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-            if (fromDateInput) fromDateInput.value = oneDayAgo.toISOString().slice(0, 16);
-            if (toDateInput) toDateInput.value = now.toISOString().slice(0, 16);
+            if (fromDateInput) {
+              const localFrom = new Date(oneDayAgo.getTime() - oneDayAgo.getTimezoneOffset() * 60000);
+              fromDateInput.value = localFrom.toISOString().slice(0, 16);
+            }
+            if (toDateInput) {
+              const localTo = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+              toDateInput.value = localTo.toISOString().slice(0, 16);
+            }
           } else if (preset === '7d') {
             const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-            if (fromDateInput) fromDateInput.value = sevenDaysAgo.toISOString().slice(0, 16);
-            if (toDateInput) toDateInput.value = now.toISOString().slice(0, 16);
+            if (fromDateInput) {
+              const localFrom = new Date(sevenDaysAgo.getTime() - sevenDaysAgo.getTimezoneOffset() * 60000);
+              fromDateInput.value = localFrom.toISOString().slice(0, 16);
+            }
+            if (toDateInput) {
+              const localTo = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+              toDateInput.value = localTo.toISOString().slice(0, 16);
+            }
           } else if (preset === 'all') {
             if (fromDateInput) fromDateInput.value = '';
             if (toDateInput) toDateInput.value = '';
@@ -958,6 +979,17 @@ router.get('/', async (req, res, next) => {
         }
       }
 
+      function formatTimeBucketLabel(key, interval) {
+        const date = new Date(key);
+        if (interval <= 5 * 60 * 1000) {
+          return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        } else if (interval <= 60 * 60 * 1000) {
+          return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit' });
+        } else {
+          return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        }
+      }
+
       let timeStart, timeEnd;
       if (filters.from && filters.to) {
         timeStart = new Date(filters.from);
@@ -978,8 +1010,9 @@ router.get('/', async (req, res, next) => {
       const bucketInterval = getTimeBucketInterval(timeStart, timeEnd);
 
       const timeBuckets = new Map();
+      const cacheBuckets = new Map();
       const sortedData = [...data].sort((a, b) => new Date(a.requestedAt).getTime() - new Date(b.requestedAt).getTime());
-      
+
       sortedData.forEach((d) => {
         const timestamp = new Date(d.requestedAt).getTime();
         const bucketKey = Math.floor(timestamp / bucketInterval) * bucketInterval;
@@ -987,20 +1020,18 @@ router.get('/', async (req, res, next) => {
           timeBuckets.set(bucketKey, 0);
         }
         timeBuckets.set(bucketKey, timeBuckets.get(bucketKey) + 1);
+
+        if (!cacheBuckets.has(bucketKey)) {
+          cacheBuckets.set(bucketKey, { hits: 0, total: 0 });
+        }
+        const bucket = cacheBuckets.get(bucketKey);
+        bucket.total++;
+        if (d.cacheHit) bucket.hits++;
       });
 
       const requestsOverTimeLabels = Array.from(timeBuckets.keys())
         .sort((a, b) => a - b)
-        .map((key) => {
-          const date = new Date(key);
-          if (bucketInterval <= 5 * 60 * 1000) {
-            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          } else if (bucketInterval <= 60 * 60 * 1000) {
-            return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit' });
-          } else {
-            return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-          }
-        });
+        .map((key) => formatTimeBucketLabel(key, bucketInterval));
       const requestsOverTimeData = Array.from(timeBuckets.keys())
         .sort((a, b) => a - b)
         .map((key) => timeBuckets.get(key));
@@ -1039,30 +1070,9 @@ router.get('/', async (req, res, next) => {
       }));
 
       // 7. Cache Hit Rate Over Time
-      const cacheBuckets = new Map();
-      sortedData.forEach((d) => {
-        const timestamp = new Date(d.requestedAt).getTime();
-        const bucketKey = Math.floor(timestamp / bucketInterval) * bucketInterval;
-        if (!cacheBuckets.has(bucketKey)) {
-          cacheBuckets.set(bucketKey, { hits: 0, total: 0 });
-        }
-        const bucket = cacheBuckets.get(bucketKey);
-        bucket.total++;
-        if (d.cacheHit) bucket.hits++;
-      });
-
       const cacheOverTimeLabels = Array.from(cacheBuckets.keys())
         .sort((a, b) => a - b)
-        .map((key) => {
-          const date = new Date(key);
-          if (bucketInterval <= 5 * 60 * 1000) {
-            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          } else if (bucketInterval <= 60 * 60 * 1000) {
-            return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit' });
-          } else {
-            return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-          }
-        });
+        .map((key) => formatTimeBucketLabel(key, bucketInterval));
       const cacheOverTimeData = Array.from(cacheBuckets.keys())
         .sort((a, b) => a - b)
         .map((key) => {
