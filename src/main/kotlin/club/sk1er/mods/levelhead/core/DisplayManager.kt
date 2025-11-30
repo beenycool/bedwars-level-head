@@ -12,6 +12,7 @@ import com.google.gson.JsonObject
 import net.minecraft.client.Minecraft
 import net.minecraft.entity.player.EntityPlayer
 import org.apache.commons.io.FileUtils
+import java.awt.Color
 import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
@@ -212,8 +213,20 @@ class DisplayManager(val file: File) {
 
     fun resetToDefaults() {
         config = MasterConfig()
+        // Ensure defaults match LevelheadConfig defaults
+        config.renderDistance = 64
+        config.purgeSize = 500
+        config.backgroundOpacity = 0.25f
+        config.showBackground = true
+        config.renderThrottleMs = 0L
         aboveHead.clear()
-        aboveHead.add(AboveHeadDisplay(DisplayConfig()))
+        val defaultDisplay = AboveHeadDisplay(DisplayConfig())
+        // Ensure DisplayConfig defaults match LevelheadConfig defaults
+        defaultDisplay.config.showSelf = true
+        defaultDisplay.config.headerString = "BedWars"
+        defaultDisplay.config.headerColor = Color(85, 255, 255)
+        defaultDisplay.config.footerString = "%star%"
+        aboveHead.add(defaultDisplay)
         adjustIndices()
         saveConfig()
         clearCachesWithoutRefetch()

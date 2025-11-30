@@ -9,9 +9,9 @@ const router = Router();
  */
 router.get('/motd', (_req, res) => {
   res.json({
-    enabled: process.env.MOTD_ENABLED === 'true',
-    message: process.env.MOTD_MESSAGE ?? 'Welcome to the Levelhead 8.3 Custom Build!',
-    color: process.env.MOTD_COLOR ?? 'GOLD',
+    enabled: true,
+    message: 'Welcome to the Levelhead 8.3 Custom Build!',
+    color: 'GOLD',
   });
 });
 
@@ -21,9 +21,9 @@ router.get('/motd', (_req, res) => {
  */
 router.get('/version', (_req, res) => {
   res.json({
-    latestVersion: process.env.LATEST_VERSION ?? '8.3.0',
-    minVersion: process.env.MIN_VERSION ?? '8.0.0',
-    updateUrl: process.env.UPDATE_URL ?? 'https://modrinth.com/mod/bedwars-level-head',
+    latestVersion: '8.3.0',
+    minVersion: '8.0.0',
+    updateUrl: 'https://modrinth.com/mod/bedwars-level-head',
   });
 });
 
