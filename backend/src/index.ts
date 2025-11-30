@@ -13,7 +13,10 @@ import {
 import { purgeExpiredEntries, closeCache, pool as cachePool } from './services/cache';
 import { observeRequest, registry } from './services/metrics';
 import { checkHypixelReachability } from './services/hypixel';
-import { initializeDynamicRateLimitService } from './services/dynamicRateLimit';
+import {
+  initializeDynamicRateLimitService,
+  stopDynamicRateLimitService,
+} from './services/dynamicRateLimit';
 import adminRouter from './routes/admin';
 import statsRouter from './routes/stats';
 
@@ -101,7 +104,10 @@ void purgeExpiredEntries().catch((error) => {
   console.error('Failed to purge expired cache entries', error);
 });
 
-initializeDynamicRateLimitService();
+void initializeDynamicRateLimitService().catch((error) => {
+  console.error('Failed initializing dynamic rate limit service', error);
+  process.exit(1);
+});
 
 const purgeInterval = setInterval(() => {
   void purgeExpiredEntries().catch((error) => {
@@ -160,6 +166,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   shuttingDown = true;
   console.log(`Received ${signal}. Shutting down gracefully...`);
   clearInterval(purgeInterval);
+  stopDynamicRateLimitService();
 
   const forcedShutdown = setTimeout(() => {
     console.error('Forcing shutdown.');

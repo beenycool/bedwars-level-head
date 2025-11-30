@@ -13,6 +13,7 @@ import { calculateDynamicRateLimit } from '../services/dynamicRateLimit';
 interface DynamicLimitCacheEntry {
   value: number | null;
   expiresAt: number;
+  pendingPromise?: Promise<number>;
 }
 
 export interface RateLimitOptions {
@@ -39,11 +40,26 @@ async function resolveDynamicLimitValue(): Promise<number> {
     return dynamicLimitCache.value;
   }
 
-  const computed = await calculateDynamicRateLimit();
-  dynamicLimitCache.value = computed;
-  dynamicLimitCache.expiresAt = now + DYNAMIC_RATE_LIMIT_CACHE_TTL_MS;
+  // If there's already a pending calculation, wait for it
+  if (dynamicLimitCache.pendingPromise) {
+    return await dynamicLimitCache.pendingPromise;
+  }
 
-  return computed;
+  // Start a new calculation
+  const calculationPromise = calculateDynamicRateLimit()
+    .then((computed) => {
+      dynamicLimitCache.value = computed;
+      dynamicLimitCache.expiresAt = Date.now() + DYNAMIC_RATE_LIMIT_CACHE_TTL_MS;
+      dynamicLimitCache.pendingPromise = undefined;
+      return computed;
+    })
+    .catch((error) => {
+      dynamicLimitCache.pendingPromise = undefined;
+      throw error;
+    });
+
+  dynamicLimitCache.pendingPromise = calculationPromise;
+  return await calculationPromise;
 }
 
 export function getClientIpAddress(req: Request): string {

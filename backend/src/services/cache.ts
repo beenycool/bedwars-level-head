@@ -289,7 +289,7 @@ export async function getActivePrivateUserCount(since: number): Promise<number> 
   await ensureInitialized();
   const result = await pool.query<{ count: string }>(
     `
-    SELECT COUNT(*) AS count
+    SELECT COUNT(DISTINCT split_part(key, ':', 2)) AS count
     FROM rate_limits
     WHERE key LIKE 'private:%' AND window_start >= $1
     `,

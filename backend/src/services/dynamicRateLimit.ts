@@ -66,14 +66,21 @@ async function refreshDynamicRateLimit(): Promise<void> {
   }
 }
 
-export function initializeDynamicRateLimitService(): void {
+export async function initializeDynamicRateLimitService(): Promise<void> {
   if (!DYNAMIC_RATE_LIMIT_ENABLED || refreshInterval) {
     return;
   }
 
-  void refreshDynamicRateLimit();
+  await refreshDynamicRateLimit();
   refreshInterval = setInterval(() => {
     void refreshDynamicRateLimit();
   }, DYNAMIC_RATE_LIMIT_CACHE_TTL_MS);
   refreshInterval.unref();
+}
+
+export function stopDynamicRateLimitService(): void {
+  if (refreshInterval) {
+    clearInterval(refreshInterval);
+    refreshInterval = null;
+  }
 }
