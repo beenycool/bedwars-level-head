@@ -9,8 +9,12 @@ import net.minecraft.client.renderer.GlStateManager
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraftforge.client.event.RenderLivingEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 object AboveHeadRender {
+    // Track last render time per player for throttling
+    private val lastRenderTime: ConcurrentHashMap<UUID, Long> = ConcurrentHashMap()
 
     @SubscribeEvent
     fun onRenderLiving(event: RenderLivingEvent.Specials.Pre<*>) {
