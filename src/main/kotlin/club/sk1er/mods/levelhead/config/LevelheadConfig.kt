@@ -4,10 +4,12 @@ import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import cc.polyfrost.oneconfig.config.Config
 import cc.polyfrost.oneconfig.config.annotations.Button
+import cc.polyfrost.oneconfig.config.annotations.Color
 import cc.polyfrost.oneconfig.config.annotations.Header
 import cc.polyfrost.oneconfig.config.annotations.Slider
 import cc.polyfrost.oneconfig.config.annotations.Switch
 import cc.polyfrost.oneconfig.config.annotations.Text
+import cc.polyfrost.oneconfig.config.core.OneColor
 import cc.polyfrost.oneconfig.config.data.Mod
 import cc.polyfrost.oneconfig.config.data.ModType
 import java.time.Duration
@@ -26,6 +28,32 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     @Text(name = "Hypixel API Key", placeholder = "Run /api new", secure = true)
     var apiKey: String = ""
+
+    @Header(text = "Display Settings", category = "Display")
+
+    @Slider(
+        name = "Text Scale",
+        min = 0.5f,
+        max = 3.0f,
+        step = 1,
+        category = "Display",
+        description = "Adjust the size of the BedWars star text above player heads."
+    )
+    var textScale: Float = 1.0f
+
+    @Color(
+        name = "Star Color",
+        category = "Display",
+        description = "Override the default prestige color for the star display. Leave at gold for default behavior."
+    )
+    var starColor: OneColor = OneColor(255, 215, 0) // Default Gold
+
+    @Switch(
+        name = "Use Custom Color",
+        category = "Display",
+        description = "When enabled, uses the custom Star Color instead of prestige-based colors."
+    )
+    var useCustomColor: Boolean = false
 
     @Header(text = "Developer Options", category = "Developer")
     @Switch(
@@ -131,6 +159,9 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     private fun resetToDefaults() {
         enabled = true
         apiKey = ""
+        textScale = 1.0f
+        starColor = OneColor(255, 215, 0)
+        useCustomColor = false
         proxyEnabled = true
         proxyBaseUrl = DEFAULT_PROXY_URL
         proxyAuthToken = ""

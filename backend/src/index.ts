@@ -19,6 +19,7 @@ import {
 } from './services/dynamicRateLimit';
 import adminRouter from './routes/admin';
 import statsRouter from './routes/stats';
+import configRouter from './routes/config';
 
 const app = express();
 
@@ -67,6 +68,7 @@ app.use((req, res, next) => {
 app.use('/api/public/player', playerPublicRouter);
 app.use('/api/player', playerRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/config', configRouter);
 app.use('/stats', statsRouter);
 
 app.get('/healthz', async (_req, res) => {

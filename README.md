@@ -6,7 +6,7 @@ BedWars Levelhead is a lightweight reimagining of the classic **Levelhead** mod 
 1. Install the mod just like any other Forge/LiteLoader mod compatible with your client.
 2. Join Hypixel (`mc.hypixel.net`).
 3. Run `/levelhead` to view your current configuration and available subcommands.
-4. If you use the public proxy, no Hypixel API key is required. To run fully offline or during backend outages, request an API key from Hypixel (`/api new`) and configure it with `/levelhead apikey <key>`.
+4. If you use the public proxy, no Hypixel API key is required. To run fully offline or during backend outages, get an API key from developer.hypixel.net and configure it with `/levelhead apikey <key>`.
 
 ---
 

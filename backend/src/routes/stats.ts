@@ -82,12 +82,13 @@ router.get('/', async (req, res, next) => {
     
     // Fetch filtered data for charts
     // Default to 200 rows if no limit specified to prevent loading entire table
+    // But if time filters are present, use MAX_ALLOWED_LIMIT to show all data in range
     const DEFAULT_CHART_LIMIT = 200;
     const [chartData, topPlayers] = await Promise.all([
       getPlayerQueriesWithFilters({
         startDate: validStartDate,
         endDate: validEndDate,
-        limit: validLimit ?? DEFAULT_CHART_LIMIT,
+        limit: validLimit ?? (validStartDate || validEndDate ? MAX_ALLOWED_LIMIT : DEFAULT_CHART_LIMIT),
       }),
       getTopPlayersByQueryCount({
         startDate: validStartDate,
