@@ -128,7 +128,6 @@ object Levelhead {
     private const val MODRINTH_API_BASE = "https://api.modrinth.com/v2"
     private const val TARGET_MC_VERSION = "1.8.9"
     private const val TARGET_LOADER = "forge"
-    private const val MAX_STATS_CACHE_ENTRIES = 500
 
     private val minecraft: Minecraft
         get() = Minecraft.getMinecraft()
@@ -563,9 +562,11 @@ object Levelhead {
             .keys
         expiredKeys.forEach { statsCache.remove(it) }
 
-        if (statsCache.size <= MAX_STATS_CACHE_ENTRIES) return
+        // Use configurable purge size from MasterConfig
+        val maxCacheSize = displayManager.config.purgeSize
+        if (statsCache.size <= maxCacheSize) return
 
-        val overflow = statsCache.size - MAX_STATS_CACHE_ENTRIES
+        val overflow = statsCache.size - maxCacheSize
         if (overflow <= 0) return
 
         statsCache.entries

@@ -15,11 +15,28 @@ import java.util.concurrent.ConcurrentHashMap
 object AboveHeadRender {
     // Track last render time per player for throttling
     private val lastRenderTime: ConcurrentHashMap<UUID, Long> = ConcurrentHashMap()
+    
+    // Clean up old render time entries periodically to prevent memory leaks
+    private var lastCleanupTime: Long = 0
+    private const val CLEANUP_INTERVAL_MS = 60000L // Clean up every minute
+    private const val MAX_ENTRY_AGE_MS = 300000L // Remove entries older than 5 minutes
+
+    private fun cleanupOldRenderTimes() {
+        val now = System.currentTimeMillis()
+        if (now - lastCleanupTime < CLEANUP_INTERVAL_MS) return
+        lastCleanupTime = now
+        
+        val cutoff = now - MAX_ENTRY_AGE_MS
+        lastRenderTime.entries.removeIf { it.value < cutoff }
+    }
 
     @SubscribeEvent
     fun onRenderLiving(event: RenderLivingEvent.Specials.Pre<*>) {
         val entity = event.entity
         if (entity !is EntityPlayer) return
+
+        // Periodic cleanup of old render time entries
+        cleanupOldRenderTimes()
 
         // Basic checks to ensure we should be rendering
         if (!displayManager.config.enabled) return

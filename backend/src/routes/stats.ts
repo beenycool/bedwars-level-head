@@ -72,7 +72,7 @@ router.get('/', async (req, res, next) => {
     const validEndDate = endDate && !Number.isNaN(endDate.getTime()) ? endDate : undefined;
     const MAX_ALLOWED_LIMIT = 10000;
     const DEFAULT_CHART_LIMIT = 200; // Default to 200 rows if no limit specified to prevent loading entire table
-    const validLimit = Number.isFinite(limit)
+    const validLimit = limit !== undefined && Number.isFinite(limit)
       ? Math.min(Math.max(limit, 1), MAX_ALLOWED_LIMIT)
       : undefined;
     const hasTimeFilter = Boolean(validStartDate || validEndDate);
