@@ -2,119 +2,100 @@ package club.sk1er.mods.levelhead.render
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.Levelhead.displayManager
-import club.sk1er.mods.levelhead.display.LevelheadTag
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
-import net.minecraft.client.Minecraft
-import net.minecraft.client.gui.FontRenderer
-import net.minecraft.client.renderer.GlStateManager
-import net.minecraft.client.renderer.Tessellator
-import net.minecraft.client.renderer.vertex.DefaultVertexFormats
-import net.minecraft.entity.EntityLivingBase
-import net.minecraft.entity.player.EntityPlayer
-import net.minecraftforge.client.event.RenderLivingEvent
+import net.minecraft.util.EnumChatFormatting
+import net.minecraftforge.event.entity.player.PlayerEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
-import org.lwjgl.opengl.GL11
 import java.awt.Color
+import kotlin.math.pow
+import kotlin.math.sqrt
 
 object AboveHeadRender {
 
     @SubscribeEvent
-    fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
+    fun onNameFormat(event: PlayerEvent.NameFormat) {
+        // Basic checks to ensure we should be modifying the name
         if (!displayManager.config.enabled) return
         if (!Levelhead.isOnHypixel()) return
-        val minecraft = Minecraft.getMinecraft()
-        if (minecraft.gameSettings.hideGUI) return
+
+        // This check ensures tags only show when Bedwars mode is active (lobby or game)
+        // Remove this line if you want stats to show everywhere on Hypixel
         if (!BedwarsModeDetector.shouldRenderTags()) return
 
-        val player = event.entity as? EntityPlayer ?: return
-        val localPlayer = minecraft.thePlayer
+        val player = event.entityPlayer
 
-        displayManager.aboveHead.forEachIndexed { index, display ->
-            if (!display.config.enabled || (player.isSelf() && !display.config.showSelf)) return@forEachIndexed
-            val tag = display.cache[player.uniqueID] ?: return@forEachIndexed
-            if (!display.loadOrRender(player)) return@forEachIndexed
+        // Get the primary display configuration
+        val display = displayManager.aboveHead.firstOrNull() ?: return
+        if (!display.config.enabled) return
 
-            var offset = 0.3
-            val hasScoreboardObjective = player.worldScoreboard?.getObjectiveInDisplaySlot(2) != null
-            val isCloseToLocalPlayer = localPlayer?.let { player.getDistanceSqToEntity(it) < 100 } ?: false
-            if (hasScoreboardObjective && isCloseToLocalPlayer) {
-                offset *= 2
+        // Retrieve the cached stats tag for this player
+        val tag = display.cache[player.uniqueID] ?: return
+
+        // Calculate nearest Minecraft color codes from the Config's RGB values
+        // because NameFormat requires strings, not raw RGB drawing
+        val headerColorCode = getNearestColorCode(display.config.headerColor)
+        val footerColorCode = getNearestColorCode(tag.footer.color)
+
+        // Construct the string: "HeaderValue FooterValue"
+        // Example output: "§bLevel: §654✫"
+        val headerText = "$headerColorCode${tag.header.value}"
+        val footerText = "$footerColorCode${tag.footer.value}"
+
+        val fullTag = "$headerText$footerText"
+
+        // Append the stats to the existing username.
+        // You can change the order to "$fullTag ${event.displayname}" if you want it before the name.
+        event.displayname = "${event.displayname} $fullTag"
+    }
+
+    /**
+     * Helper to convert the mod's Java AWT Color to the nearest Minecraft EnumChatFormatting code.
+     * This ensures the text isn't just plain white when injected into the nametag.
+     */
+    private fun getNearestColorCode(color: Color): EnumChatFormatting {
+        var nearest = EnumChatFormatting.WHITE
+        var minDistance = Double.MAX_VALUE
+
+        for (code in EnumChatFormatting.values()) {
+            if (!code.isColor) continue
+
+            // Map Minecraft color codes to approximations
+            val codeColor = getChatColorValue(code) ?: continue
+
+            val dist = sqrt(
+                (color.red - codeColor.red).toDouble().pow(2.0) +
+                    (color.green - codeColor.green).toDouble().pow(2.0) +
+                    (color.blue - codeColor.blue).toDouble().pow(2.0)
+            )
+
+            if (dist < minDistance) {
+                minDistance = dist
+                nearest = code
             }
-            if (player.isSelf()) {
-                offset = 0.0
-            }
-            offset += displayManager.config.offset
-            renderName(tag, player, event.x, event.y + offset + index * 0.3, event.z)
         }
+        return nearest
     }
 
-    private fun EntityPlayer.isSelf(): Boolean {
-        val local = Minecraft.getMinecraft().thePlayer ?: return false
-        return local.uniqueID == this.uniqueID
-    }
-
-    private fun renderName(tag: LevelheadTag, entity: EntityPlayer, x: Double, y: Double, z: Double) {
-        val mc = Minecraft.getMinecraft()
-        val renderer = mc.fontRendererObj
-        val scale = (0.016666668f * 1.6f * displayManager.config.fontSize).toFloat()
-        GlStateManager.pushMatrix()
-        GlStateManager.translate(x.toFloat(), (y + entity.height + 0.5).toFloat(), z.toFloat())
-        GL11.glNormal3f(0.0f, 1.0f, 0.0f)
-        val view = mc.renderManager
-        val xMultiplier = if (mc.gameSettings.thirdPersonView == 2) -1 else 1
-        GlStateManager.rotate(-view.playerViewY, 0.0f, 1.0f, 0.0f)
-        GlStateManager.rotate(view.playerViewX * xMultiplier, 1.0f, 0.0f, 0.0f)
-        GlStateManager.scale(-scale, -scale, scale)
-        GlStateManager.disableLighting()
-        GlStateManager.depthMask(false)
-        GlStateManager.disableDepth()
-        GlStateManager.enableBlend()
-        GlStateManager.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO)
-
-        val halfWidth = renderer.getStringWidth(tag.getString()) / 2
-        drawBackground(halfWidth)
-        renderString(renderer, tag)
-
-        GlStateManager.enableLighting()
-        GlStateManager.disableBlend()
-        GlStateManager.color(1f, 1f, 1f, 1f)
-        GlStateManager.depthMask(true)
-        GlStateManager.enableDepth()
-        GlStateManager.popMatrix()
-    }
-
-    private fun drawBackground(halfWidth: Int) {
-        val tessellator = Tessellator.getInstance()
-        val buffer = tessellator.worldRenderer
-        buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_COLOR)
-        val left = -halfWidth - 2.0
-        val right = halfWidth + 1.0
-        buffer.pos(left, -1.0, 0.0).color(0f, 0f, 0f, 0.25f).endVertex()
-        buffer.pos(left, 8.0, 0.0).color(0f, 0f, 0f, 0.25f).endVertex()
-        buffer.pos(right, 8.0, 0.0).color(0f, 0f, 0f, 0.25f).endVertex()
-        buffer.pos(right, -1.0, 0.0).color(0f, 0f, 0f, 0.25f).endVertex()
-        tessellator.draw()
-    }
-
-    private fun renderString(renderer: FontRenderer, tag: LevelheadTag) {
-        var x = -(renderer.getStringWidth(tag.getString()) / 2)
-        renderComponent(renderer, tag.header, x)
-        x += renderer.getStringWidth(tag.header.value)
-        renderComponent(renderer, tag.footer, x)
-    }
-
-    private fun renderComponent(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int) {
-        GlStateManager.disableDepth()
-        GlStateManager.depthMask(false)
-        renderer.drawString(component.value, x, 0, component.color.withAlphaFactor(0.2f))
-        GlStateManager.enableDepth()
-        GlStateManager.depthMask(true)
-        renderer.drawString(component.value, x, 0, component.color.rgb)
-    }
-
-    private fun Color.withAlphaFactor(alpha: Float): Int {
-        val clamped = alpha.coerceIn(0f, 1f)
-        val a = (clamped * 255f).toInt().coerceIn(0, 255)
-        return Color(red, green, blue, a).rgb
+    private fun getChatColorValue(chatColor: EnumChatFormatting): Color? {
+        // Hardcoded mapping of 1.8.9 color codes to RGB
+        return when (chatColor) {
+            EnumChatFormatting.BLACK -> Color(0, 0, 0)
+            EnumChatFormatting.DARK_BLUE -> Color(0, 0, 170)
+            EnumChatFormatting.DARK_GREEN -> Color(0, 170, 0)
+            EnumChatFormatting.DARK_AQUA -> Color(0, 170, 170)
+            EnumChatFormatting.DARK_RED -> Color(170, 0, 0)
+            EnumChatFormatting.DARK_PURPLE -> Color(170, 0, 170)
+            EnumChatFormatting.GOLD -> Color(255, 170, 0)
+            EnumChatFormatting.GRAY -> Color(170, 170, 170)
+            EnumChatFormatting.DARK_GRAY -> Color(85, 85, 85)
+            EnumChatFormatting.BLUE -> Color(85, 85, 255)
+            EnumChatFormatting.GREEN -> Color(85, 255, 85)
+            EnumChatFormatting.AQUA -> Color(85, 255, 255)
+            EnumChatFormatting.RED -> Color(255, 85, 85)
+            EnumChatFormatting.LIGHT_PURPLE -> Color(255, 85, 255)
+            EnumChatFormatting.YELLOW -> Color(255, 255, 85)
+            EnumChatFormatting.WHITE -> Color(255, 255, 255)
+            else -> null
+        }
     }
 }
