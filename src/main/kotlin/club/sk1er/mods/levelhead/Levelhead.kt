@@ -249,7 +249,7 @@ object Levelhead {
 
     fun fetchBatch(requests: List<LevelheadRequest>): Job {
         return worldScope.launch {
-            if (!BedwarsModeDetector.shouldRequestData()) return@launch
+            if (!Levelhead.isOnHypixel()) return@launch
             if (requests.isEmpty()) return@launch
 
             val now = System.currentTimeMillis()
@@ -277,6 +277,7 @@ object Levelhead {
                 }
 
             if (pending.isEmpty()) return@launch
+            if (!BedwarsModeDetector.isInBedwarsMatch()) return@launch
 
             val remaining = pending.toMutableList()
 
