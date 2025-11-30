@@ -12,6 +12,7 @@ import com.google.gson.JsonObject
 import net.minecraft.client.Minecraft
 import net.minecraft.entity.player.EntityPlayer
 import org.apache.commons.io.FileUtils
+import java.awt.Color
 import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
@@ -223,7 +224,7 @@ class DisplayManager(val file: File) {
         // Ensure DisplayConfig defaults match LevelheadConfig defaults
         defaultDisplay.config.showSelf = true
         defaultDisplay.config.headerString = "BedWars"
-        defaultDisplay.config.headerColor = java.awt.Color(85, 255, 255)
+        defaultDisplay.config.headerColor = Color(85, 255, 255)
         defaultDisplay.config.footerString = "%star%"
         aboveHead.add(defaultDisplay)
         adjustIndices()
