@@ -4,7 +4,9 @@ import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import com.google.gson.JsonObject
 import okhttp3.HttpUrl
+import okhttp3.MediaType
 import okhttp3.Request
+import okhttp3.RequestBody
 import java.io.IOException
 import java.io.InterruptedIOException
 import java.net.SocketTimeoutException
@@ -50,6 +52,120 @@ object BedwarsFetcher {
             return FetchResult.PermanentError("PROXY_DISABLED")
         }
         return fetchProxy(identifier, lastFetchedAt)
+    }
+
+    fun fetchBatchFromProxy(uuids: List<UUID>): Map<UUID, FetchResult> {
+        if (!shouldUseProxy()) return emptyMap()
+        if (uuids.isEmpty()) return emptyMap()
+
+        val identifierToUuid = uuids.associateBy { it.toString().replace("-", "").lowercase(Locale.ROOT) }
+
+        val payload = JsonObject().apply {
+            val uuidArray = com.google.gson.JsonArray()
+            identifierToUuid.keys.forEach { uuidArray.add(it) }
+            add("uuids", uuidArray)
+        }
+
+        val url = HttpUrl.parse(LevelheadConfig.proxyBaseUrl.trim())
+            ?.newBuilder()
+            ?.addPathSegment("api")
+            ?.addPathSegment("player")
+            ?.addPathSegment("batch")
+            ?.build()
+
+        if (url == null) {
+            Levelhead.logger.error(
+                "Failed to build proxy BedWars batch endpoint URL from base '{}'",
+                LevelheadConfig.proxyBaseUrl.sanitizeForLogs()
+            )
+            return identifierToUuid.values.associateWith { FetchResult.PermanentError("INVALID_PROXY_URL") }
+        }
+
+        val request = Request.Builder()
+            .url(url)
+            .post(RequestBody.create(MediaType.parse("application/json"), payload.toString()))
+            .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
+            .header("Accept", "application/json")
+            .header("X-Levelhead-Install", LevelheadConfig.installId)
+            .apply {
+                LevelheadConfig.proxyAuthToken.takeIf { it.isNotBlank() }?.let { token ->
+                    header("Authorization", "Bearer $token")
+                }
+            }
+            .build()
+
+        return try {
+            executeWithRetries(request, "proxy batch").use { response ->
+                val body = response.body()?.string().orEmpty()
+                val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
+
+                if (!response.isSuccessful) {
+                    return when (response.code()) {
+                        401, 403 -> {
+                            notifyInvalidProxyToken(response.code(), body)
+                            identifierToUuid.values.associateWith { FetchResult.PermanentError("PROXY_AUTH") }
+                        }
+
+                        429 -> {
+                            handleRetryAfterHint("proxy", retryAfterMillis)
+                            Levelhead.logger.warn(
+                                "Proxy rate limited BedWars batch requests. Retry after {} ms.",
+                                retryAfterMillis ?: -1
+                            )
+                            identifierToUuid.values.associateWith { FetchResult.TemporaryError("PROXY_RATE_LIMIT") }
+                        }
+
+                        else -> {
+                            handleRetryAfterHint("proxy", retryAfterMillis)
+                            Levelhead.logger.error(
+                                "Proxy batch request failed with status {}: {}",
+                                response.code(),
+                                body.sanitizeForLogs().take(200)
+                            )
+                            identifierToUuid.values.associateWith { FetchResult.TemporaryError("HTTP_${response.code()}") }
+                        }
+                    }
+                }
+
+                invalidProxyTokenWarned.set(false)
+
+                val json = kotlin.runCatching { Levelhead.jsonParser.parse(body).asJsonObject }.getOrElse {
+                    Levelhead.logger.error("Failed to parse proxy batch response body", it)
+                    return identifierToUuid.values.associateWith { FetchResult.TemporaryError("PARSE_ERROR") }
+                }
+
+                if (json.get("success")?.asBoolean == false) {
+                    Levelhead.logger.warn("Proxy batch response reported success=false: {}", body.sanitizeForLogs().take(200))
+                    return identifierToUuid.values.associateWith { FetchResult.TemporaryError("PROXY_ERROR") }
+                }
+
+                val data = json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
+                if (data == null) {
+                    Levelhead.logger.warn("Proxy batch response missing data object: {}", body.sanitizeForLogs().take(200))
+                    return identifierToUuid.values.associateWith { FetchResult.TemporaryError("MISSING_DATA") }
+                }
+
+                networkIssueWarned.set(false)
+                handleRetryAfterHint("proxy", retryAfterMillis)
+
+                val results = mutableMapOf<UUID, FetchResult>()
+                identifierToUuid.forEach { (identifier, uuid) ->
+                    val payloadElement = data.get(identifier)
+                    if (payloadElement != null && payloadElement.isJsonObject) {
+                        results[uuid] = FetchResult.Success(payloadElement.asJsonObject)
+                    } else {
+                        results[uuid] = FetchResult.TemporaryError("NOT_FOUND")
+                    }
+                }
+                results
+            }
+        } catch (ex: IOException) {
+            notifyNetworkIssue(ex)
+            identifierToUuid.values.associateWith { FetchResult.TemporaryError(ex.message) }
+        } catch (ex: Exception) {
+            Levelhead.logger.error("Failed to fetch proxy BedWars batch data", ex)
+            identifierToUuid.values.associateWith { FetchResult.TemporaryError(ex.message) }
+        }
     }
 
     private fun shouldUseProxy(): Boolean {

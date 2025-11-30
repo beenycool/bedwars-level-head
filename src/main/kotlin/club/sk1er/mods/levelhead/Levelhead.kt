@@ -278,7 +278,62 @@ object Levelhead {
 
             if (pending.isEmpty()) return@launch
 
-            pending.forEach { entry ->
+            val remaining = pending.toMutableList()
+
+            if (LevelheadConfig.proxyEnabled) {
+                val proxyEligible = remaining
+                    .filter { inFlightStatsRequests[it.uuid] == null }
+                    .onEach { entry ->
+                        if (entry.registerForRefresh && entry.displays.isNotEmpty()) {
+                            registerDisplaysForRefresh(entry.uuid, entry.displays)
+                        }
+                    }
+
+                proxyEligible
+                    .map { it.uuid }
+                    .chunked(20)
+                    .forEach { chunk ->
+                        lastFetchAttemptAt = System.currentTimeMillis()
+                        val results = BedwarsFetcher.fetchBatchFromProxy(chunk)
+                        chunk.forEach { uuid ->
+                            val result = results[uuid]
+                            val entry = remaining.find { it.uuid == uuid }
+                            if (entry == null || result == null) return@forEach
+                            when (result) {
+                                is BedwarsFetcher.FetchResult.Success -> {
+                                    lastFetchSuccessAt = System.currentTimeMillis()
+                                    val cachedEntry = buildCachedStats(result.payload)
+                                    handleStatsUpdate(uuid, cachedEntry)
+                                    applyStatsToRequests(uuid, entry.requests, cachedEntry)
+                                    remaining.remove(entry)
+                                }
+
+                                else -> {
+                                    if (entry.registerForRefresh && entry.displays.isNotEmpty()) {
+                                        registerDisplaysForRefresh(entry.uuid, entry.displays)
+                                    }
+
+                                    val proxyErrorReason = when (result) {
+                                        is BedwarsFetcher.FetchResult.TemporaryError -> result.reason
+                                        is BedwarsFetcher.FetchResult.PermanentError -> result.reason
+                                        else -> null
+                                    }
+
+                                    if (
+                                        LevelheadConfig.proxyEnabled &&
+                                        entry.cached != null &&
+                                        proxyErrorReason != null &&
+                                        (proxyErrorReason.startsWith("PROXY_") || proxyErrorReason.startsWith("HTTP_"))
+                                    ) {
+                                        remaining.remove(entry)
+                                    }
+                                }
+                            }
+                        }
+                    }
+            }
+
+            remaining.forEach { entry ->
                 val fetched = ensureStatsFetch(entry.uuid, entry.cached, entry.displays, entry.registerForRefresh).await()
                 applyStatsToRequests(entry.uuid, entry.requests, fetched)
             }
