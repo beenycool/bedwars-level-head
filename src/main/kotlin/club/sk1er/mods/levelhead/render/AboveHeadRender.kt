@@ -32,6 +32,23 @@ object AboveHeadRender {
         val minecraft = Minecraft.getMinecraft()
         val localPlayer = minecraft.thePlayer ?: return
 
+        // Render distance culling - early return before expensive operations
+        val renderDistance = displayManager.config.renderDistance
+        val distanceSq = entity.getDistanceSqToEntity(localPlayer)
+        val maxDistanceSq = (renderDistance * renderDistance).coerceAtMost(4096.0)
+        if (distanceSq > maxDistanceSq) return
+
+        // Render throttling check
+        val throttleMs = displayManager.config.renderThrottleMs
+        if (throttleMs > 0) {
+            val now = System.currentTimeMillis()
+            val lastRender = lastRenderTime[entity.uniqueID]
+            if (lastRender != null && (now - lastRender) < throttleMs) {
+                return
+            }
+            lastRenderTime[entity.uniqueID] = now
+        }
+
         // Skip rendering for ourselves in first-person view
         if (entity == localPlayer && minecraft.gameSettings.thirdPersonView == 0) return
 
