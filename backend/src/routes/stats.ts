@@ -71,9 +71,11 @@ router.get('/', async (req, res, next) => {
     const validStartDate = startDate && !Number.isNaN(startDate.getTime()) ? startDate : undefined;
     const validEndDate = endDate && !Number.isNaN(endDate.getTime()) ? endDate : undefined;
     const MAX_ALLOWED_LIMIT = 10000;
-    const validLimit = limit && Number.isFinite(limit) && limit > 0
-      ? Math.min(limit, MAX_ALLOWED_LIMIT)
+    const validLimit = Number.isFinite(limit)
+      ? Math.min(Math.max(limit, 1), MAX_ALLOWED_LIMIT)
       : undefined;
+    const hasTimeFilter = Boolean(validStartDate || validEndDate);
+    const effectiveLimit = validLimit ?? (hasTimeFilter ? MAX_ALLOWED_LIMIT : DEFAULT_CHART_LIMIT);
 
     const totalCount = await getPlayerQueryCount({ search });
     const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
@@ -82,12 +84,13 @@ router.get('/', async (req, res, next) => {
     
     // Fetch filtered data for charts
     // Default to 200 rows if no limit specified to prevent loading entire table
+    // But if time filters are present, use MAX_ALLOWED_LIMIT to show all data in range
     const DEFAULT_CHART_LIMIT = 200;
     const [chartData, topPlayers] = await Promise.all([
       getPlayerQueriesWithFilters({
         startDate: validStartDate,
         endDate: validEndDate,
-        limit: validLimit ?? DEFAULT_CHART_LIMIT,
+        limit: effectiveLimit,
       }),
       getTopPlayersByQueryCount({
         startDate: validStartDate,

@@ -2,100 +2,133 @@ package club.sk1er.mods.levelhead.render
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.Levelhead.displayManager
+import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
-import net.minecraft.util.EnumChatFormatting
-import net.minecraftforge.event.entity.player.PlayerEvent
+import net.minecraft.client.Minecraft
+import net.minecraft.client.renderer.GlStateManager
+import net.minecraft.entity.player.EntityPlayer
+import net.minecraftforge.client.event.RenderLivingEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
-import java.awt.Color
-import kotlin.math.pow
-import kotlin.math.sqrt
 
 object AboveHeadRender {
 
     @SubscribeEvent
-    fun onNameFormat(event: PlayerEvent.NameFormat) {
-        // Basic checks to ensure we should be modifying the name
+    fun onRenderLiving(event: RenderLivingEvent.Specials.Pre<*>) {
+        val entity = event.entity
+        if (entity !is EntityPlayer) return
+
+        // Basic checks to ensure we should be rendering
         if (!displayManager.config.enabled) return
+        if (!LevelheadConfig.enabled) return
         if (!Levelhead.isOnHypixel()) return
 
         // This check ensures tags only show when Bedwars mode is active (lobby or game)
-        // Remove this line if you want stats to show everywhere on Hypixel
         if (!BedwarsModeDetector.shouldRenderTags()) return
 
-        val player = event.entityPlayer
+        val minecraft = Minecraft.getMinecraft()
+        val localPlayer = minecraft.thePlayer ?: return
+
+        // Skip rendering for ourselves in first-person view
+        if (entity == localPlayer && minecraft.gameSettings.thirdPersonView == 0) return
 
         // Get the primary display configuration
         val display = displayManager.aboveHead.firstOrNull() ?: return
         if (!display.config.enabled) return
 
+        // Check showSelf setting
+        if (entity == localPlayer && !display.config.showSelf) return
+
         // Retrieve the cached stats tag for this player
-        val tag = display.cache[player.uniqueID] ?: return
+        val tag = display.cache[entity.uniqueID] ?: return
 
-        // Calculate nearest Minecraft color codes from the Config's RGB values
-        // because NameFormat requires strings, not raw RGB drawing
-        val headerColorCode = getNearestColorCode(display.config.headerColor)
-        val footerColorCode = getNearestColorCode(tag.footer.color)
+        // Build the text to display
+        val text = "${tag.header.value}${tag.footer.value}"
+        if (text.isBlank()) return
 
-        // Construct the string: "HeaderValue FooterValue"
-        // Example output: "§bLevel: §654✫"
-        val headerText = "$headerColorCode${tag.header.value}"
-        val footerText = "$footerColorCode${tag.footer.value}"
+        // Calculate position
+        val x = event.x
+        var y = event.y + entity.height + 0.5
+        val z = event.z
 
-        val fullTag = "$headerText$footerText"
+        // Adjust for sneaking
+        if (entity.isSneaking) {
+            y -= 0.25
+        }
 
-        // Append the stats to the existing username.
-        // You can change the order to "$fullTag ${event.displayname}" if you want it before the name.
-        event.displayname = "${event.displayname} $fullTag"
+        // Begin OpenGL rendering
+        GlStateManager.pushMatrix()
+
+        // Translate to position above player's head
+        GlStateManager.translate(x, y, z)
+
+        // Setup normal vector
+        GlStateManager.glNormal3f(0.0f, 1.0f, 0.0f)
+
+        // Rotate to face the player (billboard effect)
+        val renderManager = minecraft.renderManager
+        GlStateManager.rotate(-renderManager.playerViewY, 0.0f, 1.0f, 0.0f)
+        GlStateManager.rotate(renderManager.playerViewX, 1.0f, 0.0f, 0.0f)
+
+        // Apply scaling with config value
+        val scale = 0.025f * LevelheadConfig.textScale
+        GlStateManager.scale(-scale, -scale, scale)
+
+        // Setup OpenGL state for text rendering
+        GlStateManager.disableLighting()
+        GlStateManager.depthMask(false)
+        GlStateManager.enableBlend()
+        GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0)
+        GlStateManager.disableTexture2D()
+
+        val fontRenderer = minecraft.fontRendererObj
+        val width = fontRenderer.getStringWidth(text)
+        val halfWidth = width / 2
+
+        // Draw semi-transparent background
+        val backgroundColor = 0x40000000 // 25% opacity black
+        drawRect(-halfWidth - 2, -2, halfWidth + 2, fontRenderer.FONT_HEIGHT, backgroundColor)
+
+        // Re-enable textures for text rendering
+        GlStateManager.enableTexture2D()
+
+        // Determine the color to use
+        val color = if (LevelheadConfig.useCustomColor) {
+            LevelheadConfig.starColor.rgb
+        } else {
+            // Use the tag's footer color (prestige-based)
+            tag.footer.color.rgb
+        }
+
+        // Draw the text centered with shadow
+        fontRenderer.drawStringWithShadow(text, -halfWidth.toFloat(), 0f, color)
+
+        // Cleanup OpenGL state
+        GlStateManager.depthMask(true)
+        GlStateManager.enableLighting()
+        GlStateManager.disableBlend()
+        GlStateManager.color(1.0f, 1.0f, 1.0f, 1.0f)
+        GlStateManager.popMatrix()
     }
 
     /**
-     * Helper to convert the mod's Java AWT Color to the nearest Minecraft EnumChatFormatting code.
-     * This ensures the text isn't just plain white when injected into the nametag.
+     * Draws a rectangle using OpenGL.
+     * This is used for the semi-transparent background behind the text.
      */
-    private fun getNearestColorCode(color: Color): EnumChatFormatting {
-        var nearest = EnumChatFormatting.WHITE
-        var minDistance = Double.MAX_VALUE
+    private fun drawRect(left: Int, top: Int, right: Int, bottom: Int, color: Int) {
+        val alpha = (color shr 24 and 255) / 255.0f
+        val red = (color shr 16 and 255) / 255.0f
+        val green = (color shr 8 and 255) / 255.0f
+        val blue = (color and 255) / 255.0f
 
-        for (code in EnumChatFormatting.values()) {
-            if (!code.isColor) continue
+        val tessellator = net.minecraft.client.renderer.Tessellator.getInstance()
+        val worldRenderer = tessellator.worldRenderer
 
-            // Map Minecraft color codes to approximations
-            val codeColor = getChatColorValue(code) ?: continue
-
-            val dist = sqrt(
-                (color.red - codeColor.red).toDouble().pow(2.0) +
-                    (color.green - codeColor.green).toDouble().pow(2.0) +
-                    (color.blue - codeColor.blue).toDouble().pow(2.0)
-            )
-
-            if (dist < minDistance) {
-                minDistance = dist
-                nearest = code
-            }
-        }
-        return nearest
-    }
-
-    private fun getChatColorValue(chatColor: EnumChatFormatting): Color? {
-        // Hardcoded mapping of 1.8.9 color codes to RGB
-        return when (chatColor) {
-            EnumChatFormatting.BLACK -> Color(0, 0, 0)
-            EnumChatFormatting.DARK_BLUE -> Color(0, 0, 170)
-            EnumChatFormatting.DARK_GREEN -> Color(0, 170, 0)
-            EnumChatFormatting.DARK_AQUA -> Color(0, 170, 170)
-            EnumChatFormatting.DARK_RED -> Color(170, 0, 0)
-            EnumChatFormatting.DARK_PURPLE -> Color(170, 0, 170)
-            EnumChatFormatting.GOLD -> Color(255, 170, 0)
-            EnumChatFormatting.GRAY -> Color(170, 170, 170)
-            EnumChatFormatting.DARK_GRAY -> Color(85, 85, 85)
-            EnumChatFormatting.BLUE -> Color(85, 85, 255)
-            EnumChatFormatting.GREEN -> Color(85, 255, 85)
-            EnumChatFormatting.AQUA -> Color(85, 255, 255)
-            EnumChatFormatting.RED -> Color(255, 85, 85)
-            EnumChatFormatting.LIGHT_PURPLE -> Color(255, 85, 255)
-            EnumChatFormatting.YELLOW -> Color(255, 255, 85)
-            EnumChatFormatting.WHITE -> Color(255, 255, 255)
-            else -> null
-        }
+        GlStateManager.color(red, green, blue, alpha)
+        worldRenderer.begin(7, net.minecraft.client.renderer.vertex.DefaultVertexFormats.POSITION)
+        worldRenderer.pos(left.toDouble(), bottom.toDouble(), 0.0).endVertex()
+        worldRenderer.pos(right.toDouble(), bottom.toDouble(), 0.0).endVertex()
+        worldRenderer.pos(right.toDouble(), top.toDouble(), 0.0).endVertex()
+        worldRenderer.pos(left.toDouble(), top.toDouble(), 0.0).endVertex()
+        tessellator.draw()
     }
 }
