@@ -19,6 +19,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -281,24 +282,48 @@ object Levelhead {
             val remaining = pending.toMutableList()
 
             if (LevelheadConfig.proxyEnabled) {
-                val proxyEligible = remaining
-                    .filter { inFlightStatsRequests[it.uuid] == null }
-                    .onEach { entry ->
-                        if (entry.registerForRefresh && entry.displays.isNotEmpty()) {
-                            registerDisplaysForRefresh(entry.uuid, entry.displays)
-                        }
+                // 1. Identify requests that are not currently being fetched by another thread
+                val proxyCandidates = remaining.filter { inFlightStatsRequests.containsKey(it.uuid).not() }
+
+                // 2. Immediately "claim" these UUIDs by putting a placeholder into the map.
+                // This prevents the race condition where a second thread sees them as free and sends a duplicate request.
+                val batchLocks = proxyCandidates.associate { entry ->
+                    val deferred = CompletableDeferred<CachedBedwarsStats?>()
+                    // Use putIfAbsent to be thread-safe. If it returns null, we successfully claimed the lock.
+                    val existing = inFlightStatsRequests.putIfAbsent(entry.uuid, deferred)
+                    
+                    if (entry.registerForRefresh && entry.displays.isNotEmpty()) {
+                        registerDisplaysForRefresh(entry.uuid, entry.displays)
                     }
 
-                proxyEligible
+                    // If existing is null, we own the lock. If not, someone else beat us to it (ignore this one).
+                    entry.uuid to (if (existing == null) deferred else null)
+                }.filterValues { it != null }.mapValues { it.value!! }
+
+                // Only proceed with UUIDs we successfully locked
+                val lockedEligible = proxyCandidates.filter { batchLocks.containsKey(it.uuid) }
+
+                lockedEligible
                     .map { it.uuid }
                     .chunked(20)
                     .forEach { chunk ->
                         lastFetchAttemptAt = System.currentTimeMillis()
+                        
+                        // Perform the network request
                         val results = BedwarsFetcher.fetchBatchFromProxy(chunk)
+                        
                         chunk.forEach { uuid ->
                             val result = results[uuid]
                             val entry = remaining.find { it.uuid == uuid }
-                            if (entry == null || result == null) return@forEach
+                            val lock = batchLocks[uuid]
+
+                            if (entry == null || result == null) {
+                                // Something went wrong, release lock with null so waiters stop waiting
+                                lock?.complete(null)
+                                inFlightStatsRequests.remove(uuid)
+                                return@forEach
+                            }
+
                             when (result) {
                                 is BedwarsFetcher.FetchResult.Success -> {
                                     lastFetchSuccessAt = System.currentTimeMillis()
@@ -306,27 +331,39 @@ object Levelhead {
                                     handleStatsUpdate(uuid, cachedEntry)
                                     applyStatsToRequests(uuid, entry.requests, cachedEntry)
                                     remaining.remove(entry)
-                                }
 
+                                    // SUCCESS: Complete the lock with data and remove from inFlight map
+                                    lock?.complete(cachedEntry)
+                                    inFlightStatsRequests.remove(uuid)
+                                }
                                 else -> {
                                     if (entry.registerForRefresh && entry.displays.isNotEmpty()) {
                                         registerDisplaysForRefresh(entry.uuid, entry.displays)
                                     }
 
+                                    // Check if we should remove from 'remaining' (to skip fallback)
                                     val proxyErrorReason = when (result) {
                                         is BedwarsFetcher.FetchResult.TemporaryError -> result.reason
                                         is BedwarsFetcher.FetchResult.PermanentError -> result.reason
                                         else -> null
                                     }
 
-                                    if (
-                                        LevelheadConfig.proxyEnabled &&
-                                        entry.cached != null &&
-                                        proxyErrorReason != null &&
-                                        (proxyErrorReason.startsWith("PROXY_") || proxyErrorReason.startsWith("HTTP_"))
-                                    ) {
+                                    val shouldSkipFallback = LevelheadConfig.proxyEnabled &&
+                                            entry.cached != null &&
+                                            proxyErrorReason != null &&
+                                            (proxyErrorReason.startsWith("PROXY_") || proxyErrorReason.startsWith("HTTP_"))
+
+                                    if (shouldSkipFallback) {
                                         remaining.remove(entry)
+                                        // Completed, but failed.
+                                        lock?.complete(null)
+                                    } else {
+                                        // Fallback required. 
+                                        // We complete with null so any *other* threads waiting on this batch stop waiting.
+                                        // We remove from inFlightStatsRequests so the fallback logic (ensureStatsFetch) can create a NEW individual request.
+                                        lock?.complete(null)
                                     }
+                                    inFlightStatsRequests.remove(uuid)
                                 }
                             }
                         }
