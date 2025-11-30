@@ -8,6 +8,7 @@ import {
   OUTBOUND_USER_AGENT,
 } from '../config';
 import { HttpError } from '../util/httpError';
+import { recordHypixelApiCall } from './hypixelTracker';
 
 const hypixelClient = axios.create({
   baseURL: HYPIXEL_API_BASE_URL,
@@ -193,6 +194,9 @@ export async function fetchHypixelPlayer(
 
       const etag = response.headers['etag'] ?? null;
       const lastModified = parseLastModified(response.headers['last-modified']);
+      void recordHypixelApiCall(uuid).catch((error) => {
+        console.error('Failed to record Hypixel API call', error);
+      });
 
       if (response.status === 304) {
         return { payload: undefined, etag, lastModified, notModified: true };

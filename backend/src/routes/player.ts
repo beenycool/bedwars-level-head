@@ -16,6 +16,19 @@ function parseIfModifiedSince(value: string | undefined): number | undefined {
 
 const router = Router();
 
+async function recordQuerySafely(payload: Parameters<typeof recordPlayerQuery>[0]): Promise<void> {
+  try {
+    await recordPlayerQuery(payload);
+  } catch (error) {
+    console.error('Failed to record player query', {
+      error,
+      identifier: payload.identifier,
+      lookupType: payload.lookupType,
+      responseStatus: payload.responseStatus,
+    });
+  }
+}
+
 function extractBedwarsExperience(payload: ResolvedPlayer['payload']): number | null {
   const bedwars = payload.data?.bedwars ?? payload.bedwars;
   if (!bedwars || typeof bedwars !== 'object') {
@@ -63,7 +76,7 @@ router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
     const notModified = req.fresh;
     const responseStatus = notModified ? 304 : 200;
 
-    await recordPlayerQuery({
+    await recordQuerySafely({
       identifier,
       normalizedIdentifier: resolved.lookupValue,
       lookupType: resolved.lookupType,
@@ -137,7 +150,7 @@ router.post('/batch', enforceRateLimit, async (req, res, next) => {
           const experience = extractBedwarsExperience(resolved.payload);
           const stars = experience === null ? null : computeBedwarsStar(experience);
 
-          await recordPlayerQuery({
+          await recordQuerySafely({
             identifier,
             normalizedIdentifier: resolved.lookupValue,
             lookupType: resolved.lookupType,

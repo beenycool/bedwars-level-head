@@ -10,6 +10,13 @@ import cc.polyfrost.oneconfig.config.annotations.Switch
 import cc.polyfrost.oneconfig.config.annotations.Text
 import cc.polyfrost.oneconfig.config.data.Mod
 import cc.polyfrost.oneconfig.config.data.ModType
+import club.sk1er.mods.levelhead.Levelhead.jsonParser
+import com.google.gson.JsonObject
+import com.google.gson.annotations.SerializedName
+import net.minecraft.client.Minecraft
+import org.apache.commons.io.FileUtils
+import java.io.File
+import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.Locale
 import java.util.UUID
@@ -22,9 +29,10 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     const val DEFAULT_STAR_CACHE_TTL_MINUTES = 45
     @Header(text = "General")
     @Switch(name = "Enabled", description = "Toggle the BedWars Levelhead overlay")
+    @SerializedName("bedwarsEnabled")
     var enabled: Boolean = true
 
-    @Text(name = "Hypixel API Key", placeholder = "Run /api new", secure = true)
+    @Text(name = "Hypixel API Key", placeholder = "Get a key from developer.hypixel.net", secure = true)
     var apiKey: String = ""
 
     @Header(text = "Developer Options", category = "Developer")
@@ -79,7 +87,38 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     init {
         initialize()
+        migrateLegacyConfig()
         ensureInstallId()
+    }
+
+    private fun migrateLegacyConfig() {
+        try {
+            val configFile = File(File(Minecraft.getMinecraft().mcDataDir, "config"), "bedwars-levelhead.json")
+            if (!configFile.exists()) return
+
+            val jsonContent = FileUtils.readFileToString(configFile, StandardCharsets.UTF_8)
+            val json = jsonParser.parse(jsonContent)
+            if (!json.isJsonObject) return
+
+            val jsonObj = json.asJsonObject
+            var migrated = false
+
+            // Migrate "enabled" -> "bedwarsEnabled"
+            if (jsonObj.has("enabled") && !jsonObj.has("bedwarsEnabled")) {
+                val enabledValue = jsonObj.get("enabled")
+                jsonObj.add("bedwarsEnabled", enabledValue)
+                jsonObj.remove("enabled")
+                migrated = true
+            }
+
+            if (migrated) {
+                FileUtils.writeStringToFile(configFile, jsonObj.toString(), StandardCharsets.UTF_8)
+                // Reload the config after migration
+                initialize()
+            }
+        } catch (e: Exception) {
+            Levelhead.logger.warn("Failed to migrate legacy config", e)
+        }
     }
 
     private fun ensureInstallId() {

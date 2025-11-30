@@ -56,6 +56,15 @@ export interface PlayerQueryPage {
   totalCount: number;
 }
 
+export interface TopPlayer {
+  identifier: string;
+  resolvedUsername: string | null;
+  queryCount: number;
+}
+
+const DEFAULT_PLAYER_QUERIES_LIMIT = 200;
+const MAX_ALLOWED_LIMIT = 10000;
+
 const initialization = (async () => {
   try {
     await pool.query(`
@@ -198,6 +207,141 @@ export async function getRecentPlayerQueries(limit = 50): Promise<PlayerQuerySum
     responseStatus: row.response_status,
     latencyMs: row.latency_ms ?? null,
     requestedAt: new Date(row.requested_at),
+  }));
+}
+
+function buildDateRangeClause(
+  startDate: Date | undefined,
+  endDate: Date | undefined,
+  startIndex: number,
+): { clause: string; params: (Date | string)[] } {
+  const conditions: string[] = [];
+  const params: (Date | string)[] = [];
+  let paramIndex = startIndex;
+
+  if (startDate) {
+    conditions.push(`requested_at >= $${paramIndex}`);
+    params.push(startDate);
+    paramIndex++;
+  }
+
+  if (endDate) {
+    conditions.push(`requested_at <= $${paramIndex}`);
+    params.push(endDate);
+    paramIndex++;
+  }
+
+  if (conditions.length === 0) {
+    return { clause: '', params: [] };
+  }
+
+  return { clause: `WHERE ${conditions.join(' AND ')}`, params };
+}
+
+export async function getPlayerQueriesWithFilters(params: {
+  startDate?: Date;
+  endDate?: Date;
+  limit?: number;
+}): Promise<PlayerQuerySummary[]> {
+  await ensureInitialized();
+
+  const { clause: dateClause, params: dateParams } = buildDateRangeClause(
+    params.startDate,
+    params.endDate,
+    1,
+  );
+
+  // If time filters are present but no limit specified, use MAX_ALLOWED_LIMIT
+  // to show all data within the time range. Otherwise, use default limit.
+  const hasTimeFilters = params.startDate !== undefined || params.endDate !== undefined;
+  const requestedLimit = params.limit !== undefined && params.limit > 0
+    ? Math.min(params.limit, MAX_ALLOWED_LIMIT)
+    : (hasTimeFilters ? MAX_ALLOWED_LIMIT : DEFAULT_PLAYER_QUERIES_LIMIT);
+  const limitClause = `LIMIT $${dateParams.length + 1}`;
+  const queryParams = [...dateParams, requestedLimit];
+
+  const result = await pool.query<PlayerQueryHistoryRow>(
+    `
+      SELECT
+        identifier,
+        normalized_identifier,
+        lookup_type,
+        resolved_uuid,
+        resolved_username,
+        stars,
+        nicked,
+        cache_source,
+        cache_hit,
+        revalidated,
+        install_id,
+        response_status,
+        latency_ms,
+        requested_at
+      FROM player_query_history
+      ${dateClause}
+      ORDER BY requested_at DESC
+      ${limitClause}
+    `,
+    queryParams,
+  );
+
+  return result.rows.map((row) => ({
+    identifier: row.identifier,
+    normalizedIdentifier: row.normalized_identifier,
+    lookupType: row.lookup_type,
+    resolvedUuid: row.resolved_uuid,
+    resolvedUsername: row.resolved_username,
+    stars: row.stars,
+    nicked: row.nicked,
+    cacheSource: row.cache_source as 'cache' | 'network',
+    cacheHit: row.cache_hit,
+    revalidated: row.revalidated,
+    installId: row.install_id,
+    responseStatus: row.response_status,
+    latencyMs: row.latency_ms ?? null,
+    requestedAt: new Date(row.requested_at),
+  }));
+}
+
+export async function getTopPlayersByQueryCount(params: {
+  startDate?: Date;
+  endDate?: Date;
+  limit?: number;
+}): Promise<TopPlayer[]> {
+  await ensureInitialized();
+
+  const { clause: dateClause, params: dateParams } = buildDateRangeClause(
+    params.startDate,
+    params.endDate,
+    1,
+  );
+
+  const limit = params.limit ?? 20;
+  const queryParams = [...dateParams, limit];
+
+  const result = await pool.query<{
+    normalized_identifier: string;
+    resolved_username: string | null;
+    query_count: string;
+  }>(
+    `
+      SELECT
+        normalized_identifier,
+        MAX(resolved_username) as resolved_username,
+        COUNT(*) as query_count
+      FROM player_query_history
+      ${dateClause}
+      GROUP BY normalized_identifier
+      ORDER BY query_count DESC
+      LIMIT $${dateParams.length + 1}
+    `,
+    queryParams,
+  );
+
+  return result.rows.map((row) => ({
+    identifier: row.normalized_identifier,
+    resolvedUsername: row.resolved_username,
+    queryCount: Number.parseInt(row.query_count, 10),
   }));
 }
 
