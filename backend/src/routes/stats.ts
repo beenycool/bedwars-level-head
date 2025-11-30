@@ -1,5 +1,10 @@
 import { Router } from 'express';
-import { getPlayerQueryCount, getPlayerQueryPage, getRecentPlayerQueries } from '../services/history';
+import {
+  getPlayerQueryCount,
+  getPlayerQueryPage,
+  getPlayerQueriesWithFilters,
+  getTopPlayersByQueryCount,
+} from '../services/history';
 import { escapeHtml } from '../util/html';
 
 const router = Router();
@@ -53,15 +58,55 @@ router.get('/', async (req, res, next) => {
     const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
     const safePage = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
 
+    // Parse filter parameters
+    const fromParam = typeof req.query.from === 'string' ? req.query.from : undefined;
+    const toParam = typeof req.query.to === 'string' ? req.query.to : undefined;
+    const limitParam = typeof req.query.limit === 'string' ? req.query.limit : undefined;
+
+    const startDate = fromParam ? new Date(fromParam) : undefined;
+    const endDate = toParam ? new Date(toParam) : undefined;
+    const limit = limitParam ? Number.parseInt(limitParam, 10) : undefined;
+
+    // Validate dates
+    const validStartDate = startDate && !Number.isNaN(startDate.getTime()) ? startDate : undefined;
+    const validEndDate = endDate && !Number.isNaN(endDate.getTime()) ? endDate : undefined;
+    const MAX_ALLOWED_LIMIT = 10000;
+    const validLimit = limit && Number.isFinite(limit) && limit > 0
+      ? Math.min(limit, MAX_ALLOWED_LIMIT)
+      : undefined;
+
     const totalCount = await getPlayerQueryCount({ search });
     const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
     const page = Math.min(safePage, totalPages);
     const pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search, totalCountOverride: totalCount });
-    const recentActivity = await getRecentPlayerQueries(200);
+    
+    // Fetch filtered data for charts
+    // Default to 200 rows if no limit specified to prevent loading entire table
+    const DEFAULT_CHART_LIMIT = 200;
+    const [chartData, topPlayers] = await Promise.all([
+      getPlayerQueriesWithFilters({
+        startDate: validStartDate,
+        endDate: validEndDate,
+        limit: validLimit ?? DEFAULT_CHART_LIMIT,
+      }),
+      getTopPlayersByQueryCount({
+        startDate: validStartDate,
+        endDate: validEndDate,
+        limit: 20,
+      }),
+    ]);
 
-    // Serialise the recent activity so the frontend script can use it
+    // Serialise the data so the frontend script can use it
     // Securely escape < characters to prevent XSS via script injection
-    const jsonForFrontend = JSON.stringify(recentActivity).replace(/</g, '\\\\u003c');
+    const jsonForFrontend = JSON.stringify({
+      chartData,
+      topPlayers,
+      filters: {
+        from: validStartDate?.toISOString(),
+        to: validEndDate?.toISOString(),
+        limit: validLimit,
+      },
+    }).replace(/</g, '\\u003c');
 
     const rows = pageData.rows
       .map((entry) => {
@@ -318,17 +363,114 @@ router.get('/', async (req, res, next) => {
         font-size: 0.9rem;
         margin: 0;
       }
+      .filter-controls {
+        background: rgba(30, 41, 59, 0.6);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 12px;
+        padding: 1.5rem;
+        margin-bottom: 2rem;
+      }
+      .filter-form {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        align-items: flex-end;
+      }
+      .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+      }
+      .filter-group label {
+        color: #cbd5f5;
+        font-weight: 600;
+        font-size: 0.85rem;
+      }
+      .filter-group input {
+        padding: 0.5rem 0.75rem;
+        border-radius: 8px;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        background: rgba(15, 23, 42, 0.8);
+        color: #e2e8f0;
+        font-size: 0.9rem;
+      }
+      .filter-group input[type="number"] {
+        width: 120px;
+      }
+      .filter-presets {
+        display: flex;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+      }
+      .preset-btn, .apply-btn, .reset-btn {
+        padding: 0.5rem 1rem;
+        border-radius: 8px;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        background: rgba(59, 130, 246, 0.15);
+        color: #cbd5f5;
+        font-weight: 600;
+        cursor: pointer;
+        font-size: 0.9rem;
+      }
+      .preset-btn:hover, .apply-btn:hover {
+        background: rgba(59, 130, 246, 0.25);
+      }
+      .reset-btn {
+        background: rgba(239, 68, 68, 0.15);
+      }
+      .reset-btn:hover {
+        background: rgba(239, 68, 68, 0.25);
+      }
+      .filter-actions {
+        display: flex;
+        gap: 0.5rem;
+      }
+      .filter-summary {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(148, 163, 184, 0.2);
+      }
     </style>
   </head>
   <body>
     <h1>Levelhead Analytics</h1>
-    <p class="meta hero">Live snapshot of recent BedWars lookups (rendered locally, no external dashboards).</p>
+    <p class="meta hero">Live snapshot of BedWars lookups (rendered locally, no external dashboards).</p>
+
+    <div class="filter-controls">
+      <form id="filterForm" method="GET" class="filter-form">
+        <input type="hidden" name="page" value="1" />
+        ${search ? `<input type="hidden" name="q" value="${escapeHtml(search)}" />` : ''}
+        <div class="filter-group">
+          <label for="fromDate">From:</label>
+          <input type="datetime-local" id="fromDate" name="from" />
+        </div>
+        <div class="filter-group">
+          <label for="toDate">To:</label>
+          <input type="datetime-local" id="toDate" name="to" />
+        </div>
+        <div class="filter-group">
+          <label for="limitInput">Limit:</label>
+          <input type="number" id="limitInput" name="limit" placeholder="All" min="1" />
+        </div>
+        <div class="filter-presets">
+          <button type="button" class="preset-btn" data-preset="1h">Last Hour</button>
+          <button type="button" class="preset-btn" data-preset="24h">Last 24h</button>
+          <button type="button" class="preset-btn" data-preset="7d">Last 7 Days</button>
+          <button type="button" class="preset-btn" data-preset="all">All Time</button>
+        </div>
+        <div class="filter-actions">
+          <button type="submit" class="apply-btn">Apply Filters</button>
+          <button type="button" class="reset-btn" id="resetFilters">Reset</button>
+        </div>
+      </form>
+      <p class="meta filter-summary" id="filterSummary"></p>
+    </div>
 
     <div class="stat-grid">
       <div class="card stat-card">
         <p class="stat-label">Total Lookups</p>
         <p class="stat-value" id="totalLookupsValue">--</p>
-        <p class="stat-sub">Last 200 lookups</p>
+        <p class="stat-sub" id="totalLookupsSub">Filtered data</p>
       </div>
       <div class="card stat-card">
         <p class="stat-label">Cache Hit Rate</p>
@@ -357,11 +499,11 @@ router.get('/', async (req, res, next) => {
 
     <div class="dashboard-grid">
       <div class="card">
-        <h2>Cache Performance (Recent Activity)</h2>
+        <h2>Cache Performance</h2>
         <div class="chart-shell"><canvas id="cacheChart"></canvas></div>
       </div>
       <div class="card">
-        <h2>Star Distribution (Recent Activity)</h2>
+        <h2>Star Distribution</h2>
         <div class="chart-shell"><canvas id="starChart"></canvas></div>
       </div>
       <div class="card">
@@ -371,6 +513,26 @@ router.get('/', async (req, res, next) => {
       <div class="card">
         <h2>Status Breakdown</h2>
         <div class="chart-shell"><canvas id="statusChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Lookup Type Distribution</h2>
+        <div class="chart-shell"><canvas id="lookupTypeChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Requests Over Time</h2>
+        <div class="chart-shell"><canvas id="requestsOverTimeChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Cache Hit Rate Over Time</h2>
+        <div class="chart-shell"><canvas id="cacheOverTimeChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Latency Distribution</h2>
+        <div class="chart-shell"><canvas id="latencyDistributionChart"></canvas></div>
+      </div>
+      <div class="card">
+        <h2>Top Queried Players</h2>
+        <div class="chart-shell"><canvas id="topPlayersChart"></canvas></div>
       </div>
     </div>
 
@@ -419,8 +581,114 @@ router.get('/', async (req, res, next) => {
     </table>
 
     <script>
-      const data = ${jsonForFrontend};
+      const pageData = ${jsonForFrontend};
+      const data = pageData.chartData || [];
+      const topPlayers = pageData.topPlayers || [];
+      const filters = pageData.filters || {};
       const charts = [];
+
+      // Initialize filter controls
+      const fromDateInput = document.getElementById('fromDate');
+      const toDateInput = document.getElementById('toDate');
+      const limitInput = document.getElementById('limitInput');
+      const filterForm = document.getElementById('filterForm');
+      const resetBtn = document.getElementById('resetFilters');
+      const filterSummary = document.getElementById('filterSummary');
+
+      // Set filter values from URL params
+      if (filters.from && fromDateInput) {
+        const fromDate = new Date(filters.from);
+        if (!Number.isNaN(fromDate.getTime())) {
+          // Convert to local time for datetime-local input
+          const localDate = new Date(fromDate.getTime() - fromDate.getTimezoneOffset() * 60000);
+          fromDateInput.value = localDate.toISOString().slice(0, 16);
+        }
+      }
+      if (filters.to && toDateInput) {
+        const toDate = new Date(filters.to);
+        if (!Number.isNaN(toDate.getTime())) {
+          // Convert to local time for datetime-local input
+          const localDate = new Date(toDate.getTime() - toDate.getTimezoneOffset() * 60000);
+          toDateInput.value = localDate.toISOString().slice(0, 16);
+        }
+      }
+      if (filters.limit && limitInput) {
+        limitInput.value = filters.limit;
+      }
+
+      // Update filter summary
+      function updateFilterSummary() {
+        if (!filterSummary) return;
+        const parts = [];
+        if (filters.from) {
+          parts.push(\`from \${new Date(filters.from).toLocaleString()}\`);
+        }
+        if (filters.to) {
+          parts.push(\`to \${new Date(filters.to).toLocaleString()}\`);
+        }
+        if (filters.limit) {
+          parts.push(\`limit: \${filters.limit}\`);
+        }
+        filterSummary.textContent = parts.length > 0
+          ? \`Showing data: \${parts.join(', ')}\`
+          : 'Showing all data (no filters applied)';
+      }
+      updateFilterSummary();
+
+      // Preset button handlers
+      document.querySelectorAll('.preset-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const preset = btn.getAttribute('data-preset');
+          const now = new Date();
+          if (preset === '1h') {
+            const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+            if (fromDateInput) {
+              const localFrom = new Date(oneHourAgo.getTime() - oneHourAgo.getTimezoneOffset() * 60000);
+              fromDateInput.value = localFrom.toISOString().slice(0, 16);
+            }
+            if (toDateInput) {
+              const localTo = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+              toDateInput.value = localTo.toISOString().slice(0, 16);
+            }
+          } else if (preset === '24h') {
+            const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+            if (fromDateInput) {
+              const localFrom = new Date(oneDayAgo.getTime() - oneDayAgo.getTimezoneOffset() * 60000);
+              fromDateInput.value = localFrom.toISOString().slice(0, 16);
+            }
+            if (toDateInput) {
+              const localTo = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+              toDateInput.value = localTo.toISOString().slice(0, 16);
+            }
+          } else if (preset === '7d') {
+            const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+            if (fromDateInput) {
+              const localFrom = new Date(sevenDaysAgo.getTime() - sevenDaysAgo.getTimezoneOffset() * 60000);
+              fromDateInput.value = localFrom.toISOString().slice(0, 16);
+            }
+            if (toDateInput) {
+              const localTo = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+              toDateInput.value = localTo.toISOString().slice(0, 16);
+            }
+          } else if (preset === 'all') {
+            if (fromDateInput) fromDateInput.value = '';
+            if (toDateInput) toDateInput.value = '';
+            if (limitInput) limitInput.value = '';
+          }
+        });
+      });
+
+      // Reset button handler
+      if (resetBtn) {
+        resetBtn.addEventListener('click', () => {
+          const url = new URL(window.location.href);
+          url.searchParams.delete('from');
+          url.searchParams.delete('to');
+          url.searchParams.delete('limit');
+          url.searchParams.set('page', '1');
+          window.location.href = url.toString();
+        });
+      }
 
       const chartHeightControl = document.getElementById('chartHeightRange');
       const chartHeightValue = document.getElementById('chartHeightValue');
@@ -531,6 +799,14 @@ router.get('/', async (req, res, next) => {
       }
 
       setMetric('totalLookupsValue', totalLookups.toLocaleString());
+      const totalLookupsSub = document.getElementById('totalLookupsSub');
+      if (totalLookupsSub) {
+        if (filters.limit) {
+          totalLookupsSub.textContent = \`Showing \${totalLookups.toLocaleString()} of \${filters.limit} limit\`;
+        } else {
+          totalLookupsSub.textContent = \`\${totalLookups.toLocaleString()} total lookups\`;
+        }
+      }
       setMetric('cacheHitRateValue', cacheHitRate.toFixed(1) + '%');
       setProgress('cacheHitProgress', cacheHitRate);
       setMetric('successRateValue', successRate.toFixed(1) + '%');
@@ -654,6 +930,271 @@ router.get('/', async (req, res, next) => {
             legend: { position: 'bottom', labels: { color: '#cbd5f5' } },
             title: { display: false },
           },
+        },
+      }));
+
+      // 5. Lookup Type Distribution
+      const lookupTypeCounts = { UUID: 0, IGN: 0 };
+      data.forEach((d) => {
+        if (d.lookupType === 'uuid') {
+          lookupTypeCounts.UUID++;
+        } else {
+          lookupTypeCounts.IGN++;
+        }
+      });
+      charts.push(new Chart(document.getElementById('lookupTypeChart'), {
+        type: 'doughnut',
+        data: {
+          labels: ['UUID', 'IGN'],
+          datasets: [{
+            data: [lookupTypeCounts.UUID, lookupTypeCounts.IGN],
+            backgroundColor: ['#8b5cf6', '#ec4899'],
+            borderWidth: 0,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { position: 'bottom', labels: { color: '#cbd5f5' } },
+            title: { display: false },
+          },
+        },
+      }));
+
+      // 6. Requests Over Time
+      function getTimeBucketInterval(startDate, endDate) {
+        if (!startDate || !endDate || Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+          return 60 * 60 * 1000; // Default to 1 hour
+        }
+        const rangeMs = endDate.getTime() - startDate.getTime();
+        const rangeHours = rangeMs / (1000 * 60 * 60);
+        
+        if (rangeHours < 24) {
+          return 5 * 60 * 1000; // 5 minutes
+        } else if (rangeHours < 7 * 24) {
+          return 60 * 60 * 1000; // 1 hour
+        } else {
+          return 24 * 60 * 60 * 1000; // 1 day
+        }
+      }
+
+      function formatTimeBucketLabel(key, interval) {
+        const date = new Date(key);
+        if (interval <= 5 * 60 * 1000) {
+          return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        } else if (interval <= 60 * 60 * 1000) {
+          return date.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit' });
+        } else {
+          return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
+        }
+      }
+
+      let timeStart, timeEnd;
+      if (filters.from && filters.to) {
+        timeStart = new Date(filters.from);
+        timeEnd = new Date(filters.to);
+      } else if (data.length > 0) {
+        const timestamps = data.map(d => new Date(d.requestedAt).getTime()).filter(t => !Number.isNaN(t));
+        if (timestamps.length > 0) {
+          timeStart = new Date(Math.min(...timestamps));
+          timeEnd = new Date(Math.max(...timestamps));
+        } else {
+          timeStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          timeEnd = new Date();
+        }
+      } else {
+        timeStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        timeEnd = new Date();
+      }
+      const bucketInterval = getTimeBucketInterval(timeStart, timeEnd);
+
+      const timeBuckets = new Map();
+      const cacheBuckets = new Map();
+      const sortedData = [...data].sort((a, b) => new Date(a.requestedAt).getTime() - new Date(b.requestedAt).getTime());
+
+      sortedData.forEach((d) => {
+        const timestamp = new Date(d.requestedAt).getTime();
+        const bucketKey = Math.floor(timestamp / bucketInterval) * bucketInterval;
+        if (!timeBuckets.has(bucketKey)) {
+          timeBuckets.set(bucketKey, 0);
+        }
+        timeBuckets.set(bucketKey, timeBuckets.get(bucketKey) + 1);
+
+        if (!cacheBuckets.has(bucketKey)) {
+          cacheBuckets.set(bucketKey, { hits: 0, total: 0 });
+        }
+        const bucket = cacheBuckets.get(bucketKey);
+        bucket.total++;
+        if (d.cacheHit) bucket.hits++;
+      });
+
+      const requestsOverTimeLabels = Array.from(timeBuckets.keys())
+        .sort((a, b) => a - b)
+        .map((key) => formatTimeBucketLabel(key, bucketInterval));
+      const requestsOverTimeData = Array.from(timeBuckets.keys())
+        .sort((a, b) => a - b)
+        .map((key) => timeBuckets.get(key));
+
+      charts.push(new Chart(document.getElementById('requestsOverTimeChart'), {
+        type: 'line',
+        data: {
+          labels: requestsOverTimeLabels,
+          datasets: [{
+            label: 'Requests',
+            data: requestsOverTimeData,
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.2)',
+            tension: 0.35,
+            fill: true,
+            pointRadius: 0,
+            pointHitRadius: 6,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              ticks: { color: '#94a3b8', precision: 0 },
+              grid: { color: '#1f2937' },
+              beginAtZero: true,
+            },
+            x: {
+              ticks: { color: '#94a3b8', maxRotation: 45, minRotation: 0 },
+              grid: { display: false },
+            },
+          },
+          plugins: { legend: { display: false } },
+        },
+      }));
+
+      // 7. Cache Hit Rate Over Time
+      const cacheOverTimeLabels = Array.from(cacheBuckets.keys())
+        .sort((a, b) => a - b)
+        .map((key) => formatTimeBucketLabel(key, bucketInterval));
+      const cacheOverTimeData = Array.from(cacheBuckets.keys())
+        .sort((a, b) => a - b)
+        .map((key) => {
+          const bucket = cacheBuckets.get(key);
+          return bucket.total > 0 ? (bucket.hits / bucket.total) * 100 : 0;
+        });
+
+      charts.push(new Chart(document.getElementById('cacheOverTimeChart'), {
+        type: 'line',
+        data: {
+          labels: cacheOverTimeLabels,
+          datasets: [{
+            label: 'Cache Hit Rate (%)',
+            data: cacheOverTimeData,
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.2)',
+            tension: 0.35,
+            fill: true,
+            pointRadius: 0,
+            pointHitRadius: 6,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              ticks: { color: '#94a3b8', callback: (value) => value + '%' },
+              grid: { color: '#1f2937' },
+              beginAtZero: true,
+              max: 100,
+            },
+            x: {
+              ticks: { color: '#94a3b8', maxRotation: 45, minRotation: 0 },
+              grid: { display: false },
+            },
+          },
+          plugins: { legend: { display: false } },
+        },
+      }));
+
+      // 8. Latency Distribution
+      const latencyBins = {
+        '0-50ms': 0,
+        '50-100ms': 0,
+        '100-200ms': 0,
+        '200-500ms': 0,
+        '500-1000ms': 0,
+        '1000ms+': 0,
+      };
+
+      latencyValues.forEach((latency) => {
+        if (latency <= 50) latencyBins['0-50ms']++;
+        else if (latency <= 100) latencyBins['50-100ms']++;
+        else if (latency <= 200) latencyBins['100-200ms']++;
+        else if (latency <= 500) latencyBins['200-500ms']++;
+        else if (latency <= 1000) latencyBins['500-1000ms']++;
+        else latencyBins['1000ms+']++;
+      });
+
+      charts.push(new Chart(document.getElementById('latencyDistributionChart'), {
+        type: 'bar',
+        data: {
+          labels: Object.keys(latencyBins),
+          datasets: [{
+            label: 'Count',
+            data: Object.values(latencyBins),
+            backgroundColor: '#f59e0b',
+            borderRadius: 4,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            y: {
+              ticks: { color: '#94a3b8', precision: 0 },
+              grid: { color: '#334155' },
+              beginAtZero: true,
+            },
+            x: {
+              ticks: { color: '#94a3b8' },
+              grid: { display: false },
+            },
+          },
+          plugins: { legend: { display: false } },
+        },
+      }));
+
+      // 9. Top Players
+      const topPlayersLabels = topPlayers.slice(0, 20).map((p) => {
+        return p.resolvedUsername || p.identifier;
+      });
+      const topPlayersData = topPlayers.slice(0, 20).map((p) => p.queryCount);
+
+      charts.push(new Chart(document.getElementById('topPlayersChart'), {
+        type: 'bar',
+        data: {
+          labels: topPlayersLabels,
+          datasets: [{
+            label: 'Query Count',
+            data: topPlayersData,
+            backgroundColor: '#06b6d4',
+            borderRadius: 4,
+          }],
+        },
+        options: {
+          indexAxis: 'y',
+          responsive: true,
+          maintainAspectRatio: false,
+          scales: {
+            x: {
+              ticks: { color: '#94a3b8', precision: 0 },
+              grid: { color: '#334155' },
+              beginAtZero: true,
+            },
+            y: {
+              ticks: { color: '#94a3b8' },
+              grid: { display: false },
+            },
+          },
+          plugins: { legend: { display: false } },
         },
       }));
 
