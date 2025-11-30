@@ -67,6 +67,30 @@ const cacheHitRatioGauge = new client.Gauge({
   registers: [registry],
 });
 
+export const activeUsersGauge = new client.Gauge({
+  name: 'levelhead_active_private_users',
+  help: 'Number of distinct private rate limit clients active in the configured window.',
+  registers: [registry],
+});
+
+export const hypixelApiCallsGauge = new client.Gauge({
+  name: 'levelhead_hypixel_api_calls_window',
+  help: 'Number of Hypixel API calls recorded within the 5-minute sliding window.',
+  registers: [registry],
+});
+
+export const hypixelRemainingQuotaGauge = new client.Gauge({
+  name: 'levelhead_hypixel_remaining_quota',
+  help: 'Remaining Hypixel API quota for the current 5-minute window.',
+  registers: [registry],
+});
+
+export const dynamicRateLimitGauge = new client.Gauge({
+  name: 'levelhead_dynamic_rate_limit',
+  help: 'Currently calculated per-IP dynamic rate limit value.',
+  registers: [registry],
+});
+
 export const rateLimitBlocksTotal = new client.Counter({
   name: 'levelhead_rate_limit_blocks_total',
   help: 'Number of requests blocked by the proxy rate limiter.',
@@ -77,14 +101,17 @@ export const rateLimitBlocksTotal = new client.Counter({
 let cacheHits = 0;
 let cacheMisses = 0;
 
-function updateCacheRatio(): void {
+function computeCacheHitRatio(): number {
   const total = cacheHits + cacheMisses;
-  if (total === 0) {
-    cacheHitRatioGauge.set(0);
-    return;
-  }
+  return total === 0 ? 0 : cacheHits / total;
+}
 
-  cacheHitRatioGauge.set(cacheHits / total);
+function updateCacheRatio(): void {
+  cacheHitRatioGauge.set(computeCacheHitRatio());
+}
+
+export function getCacheHitRatio(): number {
+  return computeCacheHitRatio();
 }
 
 export function recordCacheHit(): void {

@@ -13,6 +13,7 @@ import {
 import { purgeExpiredEntries, closeCache, pool as cachePool } from './services/cache';
 import { observeRequest, registry } from './services/metrics';
 import { checkHypixelReachability } from './services/hypixel';
+import { initializeDynamicRateLimitService } from './services/dynamicRateLimit';
 import adminRouter from './routes/admin';
 import statsRouter from './routes/stats';
 
@@ -99,6 +100,8 @@ app.get('/metrics', async (_req, res) => {
 void purgeExpiredEntries().catch((error) => {
   console.error('Failed to purge expired cache entries', error);
 });
+
+initializeDynamicRateLimitService();
 
 const purgeInterval = setInterval(() => {
   void purgeExpiredEntries().catch((error) => {

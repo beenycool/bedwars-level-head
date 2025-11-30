@@ -2,7 +2,9 @@ package club.sk1er.mods.levelhead.bedwars
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
+import com.google.gson.JsonArray
 import com.google.gson.JsonObject
+import com.google.gson.JsonPrimitive
 import okhttp3.HttpUrl
 import okhttp3.MediaType
 import okhttp3.Request
@@ -61,8 +63,10 @@ object BedwarsFetcher {
         val identifierToUuid = uuids.associateBy { it.toString().replace("-", "").lowercase(Locale.ROOT) }
 
         val payload = JsonObject().apply {
-            val uuidArray = com.google.gson.JsonArray()
-            identifierToUuid.keys.forEach { uuidArray.add(it) }
+            val uuidArray = JsonArray()
+            identifierToUuid.keys.forEach { identifier ->
+                uuidArray.add(JsonPrimitive(identifier))
+            }
             add("uuids", uuidArray)
         }
 
