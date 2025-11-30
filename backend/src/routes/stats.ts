@@ -71,9 +71,11 @@ router.get('/', async (req, res, next) => {
     const validStartDate = startDate && !Number.isNaN(startDate.getTime()) ? startDate : undefined;
     const validEndDate = endDate && !Number.isNaN(endDate.getTime()) ? endDate : undefined;
     const MAX_ALLOWED_LIMIT = 10000;
-    const validLimit = limit && Number.isFinite(limit) && limit > 0
-      ? Math.min(limit, MAX_ALLOWED_LIMIT)
+    const validLimit = Number.isFinite(limit)
+      ? Math.min(Math.max(limit, 1), MAX_ALLOWED_LIMIT)
       : undefined;
+    const hasTimeFilter = Boolean(validStartDate || validEndDate);
+    const effectiveLimit = validLimit ?? (hasTimeFilter ? MAX_ALLOWED_LIMIT : DEFAULT_CHART_LIMIT);
 
     const totalCount = await getPlayerQueryCount({ search });
     const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
@@ -88,7 +90,7 @@ router.get('/', async (req, res, next) => {
       getPlayerQueriesWithFilters({
         startDate: validStartDate,
         endDate: validEndDate,
-        limit: validLimit ?? (validStartDate || validEndDate ? MAX_ALLOWED_LIMIT : DEFAULT_CHART_LIMIT),
+        limit: effectiveLimit,
       }),
       getTopPlayersByQueryCount({
         startDate: validStartDate,

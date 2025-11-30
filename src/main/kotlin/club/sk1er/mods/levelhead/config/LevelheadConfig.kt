@@ -35,7 +35,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         name = "Text Scale",
         min = 0.5f,
         max = 3.0f,
-        step = 1,
+        step = 25,
         category = "Display",
         description = "Adjust the size of the BedWars star text above player heads."
     )
