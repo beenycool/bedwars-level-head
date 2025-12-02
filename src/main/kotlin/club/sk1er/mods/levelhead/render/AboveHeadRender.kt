@@ -5,10 +5,9 @@ import club.sk1er.mods.levelhead.Levelhead.displayManager
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import club.sk1er.mods.levelhead.display.LevelheadTag
-import gg.essential.universal.UGraphics
-import gg.essential.universal.UMatrixStack
 import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.GlStateManager
+import net.minecraft.client.renderer.Tessellator
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraftforge.client.event.RenderLivingEvent
@@ -18,53 +17,53 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 object AboveHeadRender {
-    // Reusable MatrixStack (Similar to UMatrixStack.Compat.get() in the Sk1er implementation)
-    private val matrixStack = UMatrixStack()
-
+    // Track render times for throttling
     private val lastRenderTime: ConcurrentHashMap<UUID, Long> = ConcurrentHashMap()
+    
+    // Optimization: Check time once per frame-ish, not per entity
     private var lastCleanupTime: Long = 0
     private const val CLEANUP_INTERVAL_MS = 60000L
     private const val MAX_ENTRY_AGE_MS = 300000L
-
-    private fun cleanupOldRenderTimes() {
-        val now = System.currentTimeMillis()
-        if (now - lastCleanupTime < CLEANUP_INTERVAL_MS) return
-        lastCleanupTime = now
-        val cutoff = now - MAX_ENTRY_AGE_MS
-        lastRenderTime.entries.removeIf { it.value < cutoff }
-    }
 
     @SubscribeEvent
     fun onRenderLiving(event: RenderLivingEvent.Specials.Pre<*>) {
         val entity = event.entity
         if (entity !is EntityPlayer) return
 
-        // 1. Basic Checks
+        // 1. Ultra-fast checks (booleans only)
         if (!LevelheadConfig.enabled || !displayManager.config.enabled) return
+        
+        // 2. Context checks (slightly more expensive)
         if (!Levelhead.isOnHypixel()) return
         if (!BedwarsModeDetector.shouldRenderTags()) return
 
         val minecraft = Minecraft.getMinecraft()
         val localPlayer = minecraft.thePlayer ?: return
 
-        // 2. Distance Culling
+        // 3. Distance Culling (Math only, no allocs)
         val renderDistance = displayManager.config.renderDistance
         val distanceSq = entity.getDistanceSqToEntity(localPlayer)
         val maxDistanceSq = (renderDistance * renderDistance).toDouble().coerceAtMost(4096.0)
         if (distanceSq > maxDistanceSq) return
 
-        cleanupOldRenderTimes()
-
-        // 3. Throttling
-        val throttleMs = displayManager.config.renderThrottleMs
-        if (throttleMs > 0) {
-            val now = System.currentTimeMillis()
-            val lastRender = lastRenderTime[entity.uniqueID]
-            if (lastRender != null && (now - lastRender) < throttleMs) return
-            lastRenderTime[entity.uniqueID] = now
+        // 4. Cleanup Maintenance (Once per minute)
+        val now = System.currentTimeMillis()
+        if (now - lastCleanupTime > CLEANUP_INTERVAL_MS) {
+            lastCleanupTime = now
+            val cutoff = now - MAX_ENTRY_AGE_MS
+            // RemoveIf might alloc an iterator, but it's rare (once per min)
+            lastRenderTime.entries.removeIf { it.value < cutoff }
         }
 
-        // 4. Visibility Checks
+        // 5. Throttling
+        val throttleMs = displayManager.config.renderThrottleMs
+        if (throttleMs > 0) {
+            val lastRender = lastRenderTime[entity.uniqueID]
+            if (lastRender != null && (now - lastRender) < throttleMs) return
+            lastRenderTime[entity.uniqueID] = now // Autoboxing here is unavoidable but minor
+        }
+
+        // 6. Visibility Checks
         if (entity == localPlayer) {
             if (minecraft.gameSettings.thirdPersonView == 0) return
             if (!LevelheadConfig.showSelf) return
@@ -76,25 +75,22 @@ object AboveHeadRender {
 
         val tag = display.cache[entity.uniqueID] ?: return
 
-        // 5. Render
+        // 7. Render
         renderName(tag, entity, event.x, event.y + entity.height + 0.5, event.z)
     }
 
-    /**
-     * Optimized renderer adopted from Sk1er LLC implementation.
-     * Uses primitive colors and shared MatrixStack to eliminate allocations.
-     */
     private fun renderName(tag: LevelheadTag, entityIn: EntityPlayer, x: Double, y: Double, z: Double) {
+        // OPTIMIZATION: Do not call tag.getString() here. It creates a new String every frame.
+        // Just check components directly.
+        val headerEmpty = tag.header.value.isEmpty()
+        val footerEmpty = tag.footer.value.isEmpty()
+        if (headerEmpty && footerEmpty) return
+
         val minecraft = Minecraft.getMinecraft()
         val fontRenderer = minecraft.fontRendererObj ?: return
         val renderManager = minecraft.renderManager ?: return
 
-        val text = tag.getString()
-        if (text.isBlank()) return
-
         // Calculate Scale
-        // Sk1er impl uses: 0.016666668f * 1.6f * fontSize
-        // We map LevelheadConfig.textScale to this
         val textScale = 0.016666668f * 1.6f * LevelheadConfig.textScale
 
         GlStateManager.pushMatrix()
@@ -107,7 +103,7 @@ object AboveHeadRender {
 
         GlStateManager.disableLighting()
         GlStateManager.depthMask(false)
-        GlStateManager.disableDepth() // Sk1er impl disables depth for background
+        GlStateManager.disableDepth()
         GlStateManager.enableBlend()
         GlStateManager.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO)
 
@@ -115,56 +111,52 @@ object AboveHeadRender {
         val footerWidth = tag.footer.getWidth(fontRenderer)
         val stringWidth = (headerWidth + footerWidth) shr 1
 
-        // --- BACKGROUND RENDERING (Optimized) ---
+        // --- BACKGROUND RENDERING ---
         if (displayManager.config.showBackground) {
             GlStateManager.disableTexture2D()
             
-            // Get opacity as primitive float (No Color object creation!)
+            // Raw float opacity (No object creation)
             val opacity = displayManager.config.backgroundOpacity.coerceIn(0f, 1f)
             
-            val uGraphics = UGraphics.getFromTessellator()
-            uGraphics.beginWithDefaultShader(UGraphics.DrawMode.QUADS, DefaultVertexFormats.POSITION_COLOR)
+            // Use Tessellator directly for zero-allocation rendering
+            val tessellator = Tessellator.getInstance()
+            val worldRenderer = tessellator.worldRenderer
+            
+            worldRenderer.begin(7, DefaultVertexFormats.POSITION_COLOR)
 
-            // Use the shared matrixStack instance
-            // Using standard nametag bounds (-1.0 to 8.0) or fontHeight
             val left = (-stringWidth - 2).toDouble()
             val right = (stringWidth + 2).toDouble()
-            val top = -2.0 // Slightly above text
-            val bottom = 9.0 // Standard text height (8) + padding
+            val top = -2.0
+            val bottom = 9.0
 
-            // Direct vertex calls with primitive colors
-            uGraphics.pos(matrixStack, left, top, 0.0).color(0f, 0f, 0f, opacity).endVertex()
-            uGraphics.pos(matrixStack, left, bottom, 0.0).color(0f, 0f, 0f, opacity).endVertex()
-            uGraphics.pos(matrixStack, right, bottom, 0.0).color(0f, 0f, 0f, opacity).endVertex()
-            uGraphics.pos(matrixStack, right, top, 0.0).color(0f, 0f, 0f, opacity).endVertex()
+            // Manually emit vertices with color (r=0, g=0, b=0, a=opacity)
+            worldRenderer.pos(left, top, 0.0).color(0f, 0f, 0f, opacity).endVertex()
+            worldRenderer.pos(left, bottom, 0.0).color(0f, 0f, 0f, opacity).endVertex()
+            worldRenderer.pos(right, bottom, 0.0).color(0f, 0f, 0f, opacity).endVertex()
+            worldRenderer.pos(right, top, 0.0).color(0f, 0f, 0f, opacity).endVertex()
 
-            uGraphics.drawDirect()
+            tessellator.draw()
+            
             GlStateManager.enableTexture2D()
         }
 
         // --- TEXT RENDERING ---
-        // Sk1er impl renders this manually, but fontRenderer is fine if we manage state
         val startX = -stringWidth
         
-        // Determine primitive colors for text
+        // Colors as primitives (int)
         val headerColorRGB = if (LevelheadConfig.useCustomColor) LevelheadConfig.starColor.rgb else tag.header.color.rgb
         val footerColorRGB = if (LevelheadConfig.useCustomColor) LevelheadConfig.starColor.rgb else tag.footer.color.rgb
 
-        // Re-enable depth for text if desired, or keep disabled like Sk1er impl
-        // Sk1er impl keeps depth disabled for text rendering in the method shown
-        
-        if (tag.header.value.isNotBlank()) {
-            // FIX: Added .toFloat() and 0f
-            fontRenderer.drawString(tag.header.value, startX.toFloat(), 0f, headerColorRGB, true) // true = shadow
+        if (!headerEmpty) {
+            fontRenderer.drawString(tag.header.value, startX.toFloat(), 0f, headerColorRGB, true)
         }
         
-        val headerOffset = fontRenderer.getStringWidth(tag.header.value)
-        if (tag.footer.value.isNotBlank()) {
-            // FIX: Added .toFloat() and 0f
+        if (!footerEmpty) {
+            val headerOffset = fontRenderer.getStringWidth(tag.header.value)
             fontRenderer.drawString(tag.footer.value, (startX + headerOffset).toFloat(), 0f, footerColorRGB, true)
         }
 
-        GlStateManager.enableDepth() // Restore depth
+        GlStateManager.enableDepth()
         GlStateManager.enableLighting()
         GlStateManager.disableBlend()
         GlStateManager.color(1.0f, 1.0f, 1.0f, 1.0f)
