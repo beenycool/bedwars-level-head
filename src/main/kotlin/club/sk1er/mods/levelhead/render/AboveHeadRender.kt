@@ -4,28 +4,32 @@ import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.Levelhead.displayManager
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
+import club.sk1er.mods.levelhead.display.LevelheadTag
+import gg.essential.universal.UGraphics
+import gg.essential.universal.UMatrixStack
 import net.minecraft.client.Minecraft
 import net.minecraft.client.renderer.GlStateManager
+import net.minecraft.client.renderer.vertex.DefaultVertexFormats
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraftforge.client.event.RenderLivingEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
+import org.lwjgl.opengl.GL11
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
 object AboveHeadRender {
-    // Track last render time per player for throttling
+    // Reusable MatrixStack (Similar to UMatrixStack.Compat.get() in the Sk1er implementation)
+    private val matrixStack = UMatrixStack()
+
     private val lastRenderTime: ConcurrentHashMap<UUID, Long> = ConcurrentHashMap()
-    
-    // Clean up old render time entries periodically to prevent memory leaks
     private var lastCleanupTime: Long = 0
-    private const val CLEANUP_INTERVAL_MS = 60000L // Clean up every minute
-    private const val MAX_ENTRY_AGE_MS = 300000L // Remove entries older than 5 minutes
+    private const val CLEANUP_INTERVAL_MS = 60000L
+    private const val MAX_ENTRY_AGE_MS = 300000L
 
     private fun cleanupOldRenderTimes() {
         val now = System.currentTimeMillis()
         if (now - lastCleanupTime < CLEANUP_INTERVAL_MS) return
         lastCleanupTime = now
-        
         val cutoff = now - MAX_ENTRY_AGE_MS
         lastRenderTime.entries.removeIf { it.value < cutoff }
     }
@@ -35,157 +39,135 @@ object AboveHeadRender {
         val entity = event.entity
         if (entity !is EntityPlayer) return
 
-        // Periodic cleanup of old render time entries
-        cleanupOldRenderTimes()
-
-        // Basic checks to ensure we should be rendering
-        if (!displayManager.config.enabled) return
-        if (!LevelheadConfig.enabled) return
+        // 1. Basic Checks
+        if (!LevelheadConfig.enabled || !displayManager.config.enabled) return
         if (!Levelhead.isOnHypixel()) return
-
-        // This check ensures tags only show when Bedwars mode is active (lobby or game)
         if (!BedwarsModeDetector.shouldRenderTags()) return
 
         val minecraft = Minecraft.getMinecraft()
         val localPlayer = minecraft.thePlayer ?: return
 
-        // Render distance culling - early return before expensive operations
+        // 2. Distance Culling
         val renderDistance = displayManager.config.renderDistance
         val distanceSq = entity.getDistanceSqToEntity(localPlayer)
-        val maxDistanceSq = (renderDistance * renderDistance).coerceAtMost(4096.0)
+        val maxDistanceSq = (renderDistance * renderDistance).toDouble().coerceAtMost(4096.0)
         if (distanceSq > maxDistanceSq) return
 
-        // Render throttling check
+        cleanupOldRenderTimes()
+
+        // 3. Throttling
         val throttleMs = displayManager.config.renderThrottleMs
         if (throttleMs > 0) {
             val now = System.currentTimeMillis()
             val lastRender = lastRenderTime[entity.uniqueID]
-            if (lastRender != null && (now - lastRender) < throttleMs) {
-                return
-            }
+            if (lastRender != null && (now - lastRender) < throttleMs) return
             lastRenderTime[entity.uniqueID] = now
         }
 
-        // Skip rendering for ourselves in first-person view
-        if (entity == localPlayer && minecraft.gameSettings.thirdPersonView == 0) return
+        // 4. Visibility Checks
+        if (entity == localPlayer) {
+            if (minecraft.gameSettings.thirdPersonView == 0) return
+            if (!LevelheadConfig.showSelf) return
+        }
+        if (entity.isInvisibleToPlayer(localPlayer) || entity.isSneaking) return
 
-        // Get the primary display configuration
         val display = displayManager.aboveHead.firstOrNull() ?: return
         if (!display.config.enabled) return
 
-        // Check showSelf setting
-        if (entity == localPlayer && !display.config.showSelf) return
-
-        // Retrieve the cached stats tag for this player
         val tag = display.cache[entity.uniqueID] ?: return
 
-        // Build the text to display
-        val text = "${tag.header.value}${tag.footer.value}"
+        // 5. Render
+        renderName(tag, entity, event.x, event.y + entity.height + 0.5, event.z)
+    }
+
+    /**
+     * Optimized renderer adopted from Sk1er LLC implementation.
+     * Uses primitive colors and shared MatrixStack to eliminate allocations.
+     */
+    private fun renderName(tag: LevelheadTag, entityIn: EntityPlayer, x: Double, y: Double, z: Double) {
+        val minecraft = Minecraft.getMinecraft()
+        val fontRenderer = minecraft.fontRendererObj ?: return
+        val renderManager = minecraft.renderManager ?: return
+
+        val text = tag.getString()
         if (text.isBlank()) return
 
-        // Calculate position
-        val x = event.x
-        var y = event.y + entity.height + 0.5
-        val z = event.z
+        // Calculate Scale
+        // Sk1er impl uses: 0.016666668f * 1.6f * fontSize
+        // We map LevelheadConfig.textScale to this
+        val textScale = 0.016666668f * 1.6f * LevelheadConfig.textScale
 
-        // Adjust for sneaking
-        if (entity.isSneaking) {
-            y -= 0.25
-        }
-
-        // Begin OpenGL rendering
         GlStateManager.pushMatrix()
-
-        // Translate to position above player's head
         GlStateManager.translate(x, y, z)
-
-        // Setup normal vector
-        GlStateManager.glNormal3f(0.0f, 1.0f, 0.0f)
-
-        // Rotate to face the player (billboard effect)
-        val renderManager = minecraft.renderManager
+        GL11.glNormal3f(0.0f, 1.0f, 0.0f)
+        
         GlStateManager.rotate(-renderManager.playerViewY, 0.0f, 1.0f, 0.0f)
         GlStateManager.rotate(renderManager.playerViewX, 1.0f, 0.0f, 0.0f)
+        GlStateManager.scale(-textScale, -textScale, textScale)
 
-        // Apply scaling with config value, guard against zero or negative values
-        val MIN_SCALE_EPSILON = 0.001f
-        val effectiveScale = kotlin.math.max(kotlin.math.abs(LevelheadConfig.textScale), MIN_SCALE_EPSILON)
-        val scale = 0.025f * effectiveScale
-        GlStateManager.scale(-scale, -scale, scale)
-
-        // Setup OpenGL state for text rendering
         GlStateManager.disableLighting()
         GlStateManager.depthMask(false)
+        GlStateManager.disableDepth() // Sk1er impl disables depth for background
         GlStateManager.enableBlend()
-        GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0)
-        GlStateManager.disableTexture2D()
+        GlStateManager.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO)
 
-        val fontRenderer = minecraft.fontRendererObj
+        val headerWidth = tag.header.getWidth(fontRenderer)
+        val footerWidth = tag.footer.getWidth(fontRenderer)
+        val stringWidth = (headerWidth + footerWidth) shr 1
+
+        // --- BACKGROUND RENDERING (Optimized) ---
+        if (displayManager.config.showBackground) {
+            GlStateManager.disableTexture2D()
+            
+            // Get opacity as primitive float (No Color object creation!)
+            val opacity = displayManager.config.backgroundOpacity.coerceIn(0f, 1f)
+            
+            val uGraphics = UGraphics.getFromTessellator()
+            uGraphics.beginWithDefaultShader(UGraphics.DrawMode.QUADS, DefaultVertexFormats.POSITION_COLOR)
+
+            // Use the shared matrixStack instance
+            // Using standard nametag bounds (-1.0 to 8.0) or fontHeight
+            val left = (-stringWidth - 2).toDouble()
+            val right = (stringWidth + 2).toDouble()
+            val top = -2.0 // Slightly above text
+            val bottom = 9.0 // Standard text height (8) + padding
+
+            // Direct vertex calls with primitive colors
+            uGraphics.pos(matrixStack, left, top, 0.0).color(0f, 0f, 0f, opacity).endVertex()
+            uGraphics.pos(matrixStack, left, bottom, 0.0).color(0f, 0f, 0f, opacity).endVertex()
+            uGraphics.pos(matrixStack, right, bottom, 0.0).color(0f, 0f, 0f, opacity).endVertex()
+            uGraphics.pos(matrixStack, right, top, 0.0).color(0f, 0f, 0f, opacity).endVertex()
+
+            uGraphics.drawDirect()
+            GlStateManager.enableTexture2D()
+        }
+
+        // --- TEXT RENDERING ---
+        // Sk1er impl renders this manually, but fontRenderer is fine if we manage state
+        val startX = -stringWidth
         
-        // Calculate widths for proper centering
-        val headerText = tag.header.value
-        val footerText = tag.footer.value
-        val headerWidth = fontRenderer.getStringWidth(headerText)
-        val footerWidth = fontRenderer.getStringWidth(footerText)
-        val totalWidth = headerWidth + footerWidth
-        val halfWidth = totalWidth / 2
+        // Determine primitive colors for text
+        val headerColorRGB = if (LevelheadConfig.useCustomColor) LevelheadConfig.starColor.rgb else tag.header.color.rgb
+        val footerColorRGB = if (LevelheadConfig.useCustomColor) LevelheadConfig.starColor.rgb else tag.footer.color.rgb
 
-        // Draw semi-transparent background
-        val backgroundColor = 0x40000000 // 25% opacity black
-        drawRect(-halfWidth - 2, -2, halfWidth + 2, fontRenderer.FONT_HEIGHT, backgroundColor)
-
-        // Re-enable textures for text rendering
-        GlStateManager.enableTexture2D()
-
-        // Determine colors to use - preserve per-section colors
-        val headerColor = if (LevelheadConfig.useCustomColor) {
-            LevelheadConfig.starColor.rgb
-        } else {
-            tag.header.color.rgb
+        // Re-enable depth for text if desired, or keep disabled like Sk1er impl
+        // Sk1er impl keeps depth disabled for text rendering in the method shown
+        
+        if (tag.header.value.isNotBlank()) {
+            // FIX: Added .toFloat() and 0f
+            fontRenderer.drawString(tag.header.value, startX.toFloat(), 0f, headerColorRGB, true) // true = shadow
         }
         
-        val footerColor = if (LevelheadConfig.useCustomColor) {
-            LevelheadConfig.starColor.rgb
-        } else {
-            tag.footer.color.rgb
+        val headerOffset = fontRenderer.getStringWidth(tag.header.value)
+        if (tag.footer.value.isNotBlank()) {
+            // FIX: Added .toFloat() and 0f
+            fontRenderer.drawString(tag.footer.value, (startX + headerOffset).toFloat(), 0f, footerColorRGB, true)
         }
 
-        // Draw header and footer separately with their respective colors
-        val startX = -halfWidth.toFloat()
-        if (headerText.isNotBlank()) {
-            fontRenderer.drawStringWithShadow(headerText, startX, 0f, headerColor)
-        }
-        if (footerText.isNotBlank()) {
-            fontRenderer.drawStringWithShadow(footerText, startX + headerWidth, 0f, footerColor)
-        }
-
-        // Cleanup OpenGL state
-        GlStateManager.depthMask(true)
+        GlStateManager.enableDepth() // Restore depth
         GlStateManager.enableLighting()
         GlStateManager.disableBlend()
         GlStateManager.color(1.0f, 1.0f, 1.0f, 1.0f)
         GlStateManager.popMatrix()
-    }
-
-    /**
-     * Draws a rectangle using OpenGL.
-     * This is used for the semi-transparent background behind the text.
-     */
-    private fun drawRect(left: Int, top: Int, right: Int, bottom: Int, color: Int) {
-        val alpha = (color shr 24 and 255) / 255.0f
-        val red = (color shr 16 and 255) / 255.0f
-        val green = (color shr 8 and 255) / 255.0f
-        val blue = (color and 255) / 255.0f
-
-        val tessellator = net.minecraft.client.renderer.Tessellator.getInstance()
-        val worldRenderer = tessellator.worldRenderer
-
-        GlStateManager.color(red, green, blue, alpha)
-        worldRenderer.begin(7, net.minecraft.client.renderer.vertex.DefaultVertexFormats.POSITION)
-        worldRenderer.pos(left.toDouble(), bottom.toDouble(), 0.0).endVertex()
-        worldRenderer.pos(right.toDouble(), bottom.toDouble(), 0.0).endVertex()
-        worldRenderer.pos(right.toDouble(), top.toDouble(), 0.0).endVertex()
-        worldRenderer.pos(left.toDouble(), top.toDouble(), 0.0).endVertex()
-        tessellator.draw()
     }
 }

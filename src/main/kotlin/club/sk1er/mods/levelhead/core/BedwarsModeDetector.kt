@@ -4,6 +4,7 @@ import club.sk1er.mods.levelhead.Levelhead
 import net.minecraft.client.Minecraft
 import net.minecraft.scoreboard.Score
 import net.minecraft.scoreboard.ScorePlayerTeam
+import net.minecraft.util.IChatComponent
 import net.minecraft.util.StringUtils
 import net.minecraftforge.client.event.ClientChatReceivedEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
@@ -22,6 +23,17 @@ object BedwarsModeDetector {
     private var chatDetectionExpiry: Long = 0L
 
     private const val CHAT_CONTEXT_DURATION = 20_000L
+
+    /**
+     * Lazily cached reflection fallback for cases where the scoreboard title is not an
+     * [IChatComponent] instance but still exposes a getFormattedText-style method.
+     * This avoids doing method lookups on every detection tick.
+     */
+    private val formattedTextMethod by lazy {
+        runCatching {
+            IChatComponent::class.java.getMethod("getFormattedText")
+        }.getOrNull()
+    }
 
     enum class Context {
         UNKNOWN,
@@ -101,16 +113,12 @@ object BedwarsModeDetector {
         val displayComponent: Any? = objective.displayName
         val rawTitle = when (displayComponent) {
             null -> ""
+            is IChatComponent -> displayComponent.formattedText
             else -> {
-                val clazz = displayComponent::class.java
-                val formattedMethod = runCatching { clazz.getMethod("getFormattedText") }.getOrNull()
-                    ?: runCatching { clazz.getMethod("getUnformattedText") }.getOrNull()
-                when {
-                    formattedMethod != null -> runCatching {
-                        formattedMethod.invoke(displayComponent) as? String
-                    }.getOrNull()
-                    else -> null
-                } ?: displayComponent.toString()
+                // Fallback: try the cached reflection method once, then fall back to toString()
+                runCatching {
+                    formattedTextMethod?.invoke(displayComponent) as? String
+                }.getOrNull() ?: displayComponent.toString()
             }
         }
         val title = StringUtils.stripControlCodes(rawTitle)

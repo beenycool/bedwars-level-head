@@ -17,19 +17,34 @@ import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
 import net.minecraft.client.Minecraft
 import org.apache.commons.io.FileUtils
-import java.awt.Color
+import java.awt.Color as AwtColor
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.Locale
 import java.util.UUID
 
-object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedwars-levelhead.json") {
-    private const val DEFAULT_PROXY_URL = "https://beeny.hackclub.app"
+private const val DEFAULT_PROXY_URL = "https://beeny.hackclub.app"
+private const val _MIN_STAR_CACHE_TTL_MINUTES = 5
+private const val _MAX_STAR_CACHE_TTL_MINUTES = 180
+private const val _DEFAULT_STAR_CACHE_TTL_MINUTES = 45
 
-    const val MIN_STAR_CACHE_TTL_MINUTES = 5
-    const val MAX_STAR_CACHE_TTL_MINUTES = 180
-    const val DEFAULT_STAR_CACHE_TTL_MINUTES = 45
+object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedwars-levelhead.json") {
+    // Expose constants as @JvmStatic functions - functions are not serialized by Gson
+    @JvmStatic
+    fun getMinStarCacheTtlMinutes() = _MIN_STAR_CACHE_TTL_MINUTES
+    
+    @JvmStatic
+    fun getMaxStarCacheTtlMinutes() = _MAX_STAR_CACHE_TTL_MINUTES
+    
+    @JvmStatic
+    fun getDefaultStarCacheTtlMinutes() = _DEFAULT_STAR_CACHE_TTL_MINUTES
+    
+    // Provide property-like access for Kotlin (computed properties compile to methods, not fields)
+    val MIN_STAR_CACHE_TTL_MINUTES: Int get() = _MIN_STAR_CACHE_TTL_MINUTES
+    val MAX_STAR_CACHE_TTL_MINUTES: Int get() = _MAX_STAR_CACHE_TTL_MINUTES
+    val DEFAULT_STAR_CACHE_TTL_MINUTES: Int get() = _DEFAULT_STAR_CACHE_TTL_MINUTES
+
     @Header(text = "General")
     @Switch(name = "Enabled", description = "Toggle the BedWars Levelhead overlay")
     @SerializedName("bedwarsEnabled")
@@ -165,7 +180,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var headerColor: OneColor = OneColor(85, 255, 255)
         set(value) {
             field = value
-            val javaColor = Color(value.rgb)
+            val javaColor = AwtColor(value.rgb)
             Levelhead.displayManager.updatePrimaryDisplay { config ->
                 config.headerColor = javaColor
                 true
@@ -214,10 +229,10 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         category = "Performance",
         description = "Minimum time between render updates per player (0 = no throttling)."
     )
-    var renderThrottleMs: Long = 0L
+    var renderThrottleMs: Int = 100
         set(value) {
-            field = value.coerceIn(0L, 100L)
-            Levelhead.displayManager.config.renderThrottleMs = field
+            field = value.coerceIn(0, 100)
+            Levelhead.displayManager.config.renderThrottleMs = field.toLong()
             Levelhead.displayManager.saveConfig()
             save()
         }
@@ -254,7 +269,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         category = "Developer",
         description = "Developer option: adjust cache duration. Do not change this unless you know what you are doing."
     )
-    var starCacheTtlMinutes: Int = DEFAULT_STAR_CACHE_TTL_MINUTES
+    var starCacheTtlMinutes: Int = _DEFAULT_STAR_CACHE_TTL_MINUTES
 
     @Button(
         name = "Reset Settings",
@@ -270,7 +285,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var installId: String = ""
 
     val starCacheTtl: Duration
-        get() = Duration.ofMinutes(starCacheTtlMinutes.coerceIn(MIN_STAR_CACHE_TTL_MINUTES, MAX_STAR_CACHE_TTL_MINUTES).toLong())
+        get() = Duration.ofMinutes(starCacheTtlMinutes.coerceIn(_MIN_STAR_CACHE_TTL_MINUTES, _MAX_STAR_CACHE_TTL_MINUTES).toLong())
 
     init {
         initialize()
@@ -369,7 +384,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         headerColor = OneColor(85, 255, 255)
         footerTemplate = "%star%"
         cachePurgeSize = 500
-        renderThrottleMs = 0L
+        renderThrottleMs = 0
         proxyEnabled = true
         proxyBaseUrl = DEFAULT_PROXY_URL
         proxyAuthToken = ""
