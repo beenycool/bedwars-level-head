@@ -69,6 +69,7 @@ const MAX_ALLOWED_LIMIT = 10000;
 // Add a buffer with mutex protection
 const bufferMutex = new Mutex();
 const historyBuffer: PlayerQueryRecord[] = [];
+const MAX_HISTORY_BUFFER = 50_000;
 const BATCH_FLUSH_INTERVAL = 5000; // 5 seconds
 let flushInterval: NodeJS.Timeout | null = null;
 
@@ -176,6 +177,13 @@ async function flushHistoryBuffer(): Promise<void> {
 export async function recordPlayerQuery(record: PlayerQueryRecord): Promise<void> {
   // Push to memory instead of writing immediately (with mutex protection)
   await bufferMutex.runExclusive(() => {
+    if (historyBuffer.length >= MAX_HISTORY_BUFFER) {
+      // Drop oldest entry to prevent unbounded growth
+      historyBuffer.shift();
+      console.warn(
+        `[history] buffer at capacity (${MAX_HISTORY_BUFFER}); dropping oldest entry to admit new records`,
+      );
+    }
     historyBuffer.push(record);
   });
 }

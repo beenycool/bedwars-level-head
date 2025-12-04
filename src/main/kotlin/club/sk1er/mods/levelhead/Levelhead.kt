@@ -627,7 +627,6 @@ object Levelhead {
             baseStyle.color
         }
         
-        val style = baseStyle.copy(chroma = false)
         val tag = LevelheadTag.build(uuid) {
             header {
                 value = "${display.config.headerString}: "
@@ -636,8 +635,8 @@ object Levelhead {
             }
             footer {
                 value = footerValue
-                color = finalColor // Use the calculated color
-                chroma = if (isStale) false else style.chroma // Disable chroma if stale
+                color = finalColor
+                chroma = if (isStale) false else baseStyle.chroma // Disable chroma if stale
             }
         }
         display.cache[uuid] = tag

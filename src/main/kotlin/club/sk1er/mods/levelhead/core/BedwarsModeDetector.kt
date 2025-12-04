@@ -25,17 +25,6 @@ object BedwarsModeDetector {
 
     private const val CHAT_CONTEXT_DURATION = 20_000L
 
-    /**
-     * Lazily cached reflection fallback for cases where the scoreboard title is not an
-     * [IChatComponent] instance but still exposes a getFormattedText-style method.
-     * This avoids doing method lookups on every detection tick.
-     */
-    private val formattedTextMethod by lazy {
-        runCatching {
-            IChatComponent::class.java.getMethod("getFormattedText")
-        }.getOrNull()
-    }
-
     enum class Context {
         UNKNOWN,
         NONE,
@@ -117,9 +106,10 @@ object BedwarsModeDetector {
             null -> ""
             is IChatComponent -> displayComponent.formattedText
             else -> {
-                // Fallback: try the cached reflection method once, then fall back to toString()
+                // Fallback: try to invoke getFormattedText on the actual type, then fall back to toString()
                 runCatching {
-                    formattedTextMethod?.invoke(displayComponent) as? String
+                    displayComponent::class.java.getMethod("getFormattedText")
+                        .invoke(displayComponent) as? String
                 }.getOrNull() ?: displayComponent.toString()
             }
         }

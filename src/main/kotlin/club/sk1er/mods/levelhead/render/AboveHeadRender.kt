@@ -18,6 +18,8 @@ import java.awt.Color
 
 object AboveHeadRender {
 
+    private var frameCounter = 0
+
     @SubscribeEvent
     fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
         if (!displayManager.config.enabled) return
@@ -25,6 +27,10 @@ object AboveHeadRender {
         val minecraft = Minecraft.getMinecraft()
         if (minecraft.gameSettings.hideGUI) return
         if (!BedwarsModeDetector.shouldRenderTags()) return
+
+        val skip = displayManager.config.frameSkip.coerceAtLeast(1)
+        frameCounter = (frameCounter + 1) % skip
+        if (frameCounter != 0) return
 
         val player = event.entity as? EntityPlayer ?: return
         val localPlayer = minecraft.thePlayer
@@ -72,8 +78,9 @@ object AboveHeadRender {
         GlStateManager.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO)
 
         val halfWidth = renderer.getStringWidth(tag.getString()) / 2
+        val headerWidth = tag.header.getWidth(renderer)
         drawBackground(halfWidth)
-        renderString(renderer, tag)
+        renderString(renderer, tag, halfWidth, headerWidth)
 
         GlStateManager.enableLighting()
         GlStateManager.disableBlend()
@@ -84,32 +91,36 @@ object AboveHeadRender {
     }
 
     private fun drawBackground(halfWidth: Int) {
+        if (!displayManager.config.showBackground) return
+        val alpha = displayManager.config.backgroundOpacity.coerceIn(0f, 100f) / 100f
         val tessellator = Tessellator.getInstance()
         val buffer = tessellator.worldRenderer
         buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_COLOR)
         val left = -halfWidth - 2.0
         val right = halfWidth + 1.0
-        buffer.pos(left, -1.0, 0.0).color(0f, 0f, 0f, 0.25f).endVertex()
-        buffer.pos(left, 8.0, 0.0).color(0f, 0f, 0f, 0.25f).endVertex()
-        buffer.pos(right, 8.0, 0.0).color(0f, 0f, 0f, 0.25f).endVertex()
-        buffer.pos(right, -1.0, 0.0).color(0f, 0f, 0f, 0.25f).endVertex()
+        buffer.pos(left, -1.0, 0.0).color(0f, 0f, 0f, alpha).endVertex()
+        buffer.pos(left, 8.0, 0.0).color(0f, 0f, 0f, alpha).endVertex()
+        buffer.pos(right, 8.0, 0.0).color(0f, 0f, 0f, alpha).endVertex()
+        buffer.pos(right, -1.0, 0.0).color(0f, 0f, 0f, alpha).endVertex()
         tessellator.draw()
     }
 
-    private fun renderString(renderer: FontRenderer, tag: LevelheadTag) {
-        var x = -(renderer.getStringWidth(tag.getString()) / 2)
+    private fun renderString(renderer: FontRenderer, tag: LevelheadTag, halfWidth: Int, headerWidth: Int) {
+        var x = -halfWidth
         renderComponent(renderer, tag.header, x)
-        x += renderer.getStringWidth(tag.header.value)
+        x += headerWidth
         renderComponent(renderer, tag.footer, x)
     }
 
     private fun renderComponent(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int) {
-        GlStateManager.disableDepth()
-        GlStateManager.depthMask(false)
-        // Shadow (faded)
-        renderer.drawString(component.value, x, 0, component.color.withAlphaFactor(0.2f))
-        GlStateManager.enableDepth()
-        GlStateManager.depthMask(true)
+        if (displayManager.config.textShadow) {
+            GlStateManager.disableDepth()
+            GlStateManager.depthMask(false)
+            // Shadow (faded)
+            renderer.drawString(component.value, x, 0, component.color.withAlphaFactor(0.2f))
+            GlStateManager.enableDepth()
+            GlStateManager.depthMask(true)
+        }
         // Main text
         renderer.drawString(component.value, x, 0, component.color.rgb)
     }

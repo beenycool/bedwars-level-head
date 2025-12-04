@@ -173,9 +173,14 @@ function mapRow<T>(row: CacheRow): CacheEntry<T> {
         ? Number.parseInt(lastModifiedRaw, 10)
         : lastModifiedRaw;
 
-  // payload is JSONB - pg driver parses it automatically, no need for JSON.parse
+  // payload may be JSONB (already parsed) or legacy TEXT containing JSON; handle both
+  let parsedPayload: unknown = row.payload;
+  if (typeof row.payload === 'string') {
+    parsedPayload = JSON.parse(row.payload);
+  }
+
   return {
-    value: row.payload as T,
+    value: parsedPayload as T,
     expiresAt,
     etag: row.etag,
     lastModified,

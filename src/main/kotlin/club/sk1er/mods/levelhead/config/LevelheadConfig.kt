@@ -414,7 +414,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         headerColor = OneColor(85, 255, 255)
         footerTemplate = "%star%"
         cachePurgeSize = 500
-        renderThrottleMs = 0
+        renderThrottleMs = 100
         frameSkip = 1
         proxyEnabled = true
         proxyBaseUrl = DEFAULT_PROXY_URL
