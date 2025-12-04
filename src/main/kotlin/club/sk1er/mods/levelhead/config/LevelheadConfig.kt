@@ -155,6 +155,19 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             save()
         }
 
+    @Switch(
+        name = "Text Shadow",
+        category = "Display",
+        description = "Add shadow to text. Disable to match Patcher nametag settings with shadow off."
+    )
+    var textShadow: Boolean = false
+        set(value) {
+            field = value
+            Levelhead.displayManager.config.textShadow = value
+            Levelhead.displayManager.saveConfig()
+            save()
+        }
+
     @Header(text = "Text Customization", category = "Text")
     
     @Text(
@@ -233,6 +246,22 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         set(value) {
             field = value.coerceIn(0, 100)
             Levelhead.displayManager.config.renderThrottleMs = field.toLong()
+            Levelhead.displayManager.saveConfig()
+            save()
+        }
+
+    @Slider(
+        name = "Frame Skip",
+        min = 1f,
+        max = 4f,
+        step = 1,
+        category = "Performance",
+        description = "Render tags every N frames. Higher = better FPS but slightly less smooth. At 60 FPS: 2 = 30 updates/sec, 4 = 15 updates/sec."
+    )
+    var frameSkip: Int = 1
+        set(value) {
+            field = value.coerceIn(1, 4)
+            Levelhead.displayManager.config.frameSkip = field
             Levelhead.displayManager.saveConfig()
             save()
         }
@@ -380,11 +409,13 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         renderDistance = 64
         backgroundOpacity = 25.0f
         showBackground = true
+        textShadow = false
         headerText = "BedWars"
         headerColor = OneColor(85, 255, 255)
         footerTemplate = "%star%"
         cachePurgeSize = 500
         renderThrottleMs = 0
+        frameSkip = 1
         proxyEnabled = true
         proxyBaseUrl = DEFAULT_PROXY_URL
         proxyAuthToken = ""

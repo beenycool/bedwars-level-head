@@ -127,6 +127,7 @@ export const CACHE_DB_POOL_MAX = parseIntEnv('CACHE_DB_POOL_MAX', 10);
 export const HYPIXEL_TIMEOUT_MS = parseIntEnv('HYPIXEL_TIMEOUT_MS', 5 * 1000);
 export const HYPIXEL_RETRY_DELAY_MIN_MS = parseIntEnv('HYPIXEL_RETRY_DELAY_MIN_MS', 50);
 export const HYPIXEL_RETRY_DELAY_MAX_MS = parseIntEnv('HYPIXEL_RETRY_DELAY_MAX_MS', 150);
+export const HYPIXEL_API_CALL_WINDOW_MS = parseIntEnv('HYPIXEL_API_CALL_WINDOW_MS', 5 * 60 * 1000);
 
 export const CACHE_DB_URL = requiredEnv('CACHE_DB_URL');
 

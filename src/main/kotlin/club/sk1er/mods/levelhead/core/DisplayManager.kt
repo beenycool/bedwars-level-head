@@ -219,6 +219,8 @@ class DisplayManager(val file: File) {
         config.backgroundOpacity = 0.25f
         config.showBackground = true
         config.renderThrottleMs = 0L
+        config.frameSkip = 1
+        config.textShadow = false
         aboveHead.clear()
         val defaultDisplay = AboveHeadDisplay(DisplayConfig())
         // Ensure DisplayConfig defaults match LevelheadConfig defaults

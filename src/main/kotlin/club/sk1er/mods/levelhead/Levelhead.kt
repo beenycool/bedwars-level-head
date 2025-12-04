@@ -39,6 +39,7 @@ import net.minecraftforge.fml.common.Mod
 import net.minecraftforge.fml.common.event.FMLPostInitializationEvent
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
+import net.minecraftforge.fml.common.gameevent.TickEvent
 import net.minecraftforge.fml.common.network.FMLNetworkEvent
 import okhttp3.Dns
 import okhttp3.OkHttpClient
@@ -247,6 +248,15 @@ object Levelhead {
         }
     }
 
+    @SubscribeEvent
+    fun onClientTick(event: TickEvent.ClientTickEvent) {
+        // Only process once per tick (at END phase) to avoid double processing
+        if (event.phase != TickEvent.Phase.END) return
+        // Perform scheduled cleanup for AboveHeadRender's lastRenderTime map
+        // This moves the cleanup off the render thread to prevent micro-stutters
+        AboveHeadRender.performScheduledCleanup()
+    }
+
     fun fetchBatch(requests: List<LevelheadRequest>): Job {
         return worldScope.launch {
             if (!Levelhead.isOnHypixel()) return@launch
@@ -327,7 +337,7 @@ object Levelhead {
                             when (result) {
                                 is BedwarsFetcher.FetchResult.Success -> {
                                     lastFetchSuccessAt = System.currentTimeMillis()
-                                    val cachedEntry = buildCachedStats(result.payload)
+                                    val cachedEntry = buildCachedStats(result.payload, result.etag)
                                     handleStatsUpdate(uuid, cachedEntry)
                                     applyStatsToRequests(uuid, entry.requests, cachedEntry)
                                     remaining.remove(entry)
@@ -444,15 +454,16 @@ object Levelhead {
                 try {
                     lastFetchAttemptAt = System.currentTimeMillis()
                     rateLimiter.consume()
-                    when (val result = BedwarsFetcher.fetchPlayer(uuid, cached?.fetchedAt)) {
+                    when (val result = BedwarsFetcher.fetchPlayer(uuid, cached?.fetchedAt, cached?.etag)) {
                         is BedwarsFetcher.FetchResult.Success -> {
                             lastFetchSuccessAt = System.currentTimeMillis()
-                            val entry = buildCachedStats(result.payload)
+                            val entry = buildCachedStats(result.payload, result.etag)
                             handleStatsUpdate(uuid, entry)
                             entry
                         }
                         BedwarsFetcher.FetchResult.NotModified -> {
                             lastFetchSuccessAt = System.currentTimeMillis()
+                            // Reuse existing cached stats with updated fetchedAt, preserving etag
                             val refreshed = cached?.copy(fetchedAt = System.currentTimeMillis())
                             refreshed?.let { handleStatsUpdate(uuid, it) }
                             refreshed
@@ -486,13 +497,13 @@ object Levelhead {
         return deferred
     }
 
-    private fun buildCachedStats(payload: JsonObject): CachedBedwarsStats {
+    private fun buildCachedStats(payload: JsonObject, etag: String? = null): CachedBedwarsStats {
         val experience = BedwarsStar.extractExperience(payload)
         val star = experience?.let { BedwarsStar.calculateStar(it) }
         val fkdr = BedwarsFetcher.parseBedwarsFkdr(payload)
         val winstreak = BedwarsFetcher.parseBedwarsWinstreak(payload)
         val fetchedAt = System.currentTimeMillis()
-        return CachedBedwarsStats(star, experience, fkdr, winstreak, fetchedAt)
+        return CachedBedwarsStats(star, experience, fkdr, winstreak, fetchedAt, etag)
     }
 
     private fun resetWorldScope() {
@@ -604,6 +615,18 @@ object Levelhead {
         }
         val baseStyle = starValue?.let { BedwarsStar.styleForStar(it) }
             ?: BedwarsStar.PrestigeStyle(display.config.footerColor, false)
+        
+        // Check if data is stale (> 1 hour old)
+        val age = System.currentTimeMillis() - (starData?.fetchedAt ?: 0L)
+        val isStale = age > 3600 * 1000 // 1 hour
+        
+        // If stale, force a gray color or reduce opacity logic in the footer color
+        val finalColor = if (isStale && starData != null) {
+            Color.GRAY // Or blend baseStyle.color with gray
+        } else {
+            baseStyle.color
+        }
+        
         val style = baseStyle.copy(chroma = false)
         val tag = LevelheadTag.build(uuid) {
             header {
@@ -613,8 +636,8 @@ object Levelhead {
             }
             footer {
                 value = footerValue
-                color = style.color
-                chroma = style.chroma
+                color = finalColor // Use the calculated color
+                chroma = if (isStale) false else style.chroma // Disable chroma if stale
             }
         }
         display.cache[uuid] = tag
@@ -643,7 +666,8 @@ object Levelhead {
         val experience: Long?,
         val fkdr: Double?,
         val winstreak: Int?,
-        val fetchedAt: Long
+        val fetchedAt: Long,
+        val etag: String? = null
     ) {
         fun isExpired(ttl: Duration, now: Long = System.currentTimeMillis()): Boolean {
             return now - fetchedAt >= ttl.toMillis()

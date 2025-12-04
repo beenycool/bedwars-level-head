@@ -16,6 +16,7 @@ object BedwarsModeDetector {
 
     private val teamPattern = Regex("^(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY|GREY):", RegexOption.IGNORE_CASE)
     private val miniServerPattern = Regex("mini\\w+", RegexOption.IGNORE_CASE)
+    private val WHITESPACE_PATTERN = Regex("\\s+")
 
     private var cachedContext: Context = Context.UNKNOWN
     private var lastDetectionTime: Long = 0L
@@ -54,7 +55,8 @@ object BedwarsModeDetector {
 
     fun currentContext(force: Boolean = false): Context {
         val now = System.currentTimeMillis()
-        if (force || cachedContext == Context.UNKNOWN || now - lastDetectionTime > 1_000L) {
+        // Cache context for 5 seconds to reduce scoreboard parsing overhead
+        if (force || cachedContext == Context.UNKNOWN || now - lastDetectionTime > 5_000L) {
             val detected = detectContext()
             if (detected != cachedContext) {
                 val oldContext = cachedContext.takeUnless { it == Context.UNKNOWN } ?: Context.NONE
@@ -123,7 +125,7 @@ object BedwarsModeDetector {
         }
         val title = StringUtils.stripControlCodes(rawTitle)
             .uppercase(Locale.ROOT)
-        val normalizedTitle = title.replace("\\s+".toRegex(), "")
+        val normalizedTitle = title.replace(WHITESPACE_PATTERN, "")
         if (!normalizedTitle.contains("BEDWARS")) {
             return Context.NONE
         }

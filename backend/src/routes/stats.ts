@@ -432,6 +432,117 @@ router.get('/', async (req, res, next) => {
         padding-top: 1rem;
         border-top: 1px solid rgba(148, 163, 184, 0.2);
       }
+      .card {
+        position: relative;
+      }
+      .expand-btn {
+        position: absolute;
+        top: 0.75rem;
+        right: 0.75rem;
+        background: rgba(59, 130, 246, 0.2);
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        color: #cbd5f5;
+        padding: 0.4rem 0.6rem;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.85rem;
+        font-weight: 600;
+        z-index: 10;
+        transition: background 0.2s;
+      }
+      .expand-btn:hover {
+        background: rgba(59, 130, 246, 0.35);
+      }
+      .fullscreen-overlay {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(15, 23, 42, 0.95);
+        z-index: 9999;
+        padding: 2rem;
+        overflow: auto;
+      }
+      .fullscreen-overlay.active {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+      }
+      .fullscreen-chart-container {
+        background: rgba(30, 41, 59, 0.95);
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        border-radius: 12px;
+        padding: 2rem;
+        max-width: 95vw;
+        max-height: 95vh;
+        width: 100%;
+        position: relative;
+      }
+      .fullscreen-chart-title {
+        font-size: 1.25rem;
+        color: #cbd5f5;
+        margin-bottom: 1rem;
+        font-weight: 600;
+      }
+      .fullscreen-chart-shell {
+        position: relative;
+        height: calc(95vh - 120px);
+        min-height: 400px;
+      }
+      .fullscreen-close-btn {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+        background: rgba(239, 68, 68, 0.2);
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        color: #cbd5f5;
+        padding: 0.5rem 0.75rem;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 0.9rem;
+        font-weight: 600;
+        z-index: 10;
+      }
+      .fullscreen-close-btn:hover {
+        background: rgba(239, 68, 68, 0.35);
+      }
+      .latency-chart-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+      }
+      .latency-chart-controls label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #cbd5f5;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .latency-chart-controls input[type="checkbox"] {
+        accent-color: #38bdf8;
+        cursor: pointer;
+      }
+      .stat-card-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+      }
+      .stat-card-controls select {
+        padding: 0.35rem 0.5rem;
+        border-radius: 6px;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        background: rgba(15, 23, 42, 0.8);
+        color: #e2e8f0;
+        font-size: 0.75rem;
+        cursor: pointer;
+      }
     </style>
   </head>
   <body>
@@ -487,9 +598,20 @@ router.get('/', async (req, res, next) => {
         <p class="stat-sub">Based on HTTP status codes</p>
       </div>
       <div class="card stat-card">
-        <p class="stat-label">Latency (p95)</p>
+        <p class="stat-label" id="latencyLabel">Latency (p95)</p>
         <p class="stat-value" id="latencyP95Value">--</p>
         <p class="stat-sub">Derived from real latency samples</p>
+        <div class="stat-card-controls">
+          <label for="latencyMetricSelect">Metric:</label>
+          <select id="latencyMetricSelect">
+            <option value="p50">p50 (Median)</option>
+            <option value="p95" selected>p95</option>
+            <option value="p99">p99</option>
+            <option value="min">Min</option>
+            <option value="max">Max</option>
+            <option value="avg">Average</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -502,39 +624,64 @@ router.get('/', async (req, res, next) => {
     <div class="dashboard-grid">
       <div class="card">
         <h2>Cache Performance</h2>
+        <button class="expand-btn" data-chart-id="cacheChart" data-chart-title="Cache Performance">Expand</button>
         <div class="chart-shell"><canvas id="cacheChart"></canvas></div>
       </div>
       <div class="card">
         <h2>Star Distribution</h2>
+        <button class="expand-btn" data-chart-id="starChart" data-chart-title="Star Distribution">Expand</button>
         <div class="chart-shell"><canvas id="starChart"></canvas></div>
       </div>
       <div class="card">
         <h2>Latency Pulse</h2>
+        <button class="expand-btn" data-chart-id="latencyChart" data-chart-title="Latency Pulse">Expand</button>
+        <div class="latency-chart-controls">
+          <label>
+            <input type="checkbox" id="includeCacheHits" checked />
+            Include cache hits
+          </label>
+        </div>
         <div class="chart-shell"><canvas id="latencyChart"></canvas></div>
       </div>
       <div class="card">
         <h2>Status Breakdown</h2>
+        <button class="expand-btn" data-chart-id="statusChart" data-chart-title="Status Breakdown">Expand</button>
         <div class="chart-shell"><canvas id="statusChart"></canvas></div>
       </div>
       <div class="card">
         <h2>Lookup Type Distribution</h2>
+        <button class="expand-btn" data-chart-id="lookupTypeChart" data-chart-title="Lookup Type Distribution">Expand</button>
         <div class="chart-shell"><canvas id="lookupTypeChart"></canvas></div>
       </div>
       <div class="card">
         <h2>Requests Over Time</h2>
+        <button class="expand-btn" data-chart-id="requestsOverTimeChart" data-chart-title="Requests Over Time">Expand</button>
         <div class="chart-shell"><canvas id="requestsOverTimeChart"></canvas></div>
       </div>
       <div class="card">
         <h2>Cache Hit Rate Over Time</h2>
+        <button class="expand-btn" data-chart-id="cacheOverTimeChart" data-chart-title="Cache Hit Rate Over Time">Expand</button>
         <div class="chart-shell"><canvas id="cacheOverTimeChart"></canvas></div>
       </div>
       <div class="card">
         <h2>Latency Distribution</h2>
+        <button class="expand-btn" data-chart-id="latencyDistributionChart" data-chart-title="Latency Distribution">Expand</button>
         <div class="chart-shell"><canvas id="latencyDistributionChart"></canvas></div>
       </div>
       <div class="card">
         <h2>Top Queried Players</h2>
+        <button class="expand-btn" data-chart-id="topPlayersChart" data-chart-title="Top Queried Players">Expand</button>
         <div class="chart-shell"><canvas id="topPlayersChart"></canvas></div>
+      </div>
+    </div>
+
+    <div class="fullscreen-overlay" id="fullscreenOverlay">
+      <div class="fullscreen-chart-container">
+        <button class="fullscreen-close-btn" id="fullscreenCloseBtn">Close (ESC)</button>
+        <div class="fullscreen-chart-title" id="fullscreenChartTitle"></div>
+        <div class="fullscreen-chart-shell">
+          <canvas id="fullscreenChart"></canvas>
+        </div>
       </div>
     </div>
 
@@ -771,10 +918,21 @@ router.get('/', async (req, res, next) => {
       const latencyValues = data
         .map((d) => (typeof d.latencyMs === 'number' && d.latencyMs >= 0 ? d.latencyMs : null))
         .filter((v) => v !== null);
-      const latencyP95 = percentile(latencyValues, 95);
-      const latencyAvg = latencyValues.length
-        ? latencyValues.reduce((sum, value) => sum + (value ?? 0), 0) / latencyValues.length
-        : null;
+      
+      // Calculate all latency metrics
+      const latencyMetrics = {
+        p50: percentile(latencyValues, 50),
+        p95: percentile(latencyValues, 95),
+        p99: percentile(latencyValues, 99),
+        min: latencyValues.length > 0 ? Math.min(...latencyValues) : null,
+        max: latencyValues.length > 0 ? Math.max(...latencyValues) : null,
+        avg: latencyValues.length
+          ? latencyValues.reduce((sum, value) => sum + (value ?? 0), 0) / latencyValues.length
+          : null,
+      };
+      
+      const latencyP95 = latencyMetrics.p95;
+      const latencyAvg = latencyMetrics.avg;
 
       const statusBuckets = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, Other: 0 };
       data.forEach((d) => {
@@ -788,10 +946,17 @@ router.get('/', async (req, res, next) => {
       const sortedByRequestTime = [...data].sort(
         (a, b) => new Date(a.requestedAt).getTime() - new Date(b.requestedAt).getTime(),
       );
-      const latencySeries = sortedByRequestTime.map((d) => ({
+      
+      // Store original latency series for filtering
+      const allLatencySeries = sortedByRequestTime.map((d) => ({
         x: new Date(d.requestedAt),
         y: typeof d.latencyMs === 'number' && d.latencyMs >= 0 ? d.latencyMs : null,
+        cacheHit: d.cacheHit || false,
       }));
+      
+      // Default: include cache hits
+      let includeCacheHits = true;
+      let latencySeries = allLatencySeries.filter((point) => includeCacheHits || !point.cacheHit);
 
       function setMetric(id, value) {
         const el = document.getElementById(id);
@@ -816,11 +981,55 @@ router.get('/', async (req, res, next) => {
       setProgress('cacheHitProgress', cacheHitRate);
       setMetric('successRateValue', successRate.toFixed(1) + '%');
       setProgress('successRateProgress', successRate);
-      const latencyDisplay = latencyP95 ?? latencyAvg;
-      setMetric(
-        'latencyP95Value',
-        latencyDisplay === null ? '--' : Math.round(latencyDisplay).toLocaleString() + ' ms',
-      );
+      
+      // Latency metric selection handler
+      const latencyMetricSelect = document.getElementById('latencyMetricSelect');
+      const latencyLabel = document.getElementById('latencyLabel');
+      let selectedLatencyMetric = 'p95';
+      
+      function updateLatencyDisplay() {
+        const metricValue = latencyMetrics[selectedLatencyMetric];
+        const displayValue = metricValue === null ? '--' : Math.round(metricValue).toLocaleString() + ' ms';
+        setMetric('latencyP95Value', displayValue);
+        
+        // Update label
+        const metricLabels = {
+          p50: 'Latency (p50)',
+          p95: 'Latency (p95)',
+          p99: 'Latency (p99)',
+          min: 'Latency (Min)',
+          max: 'Latency (Max)',
+          avg: 'Latency (Average)',
+        };
+        if (latencyLabel) {
+          latencyLabel.textContent = metricLabels[selectedLatencyMetric] || 'Latency';
+        }
+      }
+      
+      if (latencyMetricSelect) {
+        // Load saved preference
+        try {
+          const saved = window.localStorage.getItem('latencyMetric');
+          if (saved && latencyMetrics[saved] !== undefined) {
+            selectedLatencyMetric = saved;
+            latencyMetricSelect.value = saved;
+          }
+        } catch {
+          // ignore
+        }
+        
+        latencyMetricSelect.addEventListener('change', (e) => {
+          selectedLatencyMetric = e.target.value;
+          updateLatencyDisplay();
+          try {
+            window.localStorage.setItem('latencyMetric', selectedLatencyMetric);
+          } catch {
+            // ignore
+          }
+        });
+      }
+      
+      updateLatencyDisplay();
 
       // Render Pie Chart (Cache)
       charts.push(new Chart(document.getElementById('cacheChart'), {
@@ -878,13 +1087,35 @@ router.get('/', async (req, res, next) => {
         }
       }));
 
+      function updateLatencyChart() {
+        // Filter latency series based on cache hit inclusion
+        const filteredSeries = includeCacheHits
+          ? allLatencySeries
+          : allLatencySeries.filter((point) => !point.cacheHit);
+        
+        const filteredLabels = filteredSeries.map((point) => {
+          const asDate = point.x instanceof Date ? point.x : new Date(point.x);
+          if (Number.isNaN(asDate.getTime())) return '';
+          return asDate.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        });
+        
+        // Find existing latency chart and update it
+        const latencyChartIndex = charts.findIndex((chart) => chart.canvas.id === 'latencyChart');
+        if (latencyChartIndex >= 0) {
+          const chart = charts[latencyChartIndex];
+          chart.data.labels = filteredLabels;
+          chart.data.datasets[0].data = filteredSeries.map((point) => point.y);
+          chart.update('none'); // Update without animation for better performance
+        }
+      }
+      
       const latencyLabels = sortedByRequestTime.map((d, index) => {
         const asDate = new Date(d.requestedAt);
         if (Number.isNaN(asDate.getTime())) return 'Lookup ' + (index + 1);
         return asDate.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
       });
 
-      charts.push(new Chart(document.getElementById('latencyChart'), {
+      const latencyChart = new Chart(document.getElementById('latencyChart'), {
         type: 'line',
         data: {
           labels: latencyLabels,
@@ -916,7 +1147,17 @@ router.get('/', async (req, res, next) => {
           plugins: { legend: { display: false } },
           maintainAspectRatio: false,
         },
-      }));
+      });
+      charts.push(latencyChart);
+      
+      // Cache hit toggle handler
+      const includeCacheHitsCheckbox = document.getElementById('includeCacheHits');
+      if (includeCacheHitsCheckbox) {
+        includeCacheHitsCheckbox.addEventListener('change', (e) => {
+          includeCacheHits = e.target.checked;
+          updateLatencyChart();
+        });
+      }
 
       charts.push(new Chart(document.getElementById('statusChart'), {
         type: 'doughnut',
@@ -1204,6 +1445,100 @@ router.get('/', async (req, res, next) => {
       }));
 
       applyChartHeight(currentChartHeight);
+
+      // Fullscreen chart functionality
+      const fullscreenOverlay = document.getElementById('fullscreenOverlay');
+      const fullscreenCloseBtn = document.getElementById('fullscreenCloseBtn');
+      const fullscreenChartTitle = document.getElementById('fullscreenChartTitle');
+      const fullscreenChartCanvas = document.getElementById('fullscreenChart');
+      let fullscreenChartInstance = null;
+
+      function openFullscreenChart(chartId, chartTitle) {
+        const originalChart = charts.find((chart) => chart.canvas.id === chartId);
+        if (!originalChart || !fullscreenOverlay || !fullscreenChartCanvas) return;
+
+        // Set title
+        if (fullscreenChartTitle) {
+          fullscreenChartTitle.textContent = chartTitle;
+        }
+
+        // Show overlay
+        fullscreenOverlay.classList.add('active');
+
+        // Destroy existing fullscreen chart if any
+        if (fullscreenChartInstance) {
+          fullscreenChartInstance.destroy();
+        }
+
+        // Clone chart data and options properly
+        const chartData = {
+          labels: originalChart.data.labels ? [...originalChart.data.labels] : [],
+          datasets: originalChart.data.datasets.map((dataset) => ({
+            ...dataset,
+            data: Array.isArray(dataset.data) ? [...dataset.data] : dataset.data,
+          })),
+        };
+
+        const chartOptions = {
+          ...originalChart.options,
+          maintainAspectRatio: false,
+        };
+
+        // Create new chart in fullscreen
+        fullscreenChartInstance = new Chart(fullscreenChartCanvas, {
+          type: originalChart.config.type,
+          data: chartData,
+          options: chartOptions,
+        });
+        
+        // Resize to fill container
+        setTimeout(() => {
+          if (fullscreenChartInstance) {
+            fullscreenChartInstance.resize();
+          }
+        }, 100);
+      }
+
+      function closeFullscreenChart() {
+        if (fullscreenOverlay) {
+          fullscreenOverlay.classList.remove('active');
+        }
+        if (fullscreenChartInstance) {
+          fullscreenChartInstance.destroy();
+          fullscreenChartInstance = null;
+        }
+      }
+
+      // Expand button handlers
+      document.querySelectorAll('.expand-btn').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const chartId = btn.getAttribute('data-chart-id');
+          const chartTitle = btn.getAttribute('data-chart-title') || 'Chart';
+          openFullscreenChart(chartId, chartTitle);
+        });
+      });
+
+      // Close button handler
+      if (fullscreenCloseBtn) {
+        fullscreenCloseBtn.addEventListener('click', closeFullscreenChart);
+      }
+
+      // ESC key handler
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && fullscreenOverlay?.classList.contains('active')) {
+          closeFullscreenChart();
+        }
+      });
+
+      // Click outside to close
+      if (fullscreenOverlay) {
+        fullscreenOverlay.addEventListener('click', (e) => {
+          if (e.target === fullscreenOverlay) {
+            closeFullscreenChart();
+          }
+        });
+      }
     </script>
   </body>
 </html>`;
