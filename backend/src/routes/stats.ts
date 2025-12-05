@@ -1496,7 +1496,10 @@ router.get('/', async (req, res, next) => {
         };
 
         // Clone options, filtering out internal Chart.js properties to avoid resolver issues
-        const originalOptions = originalChart.options;
+        // Try to get original config options first (before Chart.js processing), otherwise use processed options
+        const originalOptions = (originalChart.config && originalChart.config.options) 
+          ? originalChart.config.options 
+          : originalChart.options;
         const chartOptions = {};
         
         // Whitelist of safe scale properties to copy (avoid internal resolvers)
@@ -1504,14 +1507,23 @@ router.get('/', async (req, res, next) => {
         
         // Helper to safely extract legend position as string
         function extractLegendPosition(legendConfig) {
-          if (!legendConfig || !legendConfig.position) {
+          if (!legendConfig) {
             return 'bottom';
           }
-          const pos = legendConfig.position;
+          
+          // Try to get position from various possible locations
+          let pos = legendConfig.position;
+          
+          // If position is a function (resolver), skip it and use default
+          if (typeof pos === 'function') {
+            return 'bottom';
+          }
+          
           // If it's already a string, use it directly
           if (typeof pos === 'string') {
             return pos;
           }
+          
           // If it's an object, try to extract the value
           if (typeof pos === 'object' && pos !== null) {
             // Chart.js might store it as { value: 'bottom' } or similar
@@ -1522,14 +1534,20 @@ router.get('/', async (req, res, next) => {
             if ('position' in pos && typeof pos.position === 'string') {
               return pos.position;
             }
-            // Try toString() if available
+            // Try toString() if available, but only if it returns a string
             if (typeof pos.toString === 'function') {
-              const str = pos.toString();
-              if (typeof str === 'string' && str.length > 0) {
-                return str;
+              try {
+                const str = String(pos);
+                // Only use if it's a valid position string
+                if (typeof str === 'string' && ['top', 'bottom', 'left', 'right'].includes(str.toLowerCase())) {
+                  return str.toLowerCase();
+                }
+              } catch (e) {
+                // Ignore errors
               }
             }
           }
+          
           // Fallback to default - always return a valid string
           return 'bottom';
         }
@@ -1538,8 +1556,13 @@ router.get('/', async (req, res, next) => {
         function safeClone(obj, depth = 0) {
           if (depth > 5) return null; // Prevent infinite recursion
           if (obj === null || obj === undefined) return obj;
-          if (typeof obj !== 'object') return obj;
           if (typeof obj === 'function') return undefined; // Exclude functions
+          if (typeof obj !== 'object') return obj;
+          
+          // Skip objects that are Chart.js resolvers (they have _resolve or _scriptable)
+          if ('_resolve' in obj || typeof obj._scriptable === 'function' || typeof obj._fallback === 'function') {
+            return undefined;
+          }
           
           // Handle arrays
           if (Array.isArray(obj)) {
@@ -1551,7 +1574,17 @@ router.get('/', async (req, res, next) => {
           for (const key in obj) {
             if (!key || key.startsWith('_')) continue; // Skip internal properties
             const value = obj[key];
-            if (typeof value === 'function') continue; // Skip functions
+            
+            // Skip functions entirely
+            if (typeof value === 'function') continue;
+            
+            // Skip objects that look like resolvers
+            if (typeof value === 'object' && value !== null) {
+              if ('_resolve' in value || typeof value._scriptable === 'function') {
+                continue;
+              }
+            }
+            
             const clonedValue = safeClone(value, depth + 1);
             if (clonedValue !== undefined) {
               cloned[key] = clonedValue;
@@ -1595,28 +1628,53 @@ router.get('/', async (req, res, next) => {
               }
               
               const scale = originalOptions.scales[scaleKey];
+              
+              // Skip if scale itself is a function or has internal Chart.js properties
+              if (typeof scale === 'function' || (typeof scale === 'object' && scale !== null && '_resolve' in scale)) {
+                continue;
+              }
+              
               const clonedScale = {};
               
               // Only copy whitelisted safe properties to avoid resolver functions
               for (const scaleProp of safeScaleProperties) {
-                if (scaleProp in scale) {
-                  const propValue = scale[scaleProp];
-                  
-                  // Skip functions entirely
-                  if (typeof propValue === 'function') {
+                if (!(scaleProp in scale)) {
+                  continue;
+                }
+                
+                const propValue = scale[scaleProp];
+                
+                // Skip functions entirely (including resolvers)
+                if (typeof propValue === 'function') {
+                  continue;
+                }
+                
+                // Skip objects that might be resolvers (have _resolve or similar internal properties)
+                if (typeof propValue === 'object' && propValue !== null) {
+                  if ('_resolve' in propValue || typeof propValue._scriptable === 'function') {
                     continue;
                   }
-                  
-                  // For nested objects (ticks, grid), use safe clone
-                  if (scaleProp === 'ticks' || scaleProp === 'grid') {
-                    const cloned = safeClone(propValue);
-                    if (cloned) {
+                }
+                
+                // For nested objects (ticks, grid), use safe clone
+                if (scaleProp === 'ticks' || scaleProp === 'grid') {
+                  const cloned = safeClone(propValue);
+                  if (cloned && typeof cloned === 'object') {
+                    // Double-check cloned object doesn't have resolver properties
+                    let hasResolvers = false;
+                    for (const subKey in cloned) {
+                      if (typeof cloned[subKey] === 'function' || (typeof cloned[subKey] === 'object' && cloned[subKey] !== null && '_resolve' in cloned[subKey])) {
+                        hasResolvers = true;
+                        break;
+                      }
+                    }
+                    if (!hasResolvers) {
                       clonedScale[scaleProp] = cloned;
                     }
-                  } else {
-                    // Copy primitive values directly
-                    clonedScale[scaleProp] = propValue;
                   }
+                } else {
+                  // Copy primitive values directly
+                  clonedScale[scaleProp] = propValue;
                 }
               }
               
@@ -1636,6 +1694,32 @@ router.get('/', async (req, res, next) => {
         
         // Override maintainAspectRatio
         chartOptions.maintainAspectRatio = false;
+        
+        // Final cleanup: ensure scales don't contain any resolver functions
+        if (chartOptions.scales) {
+          for (const scaleKey in chartOptions.scales) {
+            const scale = chartOptions.scales[scaleKey];
+            // Remove scale if it contains resolver-like properties
+            if (scale && typeof scale === 'object') {
+              for (const prop in scale) {
+                const value = scale[prop];
+                if (typeof value === 'function' || 
+                    (typeof value === 'object' && value !== null && ('_resolve' in value || typeof value._scriptable === 'function'))) {
+                  // Remove the problematic property
+                  delete scale[prop];
+                }
+              }
+              // If scale is now empty, remove it
+              if (Object.keys(scale).length === 0) {
+                delete chartOptions.scales[scaleKey];
+              }
+            }
+          }
+          // If scales object is now empty, remove it
+          if (Object.keys(chartOptions.scales).length === 0) {
+            delete chartOptions.scales;
+          }
+        }
 
         // Create new chart in fullscreen
         fullscreenChartInstance = new Chart(fullscreenChartCanvas, {
