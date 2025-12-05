@@ -1047,7 +1047,7 @@ router.get('/', async (req, res, next) => {
             maintainAspectRatio: false,
             plugins: {
                 legend: { 
-                    position: String('bottom'), 
+                    position: 'bottom', 
                     labels: { color: '#cbd5f5' } 
                 },
                 title: { display: false }
@@ -1177,7 +1177,7 @@ router.get('/', async (req, res, next) => {
           maintainAspectRatio: false,
           plugins: {
             legend: { 
-              position: String('bottom'), 
+              position: 'bottom', 
               labels: { color: '#cbd5f5' } 
             },
             title: { display: false },
@@ -1209,7 +1209,7 @@ router.get('/', async (req, res, next) => {
           maintainAspectRatio: false,
           plugins: {
             legend: { 
-              position: String('bottom'), 
+              position: 'bottom', 
               labels: { color: '#cbd5f5' } 
             },
             title: { display: false },
@@ -1500,7 +1500,7 @@ router.get('/', async (req, res, next) => {
         const chartOptions = {};
         
         // Whitelist of safe scale properties to copy (avoid internal resolvers)
-        const safeScaleProperties = ['ticks', 'grid', 'beginAtZero', 'max', 'min', 'maxRotation', 'minRotation'];
+        const safeScaleProperties = ['ticks', 'grid', 'beginAtZero', 'max', 'min', 'maxRotation', 'minRotation', 'display', 'precision'];
         
         // Helper to safely extract legend position as string
         function extractLegendPosition(legendConfig) {
@@ -1508,7 +1508,7 @@ router.get('/', async (req, res, next) => {
             return 'bottom';
           }
           const pos = legendConfig.position;
-          // If it's already a string, use it
+          // If it's already a string, use it directly
           if (typeof pos === 'string') {
             return pos;
           }
@@ -1522,57 +1522,114 @@ router.get('/', async (req, res, next) => {
             if ('position' in pos && typeof pos.position === 'string') {
               return pos.position;
             }
+            // Try toString() if available
+            if (typeof pos.toString === 'function') {
+              const str = pos.toString();
+              if (typeof str === 'string' && str.length > 0) {
+                return str;
+              }
+            }
           }
-          // Fallback to default
+          // Fallback to default - always return a valid string
           return 'bottom';
+        }
+        
+        // Helper to safely clone an object, excluding functions and internal properties
+        function safeClone(obj, depth = 0) {
+          if (depth > 5) return null; // Prevent infinite recursion
+          if (obj === null || obj === undefined) return obj;
+          if (typeof obj !== 'object') return obj;
+          if (typeof obj === 'function') return undefined; // Exclude functions
+          
+          // Handle arrays
+          if (Array.isArray(obj)) {
+            return obj.map(item => safeClone(item, depth + 1)).filter(item => item !== undefined);
+          }
+          
+          // Handle plain objects
+          const cloned = {};
+          for (const key in obj) {
+            if (!key || key.startsWith('_')) continue; // Skip internal properties
+            const value = obj[key];
+            if (typeof value === 'function') continue; // Skip functions
+            const clonedValue = safeClone(value, depth + 1);
+            if (clonedValue !== undefined) {
+              cloned[key] = clonedValue;
+            }
+          }
+          return cloned;
         }
         
         // Copy top-level options, excluding internal properties
         for (const key in originalOptions) {
-          if (key && !key.startsWith('_') && typeof originalOptions[key] !== 'function') {
-            if (key === 'plugins' && originalOptions.plugins) {
-              chartOptions.plugins = {};
-              for (const pluginKey in originalOptions.plugins) {
-                if (pluginKey && typeof originalOptions.plugins[pluginKey] !== 'function') {
-                  if (pluginKey === 'legend' && originalOptions.plugins.legend) {
-                    chartOptions.plugins.legend = {
-                      position: extractLegendPosition(originalOptions.plugins.legend),
-                      display: originalOptions.plugins.legend.display !== false,
-                      labels: originalOptions.plugins.legend.labels ? { ...originalOptions.plugins.legend.labels } : undefined
-                    };
-                  } else {
-                    chartOptions.plugins[pluginKey] = { ...originalOptions.plugins[pluginKey] };
-                  }
+          if (!key || key.startsWith('_') || typeof originalOptions[key] === 'function') {
+            continue;
+          }
+          
+          if (key === 'plugins' && originalOptions.plugins) {
+            chartOptions.plugins = {};
+            for (const pluginKey in originalOptions.plugins) {
+              if (!pluginKey || typeof originalOptions.plugins[pluginKey] === 'function') {
+                continue;
+              }
+              
+              if (pluginKey === 'legend' && originalOptions.plugins.legend) {
+                const legendConfig = originalOptions.plugins.legend;
+                chartOptions.plugins.legend = {
+                  position: extractLegendPosition(legendConfig),
+                  display: legendConfig.display !== false,
+                  labels: legendConfig.labels ? safeClone(legendConfig.labels) : undefined
+                };
+              } else {
+                const clonedPlugin = safeClone(originalOptions.plugins[pluginKey]);
+                if (clonedPlugin) {
+                  chartOptions.plugins[pluginKey] = clonedPlugin;
                 }
               }
-            } else if (key === 'scales' && originalOptions.scales) {
-              chartOptions.scales = {};
-              for (const scaleKey in originalOptions.scales) {
-                if (scaleKey && typeof originalOptions.scales[scaleKey] !== 'function') {
-                  const scale = originalOptions.scales[scaleKey];
-                  chartOptions.scales[scaleKey] = {};
-                  // Only copy whitelisted safe properties to avoid resolver functions
-                  for (const scaleProp of safeScaleProperties) {
-                    if (scaleProp in scale && typeof scale[scaleProp] !== 'function') {
-                      if (scaleProp === 'ticks' || scaleProp === 'grid') {
-                        // Deep clone ticks and grid objects, but exclude functions
-                        const source = scale[scaleProp];
-                        chartOptions.scales[scaleKey][scaleProp] = {};
-                        for (const subProp in source) {
-                          if (subProp && typeof source[subProp] !== 'function' && !subProp.startsWith('_')) {
-                            chartOptions.scales[scaleKey][scaleProp][subProp] = source[subProp];
-                          }
-                        }
-                      } else {
-                        // Copy primitive values directly
-                        chartOptions.scales[scaleKey][scaleProp] = scale[scaleProp];
-                      }
+            }
+          } else if (key === 'scales' && originalOptions.scales) {
+            chartOptions.scales = {};
+            for (const scaleKey in originalOptions.scales) {
+              if (!scaleKey || typeof originalOptions.scales[scaleKey] === 'function') {
+                continue;
+              }
+              
+              const scale = originalOptions.scales[scaleKey];
+              const clonedScale = {};
+              
+              // Only copy whitelisted safe properties to avoid resolver functions
+              for (const scaleProp of safeScaleProperties) {
+                if (scaleProp in scale) {
+                  const propValue = scale[scaleProp];
+                  
+                  // Skip functions entirely
+                  if (typeof propValue === 'function') {
+                    continue;
+                  }
+                  
+                  // For nested objects (ticks, grid), use safe clone
+                  if (scaleProp === 'ticks' || scaleProp === 'grid') {
+                    const cloned = safeClone(propValue);
+                    if (cloned) {
+                      clonedScale[scaleProp] = cloned;
                     }
+                  } else {
+                    // Copy primitive values directly
+                    clonedScale[scaleProp] = propValue;
                   }
                 }
               }
-            } else {
-              chartOptions[key] = originalOptions[key];
+              
+              // Only add scale if it has valid properties
+              if (Object.keys(clonedScale).length > 0) {
+                chartOptions.scales[scaleKey] = clonedScale;
+              }
+            }
+          } else {
+            // For other top-level properties, use safe clone
+            const cloned = safeClone(originalOptions[key]);
+            if (cloned !== undefined && cloned !== null) {
+              chartOptions[key] = cloned;
             }
           }
         }
