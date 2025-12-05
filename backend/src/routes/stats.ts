@@ -1046,7 +1046,10 @@ router.get('/', async (req, res, next) => {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { position: 'bottom', labels: { color: '#cbd5f5' } },
+                legend: { 
+                    position: String('bottom'), 
+                    labels: { color: '#cbd5f5' } 
+                },
                 title: { display: false }
             }
         }
@@ -1173,7 +1176,10 @@ router.get('/', async (req, res, next) => {
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
-            legend: { position: 'bottom', labels: { color: '#cbd5f5' } },
+            legend: { 
+              position: String('bottom'), 
+              labels: { color: '#cbd5f5' } 
+            },
             title: { display: false },
           },
         },
@@ -1202,7 +1208,10 @@ router.get('/', async (req, res, next) => {
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
-            legend: { position: 'bottom', labels: { color: '#cbd5f5' } },
+            legend: { 
+              position: String('bottom'), 
+              labels: { color: '#cbd5f5' } 
+            },
             title: { display: false },
           },
         },
@@ -1465,9 +1474,16 @@ router.get('/', async (req, res, next) => {
         // Show overlay
         fullscreenOverlay.classList.add('active');
 
-        // Destroy existing fullscreen chart if any
+        // Check for existing chart on canvas and destroy it
+        const existingChart = Chart.getChart(fullscreenChartCanvas);
+        if (existingChart) {
+          existingChart.destroy();
+        }
+
+        // Destroy existing fullscreen chart instance if any
         if (fullscreenChartInstance) {
           fullscreenChartInstance.destroy();
+          fullscreenChartInstance = null;
         }
 
         // Clone chart data and options properly
@@ -1479,10 +1495,53 @@ router.get('/', async (req, res, next) => {
           })),
         };
 
-        const chartOptions = {
-          ...originalChart.options,
-          maintainAspectRatio: false,
-        };
+        // Clone options, filtering out internal Chart.js properties to avoid resolver issues
+        const originalOptions = originalChart.options;
+        const chartOptions = {};
+        
+        // Copy top-level options, excluding internal properties
+        for (const key in originalOptions) {
+          if (key && !key.startsWith('_') && typeof originalOptions[key] !== 'function') {
+            if (key === 'plugins' && originalOptions.plugins) {
+              chartOptions.plugins = {};
+              for (const pluginKey in originalOptions.plugins) {
+                if (pluginKey && typeof originalOptions.plugins[pluginKey] !== 'function') {
+                  if (pluginKey === 'legend' && originalOptions.plugins.legend) {
+                    chartOptions.plugins.legend = {
+                      position: String(originalOptions.plugins.legend.position || 'bottom'),
+                      display: originalOptions.plugins.legend.display !== false,
+                      labels: originalOptions.plugins.legend.labels ? { ...originalOptions.plugins.legend.labels } : undefined
+                    };
+                  } else {
+                    chartOptions.plugins[pluginKey] = { ...originalOptions.plugins[pluginKey] };
+                  }
+                }
+              }
+            } else if (key === 'scales' && originalOptions.scales) {
+              chartOptions.scales = {};
+              for (const scaleKey in originalOptions.scales) {
+                if (scaleKey && typeof originalOptions.scales[scaleKey] !== 'function') {
+                  const scale = originalOptions.scales[scaleKey];
+                  chartOptions.scales[scaleKey] = {};
+                  for (const scaleProp in scale) {
+                    if (scaleProp && !scaleProp.startsWith('_') && typeof scale[scaleProp] !== 'function') {
+                      if (scaleProp === 'ticks' || scaleProp === 'grid') {
+                        chartOptions.scales[scaleKey][scaleProp] = { ...scale[scaleProp] };
+                      } else {
+                        chartOptions.scales[scaleKey][scaleProp] = scale[scaleProp];
+                      }
+                    }
+                  }
+                }
+              }
+            } else {
+              chartOptions[key] = originalOptions[key];
+            }
+          }
+        }
+        
+        // Override maintainAspectRatio
+        chartOptions.maintainAspectRatio = false;
 
         // Create new chart in fullscreen
         fullscreenChartInstance = new Chart(fullscreenChartCanvas, {
