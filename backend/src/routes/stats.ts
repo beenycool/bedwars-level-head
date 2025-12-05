@@ -1499,6 +1499,34 @@ router.get('/', async (req, res, next) => {
         const originalOptions = originalChart.options;
         const chartOptions = {};
         
+        // Whitelist of safe scale properties to copy (avoid internal resolvers)
+        const safeScaleProperties = ['ticks', 'grid', 'beginAtZero', 'max', 'min', 'maxRotation', 'minRotation'];
+        
+        // Helper to safely extract legend position as string
+        function extractLegendPosition(legendConfig) {
+          if (!legendConfig || !legendConfig.position) {
+            return 'bottom';
+          }
+          const pos = legendConfig.position;
+          // If it's already a string, use it
+          if (typeof pos === 'string') {
+            return pos;
+          }
+          // If it's an object, try to extract the value
+          if (typeof pos === 'object' && pos !== null) {
+            // Chart.js might store it as { value: 'bottom' } or similar
+            if ('value' in pos && typeof pos.value === 'string') {
+              return pos.value;
+            }
+            // Try common property names
+            if ('position' in pos && typeof pos.position === 'string') {
+              return pos.position;
+            }
+          }
+          // Fallback to default
+          return 'bottom';
+        }
+        
         // Copy top-level options, excluding internal properties
         for (const key in originalOptions) {
           if (key && !key.startsWith('_') && typeof originalOptions[key] !== 'function') {
@@ -1508,7 +1536,7 @@ router.get('/', async (req, res, next) => {
                 if (pluginKey && typeof originalOptions.plugins[pluginKey] !== 'function') {
                   if (pluginKey === 'legend' && originalOptions.plugins.legend) {
                     chartOptions.plugins.legend = {
-                      position: String(originalOptions.plugins.legend.position || 'bottom'),
+                      position: extractLegendPosition(originalOptions.plugins.legend),
                       display: originalOptions.plugins.legend.display !== false,
                       labels: originalOptions.plugins.legend.labels ? { ...originalOptions.plugins.legend.labels } : undefined
                     };
@@ -1523,11 +1551,20 @@ router.get('/', async (req, res, next) => {
                 if (scaleKey && typeof originalOptions.scales[scaleKey] !== 'function') {
                   const scale = originalOptions.scales[scaleKey];
                   chartOptions.scales[scaleKey] = {};
-                  for (const scaleProp in scale) {
-                    if (scaleProp && !scaleProp.startsWith('_') && typeof scale[scaleProp] !== 'function') {
+                  // Only copy whitelisted safe properties to avoid resolver functions
+                  for (const scaleProp of safeScaleProperties) {
+                    if (scaleProp in scale && typeof scale[scaleProp] !== 'function') {
                       if (scaleProp === 'ticks' || scaleProp === 'grid') {
-                        chartOptions.scales[scaleKey][scaleProp] = { ...scale[scaleProp] };
+                        // Deep clone ticks and grid objects, but exclude functions
+                        const source = scale[scaleProp];
+                        chartOptions.scales[scaleKey][scaleProp] = {};
+                        for (const subProp in source) {
+                          if (subProp && typeof source[subProp] !== 'function' && !subProp.startsWith('_')) {
+                            chartOptions.scales[scaleKey][scaleProp][subProp] = source[subProp];
+                          }
+                        }
                       } else {
+                        // Copy primitive values directly
                         chartOptions.scales[scaleKey][scaleProp] = scale[scaleProp];
                       }
                     }
