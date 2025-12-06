@@ -52,6 +52,63 @@ function formatLatency(latency: number | null): string {
   return `${latency.toLocaleString()} ms`;
 }
 
+function toCSV(data: any[]): string {
+  if (data.length === 0) return '';
+  const headers = Object.keys(data[0]);
+  const headerRow = headers.join(',');
+  const rows = data.map(row => {
+    return headers.map(fieldName => {
+      const val = row[fieldName];
+      if (val === null || val === undefined) return '';
+      if (val instanceof Date) return val.toISOString();
+      const str = String(val);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    }).join(',');
+  });
+  return [headerRow, ...rows].join('\n');
+}
+
+router.get('/csv', async (req, res) => {
+  try {
+    const fromParam = typeof req.query.from === 'string' ? req.query.from : undefined;
+    const toParam = typeof req.query.to === 'string' ? req.query.to : undefined;
+    const limitParam = typeof req.query.limit === 'string' ? req.query.limit : undefined;
+
+    const startDate = fromParam ? new Date(fromParam) : undefined;
+    const endDate = toParam ? new Date(toParam) : undefined;
+    const limit = limitParam ? Number.parseInt(limitParam, 10) : undefined;
+
+    const validStartDate = startDate && !Number.isNaN(startDate.getTime()) ? startDate : undefined;
+    const validEndDate = endDate && !Number.isNaN(endDate.getTime()) ? endDate : undefined;
+    const MAX_ALLOWED_LIMIT = 10000;
+    const DEFAULT_CHART_LIMIT = 200;
+    const validLimit = limit !== undefined && Number.isFinite(limit)
+      ? Math.min(Math.max(limit, 1), MAX_ALLOWED_LIMIT)
+      : undefined;
+
+    const hasTimeFilter = Boolean(validStartDate || validEndDate);
+    const effectiveLimit = validLimit ?? (hasTimeFilter ? MAX_ALLOWED_LIMIT : DEFAULT_CHART_LIMIT);
+
+    const data = await getPlayerQueriesWithFilters({
+      startDate: validStartDate,
+      endDate: validEndDate,
+      limit: effectiveLimit,
+    });
+
+    const csv = toCSV(data);
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="stats.csv"');
+    res.send(csv);
+  } catch (error) {
+    console.error('Failed to generate CSV', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
 router.get('/', async (req, res, next) => {
   try {
     const requestedPage = Number.parseInt((req.query.page as string) ?? '1', 10);
@@ -714,7 +771,10 @@ router.get('/', async (req, res, next) => {
       <div class="fullscreen-modal">
         <div class="fullscreen-header">
           <h3 class="fullscreen-title" id="fullscreenTitle"></h3>
-          <button class="fullscreen-close-btn" id="fullscreenCloseBtn">✕ Close</button>
+          <div style="display: flex; gap: 0.5rem;">
+            <a id="fullscreenDownloadBtn" class="fullscreen-close-btn" style="text-decoration: none; display: flex; align-items: center; justify-content: center; background: rgba(59, 130, 246, 0.2); border-color: rgba(59, 130, 246, 0.4); color: #93c5fd;" href="#" target="_blank">Download CSV</a>
+            <button class="fullscreen-close-btn" id="fullscreenCloseBtn">✕ Close</button>
+          </div>
         </div>
         <div class="fullscreen-chart-container">
           <canvas id="fullscreenChart"></canvas>
@@ -1563,6 +1623,7 @@ router.get('/', async (req, res, next) => {
       function openFullscreen(chartId) {
         const overlay = document.getElementById('fullscreenOverlay');
         const titleEl = document.getElementById('fullscreenTitle');
+        const downloadBtn = document.getElementById('fullscreenDownloadBtn');
         const canvas = document.getElementById('fullscreenChart');
         const info = chartConfigs[chartId];
         
@@ -1577,6 +1638,14 @@ router.get('/', async (req, res, next) => {
         titleEl.textContent = info.title;
         overlay.style.display = 'flex';
         document.body.style.overflow = 'hidden';
+
+        if (downloadBtn) {
+            const url = new URL(window.location.origin + '/stats/csv');
+            if (filters.from) url.searchParams.set('from', filters.from);
+            if (filters.to) url.searchParams.set('to', filters.to);
+            if (filters.limit) url.searchParams.set('limit', filters.limit);
+            downloadBtn.href = url.toString();
+        }
         
         // Clone config to avoid mutating original
         const clonedConfig = deepCloneConfig(info.config);
