@@ -137,12 +137,12 @@ async function flushHistoryBuffer(): Promise<void> {
     await client.query('BEGIN');
 
     // Build bulk INSERT with VALUES clause
-    const values = batch.map((_, i) => {
+    const values = batch.map((_: PlayerQueryRecord, i: number) => {
       const base = i * 13;
       return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`;
     }).join(', ');
 
-    const params = batch.flatMap(record => [
+    const params = batch.flatMap((record: PlayerQueryRecord) => [
       record.identifier, record.normalizedIdentifier, record.lookupType,
       record.resolvedUuid, record.resolvedUsername, record.stars,
       record.nicked, record.cacheSource, record.cacheHit,

@@ -435,80 +435,7 @@ router.get('/', async (req, res, next) => {
       .card {
         position: relative;
       }
-      .expand-btn {
-        position: absolute;
-        top: 0.75rem;
-        right: 0.75rem;
-        background: rgba(59, 130, 246, 0.2);
-        border: 1px solid rgba(148, 163, 184, 0.3);
-        color: #cbd5f5;
-        padding: 0.4rem 0.6rem;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 0.85rem;
-        font-weight: 600;
-        z-index: 10;
-        transition: background 0.2s;
-      }
-      .expand-btn:hover {
-        background: rgba(59, 130, 246, 0.35);
-      }
-      .fullscreen-overlay {
-        display: none;
-        position: fixed;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: rgba(15, 23, 42, 0.95);
-        z-index: 9999;
-        padding: 2rem;
-        overflow: auto;
-      }
-      .fullscreen-overlay.active {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-      }
-      .fullscreen-chart-container {
-        background: rgba(30, 41, 59, 0.95);
-        border: 1px solid rgba(148, 163, 184, 0.3);
-        border-radius: 12px;
-        padding: 2rem;
-        max-width: 95vw;
-        max-height: 95vh;
-        width: 100%;
-        position: relative;
-      }
-      .fullscreen-chart-title {
-        font-size: 1.25rem;
-        color: #cbd5f5;
-        margin-bottom: 1rem;
-        font-weight: 600;
-      }
-      .fullscreen-chart-shell {
-        position: relative;
-        height: calc(95vh - 120px);
-        min-height: 400px;
-      }
-      .fullscreen-close-btn {
-        position: absolute;
-        top: 1rem;
-        right: 1rem;
-        background: rgba(239, 68, 68, 0.2);
-        border: 1px solid rgba(148, 163, 184, 0.3);
-        color: #cbd5f5;
-        padding: 0.5rem 0.75rem;
-        border-radius: 6px;
-        cursor: pointer;
-        font-size: 0.9rem;
-        font-weight: 600;
-        z-index: 10;
-      }
-      .fullscreen-close-btn:hover {
-        background: rgba(239, 68, 68, 0.35);
-      }
+
       .latency-chart-controls {
         display: flex;
         align-items: center;
@@ -624,17 +551,17 @@ router.get('/', async (req, res, next) => {
     <div class="dashboard-grid">
       <div class="card">
         <h2>Cache Performance</h2>
-        <button class="expand-btn" data-chart-id="cacheChart" data-chart-title="Cache Performance">Expand</button>
+
         <div class="chart-shell"><canvas id="cacheChart"></canvas></div>
       </div>
       <div class="card">
         <h2>Star Distribution</h2>
-        <button class="expand-btn" data-chart-id="starChart" data-chart-title="Star Distribution">Expand</button>
+
         <div class="chart-shell"><canvas id="starChart"></canvas></div>
       </div>
       <div class="card">
         <h2>Latency Pulse</h2>
-        <button class="expand-btn" data-chart-id="latencyChart" data-chart-title="Latency Pulse">Expand</button>
+
         <div class="latency-chart-controls">
           <label>
             <input type="checkbox" id="includeCacheHits" checked />
@@ -645,45 +572,37 @@ router.get('/', async (req, res, next) => {
       </div>
       <div class="card">
         <h2>Status Breakdown</h2>
-        <button class="expand-btn" data-chart-id="statusChart" data-chart-title="Status Breakdown">Expand</button>
+
         <div class="chart-shell"><canvas id="statusChart"></canvas></div>
       </div>
       <div class="card">
         <h2>Lookup Type Distribution</h2>
-        <button class="expand-btn" data-chart-id="lookupTypeChart" data-chart-title="Lookup Type Distribution">Expand</button>
+
         <div class="chart-shell"><canvas id="lookupTypeChart"></canvas></div>
       </div>
       <div class="card">
         <h2>Requests Over Time</h2>
-        <button class="expand-btn" data-chart-id="requestsOverTimeChart" data-chart-title="Requests Over Time">Expand</button>
+
         <div class="chart-shell"><canvas id="requestsOverTimeChart"></canvas></div>
       </div>
       <div class="card">
         <h2>Cache Hit Rate Over Time</h2>
-        <button class="expand-btn" data-chart-id="cacheOverTimeChart" data-chart-title="Cache Hit Rate Over Time">Expand</button>
+
         <div class="chart-shell"><canvas id="cacheOverTimeChart"></canvas></div>
       </div>
       <div class="card">
         <h2>Latency Distribution</h2>
-        <button class="expand-btn" data-chart-id="latencyDistributionChart" data-chart-title="Latency Distribution">Expand</button>
+
         <div class="chart-shell"><canvas id="latencyDistributionChart"></canvas></div>
       </div>
       <div class="card">
         <h2>Top Queried Players</h2>
-        <button class="expand-btn" data-chart-id="topPlayersChart" data-chart-title="Top Queried Players">Expand</button>
+
         <div class="chart-shell"><canvas id="topPlayersChart"></canvas></div>
       </div>
     </div>
 
-    <div class="fullscreen-overlay" id="fullscreenOverlay">
-      <div class="fullscreen-chart-container">
-        <button class="fullscreen-close-btn" id="fullscreenCloseBtn">Close (ESC)</button>
-        <div class="fullscreen-chart-title" id="fullscreenChartTitle"></div>
-        <div class="fullscreen-chart-shell">
-          <canvas id="fullscreenChart"></canvas>
-        </div>
-      </div>
-    </div>
+
 
     <h2>Recent Player Lookups</h2>
     <p class="meta">${pageData.totalCount === 0 ? 'No lookups recorded yet.' : `Showing page ${page} of ${totalPages} (${pageData.totalCount} total lookups).`}</p>
@@ -736,47 +655,10 @@ router.get('/', async (req, res, next) => {
       const filters = pageData.filters || {};
       const charts = [];
       // Store original chart configs for fullscreen cloning (avoids Chart.js resolver issues)
-      const chartConfigs = new Map();
+
 
       // Safe deep clone helper that preserves functions but skips Chart.js internal properties
-      function safeCloneConfig(obj, depth = 0) {
-        if (depth > 10) return null; // Prevent infinite recursion
-        if (obj === null || obj === undefined) return obj;
-        if (typeof obj === 'function') return obj; // Preserve functions
-        if (typeof obj !== 'object') return obj;
-        
-        // Skip Chart.js resolver objects (they have internal properties)
-        if (typeof obj === 'object' && obj !== null) {
-          if ('_resolve' in obj || '_scriptable' in obj || '_fallback' in obj) {
-            return undefined;
-          }
-        }
-        
-        // Handle arrays
-        if (Array.isArray(obj)) {
-          return obj.map(item => safeCloneConfig(item, depth + 1)).filter(item => item !== undefined);
-        }
-        
-        // Handle plain objects
-        const cloned = {};
-        for (const key in obj) {
-          if (!key || key.startsWith('_')) continue; // Skip internal properties
-          const value = obj[key];
-          
-          // Skip objects that look like resolvers
-          if (typeof value === 'object' && value !== null) {
-            if ('_resolve' in value || '_scriptable' in value || '_fallback' in value) {
-              continue;
-            }
-          }
-          
-          const clonedValue = safeCloneConfig(value, depth + 1);
-          if (clonedValue !== undefined) {
-            cloned[key] = clonedValue;
-          }
-        }
-        return cloned;
-      }
+
 
       // Initialize filter controls
       const fromDateInput = document.getElementById('fromDate');
@@ -1097,7 +979,7 @@ router.get('/', async (req, res, next) => {
         }
       };
       const cacheChartEl = document.getElementById('cacheChart');
-      chartConfigs.set('cacheChart', safeCloneConfig(cacheChartConfig));
+
       charts.push(new Chart(cacheChartEl, cacheChartConfig));
 
       // Render Bar Chart (Stars)
@@ -1135,7 +1017,7 @@ router.get('/', async (req, res, next) => {
         }
       };
       const starChartEl = document.getElementById('starChart');
-      chartConfigs.set('starChart', safeCloneConfig(starChartConfig));
+
       charts.push(new Chart(starChartEl, starChartConfig));
 
       function updateLatencyChart() {
@@ -1200,7 +1082,7 @@ router.get('/', async (req, res, next) => {
         },
       };
       const latencyChartEl = document.getElementById('latencyChart');
-      chartConfigs.set('latencyChart', safeCloneConfig(latencyChartConfig));
+
       const latencyChart = new Chart(latencyChartEl, latencyChartConfig);
       charts.push(latencyChart);
       
@@ -1236,7 +1118,7 @@ router.get('/', async (req, res, next) => {
         },
       };
       const statusChartEl = document.getElementById('statusChart');
-      chartConfigs.set('statusChart', safeCloneConfig(statusChartConfig));
+
       charts.push(new Chart(statusChartEl, statusChartConfig));
 
       // 5. Lookup Type Distribution
@@ -1271,7 +1153,7 @@ router.get('/', async (req, res, next) => {
         },
       };
       const lookupTypeChartEl = document.getElementById('lookupTypeChart');
-      chartConfigs.set('lookupTypeChart', safeCloneConfig(lookupTypeChartConfig));
+
       charts.push(new Chart(lookupTypeChartEl, lookupTypeChartConfig));
 
       // 6. Requests Over Time
@@ -1381,7 +1263,7 @@ router.get('/', async (req, res, next) => {
         },
       };
       const requestsOverTimeChartEl = document.getElementById('requestsOverTimeChart');
-      chartConfigs.set('requestsOverTimeChart', safeCloneConfig(requestsOverTimeChartConfig));
+
       charts.push(new Chart(requestsOverTimeChartEl, requestsOverTimeChartConfig));
 
       // 7. Cache Hit Rate Over Time
@@ -1429,7 +1311,7 @@ router.get('/', async (req, res, next) => {
         },
       };
       const cacheOverTimeChartEl = document.getElementById('cacheOverTimeChart');
-      chartConfigs.set('cacheOverTimeChart', safeCloneConfig(cacheOverTimeChartConfig));
+
       charts.push(new Chart(cacheOverTimeChartEl, cacheOverTimeChartConfig));
 
       // 8. Latency Distribution
@@ -1480,7 +1362,7 @@ router.get('/', async (req, res, next) => {
         },
       };
       const latencyDistributionChartEl = document.getElementById('latencyDistributionChart');
-      chartConfigs.set('latencyDistributionChart', safeCloneConfig(latencyDistributionChartConfig));
+
       charts.push(new Chart(latencyDistributionChartEl, latencyDistributionChartConfig));
 
       // 9. Top Players
@@ -1519,129 +1401,12 @@ router.get('/', async (req, res, next) => {
         },
       };
       const topPlayersChartEl = document.getElementById('topPlayersChart');
-      chartConfigs.set('topPlayersChart', safeCloneConfig(topPlayersChartConfig));
+
       charts.push(new Chart(topPlayersChartEl, topPlayersChartConfig));
 
       applyChartHeight(currentChartHeight);
 
-      // Fullscreen chart functionality
-      const fullscreenOverlay = document.getElementById('fullscreenOverlay');
-      const fullscreenCloseBtn = document.getElementById('fullscreenCloseBtn');
-      const fullscreenChartTitle = document.getElementById('fullscreenChartTitle');
-      const fullscreenChartCanvas = document.getElementById('fullscreenChart');
-      let fullscreenChartInstance = null;
 
-      function openFullscreenChart(chartId, chartTitle) {
-        const originalChart = charts.find((chart) => chart.canvas.id === chartId);
-        if (!originalChart || !fullscreenOverlay || !fullscreenChartCanvas) return;
-
-        // Get stored config for this chart
-        const storedConfig = chartConfigs.get(chartId);
-        if (!storedConfig) {
-          console.warn('No stored config found for chart:', chartId);
-          return;
-        }
-
-        // Set title
-        if (fullscreenChartTitle) {
-          fullscreenChartTitle.textContent = chartTitle;
-        }
-
-        // Show overlay
-        fullscreenOverlay.classList.add('active');
-
-        // Check for existing chart on canvas and destroy it
-        const existingChart = Chart.getChart(fullscreenChartCanvas);
-        if (existingChart) {
-          existingChart.destroy();
-        }
-
-        // Destroy existing fullscreen chart instance if any
-        if (fullscreenChartInstance) {
-          fullscreenChartInstance.destroy();
-          fullscreenChartInstance = null;
-        }
-
-        // Build a completely fresh config - use JSON to strip all non-serializable properties
-        const freshData = JSON.parse(JSON.stringify({
-          labels: originalChart.data.labels || [],
-          datasets: originalChart.data.datasets.map((ds) => ({
-            label: ds.label,
-            data: ds.data,
-            backgroundColor: ds.backgroundColor,
-            borderColor: ds.borderColor,
-            borderWidth: ds.borderWidth,
-            borderRadius: ds.borderRadius,
-            tension: ds.tension,
-            fill: ds.fill,
-            spanGaps: ds.spanGaps,
-            pointRadius: ds.pointRadius,
-            pointHitRadius: ds.pointHitRadius,
-          })),
-        }));
-
-        // Build fresh options from stored config (these are clean)
-        const freshOptions = JSON.parse(JSON.stringify(storedConfig.options || {}));
-        freshOptions.responsive = true;
-        freshOptions.maintainAspectRatio = false;
-
-        const chartConfig = {
-          type: storedConfig.type,
-          data: freshData,
-          options: freshOptions,
-        };
-
-        // Create new chart in fullscreen
-        fullscreenChartInstance = new Chart(fullscreenChartCanvas, chartConfig);
-        
-        // Resize to fill container
-        setTimeout(() => {
-          if (fullscreenChartInstance) {
-            fullscreenChartInstance.resize();
-          }
-        }, 100);
-      }
-
-      function closeFullscreenChart() {
-        if (fullscreenOverlay) {
-          fullscreenOverlay.classList.remove('active');
-        }
-        if (fullscreenChartInstance) {
-          fullscreenChartInstance.destroy();
-          fullscreenChartInstance = null;
-        }
-      }
-
-      // Expand button handlers
-      document.querySelectorAll('.expand-btn').forEach((btn) => {
-        btn.addEventListener('click', (e) => {
-          e.stopPropagation();
-          const chartId = btn.getAttribute('data-chart-id');
-          const chartTitle = btn.getAttribute('data-chart-title') || 'Chart';
-          openFullscreenChart(chartId, chartTitle);
-        });
-      });
-
-      // Close button handler
-      if (fullscreenCloseBtn) {
-        fullscreenCloseBtn.addEventListener('click', closeFullscreenChart);
-      }
-
-      // ESC key handler
-      document.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && fullscreenOverlay?.classList.contains('active')) {
-          closeFullscreenChart();
-        }
-      });
-
-      // Click outside to close
-      if (fullscreenOverlay) {
-        fullscreenOverlay.addEventListener('click', (e) => {
-          if (e.target === fullscreenOverlay) {
-            closeFullscreenChart();
-          }
-        });
-      }
     </script>
   </body>
 </html>`;
