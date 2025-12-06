@@ -1,4 +1,5 @@
 import express from 'express';
+import compression from 'compression';
 import playerRouter from './routes/player';
 import playerPublicRouter from './routes/playerPublic';
 import { HttpError } from './util/httpError';
@@ -13,6 +14,7 @@ import {
 import { purgeExpiredEntries, closeCache, pool as cachePool } from './services/cache';
 import { observeRequest, registry } from './services/metrics';
 import { checkHypixelReachability } from './services/hypixel';
+import { flushHistoryBuffer, startHistoryFlushInterval, stopHistoryFlushInterval } from './services/history';
 import {
   initializeDynamicRateLimitService,
   stopDynamicRateLimitService,
@@ -35,6 +37,9 @@ function sanitizeUrlForLogs(target: string): string {
 
 app.disable('x-powered-by');
 app.set('trust proxy', TRUST_PROXY);
+// Enable gzip compression for all responses (clients should send Accept-Encoding: gzip)
+// Large Hypixel JSON payloads compress very well (often 80-90% reduction)
+app.use(compression());
 app.use(express.json({ limit: '64kb' }));
 
 app.use((req, res, next) => {
@@ -111,6 +116,9 @@ void initializeDynamicRateLimitService().catch((error) => {
   process.exit(1);
 });
 
+// Start history flush interval
+startHistoryFlushInterval();
+
 const purgeInterval = setInterval(() => {
   void purgeExpiredEntries().catch((error) => {
     console.error('Failed to purge expired cache entries', error);
@@ -168,6 +176,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   shuttingDown = true;
   console.log(`Received ${signal}. Shutting down gracefully...`);
   clearInterval(purgeInterval);
+  stopHistoryFlushInterval();
   stopDynamicRateLimitService();
 
   const forcedShutdown = setTimeout(() => {
@@ -187,6 +196,10 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
 
         resolve();
       });
+    });
+    // Flush history buffer before closing cache
+    await flushHistoryBuffer().catch((error) => {
+      console.error('Error flushing history buffer during shutdown', error);
     });
   } finally {
     safeCloseCache().finally(() => {

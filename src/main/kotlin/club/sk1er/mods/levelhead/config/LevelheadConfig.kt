@@ -17,19 +17,34 @@ import com.google.gson.JsonObject
 import com.google.gson.annotations.SerializedName
 import net.minecraft.client.Minecraft
 import org.apache.commons.io.FileUtils
-import java.awt.Color
+import java.awt.Color as AwtColor
 import java.io.File
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.Locale
 import java.util.UUID
 
-object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedwars-levelhead.json") {
-    private const val DEFAULT_PROXY_URL = "https://beeny.hackclub.app"
+private const val DEFAULT_PROXY_URL = "https://beeny.hackclub.app"
+private const val _MIN_STAR_CACHE_TTL_MINUTES = 5
+private const val _MAX_STAR_CACHE_TTL_MINUTES = 180
+private const val _DEFAULT_STAR_CACHE_TTL_MINUTES = 45
 
-    const val MIN_STAR_CACHE_TTL_MINUTES = 5
-    const val MAX_STAR_CACHE_TTL_MINUTES = 180
-    const val DEFAULT_STAR_CACHE_TTL_MINUTES = 45
+object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedwars-levelhead.json") {
+    // Expose constants as @JvmStatic functions - functions are not serialized by Gson
+    @JvmStatic
+    fun getMinStarCacheTtlMinutes() = _MIN_STAR_CACHE_TTL_MINUTES
+    
+    @JvmStatic
+    fun getMaxStarCacheTtlMinutes() = _MAX_STAR_CACHE_TTL_MINUTES
+    
+    @JvmStatic
+    fun getDefaultStarCacheTtlMinutes() = _DEFAULT_STAR_CACHE_TTL_MINUTES
+    
+    // Provide property-like access for Kotlin (computed properties compile to methods, not fields)
+    val MIN_STAR_CACHE_TTL_MINUTES: Int get() = _MIN_STAR_CACHE_TTL_MINUTES
+    val MAX_STAR_CACHE_TTL_MINUTES: Int get() = _MAX_STAR_CACHE_TTL_MINUTES
+    val DEFAULT_STAR_CACHE_TTL_MINUTES: Int get() = _DEFAULT_STAR_CACHE_TTL_MINUTES
+
     @Header(text = "General")
     @Switch(name = "Enabled", description = "Toggle the BedWars Levelhead overlay")
     @SerializedName("bedwarsEnabled")
@@ -70,13 +85,11 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         description = "Toggle showing your own levelhead above your head."
     )
     var showSelf: Boolean = true
-        get() = Levelhead.displayManager.primaryDisplay()?.config?.showSelf ?: true
         set(value) {
             field = value
             Levelhead.displayManager.updatePrimaryDisplay { config ->
-                val changed = config.showSelf != value
                 config.showSelf = value
-                changed
+                true
             }
             save()
         }
@@ -90,7 +103,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         description = "Vertical position adjustment for the levelhead display."
     )
     var displayOffset: Float = 0.0f
-        get() = Levelhead.displayManager.config.offset.toFloat()
         set(value) {
             field = value.coerceIn(-2.0f, 2.0f)
             Levelhead.displayManager.config.offset = field.toDouble()
@@ -107,7 +119,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         description = "Maximum distance (in blocks) to render levelhead tags."
     )
     var renderDistance: Int = 64
-        get() = Levelhead.displayManager.config.renderDistance
         set(value) {
             field = value.coerceIn(16, 128)
             Levelhead.displayManager.config.renderDistance = field
@@ -124,7 +135,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         description = "Background transparency percentage (0 = transparent, 100 = opaque)."
     )
     var backgroundOpacity: Float = 25.0f
-        get() = (Levelhead.displayManager.config.backgroundOpacity * 100f).coerceIn(0f, 100f)
         set(value) {
             field = value.coerceIn(0f, 100f)
             Levelhead.displayManager.config.backgroundOpacity = (field / 100f).coerceIn(0f, 1f)
@@ -138,10 +148,22 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         description = "Toggle the semi-transparent background behind the text."
     )
     var showBackground: Boolean = true
-        get() = Levelhead.displayManager.config.showBackground
         set(value) {
             field = value
             Levelhead.displayManager.config.showBackground = value
+            Levelhead.displayManager.saveConfig()
+            save()
+        }
+
+    @Switch(
+        name = "Text Shadow",
+        category = "Display",
+        description = "Add shadow to text. Disable to match Patcher nametag settings with shadow off."
+    )
+    var textShadow: Boolean = false
+        set(value) {
+            field = value
+            Levelhead.displayManager.config.textShadow = value
             Levelhead.displayManager.saveConfig()
             save()
         }
@@ -154,13 +176,11 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         description = "Customize the header text displayed before the star value."
     )
     var headerText: String = "BedWars"
-        get() = Levelhead.displayManager.primaryDisplay()?.config?.headerString ?: "BedWars"
         set(value) {
             field = value.trim()
             Levelhead.displayManager.updatePrimaryDisplay { config ->
-                val changed = config.headerString != field
                 config.headerString = field
-                changed
+                true
             }
             save()
         }
@@ -171,21 +191,12 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         description = "Color for the header text."
     )
     var headerColor: OneColor = OneColor(85, 255, 255)
-        get() {
-            val color = Levelhead.displayManager.primaryDisplay()?.config?.headerColor
-            return if (color != null) {
-                OneColor(color.red, color.green, color.blue)
-            } else {
-                OneColor(85, 255, 255)
-            }
-        }
         set(value) {
             field = value
-            val javaColor = java.awt.Color(value.rgb)
+            val javaColor = AwtColor(value.rgb)
             Levelhead.displayManager.updatePrimaryDisplay { config ->
-                val changed = config.headerColor != javaColor
                 config.headerColor = javaColor
-                changed
+                true
             }
             save()
         }
@@ -196,13 +207,11 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         description = "Footer template with placeholders: %star% (star value), %fkdr% (FKDR), %ws% (winstreak)."
     )
     var footerTemplate: String = "%star%"
-        get() = Levelhead.displayManager.primaryDisplay()?.config?.footerString ?: "%star%"
         set(value) {
             field = value.trim()
             Levelhead.displayManager.updatePrimaryDisplay { config ->
-                val changed = config.footerString != field
                 config.footerString = field
-                changed
+                true
             }
             save()
         }
@@ -218,7 +227,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         description = "Maximum cache entries before purging old entries."
     )
     var cachePurgeSize: Int = 500
-        get() = Levelhead.displayManager.config.purgeSize
         set(value) {
             field = value.coerceIn(100, 2000)
             Levelhead.displayManager.config.purgeSize = field
@@ -234,11 +242,26 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         category = "Performance",
         description = "Minimum time between render updates per player (0 = no throttling)."
     )
-    var renderThrottleMs: Long = 0L
-        get() = Levelhead.displayManager.config.renderThrottleMs
+    var renderThrottleMs: Int = 100
         set(value) {
-            field = value.coerceIn(0L, 100L)
-            Levelhead.displayManager.config.renderThrottleMs = field
+            field = value.coerceIn(0, 100)
+            Levelhead.displayManager.config.renderThrottleMs = field.toLong()
+            Levelhead.displayManager.saveConfig()
+            save()
+        }
+
+    @Slider(
+        name = "Frame Skip",
+        min = 1f,
+        max = 4f,
+        step = 1,
+        category = "Performance",
+        description = "Render tags every N frames. Higher = better FPS but slightly less smooth. At 60 FPS: 2 = 30 updates/sec, 4 = 15 updates/sec."
+    )
+    var frameSkip: Int = 1
+        set(value) {
+            field = value.coerceIn(1, 4)
+            Levelhead.displayManager.config.frameSkip = field
             Levelhead.displayManager.saveConfig()
             save()
         }
@@ -275,7 +298,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         category = "Developer",
         description = "Developer option: adjust cache duration. Do not change this unless you know what you are doing."
     )
-    var starCacheTtlMinutes: Int = DEFAULT_STAR_CACHE_TTL_MINUTES
+    var starCacheTtlMinutes: Int = _DEFAULT_STAR_CACHE_TTL_MINUTES
 
     @Button(
         name = "Reset Settings",
@@ -291,7 +314,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var installId: String = ""
 
     val starCacheTtl: Duration
-        get() = Duration.ofMinutes(starCacheTtlMinutes.coerceIn(MIN_STAR_CACHE_TTL_MINUTES, MAX_STAR_CACHE_TTL_MINUTES).toLong())
+        get() = Duration.ofMinutes(starCacheTtlMinutes.coerceIn(_MIN_STAR_CACHE_TTL_MINUTES, _MAX_STAR_CACHE_TTL_MINUTES).toLong())
 
     init {
         initialize()
@@ -386,11 +409,13 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         renderDistance = 64
         backgroundOpacity = 25.0f
         showBackground = true
+        textShadow = false
         headerText = "BedWars"
         headerColor = OneColor(85, 255, 255)
         footerTemplate = "%star%"
         cachePurgeSize = 500
-        renderThrottleMs = 0L
+        renderThrottleMs = 100
+        frameSkip = 1
         proxyEnabled = true
         proxyBaseUrl = DEFAULT_PROXY_URL
         proxyAuthToken = ""

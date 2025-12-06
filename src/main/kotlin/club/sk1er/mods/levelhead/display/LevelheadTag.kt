@@ -31,10 +31,37 @@ class LevelheadTag(val owner: UUID) {
     }
 
     class LevelheadComponent {
+        /**
+         * Raw string value for this component. Color codes are converted from '&' to '§'
+         * when the value is set. Whenever the value changes, the cached width is invalidated.
+         */
         var value: String = ""
-            set(value) { field = value.replace("&", "\u00a7") }
+            set(v) {
+                field = v.replace("&", "\u00a7")
+                cachedWidth = -1
+            }
+
         var color: Color = Color.WHITE
         var chroma: Boolean = false
+
+        /**
+         * Cached pixel width for this component's value. This is computed lazily via
+         * [getWidth] the first time it is needed after the value changes. Using -1 as
+         * a sentinel avoids needing an additional boolean flag.
+         */
+        private var cachedWidth: Int = -1
+
+        /**
+         * Returns the width of [value] using the provided [fontRenderer], computing and
+         * caching it on first access after a change. This avoids repeatedly calling
+         * FontRenderer#getStringWidth on static or rarely changing text every frame.
+         */
+        fun getWidth(fontRenderer: net.minecraft.client.gui.FontRenderer): Int {
+            if (cachedWidth == -1) {
+                cachedWidth = fontRenderer.getStringWidth(value)
+            }
+            return cachedWidth
+        }
 
         override fun toString(): String = "LevelheadComponent{value='$value', color='${color}', chroma=$chroma}"
     }

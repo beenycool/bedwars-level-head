@@ -1,3 +1,4 @@
+import { Mutex } from 'async-mutex';
 import { pool } from './cache';
 
 interface PlayerQueryHistoryRow {
@@ -65,6 +66,13 @@ export interface TopPlayer {
 const DEFAULT_PLAYER_QUERIES_LIMIT = 200;
 const MAX_ALLOWED_LIMIT = 10000;
 
+// Add a buffer with mutex protection
+const bufferMutex = new Mutex();
+const historyBuffer: PlayerQueryRecord[] = [];
+const MAX_HISTORY_BUFFER = 50_000;
+const BATCH_FLUSH_INTERVAL = 5000; // 5 seconds
+let flushInterval: NodeJS.Timeout | null = null;
+
 const initialization = (async () => {
   try {
     await pool.query(`
@@ -98,6 +106,10 @@ const initialization = (async () => {
       CREATE INDEX IF NOT EXISTS idx_player_query_history_identifier
       ON player_query_history (normalized_identifier)
     `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_player_query_history_latency
+      ON player_query_history (latency_ms)
+    `);
   } catch (error) {
     console.error('Failed to initialize player_query_history table', error);
     throw error;
@@ -108,63 +120,100 @@ async function ensureInitialized(): Promise<void> {
   await initialization;
 }
 
-export async function recordPlayerQuery(record: PlayerQueryRecord): Promise<void> {
-  await ensureInitialized();
-  await pool.query(
-    `
-      INSERT INTO player_query_history (
-        identifier,
-        normalized_identifier,
-        lookup_type,
-        resolved_uuid,
-        resolved_username,
-        stars,
-        nicked,
-        cache_source,
-        cache_hit,
-        revalidated,
-        install_id,
-        response_status,
-        latency_ms
-      )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-    `,
-    [
-      record.identifier,
-      record.normalizedIdentifier,
-      record.lookupType,
-      record.resolvedUuid,
-      record.resolvedUsername,
-      record.stars,
-      record.nicked,
-      record.cacheSource,
-      record.cacheHit,
-      record.revalidated,
-      record.installId,
-      record.responseStatus,
-      record.latencyMs ?? null,
-    ],
-  );
+// Create a new flush function
+async function flushHistoryBuffer(): Promise<void> {
+  // Atomically copy and clear buffer
+  const batch = await bufferMutex.runExclusive(() => {
+    if (historyBuffer.length === 0) {
+      return [];
+    }
+    const copy = [...historyBuffer];
+    historyBuffer.length = 0;
+    return copy;
+  });
 
-  console.info(
-    '[history] recorded query',
-    {
-      identifier: record.identifier,
-      normalizedIdentifier: record.normalizedIdentifier,
-      lookupType: record.lookupType,
-      resolvedUuid: record.resolvedUuid,
-      resolvedUsername: record.resolvedUsername,
-      stars: record.stars,
-      nicked: record.nicked,
-      cacheSource: record.cacheSource,
-      cacheHit: record.cacheHit,
-      revalidated: record.revalidated,
-      installId: record.installId,
-      responseStatus: record.responseStatus,
-      latencyMs: record.latencyMs ?? null,
-    },
-  );
+  if (batch.length === 0) return;
+
+  await ensureInitialized();
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // Build bulk INSERT with VALUES clause
+    const values = batch.map((_: PlayerQueryRecord, i: number) => {
+      const base = i * 13;
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`;
+    }).join(', ');
+
+    const params = batch.flatMap((record: PlayerQueryRecord) => [
+      record.identifier, record.normalizedIdentifier, record.lookupType,
+      record.resolvedUuid, record.resolvedUsername, record.stars,
+      record.nicked, record.cacheSource, record.cacheHit,
+      record.revalidated, record.installId, record.responseStatus,
+      record.latencyMs ?? null,
+    ]);
+
+    const queryText = `
+      INSERT INTO player_query_history (
+        identifier, normalized_identifier, lookup_type, resolved_uuid, 
+        resolved_username, stars, nicked, cache_source, cache_hit, 
+        revalidated, install_id, response_status, latency_ms
+      ) VALUES ${values}
+    `;
+
+    await client.query(queryText, params);
+    await client.query('COMMIT');
+    console.info(`[history] Flushed ${batch.length} records in batch`);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('[history] Failed to flush batch', err);
+    // Put items back in buffer for retry (with mutex protection)
+    await bufferMutex.runExclusive(() => {
+      historyBuffer.unshift(...batch); // unshift to preserve order
+    });
+  } finally {
+    client.release();
+  }
 }
+
+// Replace the existing recordPlayerQuery with this buffered version
+export async function recordPlayerQuery(record: PlayerQueryRecord): Promise<void> {
+  // Push to memory instead of writing immediately (with mutex protection)
+  await bufferMutex.runExclusive(() => {
+    if (historyBuffer.length >= MAX_HISTORY_BUFFER) {
+      // Drop oldest entry to prevent unbounded growth
+      historyBuffer.shift();
+      console.warn(
+        `[history] buffer at capacity (${MAX_HISTORY_BUFFER}); dropping oldest entry to admit new records`,
+      );
+    }
+    historyBuffer.push(record);
+  });
+}
+
+// Start the interval in your initialization logic
+export function startHistoryFlushInterval(): void {
+  if (flushInterval !== null) {
+    return; // Already started
+  }
+  flushInterval = setInterval(() => {
+    void flushHistoryBuffer().catch((error) => {
+      console.error('[history] Unhandled error in flush interval', error);
+    });
+  }, BATCH_FLUSH_INTERVAL);
+}
+
+// Stop the interval for graceful shutdown
+export function stopHistoryFlushInterval(): void {
+  if (flushInterval !== null) {
+    clearInterval(flushInterval);
+    flushInterval = null;
+  }
+}
+
+// Export flushHistoryBuffer for graceful shutdown
+export { flushHistoryBuffer };
 
 export async function getRecentPlayerQueries(limit = 50): Promise<PlayerQuerySummary[]> {
   await ensureInitialized();

@@ -131,12 +131,29 @@ class DisplayManager(val file: File) {
         if (player.isNPC) return
         if (!BedwarsModeDetector.shouldRequestData()) return
         val displays = aboveHead.filter { it.config.enabled }
-        displays.filter { !it.cache.containsKey(player.uniqueID) }
+        val requests = displays.filter { !it.cache.containsKey(player.uniqueID) }
             .map { display ->
                 Levelhead.LevelheadRequest(player.uniqueID.trimmed, display, display.bottomValue)
             }
-            .ifEmpty { return }
-            .run { Levelhead.fetchBatch(this) }
+        
+        if (requests.isNotEmpty()) {
+            pendingRequests.addAll(requests)
+        }
+    }
+
+    private val pendingRequests = java.util.concurrent.ConcurrentLinkedQueue<Levelhead.LevelheadRequest>()
+
+    fun tick() {
+        if (pendingRequests.isEmpty()) return
+        val batch = ArrayList<Levelhead.LevelheadRequest>()
+        var req = pendingRequests.poll()
+        while (req != null) {
+            batch.add(req)
+            req = pendingRequests.poll()
+        }
+        if (batch.isNotEmpty()) {
+            Levelhead.fetchBatch(batch)
+        }
     }
 
     fun checkCacheSizes() {
@@ -219,6 +236,8 @@ class DisplayManager(val file: File) {
         config.backgroundOpacity = 0.25f
         config.showBackground = true
         config.renderThrottleMs = 0L
+        config.frameSkip = 1
+        config.textShadow = false
         aboveHead.clear()
         val defaultDisplay = AboveHeadDisplay(DisplayConfig())
         // Ensure DisplayConfig defaults match LevelheadConfig defaults

@@ -33,27 +33,27 @@ object BedwarsFetcher {
     private val proxyMisconfiguredWarned = AtomicBoolean(false)
 
     sealed class FetchResult {
-        data class Success(val payload: JsonObject) : FetchResult()
+        data class Success(val payload: JsonObject, val etag: String? = null) : FetchResult()
         object NotModified : FetchResult()
         data class TemporaryError(val reason: String? = null) : FetchResult()
         data class PermanentError(val reason: String? = null) : FetchResult()
     }
 
-    fun fetchPlayer(uuid: UUID, lastFetchedAt: Long?): FetchResult {
+    fun fetchPlayer(uuid: UUID, lastFetchedAt: Long?, etag: String? = null): FetchResult {
         if (shouldUseProxy()) {
             val identifier = uuid.toString().replace("-", "")
-            return fetchProxy(identifier, lastFetchedAt)
+            return fetchProxy(identifier, lastFetchedAt, etag)
         }
 
         val hypixelResult = fetchFromHypixel(uuid)
         return hypixelResult
     }
 
-    fun fetchProxyPlayer(identifier: String, lastFetchedAt: Long? = null): FetchResult {
+    fun fetchProxyPlayer(identifier: String, lastFetchedAt: Long? = null, etag: String? = null): FetchResult {
         if (!shouldUseProxy()) {
             return FetchResult.PermanentError("PROXY_DISABLED")
         }
-        return fetchProxy(identifier, lastFetchedAt)
+        return fetchProxy(identifier, lastFetchedAt, etag)
     }
 
     fun fetchBatchFromProxy(uuids: List<UUID>): Map<UUID, FetchResult> {
@@ -192,7 +192,7 @@ object BedwarsFetcher {
         return true
     }
 
-    private fun fetchProxy(identifierInput: String, lastFetchedAt: Long?): FetchResult {
+    private fun fetchProxy(identifierInput: String, lastFetchedAt: Long?, etag: String? = null): FetchResult {
         val baseUrl = LevelheadConfig.proxyBaseUrl.trim()
         val identifier = sanitizeProxyIdentifier(identifierInput)
         val isPublic = LevelheadConfig.proxyAuthToken.isBlank()
@@ -221,7 +221,10 @@ object BedwarsFetcher {
                 LevelheadConfig.proxyAuthToken.takeIf { it.isNotBlank() }?.let { token ->
                     header("Authorization", "Bearer $token")
                 }
-                lastFetchedAt?.let { since ->
+                // Prefer ETag over If-Modified-Since when available
+                etag?.takeIf { it.isNotBlank() }?.let { tag ->
+                    header("If-None-Match", tag)
+                } ?: lastFetchedAt?.let { since ->
                     header("If-Modified-Since", since.toHttpDateString())
                 }
             }
@@ -280,7 +283,8 @@ object BedwarsFetcher {
 
                 networkIssueWarned.set(false)
                 handleRetryAfterHint("proxy", retryAfterMillis)
-                FetchResult.Success(json)
+                val etag = response.header("ETag")
+                FetchResult.Success(json, etag)
             }
         } catch (ex: IOException) {
             notifyNetworkIssue(ex)

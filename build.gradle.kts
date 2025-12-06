@@ -38,6 +38,8 @@ repositories {
     maven("https://repo.polyfrost.org/releases")
     maven("https://repo.polyfrost.cc/releases")
     maven("https://repo.spongepowered.org/repository/maven-public/")
+    // Essential repository for gg.essential artifacts (UGraphics, UMatrixStack, etc.)
+    maven("https://repo.essential.gg/repository/maven-public")
 }
 
 val embed by configurations.creating
@@ -52,6 +54,8 @@ configurations.configureEach {
 dependencies {
     val oneconfig = "cc.polyfrost:oneconfig-$platform:0.2.2-alpha+"
     val universalcraft = "cc.polyfrost:universalcraft-$platform:246"
+    val essentialForge = "gg.essential:essential-1.8.9-forge:1.3.10.2"
+    val essentialLoader = "gg.essential:loader-launchwrapper:1.1.3"
 
     modCompileOnly(oneconfig)
     modImplementation(oneconfig)
@@ -60,6 +64,10 @@ dependencies {
 
     modCompileOnly(universalcraft)
     modImplementation(universalcraft)
+
+    // Essential is used for rendering (UGraphics/UMatrixStack) and is embedded via the loader
+    compileOnly(essentialForge)
+    embed(essentialLoader)
 
     embed(kotlin("stdlib"))
     embed("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
