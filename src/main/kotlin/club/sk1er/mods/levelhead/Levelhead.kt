@@ -255,6 +255,7 @@ object Levelhead {
         // Perform scheduled cleanup for AboveHeadRender's lastRenderTime map
         // This moves the cleanup off the render thread to prevent micro-stutters
         AboveHeadRender.performScheduledCleanup()
+        displayManager.tick()
     }
 
     fun fetchBatch(requests: List<LevelheadRequest>): Job {

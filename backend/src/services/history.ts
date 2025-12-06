@@ -106,6 +106,10 @@ const initialization = (async () => {
       CREATE INDEX IF NOT EXISTS idx_player_query_history_identifier
       ON player_query_history (normalized_identifier)
     `);
+    await pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_player_query_history_latency
+      ON player_query_history (latency_ms)
+    `);
   } catch (error) {
     console.error('Failed to initialize player_query_history table', error);
     throw error;

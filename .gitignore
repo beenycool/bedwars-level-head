@@ -32,3 +32,4 @@ Thumbs.db
 # environment configuration
 .env
 backend/.env
+backend/package-lock.json

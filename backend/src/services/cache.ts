@@ -117,6 +117,12 @@ const initialization = pool
     await pool.query(
       'CREATE INDEX IF NOT EXISTS idx_hypixel_calls_time ON hypixel_api_calls (called_at)',
     );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_player_cache_expires ON player_cache (expires_at)',
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits (window_start)',
+    );
     console.info('[cache] hypixel_api_calls table is ready');
   })
   .catch((error: unknown) => {
