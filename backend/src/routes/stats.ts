@@ -83,7 +83,7 @@ router.get('/', async (req, res, next) => {
     const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
     const page = Math.min(safePage, totalPages);
     const pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search, totalCountOverride: totalCount });
-    
+
     // Fetch filtered data for charts
     const [chartData, topPlayers] = await Promise.all([
       getPlayerQueriesWithFilters({
@@ -735,6 +735,48 @@ router.get('/', async (req, res, next) => {
       const topPlayers = pageData.topPlayers || [];
       const filters = pageData.filters || {};
       const charts = [];
+      // Store original chart configs for fullscreen cloning (avoids Chart.js resolver issues)
+      const chartConfigs = new Map();
+
+      // Safe deep clone helper that preserves functions but skips Chart.js internal properties
+      function safeCloneConfig(obj, depth = 0) {
+        if (depth > 10) return null; // Prevent infinite recursion
+        if (obj === null || obj === undefined) return obj;
+        if (typeof obj === 'function') return obj; // Preserve functions
+        if (typeof obj !== 'object') return obj;
+        
+        // Skip Chart.js resolver objects (they have internal properties)
+        if (typeof obj === 'object' && obj !== null) {
+          if ('_resolve' in obj || '_scriptable' in obj || '_fallback' in obj) {
+            return undefined;
+          }
+        }
+        
+        // Handle arrays
+        if (Array.isArray(obj)) {
+          return obj.map(item => safeCloneConfig(item, depth + 1)).filter(item => item !== undefined);
+        }
+        
+        // Handle plain objects
+        const cloned = {};
+        for (const key in obj) {
+          if (!key || key.startsWith('_')) continue; // Skip internal properties
+          const value = obj[key];
+          
+          // Skip objects that look like resolvers
+          if (typeof value === 'object' && value !== null) {
+            if ('_resolve' in value || '_scriptable' in value || '_fallback' in value) {
+              continue;
+            }
+          }
+          
+          const clonedValue = safeCloneConfig(value, depth + 1);
+          if (clonedValue !== undefined) {
+            cloned[key] = clonedValue;
+          }
+        }
+        return cloned;
+      }
 
       // Initialize filter controls
       const fromDateInput = document.getElementById('fromDate');
@@ -1032,7 +1074,7 @@ router.get('/', async (req, res, next) => {
       updateLatencyDisplay();
 
       // Render Pie Chart (Cache)
-      charts.push(new Chart(document.getElementById('cacheChart'), {
+      const cacheChartConfig = {
         type: 'doughnut',
         data: {
           labels: ['Cache Hit', 'Network Fetch'],
@@ -1053,10 +1095,13 @@ router.get('/', async (req, res, next) => {
                 title: { display: false }
             }
         }
-      }));
+      };
+      const cacheChartEl = document.getElementById('cacheChart');
+      chartConfigs.set('cacheChart', safeCloneConfig(cacheChartConfig));
+      charts.push(new Chart(cacheChartEl, cacheChartConfig));
 
       // Render Bar Chart (Stars)
-      charts.push(new Chart(document.getElementById('starChart'), {
+      const starChartConfig = {
         type: 'bar',
         data: {
           labels: Object.keys(starRanges),
@@ -1088,7 +1133,10 @@ router.get('/', async (req, res, next) => {
             },
             plugins: { legend: { display: false } }
         }
-      }));
+      };
+      const starChartEl = document.getElementById('starChart');
+      chartConfigs.set('starChart', safeCloneConfig(starChartConfig));
+      charts.push(new Chart(starChartEl, starChartConfig));
 
       function updateLatencyChart() {
         // Filter latency series based on cache hit inclusion
@@ -1118,7 +1166,7 @@ router.get('/', async (req, res, next) => {
         return asDate.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
       });
 
-      const latencyChart = new Chart(document.getElementById('latencyChart'), {
+      const latencyChartConfig = {
         type: 'line',
         data: {
           labels: latencyLabels,
@@ -1150,7 +1198,10 @@ router.get('/', async (req, res, next) => {
           plugins: { legend: { display: false } },
           maintainAspectRatio: false,
         },
-      });
+      };
+      const latencyChartEl = document.getElementById('latencyChart');
+      chartConfigs.set('latencyChart', safeCloneConfig(latencyChartConfig));
+      const latencyChart = new Chart(latencyChartEl, latencyChartConfig);
       charts.push(latencyChart);
       
       // Cache hit toggle handler
@@ -1162,7 +1213,7 @@ router.get('/', async (req, res, next) => {
         });
       }
 
-      charts.push(new Chart(document.getElementById('statusChart'), {
+      const statusChartConfig = {
         type: 'doughnut',
         data: {
           labels: Object.keys(statusBuckets),
@@ -1183,7 +1234,10 @@ router.get('/', async (req, res, next) => {
             title: { display: false },
           },
         },
-      }));
+      };
+      const statusChartEl = document.getElementById('statusChart');
+      chartConfigs.set('statusChart', safeCloneConfig(statusChartConfig));
+      charts.push(new Chart(statusChartEl, statusChartConfig));
 
       // 5. Lookup Type Distribution
       const lookupTypeCounts = { UUID: 0, IGN: 0 };
@@ -1194,7 +1248,7 @@ router.get('/', async (req, res, next) => {
           lookupTypeCounts.IGN++;
         }
       });
-      charts.push(new Chart(document.getElementById('lookupTypeChart'), {
+      const lookupTypeChartConfig = {
         type: 'doughnut',
         data: {
           labels: ['UUID', 'IGN'],
@@ -1215,7 +1269,10 @@ router.get('/', async (req, res, next) => {
             title: { display: false },
           },
         },
-      }));
+      };
+      const lookupTypeChartEl = document.getElementById('lookupTypeChart');
+      chartConfigs.set('lookupTypeChart', safeCloneConfig(lookupTypeChartConfig));
+      charts.push(new Chart(lookupTypeChartEl, lookupTypeChartConfig));
 
       // 6. Requests Over Time
       function getTimeBucketInterval(startDate, endDate) {
@@ -1291,7 +1348,7 @@ router.get('/', async (req, res, next) => {
         .sort((a, b) => a - b)
         .map((key) => timeBuckets.get(key));
 
-      charts.push(new Chart(document.getElementById('requestsOverTimeChart'), {
+      const requestsOverTimeChartConfig = {
         type: 'line',
         data: {
           labels: requestsOverTimeLabels,
@@ -1322,7 +1379,10 @@ router.get('/', async (req, res, next) => {
           },
           plugins: { legend: { display: false } },
         },
-      }));
+      };
+      const requestsOverTimeChartEl = document.getElementById('requestsOverTimeChart');
+      chartConfigs.set('requestsOverTimeChart', safeCloneConfig(requestsOverTimeChartConfig));
+      charts.push(new Chart(requestsOverTimeChartEl, requestsOverTimeChartConfig));
 
       // 7. Cache Hit Rate Over Time
       const cacheOverTimeLabels = Array.from(cacheBuckets.keys())
@@ -1335,7 +1395,7 @@ router.get('/', async (req, res, next) => {
           return bucket.total > 0 ? (bucket.hits / bucket.total) * 100 : 0;
         });
 
-      charts.push(new Chart(document.getElementById('cacheOverTimeChart'), {
+      const cacheOverTimeChartConfig = {
         type: 'line',
         data: {
           labels: cacheOverTimeLabels,
@@ -1367,7 +1427,10 @@ router.get('/', async (req, res, next) => {
           },
           plugins: { legend: { display: false } },
         },
-      }));
+      };
+      const cacheOverTimeChartEl = document.getElementById('cacheOverTimeChart');
+      chartConfigs.set('cacheOverTimeChart', safeCloneConfig(cacheOverTimeChartConfig));
+      charts.push(new Chart(cacheOverTimeChartEl, cacheOverTimeChartConfig));
 
       // 8. Latency Distribution
       const latencyBins = {
@@ -1388,7 +1451,7 @@ router.get('/', async (req, res, next) => {
         else latencyBins['1000ms+']++;
       });
 
-      charts.push(new Chart(document.getElementById('latencyDistributionChart'), {
+      const latencyDistributionChartConfig = {
         type: 'bar',
         data: {
           labels: Object.keys(latencyBins),
@@ -1415,7 +1478,10 @@ router.get('/', async (req, res, next) => {
           },
           plugins: { legend: { display: false } },
         },
-      }));
+      };
+      const latencyDistributionChartEl = document.getElementById('latencyDistributionChart');
+      chartConfigs.set('latencyDistributionChart', safeCloneConfig(latencyDistributionChartConfig));
+      charts.push(new Chart(latencyDistributionChartEl, latencyDistributionChartConfig));
 
       // 9. Top Players
       const topPlayersLabels = topPlayers.slice(0, 20).map((p) => {
@@ -1423,7 +1489,7 @@ router.get('/', async (req, res, next) => {
       });
       const topPlayersData = topPlayers.slice(0, 20).map((p) => p.queryCount);
 
-      charts.push(new Chart(document.getElementById('topPlayersChart'), {
+      const topPlayersChartConfig = {
         type: 'bar',
         data: {
           labels: topPlayersLabels,
@@ -1451,7 +1517,10 @@ router.get('/', async (req, res, next) => {
           },
           plugins: { legend: { display: false } },
         },
-      }));
+      };
+      const topPlayersChartEl = document.getElementById('topPlayersChart');
+      chartConfigs.set('topPlayersChart', safeCloneConfig(topPlayersChartConfig));
+      charts.push(new Chart(topPlayersChartEl, topPlayersChartConfig));
 
       applyChartHeight(currentChartHeight);
 
@@ -1465,6 +1534,13 @@ router.get('/', async (req, res, next) => {
       function openFullscreenChart(chartId, chartTitle) {
         const originalChart = charts.find((chart) => chart.canvas.id === chartId);
         if (!originalChart || !fullscreenOverlay || !fullscreenChartCanvas) return;
+
+        // Get stored config for this chart (avoids Chart.js resolver issues)
+        const storedConfig = chartConfigs.get(chartId);
+        if (!storedConfig) {
+          console.warn('No stored config found for chart:', chartId);
+          return;
+        }
 
         // Set title
         if (fullscreenChartTitle) {
@@ -1486,247 +1562,29 @@ router.get('/', async (req, res, next) => {
           fullscreenChartInstance = null;
         }
 
-        // Clone chart data and options properly
-        const chartData = {
-          labels: originalChart.data.labels ? [...originalChart.data.labels] : [],
-          datasets: originalChart.data.datasets.map((dataset) => ({
-            ...dataset,
-            data: Array.isArray(dataset.data) ? [...dataset.data] : dataset.data,
-          })),
-        };
+        // Clone the stored config (which is already clean)
+        const chartConfig = safeCloneConfig(storedConfig);
+        
+        // Update only the data arrays from the live chart (avoid copying internal Chart.js state)
+        if (originalChart.data.labels) {
+          chartConfig.data.labels = [...originalChart.data.labels];
+        }
+        // Update dataset data arrays only, preserving clean config properties
+        if (chartConfig.data.datasets && originalChart.data.datasets) {
+          for (let i = 0; i < chartConfig.data.datasets.length && i < originalChart.data.datasets.length; i++) {
+            const liveDataset = originalChart.data.datasets[i];
+            if (Array.isArray(liveDataset.data)) {
+              chartConfig.data.datasets[i].data = [...liveDataset.data];
+            }
+          }
+        }
+        
+        // Ensure maintainAspectRatio is false for fullscreen
+        chartConfig.options = chartConfig.options || {};
+        chartConfig.options.maintainAspectRatio = false;
 
-        // Clone options, filtering out internal Chart.js properties to avoid resolver issues
-        // Try to get original config options first (before Chart.js processing), otherwise use processed options
-        const originalOptions = (originalChart.config && originalChart.config.options) 
-          ? originalChart.config.options 
-          : originalChart.options;
-        const chartOptions = {};
-        
-        // Whitelist of safe scale properties to copy (avoid internal resolvers)
-        const safeScaleProperties = ['ticks', 'grid', 'beginAtZero', 'max', 'min', 'maxRotation', 'minRotation', 'display', 'precision'];
-        
-        // Helper to safely extract legend position as string
-        function extractLegendPosition(legendConfig) {
-          if (!legendConfig) {
-            return 'bottom';
-          }
-          
-          // Try to get position from various possible locations
-          let pos = legendConfig.position;
-          
-          // If position is a function (resolver), skip it and use default
-          if (typeof pos === 'function') {
-            return 'bottom';
-          }
-          
-          // If it's already a string, use it directly
-          if (typeof pos === 'string') {
-            return pos;
-          }
-          
-          // If it's an object, try to extract the value
-          if (typeof pos === 'object' && pos !== null) {
-            // Chart.js might store it as { value: 'bottom' } or similar
-            if ('value' in pos && typeof pos.value === 'string') {
-              return pos.value;
-            }
-            // Try common property names
-            if ('position' in pos && typeof pos.position === 'string') {
-              return pos.position;
-            }
-            // Try toString() if available, but only if it returns a string
-            if (typeof pos.toString === 'function') {
-              try {
-                const str = String(pos);
-                // Only use if it's a valid position string
-                if (typeof str === 'string' && ['top', 'bottom', 'left', 'right'].includes(str.toLowerCase())) {
-                  return str.toLowerCase();
-                }
-              } catch (e) {
-                // Ignore errors
-              }
-            }
-          }
-          
-          // Fallback to default - always return a valid string
-          return 'bottom';
-        }
-        
-        // Helper to safely clone an object, excluding functions and internal properties
-        function safeClone(obj, depth = 0) {
-          if (depth > 5) return null; // Prevent infinite recursion
-          if (obj === null || obj === undefined) return obj;
-          if (typeof obj === 'function') return undefined; // Exclude functions
-          if (typeof obj !== 'object') return obj;
-          
-          // Skip objects that are Chart.js resolvers (they have _resolve or _scriptable)
-          if ('_resolve' in obj || typeof obj._scriptable === 'function' || typeof obj._fallback === 'function') {
-            return undefined;
-          }
-          
-          // Handle arrays
-          if (Array.isArray(obj)) {
-            return obj.map(item => safeClone(item, depth + 1)).filter(item => item !== undefined);
-          }
-          
-          // Handle plain objects
-          const cloned = {};
-          for (const key in obj) {
-            if (!key || key.startsWith('_')) continue; // Skip internal properties
-            const value = obj[key];
-            
-            // Skip functions entirely
-            if (typeof value === 'function') continue;
-            
-            // Skip objects that look like resolvers
-            if (typeof value === 'object' && value !== null) {
-              if ('_resolve' in value || typeof value._scriptable === 'function') {
-                continue;
-              }
-            }
-            
-            const clonedValue = safeClone(value, depth + 1);
-            if (clonedValue !== undefined) {
-              cloned[key] = clonedValue;
-            }
-          }
-          return cloned;
-        }
-        
-        // Copy top-level options, excluding internal properties
-        for (const key in originalOptions) {
-          if (!key || key.startsWith('_') || typeof originalOptions[key] === 'function') {
-            continue;
-          }
-          
-          if (key === 'plugins' && originalOptions.plugins) {
-            chartOptions.plugins = {};
-            for (const pluginKey in originalOptions.plugins) {
-              if (!pluginKey || typeof originalOptions.plugins[pluginKey] === 'function') {
-                continue;
-              }
-              
-              if (pluginKey === 'legend' && originalOptions.plugins.legend) {
-                const legendConfig = originalOptions.plugins.legend;
-                chartOptions.plugins.legend = {
-                  position: extractLegendPosition(legendConfig),
-                  display: legendConfig.display !== false,
-                  labels: legendConfig.labels ? safeClone(legendConfig.labels) : undefined
-                };
-              } else {
-                const clonedPlugin = safeClone(originalOptions.plugins[pluginKey]);
-                if (clonedPlugin) {
-                  chartOptions.plugins[pluginKey] = clonedPlugin;
-                }
-              }
-            }
-          } else if (key === 'scales' && originalOptions.scales) {
-            chartOptions.scales = {};
-            for (const scaleKey in originalOptions.scales) {
-              if (!scaleKey || typeof originalOptions.scales[scaleKey] === 'function') {
-                continue;
-              }
-              
-              const scale = originalOptions.scales[scaleKey];
-              
-              // Skip if scale itself is a function or has internal Chart.js properties
-              if (typeof scale === 'function' || (typeof scale === 'object' && scale !== null && '_resolve' in scale)) {
-                continue;
-              }
-              
-              const clonedScale = {};
-              
-              // Only copy whitelisted safe properties to avoid resolver functions
-              for (const scaleProp of safeScaleProperties) {
-                if (!(scaleProp in scale)) {
-                  continue;
-                }
-                
-                const propValue = scale[scaleProp];
-                
-                // Skip functions entirely (including resolvers)
-                if (typeof propValue === 'function') {
-                  continue;
-                }
-                
-                // Skip objects that might be resolvers (have _resolve or similar internal properties)
-                if (typeof propValue === 'object' && propValue !== null) {
-                  if ('_resolve' in propValue || typeof propValue._scriptable === 'function') {
-                    continue;
-                  }
-                }
-                
-                // For nested objects (ticks, grid), use safe clone
-                if (scaleProp === 'ticks' || scaleProp === 'grid') {
-                  const cloned = safeClone(propValue);
-                  if (cloned && typeof cloned === 'object') {
-                    // Double-check cloned object doesn't have resolver properties
-                    let hasResolvers = false;
-                    for (const subKey in cloned) {
-                      if (typeof cloned[subKey] === 'function' || (typeof cloned[subKey] === 'object' && cloned[subKey] !== null && '_resolve' in cloned[subKey])) {
-                        hasResolvers = true;
-                        break;
-                      }
-                    }
-                    if (!hasResolvers) {
-                      clonedScale[scaleProp] = cloned;
-                    }
-                  }
-                } else {
-                  // Copy primitive values directly
-                  clonedScale[scaleProp] = propValue;
-                }
-              }
-              
-              // Only add scale if it has valid properties
-              if (Object.keys(clonedScale).length > 0) {
-                chartOptions.scales[scaleKey] = clonedScale;
-              }
-            }
-          } else {
-            // For other top-level properties, use safe clone
-            const cloned = safeClone(originalOptions[key]);
-            if (cloned !== undefined && cloned !== null) {
-              chartOptions[key] = cloned;
-            }
-          }
-        }
-        
-        // Override maintainAspectRatio
-        chartOptions.maintainAspectRatio = false;
-        
-        // Final cleanup: ensure scales don't contain any resolver functions
-        if (chartOptions.scales) {
-          for (const scaleKey in chartOptions.scales) {
-            const scale = chartOptions.scales[scaleKey];
-            // Remove scale if it contains resolver-like properties
-            if (scale && typeof scale === 'object') {
-              for (const prop in scale) {
-                const value = scale[prop];
-                if (typeof value === 'function' || 
-                    (typeof value === 'object' && value !== null && ('_resolve' in value || typeof value._scriptable === 'function'))) {
-                  // Remove the problematic property
-                  delete scale[prop];
-                }
-              }
-              // If scale is now empty, remove it
-              if (Object.keys(scale).length === 0) {
-                delete chartOptions.scales[scaleKey];
-              }
-            }
-          }
-          // If scales object is now empty, remove it
-          if (Object.keys(chartOptions.scales).length === 0) {
-            delete chartOptions.scales;
-          }
-        }
-
-        // Create new chart in fullscreen
-        fullscreenChartInstance = new Chart(fullscreenChartCanvas, {
-          type: originalChart.config.type,
-          data: chartData,
-          options: chartOptions,
-        });
+        // Create new chart in fullscreen using the clean stored config
+        fullscreenChartInstance = new Chart(fullscreenChartCanvas, chartConfig);
         
         // Resize to fill container
         setTimeout(() => {
