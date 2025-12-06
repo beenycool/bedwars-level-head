@@ -1535,7 +1535,7 @@ router.get('/', async (req, res, next) => {
         const originalChart = charts.find((chart) => chart.canvas.id === chartId);
         if (!originalChart || !fullscreenOverlay || !fullscreenChartCanvas) return;
 
-        // Get stored config for this chart (avoids Chart.js resolver issues)
+        // Get stored config for this chart
         const storedConfig = chartConfigs.get(chartId);
         if (!storedConfig) {
           console.warn('No stored config found for chart:', chartId);
@@ -1562,28 +1562,36 @@ router.get('/', async (req, res, next) => {
           fullscreenChartInstance = null;
         }
 
-        // Clone the stored config (which is already clean)
-        const chartConfig = safeCloneConfig(storedConfig);
-        
-        // Update only the data arrays from the live chart (avoid copying internal Chart.js state)
-        if (originalChart.data.labels) {
-          chartConfig.data.labels = [...originalChart.data.labels];
-        }
-        // Update dataset data arrays only, preserving clean config properties
-        if (chartConfig.data.datasets && originalChart.data.datasets) {
-          for (let i = 0; i < chartConfig.data.datasets.length && i < originalChart.data.datasets.length; i++) {
-            const liveDataset = originalChart.data.datasets[i];
-            if (Array.isArray(liveDataset.data)) {
-              chartConfig.data.datasets[i].data = [...liveDataset.data];
-            }
-          }
-        }
-        
-        // Ensure maintainAspectRatio is false for fullscreen
-        chartConfig.options = chartConfig.options || {};
-        chartConfig.options.maintainAspectRatio = false;
+        // Build a completely fresh config - use JSON to strip all non-serializable properties
+        const freshData = JSON.parse(JSON.stringify({
+          labels: originalChart.data.labels || [],
+          datasets: originalChart.data.datasets.map((ds) => ({
+            label: ds.label,
+            data: ds.data,
+            backgroundColor: ds.backgroundColor,
+            borderColor: ds.borderColor,
+            borderWidth: ds.borderWidth,
+            borderRadius: ds.borderRadius,
+            tension: ds.tension,
+            fill: ds.fill,
+            spanGaps: ds.spanGaps,
+            pointRadius: ds.pointRadius,
+            pointHitRadius: ds.pointHitRadius,
+          })),
+        }));
 
-        // Create new chart in fullscreen using the clean stored config
+        // Build fresh options from stored config (these are clean)
+        const freshOptions = JSON.parse(JSON.stringify(storedConfig.options || {}));
+        freshOptions.responsive = true;
+        freshOptions.maintainAspectRatio = false;
+
+        const chartConfig = {
+          type: storedConfig.type,
+          data: freshData,
+          options: freshOptions,
+        };
+
+        // Create new chart in fullscreen
         fullscreenChartInstance = new Chart(fullscreenChartCanvas, chartConfig);
         
         // Resize to fill container
