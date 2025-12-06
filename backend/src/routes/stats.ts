@@ -470,6 +470,96 @@ router.get('/', async (req, res, next) => {
         font-size: 0.75rem;
         cursor: pointer;
       }
+      .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+      }
+      .card-header h2 {
+        margin: 0;
+      }
+      .expand-btn {
+        background: rgba(59, 130, 246, 0.2);
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        border-radius: 6px;
+        padding: 0.35rem 0.5rem;
+        color: #cbd5f5;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: background 0.2s, transform 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+      }
+      .expand-btn:hover {
+        background: rgba(59, 130, 246, 0.4);
+        transform: scale(1.05);
+      }
+      .fullscreen-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(15, 23, 42, 0.95);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: fadeIn 0.2s ease;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      .fullscreen-modal {
+        width: 90vw;
+        height: 85vh;
+        background: rgba(30, 41, 59, 0.98);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 16px;
+        padding: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      }
+      .fullscreen-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      }
+      .fullscreen-title {
+        font-size: 1.35rem;
+        color: #e2e8f0;
+        margin: 0;
+        font-weight: 600;
+      }
+      .fullscreen-close-btn {
+        background: rgba(239, 68, 68, 0.2);
+        border: 1px solid rgba(239, 68, 68, 0.4);
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        color: #fca5a5;
+        cursor: pointer;
+        font-weight: 600;
+        transition: background 0.2s;
+      }
+      .fullscreen-close-btn:hover {
+        background: rgba(239, 68, 68, 0.4);
+      }
+      .fullscreen-chart-container {
+        flex: 1;
+        position: relative;
+        min-height: 0;
+      }
+      .fullscreen-chart-container canvas {
+        width: 100% !important;
+        height: 100% !important;
+      }
     </style>
   </head>
   <body>
@@ -550,18 +640,24 @@ router.get('/', async (req, res, next) => {
 
     <div class="dashboard-grid">
       <div class="card">
-        <h2>Cache Performance</h2>
-
+        <div class="card-header">
+          <h2>Cache Performance</h2>
+          <button class="expand-btn" data-chart="cacheChart" title="Expand chart">⛶</button>
+        </div>
         <div class="chart-shell"><canvas id="cacheChart"></canvas></div>
       </div>
       <div class="card">
-        <h2>Star Distribution</h2>
-
+        <div class="card-header">
+          <h2>Star Distribution</h2>
+          <button class="expand-btn" data-chart="starChart" title="Expand chart">⛶</button>
+        </div>
         <div class="chart-shell"><canvas id="starChart"></canvas></div>
       </div>
       <div class="card">
-        <h2>Latency Pulse</h2>
-
+        <div class="card-header">
+          <h2>Latency Pulse</h2>
+          <button class="expand-btn" data-chart="latencyChart" title="Expand chart">⛶</button>
+        </div>
         <div class="latency-chart-controls">
           <label>
             <input type="checkbox" id="includeCacheHits" checked />
@@ -571,34 +667,58 @@ router.get('/', async (req, res, next) => {
         <div class="chart-shell"><canvas id="latencyChart"></canvas></div>
       </div>
       <div class="card">
-        <h2>Status Breakdown</h2>
-
+        <div class="card-header">
+          <h2>Status Breakdown</h2>
+          <button class="expand-btn" data-chart="statusChart" title="Expand chart">⛶</button>
+        </div>
         <div class="chart-shell"><canvas id="statusChart"></canvas></div>
       </div>
       <div class="card">
-        <h2>Lookup Type Distribution</h2>
-
+        <div class="card-header">
+          <h2>Lookup Type Distribution</h2>
+          <button class="expand-btn" data-chart="lookupTypeChart" title="Expand chart">⛶</button>
+        </div>
         <div class="chart-shell"><canvas id="lookupTypeChart"></canvas></div>
       </div>
       <div class="card">
-        <h2>Requests Over Time</h2>
-
+        <div class="card-header">
+          <h2>Requests Over Time</h2>
+          <button class="expand-btn" data-chart="requestsOverTimeChart" title="Expand chart">⛶</button>
+        </div>
         <div class="chart-shell"><canvas id="requestsOverTimeChart"></canvas></div>
       </div>
       <div class="card">
-        <h2>Cache Hit Rate Over Time</h2>
-
+        <div class="card-header">
+          <h2>Cache Hit Rate Over Time</h2>
+          <button class="expand-btn" data-chart="cacheOverTimeChart" title="Expand chart">⛶</button>
+        </div>
         <div class="chart-shell"><canvas id="cacheOverTimeChart"></canvas></div>
       </div>
       <div class="card">
-        <h2>Latency Distribution</h2>
-
+        <div class="card-header">
+          <h2>Latency Distribution</h2>
+          <button class="expand-btn" data-chart="latencyDistributionChart" title="Expand chart">⛶</button>
+        </div>
         <div class="chart-shell"><canvas id="latencyDistributionChart"></canvas></div>
       </div>
       <div class="card">
-        <h2>Top Queried Players</h2>
-
+        <div class="card-header">
+          <h2>Top Queried Players</h2>
+          <button class="expand-btn" data-chart="topPlayersChart" title="Expand chart">⛶</button>
+        </div>
         <div class="chart-shell"><canvas id="topPlayersChart"></canvas></div>
+      </div>
+    </div>
+
+    <div id="fullscreenOverlay" class="fullscreen-overlay" style="display: none;">
+      <div class="fullscreen-modal">
+        <div class="fullscreen-header">
+          <h3 class="fullscreen-title" id="fullscreenTitle"></h3>
+          <button class="fullscreen-close-btn" id="fullscreenCloseBtn">✕ Close</button>
+        </div>
+        <div class="fullscreen-chart-container">
+          <canvas id="fullscreenChart"></canvas>
+        </div>
       </div>
     </div>
 
@@ -1406,6 +1526,107 @@ router.get('/', async (req, res, next) => {
 
       applyChartHeight(currentChartHeight);
 
+      // Fullscreen chart handling
+      const chartConfigs = {
+        cacheChart: { title: 'Cache Performance', config: cacheChartConfig },
+        starChart: { title: 'Star Distribution', config: starChartConfig },
+        latencyChart: { title: 'Latency Pulse', config: latencyChartConfig },
+        statusChart: { title: 'Status Breakdown', config: statusChartConfig },
+        lookupTypeChart: { title: 'Lookup Type Distribution', config: lookupTypeChartConfig },
+        requestsOverTimeChart: { title: 'Requests Over Time', config: requestsOverTimeChartConfig },
+        cacheOverTimeChart: { title: 'Cache Hit Rate Over Time', config: cacheOverTimeChartConfig },
+        latencyDistributionChart: { title: 'Latency Distribution', config: latencyDistributionChartConfig },
+        topPlayersChart: { title: 'Top Queried Players', config: topPlayersChartConfig },
+      };
+
+      let fullscreenChartInstance = null;
+
+      function deepCloneConfig(config) {
+        // Deep clone that handles data arrays properly
+        const cloned = {
+          type: config.type,
+          data: {
+            labels: config.data.labels ? [...config.data.labels] : [],
+            datasets: config.data.datasets.map(ds => ({
+              ...ds,
+              data: Array.isArray(ds.data) ? [...ds.data] : ds.data,
+              backgroundColor: Array.isArray(ds.backgroundColor) 
+                ? [...ds.backgroundColor] 
+                : ds.backgroundColor,
+            })),
+          },
+          options: JSON.parse(JSON.stringify(config.options || {})),
+        };
+        return cloned;
+      }
+
+      function openFullscreen(chartId) {
+        const overlay = document.getElementById('fullscreenOverlay');
+        const titleEl = document.getElementById('fullscreenTitle');
+        const canvas = document.getElementById('fullscreenChart');
+        const info = chartConfigs[chartId];
+        
+        if (!info || !overlay || !canvas) return;
+        
+        // Clean up any existing fullscreen chart
+        if (fullscreenChartInstance) {
+          fullscreenChartInstance.destroy();
+          fullscreenChartInstance = null;
+        }
+        
+        titleEl.textContent = info.title;
+        overlay.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+        
+        // Clone config to avoid mutating original
+        const clonedConfig = deepCloneConfig(info.config);
+        
+        // Create new chart in fullscreen canvas
+        fullscreenChartInstance = new Chart(canvas, clonedConfig);
+      }
+
+      function closeFullscreen() {
+        const overlay = document.getElementById('fullscreenOverlay');
+        if (fullscreenChartInstance) {
+          fullscreenChartInstance.destroy();
+          fullscreenChartInstance = null;
+        }
+        if (overlay) {
+          overlay.style.display = 'none';
+        }
+        document.body.style.overflow = '';
+      }
+
+      // Attach event listeners to expand buttons
+      document.querySelectorAll('.expand-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const chartId = btn.getAttribute('data-chart');
+          if (chartId) openFullscreen(chartId);
+        });
+      });
+
+      // Close button handler
+      const closeBtn = document.getElementById('fullscreenCloseBtn');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', closeFullscreen);
+      }
+
+      // Click on overlay background to close
+      const overlay = document.getElementById('fullscreenOverlay');
+      if (overlay) {
+        overlay.addEventListener('click', (e) => {
+          if (e.target.id === 'fullscreenOverlay') {
+            closeFullscreen();
+          }
+        });
+      }
+
+      // Escape key to close
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeFullscreen();
+        }
+      });
 
     </script>
   </body>
