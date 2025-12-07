@@ -2,6 +2,7 @@ package club.sk1er.mods.levelhead.commands
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
+import club.sk1er.mods.levelhead.bedwars.FetchResult
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import club.sk1er.mods.levelhead.core.BedwarsStar
@@ -760,10 +761,10 @@ class LevelheadCommand {
     private suspend fun fetchWhoisFromProxy(identifier: String): WhoisResult = withContext(Dispatchers.IO) {
         Levelhead.rateLimiter.consume()
         when (val result = BedwarsFetcher.fetchProxyPlayer(identifier, null)) {
-            is BedwarsFetcher.FetchResult.Success -> parseWhoisResult(result.payload, identifier, source = "proxy")
-            BedwarsFetcher.FetchResult.NotModified -> throw CommandException("Proxy returned no updates for $identifier.")
-            is BedwarsFetcher.FetchResult.TemporaryError -> throw CommandException("Proxy temporarily unavailable (${result.reason ?: "unknown"}).")
-            is BedwarsFetcher.FetchResult.PermanentError -> throw CommandException(
+            is FetchResult.Success -> parseWhoisResult(result.payload, identifier, source = "proxy")
+            FetchResult.NotModified -> throw CommandException("Proxy returned no updates for $identifier.")
+            is FetchResult.TemporaryError -> throw CommandException("Proxy temporarily unavailable (${result.reason ?: "unknown"}).")
+            is FetchResult.PermanentError -> throw CommandException(
                 when (result.reason) {
                     "PROXY_DISABLED" -> "Proxy is disabled. Configure it or use a UUID."
                     else -> "Proxy rejected the request (${result.reason ?: "unknown"})."
@@ -775,10 +776,10 @@ class LevelheadCommand {
     private suspend fun fetchWhoisFromHypixel(resolved: ResolvedIdentifier): WhoisResult = withContext(Dispatchers.IO) {
         Levelhead.rateLimiter.consume()
         when (val result = BedwarsFetcher.fetchPlayer(resolved.uuid, null)) {
-            is BedwarsFetcher.FetchResult.Success -> parseWhoisResult(result.payload, resolved.displayName ?: resolved.uuid.toString(), source = "hypixel")
-            BedwarsFetcher.FetchResult.NotModified -> throw CommandException("No fresh data available for ${resolved.displayName ?: resolved.uuid}.")
-            is BedwarsFetcher.FetchResult.TemporaryError -> throw CommandException("Hypixel temporarily unavailable (${result.reason ?: "unknown"}).")
-            is BedwarsFetcher.FetchResult.PermanentError -> throw CommandException(
+            is FetchResult.Success -> parseWhoisResult(result.payload, resolved.displayName ?: resolved.uuid.toString(), source = "hypixel")
+            FetchResult.NotModified -> throw CommandException("No fresh data available for ${resolved.displayName ?: resolved.uuid}.")
+            is FetchResult.TemporaryError -> throw CommandException("Hypixel temporarily unavailable (${result.reason ?: "unknown"}).")
+            is FetchResult.PermanentError -> throw CommandException(
                 when (result.reason) {
                     "MISSING_KEY" -> "Set your Hypixel API key with /levelhead apikey <key> to query players."
                     else -> "Hypixel request failed (${result.reason ?: "unknown"})."

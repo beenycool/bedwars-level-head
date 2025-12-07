@@ -37,7 +37,7 @@ object AboveHeadRender {
         if (minecraft.gameSettings.hideGUI) return
         if (!BedwarsModeDetector.shouldRenderTags()) return
 
-        // Performance: Frame skipping
+        // Performance: Frame skipping - move counter to entity-independent check
         val skip = displayManager.config.frameSkip.coerceAtLeast(1)
         frameCounter = (frameCounter + 1) % skip
         if (frameCounter != 0) return
@@ -152,16 +152,18 @@ object AboveHeadRender {
     }
 
     private fun renderComponent(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int) {
-        // Pass 1: Shadow / Depth-disabled pass
-        @Suppress("DEPRECATION")
-        UGraphics.disableDepth()
-        @Suppress("DEPRECATION")
-        UGraphics.depthMask(false)
-        
-        if (component.chroma) {
-            renderer.drawString(component.value, x, 0, DarkChromaColor)
-        } else {
-            renderer.drawString(component.value, x, 0, component.color.withAlpha(0.2f).rgb)
+        // Pass 1: Shadow / Depth-disabled pass (only if text shadow is enabled)
+        if (displayManager.config.textShadow) {
+            @Suppress("DEPRECATION")
+            UGraphics.disableDepth()
+            @Suppress("DEPRECATION")
+            UGraphics.depthMask(false)
+            
+            if (component.chroma) {
+                renderer.drawString(component.value, x, 0, DarkChromaColor)
+            } else {
+                renderer.drawString(component.value, x, 0, component.color.withAlpha(0.2f).rgb)
+            }
         }
 
         // Pass 2: Main Text

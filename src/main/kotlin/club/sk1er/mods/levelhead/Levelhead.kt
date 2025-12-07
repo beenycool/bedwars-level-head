@@ -2,6 +2,7 @@ package club.sk1er.mods.levelhead
 
 import cc.polyfrost.oneconfig.utils.commands.CommandManager
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
+import club.sk1er.mods.levelhead.bedwars.FetchResult
 import club.sk1er.mods.levelhead.commands.LevelheadCommand
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
@@ -336,7 +337,7 @@ object Levelhead {
                             }
 
                             when (result) {
-                                is BedwarsFetcher.FetchResult.Success -> {
+                                is FetchResult.Success -> {
                                     lastFetchSuccessAt = System.currentTimeMillis()
                                     val cachedEntry = buildCachedStats(result.payload, result.etag)
                                     handleStatsUpdate(uuid, cachedEntry)
@@ -354,8 +355,8 @@ object Levelhead {
 
                                     // Check if we should remove from 'remaining' (to skip fallback)
                                     val proxyErrorReason = when (result) {
-                                        is BedwarsFetcher.FetchResult.TemporaryError -> result.reason
-                                        is BedwarsFetcher.FetchResult.PermanentError -> result.reason
+                                        is FetchResult.TemporaryError -> result.reason
+                                        is FetchResult.PermanentError -> result.reason
                                         else -> null
                                     }
 
@@ -456,24 +457,24 @@ object Levelhead {
                     lastFetchAttemptAt = System.currentTimeMillis()
                     rateLimiter.consume()
                     when (val result = BedwarsFetcher.fetchPlayer(uuid, cached?.fetchedAt, cached?.etag)) {
-                        is BedwarsFetcher.FetchResult.Success -> {
+                        is FetchResult.Success -> {
                             lastFetchSuccessAt = System.currentTimeMillis()
                             val entry = buildCachedStats(result.payload, result.etag)
                             handleStatsUpdate(uuid, entry)
                             entry
                         }
-                        BedwarsFetcher.FetchResult.NotModified -> {
+                        FetchResult.NotModified -> {
                             lastFetchSuccessAt = System.currentTimeMillis()
                             // Reuse existing cached stats with updated fetchedAt, preserving etag
                             val refreshed = cached?.copy(fetchedAt = System.currentTimeMillis())
                             refreshed?.let { handleStatsUpdate(uuid, it) }
                             refreshed
                         }
-                        is BedwarsFetcher.FetchResult.TemporaryError -> {
+                        is FetchResult.TemporaryError -> {
                             handleStatsUpdate(uuid, cached)
                             null
                         }
-                        is BedwarsFetcher.FetchResult.PermanentError -> {
+                        is FetchResult.PermanentError -> {
                             handleStatsUpdate(uuid, cached)
                             null
                         }
