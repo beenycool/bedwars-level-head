@@ -55,7 +55,9 @@ async function resolveDynamicLimitValue(): Promise<number> {
     })
     .catch((error) => {
       dynamicLimitCache.pendingPromise = undefined;
-      throw error;
+      console.error('Dynamic rate limit calculation failed:', error);
+      // Fallback to static max on error to prevent unhandled rejections
+      return RATE_LIMIT_MAX;
     });
 
   dynamicLimitCache.pendingPromise = calculationPromise;
