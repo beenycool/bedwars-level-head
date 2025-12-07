@@ -20,6 +20,10 @@ class AboveHeadDisplay(config: DisplayConfig) : LevelheadDisplay(DisplayPosition
 
     override fun loadOrRender(player: EntityPlayer?): Boolean {
         if (player == null) return false
+        val localPlayer = Minecraft.getMinecraft().thePlayer ?: return false
+        // Check server-side invisibility first (e.g., spectators, hidden players)
+        if (player.isInvisibleToPlayer(localPlayer)) return false
+        if (player.isInvisible) return false
         if (player.isPotionActive(
             //#if MC==10809
             Potion.invisibility
@@ -31,7 +35,6 @@ class AboveHeadDisplay(config: DisplayConfig) : LevelheadDisplay(DisplayPosition
         //#else
         //$$ if (!player.getPassengers().isEmpty()) return false
         //#endif
-        val localPlayer = Minecraft.getMinecraft().thePlayer ?: return false
         val min = min(4096, Levelhead.displayManager.config.renderDistance * Levelhead.displayManager.config.renderDistance)
         val nearLocalPlayer = player.getDistanceSqToEntity(localPlayer) <= min
         if (!nearLocalPlayer) return false
@@ -39,9 +42,6 @@ class AboveHeadDisplay(config: DisplayConfig) : LevelheadDisplay(DisplayPosition
         return (!player.hasCustomName() || player.customNameTag.isNotEmpty())
                 && player.displayNameString.isNotEmpty()
                 && super.loadOrRender(player)
-                && !player.isInvisible
-                && !player.isInvisibleToPlayer(localPlayer)
-                && !player.isSneaking
     }
 
     private fun renderFromTeam(player: EntityPlayer): Boolean {

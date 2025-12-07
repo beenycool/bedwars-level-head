@@ -16,6 +16,7 @@ import java.awt.Color
 import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
+import kotlinx.coroutines.launch
 
 class DisplayManager(val file: File) {
 
@@ -68,20 +69,27 @@ class DisplayManager(val file: File) {
     }
 
     fun saveConfig() {
-        val jsonObject = JsonObject()
-        jsonObject.add("master", gson.toJsonTree(config))
-
-        val head = JsonArray()
-        aboveHead.forEach { display ->
-            head.add(gson.toJsonTree(display.config))
+        val headSnapshot = synchronized(aboveHead) {
+            aboveHead.map { gson.toJsonTree(it.config) }
         }
+        val masterSnapshot = gson.toJsonTree(config)
 
-        jsonObject.add("head", head)
+        Levelhead.scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val jsonObject = JsonObject()
+            jsonObject.add("master", masterSnapshot)
 
-        try {
-            FileUtils.writeStringToFile(file, jsonObject.toString(), StandardCharsets.UTF_8)
-        } catch (e: IOException) {
-            Levelhead.logger.error("Failed to write to config.", e)
+            val head = JsonArray()
+            headSnapshot.forEach { displayConfig ->
+                head.add(displayConfig)
+            }
+
+            jsonObject.add("head", head)
+
+            try {
+                FileUtils.writeStringToFile(file, jsonObject.toString(), StandardCharsets.UTF_8)
+            } catch (e: IOException) {
+                Levelhead.logger.error("Failed to write to config.", e)
+            }
         }
     }
 

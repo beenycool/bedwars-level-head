@@ -39,7 +39,7 @@ object BedwarsFetcher {
         data class PermanentError(val reason: String? = null) : FetchResult()
     }
 
-    fun fetchPlayer(uuid: UUID, lastFetchedAt: Long?, etag: String? = null): FetchResult {
+    suspend fun fetchPlayer(uuid: UUID, lastFetchedAt: Long?, etag: String? = null): FetchResult {
         if (shouldUseProxy()) {
             val identifier = uuid.toString().replace("-", "")
             return fetchProxy(identifier, lastFetchedAt, etag)
@@ -49,14 +49,14 @@ object BedwarsFetcher {
         return hypixelResult
     }
 
-    fun fetchProxyPlayer(identifier: String, lastFetchedAt: Long? = null, etag: String? = null): FetchResult {
+    suspend fun fetchProxyPlayer(identifier: String, lastFetchedAt: Long? = null, etag: String? = null): FetchResult {
         if (!shouldUseProxy()) {
             return FetchResult.PermanentError("PROXY_DISABLED")
         }
         return fetchProxy(identifier, lastFetchedAt, etag)
     }
 
-    fun fetchBatchFromProxy(uuids: List<UUID>): Map<UUID, FetchResult> {
+    suspend fun fetchBatchFromProxy(uuids: List<UUID>): Map<UUID, FetchResult> {
         if (!shouldUseProxy()) return emptyMap()
         if (uuids.isEmpty()) return emptyMap()
 
@@ -192,7 +192,7 @@ object BedwarsFetcher {
         return true
     }
 
-    private fun fetchProxy(identifierInput: String, lastFetchedAt: Long?, etag: String? = null): FetchResult {
+    private suspend fun fetchProxy(identifierInput: String, lastFetchedAt: Long?, etag: String? = null): FetchResult {
         val baseUrl = LevelheadConfig.proxyBaseUrl.trim()
         val identifier = sanitizeProxyIdentifier(identifierInput)
         val isPublic = LevelheadConfig.proxyAuthToken.isBlank()
@@ -295,7 +295,7 @@ object BedwarsFetcher {
         }
     }
 
-    private fun fetchFromHypixel(uuid: UUID): FetchResult {
+    private suspend fun fetchFromHypixel(uuid: UUID): FetchResult {
         val key = LevelheadConfig.apiKey
         if (key.isBlank()) {
             notifyMissingKey()
@@ -361,7 +361,7 @@ object BedwarsFetcher {
         }
     }
 
-    private fun executeWithRetries(request: Request, description: String, attempts: Int = 2): okhttp3.Response {
+    private suspend fun executeWithRetries(request: Request, description: String, attempts: Int = 2): okhttp3.Response {
         var lastException: IOException? = null
         repeat(attempts) { index ->
             try {
@@ -381,7 +381,8 @@ object BedwarsFetcher {
                         attempts,
                         backoffMillis
                     )
-                    Thread.sleep(backoffMillis)
+                    // Use coroutine delay instead of blocking Thread.sleep
+                    kotlinx.coroutines.delay(backoffMillis)
                 }
             }
         }

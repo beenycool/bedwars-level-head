@@ -12,6 +12,7 @@ import cc.polyfrost.oneconfig.utils.commands.annotations.Main
 import cc.polyfrost.oneconfig.utils.commands.annotations.SubCommand
 import com.google.gson.JsonObject
 import net.minecraft.client.Minecraft
+import net.minecraft.client.gui.GuiScreen
 import net.minecraft.util.ChatComponentText
 import net.minecraft.util.EnumChatFormatting as ChatColor
 import kotlinx.coroutines.Dispatchers
@@ -112,6 +113,16 @@ class LevelheadCommand {
         LevelheadConfig.updateApiKey(sanitized)
         sendMessage("${ChatColor.GREEN}Saved Hypixel API key for BedWars stat fetching.")
         resetBedwarsFetcher()
+
+        // Background validation of the API key
+        Levelhead.scope.launch {
+            val valid = validateApiKey(sanitized)
+            if (!valid) {
+                Minecraft.getMinecraft().addScheduledTask {
+                    sendMessage("${ChatColor.RED}Warning: That API key appears to be invalid (Hypixel rejected it).")
+                }
+            }
+        }
     }
 
     @SubCommand
@@ -127,6 +138,19 @@ class LevelheadCommand {
         Levelhead.rateLimiter.resetState()
         Levelhead.displayManager.clearCache()
         sendMessage("${ChatColor.GREEN}Reloaded BedWars star cache.")
+    }
+
+    @SubCommand
+    fun copy() {
+        val minecraft = Minecraft.getMinecraft()
+        val target = minecraft.objectMouseOver?.entityHit
+        if (target == null || target !is EntityPlayer) {
+            sendMessage("${ChatColor.RED}You are not looking at a player.")
+            return
+        }
+        val uuid = target.uniqueID.toString()
+        GuiScreen.setClipboardString(uuid)
+        sendMessage("${ChatColor.GREEN}Copied UUID of ${ChatColor.GOLD}${target.name}${ChatColor.GREEN} to clipboard: ${ChatColor.AQUA}$uuid")
     }
 
     @SubCommand
@@ -228,7 +252,7 @@ class LevelheadCommand {
             "offset" -> handleDisplayOffset(parsedArgs.drop(1))
             "showself" -> handleDisplayShowSelf(parsedArgs.drop(1))
             else -> {
-                sendMessage("${ChatColor.RED}Unknown display option '${parsedArgs[0]}'.")
+                sendMessage("${ChatColor.RED}Unknown option '${parsedArgs[0]}'. ${ChatColor.YELLOW}Valid options: header, offset, showself.")
                 sendDisplayUsage()
             }
         }
@@ -424,7 +448,7 @@ class LevelheadCommand {
             }
             else -> {
                 sendMessage(
-                    "${ChatColor.RED}Unknown header option '${args[0]}'."
+                    "${ChatColor.RED}Unknown option '${args[0]}'. ${ChatColor.YELLOW}Valid options: text, color."
                 )
                 sendDisplayHeaderDetails()
             }
@@ -660,6 +684,24 @@ class LevelheadCommand {
     }
 
     private fun formatColor(color: Color): String = "#%06X".format(Locale.ROOT, color.rgb and 0xFFFFFF)
+
+    private suspend fun validateApiKey(key: String): Boolean = withContext(Dispatchers.IO) {
+        val url = HttpUrl.parse("https://api.hypixel.net/key") ?: return@withContext false
+
+        val request = Request.Builder()
+            .url(url)
+            .header("API-Key", key)
+            .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
+            .header("Accept", "application/json")
+            .get()
+            .build()
+
+        runCatching {
+            Levelhead.okHttpClient.newCall(request).execute().use { response ->
+                response.isSuccessful
+            }
+        }.getOrDefault(false)
+    }
 
     private fun isProxyFullyConfigured(): Boolean {
         return LevelheadConfig.proxyEnabled && LevelheadConfig.proxyBaseUrl.isNotBlank() && LevelheadConfig.proxyAuthToken.isNotBlank()
