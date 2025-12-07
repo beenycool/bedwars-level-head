@@ -1,53 +1,23 @@
 import { Router } from 'express';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import { enforceRateLimit } from '../middleware/rateLimit';
 import { resolvePlayer, ResolvedPlayer } from '../services/player';
 import { recordPlayerQuery } from '../services/history';
 import { computeBedwarsStar } from '../util/bedwars';
 import { HttpError } from '../util/httpError';
+import { validatePlayerSubmission, matchesCriticalFields } from '../util/validation';
+import { canonicalize } from '../util/signature';
+import { isValidBedwarsObject } from '../util/typeChecks';
 
-function parseIfModifiedSince(value: string | undefined): number | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? undefined : parsed;
-}
+import { extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely } from '../util/requestUtils';
+import { getCacheEntry } from '../services/cache';
+import { COMMUNITY_SUBMIT_SECRET } from '../config';
 
 const router = Router();
 
-async function recordQuerySafely(payload: Parameters<typeof recordPlayerQuery>[0]): Promise<void> {
-  try {
-    await recordPlayerQuery(payload);
-  } catch (error) {
-    console.error('Failed to record player query', {
-      error,
-      identifier: payload.identifier,
-      lookupType: payload.lookupType,
-      responseStatus: payload.responseStatus,
-    });
-  }
-}
 
-function extractBedwarsExperience(payload: ResolvedPlayer['payload']): number | null {
-  const bedwars = payload.data?.bedwars ?? payload.bedwars;
-  if (!bedwars || typeof bedwars !== 'object') {
-    return null;
-  }
 
-  const record = bedwars as Record<string, unknown>;
-  const rawValue = record.bedwars_experience ?? record.Experience ?? record.experience;
-  if (rawValue === undefined || rawValue === null) {
-    return null;
-  }
 
-  const numeric = Number(rawValue);
-  if (!Number.isFinite(numeric) || numeric < 0) {
-    return null;
-  }
-
-  return numeric;
-}
 
 router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
   const { identifier } = req.params;
@@ -187,6 +157,148 @@ router.post('/batch', enforceRateLimit, async (req, res, next) => {
     });
 
     res.json({ success: true, data: payloadMap });
+  } catch (error) {
+    next(error);
+  }
+});
+
+const uuidOnlyPattern = /^[0-9a-f]{32}$/i;
+
+
+
+
+
+function verifySignedSubmission(uuid: string, data: unknown, signature?: string): boolean {
+  if (!COMMUNITY_SUBMIT_SECRET || !signature) {
+    return false;
+  }
+
+  try {
+    const canonical = canonicalize(data);
+    const digest = createHmac('sha256', COMMUNITY_SUBMIT_SECRET).update(`${uuid}:${canonical}`).digest();
+    const provided = Buffer.from(signature, 'hex');
+    if (provided.length !== digest.length) {
+      return false;
+    }
+    return timingSafeEqual(provided, digest);
+  } catch (error) {
+    console.warn('Failed to verify signed submission', error);
+    return false;
+  }
+}
+
+async function verifyHypixelOrigin(uuid: string, data: unknown, signature?: string): Promise<boolean> {
+  try {
+    const submittedData = data as Record<string, unknown>;
+    const cacheKey = `player:${uuid}`;
+    const cached = await getCacheEntry<ResolvedPlayer['payload']>(cacheKey);
+    const cachedBedwars = cached?.value?.data?.bedwars ?? cached?.value?.bedwars;
+
+    if (cachedBedwars && isValidBedwarsObject(cachedBedwars) && matchesCriticalFields(cachedBedwars, submittedData)) {
+      return true;
+    }
+
+    if (verifySignedSubmission(uuid, data, signature)) {
+      return true;
+    }
+
+    const { fetchHypixelPlayer } = await import('../services/hypixel');
+    const result = await fetchHypixelPlayer(uuid);
+
+    if (!result.payload || result.notModified) {
+      return false;
+    }
+
+    const hypixelData = result.payload.data?.bedwars;
+    if (!isValidBedwarsObject(hypixelData)) {
+      return false;
+    }
+
+    return matchesCriticalFields(hypixelData, submittedData);
+  } catch (error) {
+    console.error('Failed to verify Hypixel origin:', error);
+    return false;
+  }
+}
+
+router.post('/submit', enforceRateLimit, async (req, res, next) => {
+  res.locals.metricsRoute = '/api/player/submit';
+  const body = req.body as { uuid?: unknown; data?: unknown; signature?: unknown } | undefined;
+
+  // Validate request body structure
+  if (!body || typeof body !== 'object') {
+    next(new HttpError(400, 'BAD_REQUEST', 'Expected JSON body with uuid and data fields.'));
+    return;
+  }
+
+  const { uuid, data, signature: rawSignature } = body;
+
+  // Validate UUID format
+  if (typeof uuid !== 'string' || !uuidOnlyPattern.test(uuid.trim())) {
+    next(new HttpError(400, 'INVALID_UUID', 'uuid must be a 32-character hex string (no dashes).'));
+    return;
+  }
+
+  // Validate data is present and is an object
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    next(new HttpError(400, 'INVALID_DATA', 'data must be a non-null, non-array object.'));
+    return;
+  }
+
+  const signature = typeof rawSignature === 'string' && rawSignature.trim().length > 0 ? rawSignature.trim() : undefined;
+
+  // Perform comprehensive validation
+  const jsonString = JSON.stringify(data);
+  const validation = validatePlayerSubmission(jsonString, data);
+
+  if (!validation.valid) {
+    const errorDetails = validation.errors.map((err) => `${err.field}: ${err.message}`).join('; ');
+    next(
+      new HttpError(
+        422,
+        'VALIDATION_FAILED',
+        `Player data validation failed: ${errorDetails}`,
+      ),
+    );
+    return;
+  }
+
+  const normalizedUuid = uuid.trim().toLowerCase();
+
+  // Verify origin to prevent cache poisoning
+  const isValidOrigin = await verifyHypixelOrigin(normalizedUuid, data, signature);
+  if (!isValidOrigin) {
+    next(
+      new HttpError(
+        403,
+        'INVALID_ORIGIN',
+        'Player data could not be verified as originating from Hypixel API. This may indicate fabricated data.',
+      ),
+    );
+    return;
+  }
+
+  const cacheKey = `player:${normalizedUuid}`;
+
+  try {
+    const { setCachedPayload } = await import('../services/cache');
+    const { CACHE_TTL_MS } = await import('../config');
+
+    // Build a proxy-compatible payload wrapper
+    const payload = {
+      success: true,
+      contributed: true,
+      data: { bedwars: data },
+      bedwars: data,
+    };
+
+    await setCachedPayload(cacheKey, payload, CACHE_TTL_MS, {
+      etag: `contrib-${Date.now()}`,
+      lastModified: Date.now(),
+    });
+
+    console.info(`[player/submit] Accepted contribution for uuid=${normalizedUuid}`);
+    res.status(202).json({ success: true, message: 'Contribution accepted.' });
   } catch (error) {
     next(error);
   }

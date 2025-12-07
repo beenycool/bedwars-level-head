@@ -112,6 +112,7 @@ export const TRUST_PROXY_ENABLED = TRUST_PROXY !== false;
 export const HYPIXEL_API_BASE_URL = process.env.HYPIXEL_API_BASE_URL ?? 'https://api.hypixel.net';
 
 export const CLOUD_FLARE_TUNNEL = process.env.CLOUDFLARE_TUNNEL ?? '';
+export const COMMUNITY_SUBMIT_SECRET = process.env.COMMUNITY_SUBMIT_SECRET?.trim() ?? '';
 
 const HOURS = 60 * 60 * 1000;
 const defaultCacheTtl = 72 * HOURS;

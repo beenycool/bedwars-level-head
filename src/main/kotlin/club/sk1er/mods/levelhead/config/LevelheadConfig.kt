@@ -53,6 +53,20 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Text(name = "Hypixel API Key", placeholder = "Get a key from developer.hypixel.net", secure = true)
     var apiKey: String = ""
 
+    @Switch(
+        name = "Community Database",
+        description = "Fetch stats from the community cache to save API requests. When you have an API key, your lookups will also contribute to the shared cache."
+    )
+    var communityDatabase: Boolean = true
+        set(value) {
+            if (value && apiKey.isBlank()) {
+                Levelhead.sendChat("§eYou need a Hypixel API key to contribute to the community database. §7You can still fetch cached data.")
+            }
+            field = value
+            save()
+            BedwarsFetcher.resetWarnings()
+        }
+
     @Header(text = "Display Settings", category = "Display")
 
     @Slider(
@@ -64,6 +78,12 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         description = "Adjust the size of the BedWars star text above player heads."
     )
     var textScale: Float = 1.0f
+        set(value) {
+            val clamped = value.coerceIn(0.5f, 3.0f)
+            field = clamped
+            syncFontSizeWithDisplayManager(clamped)
+            save()
+        }
 
     @Color(
         name = "Star Color",
@@ -290,6 +310,14 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var proxyAuthToken: String = ""
 
+    @Text(
+        name = "Submission Secret",
+        secure = true,
+        description = "Developer option: HMAC secret for signing community submissions. Must match the backend.",
+        category = "Developer"
+    )
+    var communitySubmitSecret: String = ""
+
     @Slider(
         name = "Star Cache TTL (minutes)",
         min = 5f,
@@ -319,6 +347,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     init {
         initialize()
         migrateLegacyConfig()
+        syncDisplayManagerConfig()
         ensureInstallId()
     }
 
@@ -416,13 +445,121 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         cachePurgeSize = 500
         renderThrottleMs = 100
         frameSkip = 1
+        communityDatabase = true
         proxyEnabled = true
         proxyBaseUrl = DEFAULT_PROXY_URL
         proxyAuthToken = ""
+        communitySubmitSecret = ""
         starCacheTtlMinutes = DEFAULT_STAR_CACHE_TTL_MINUTES
+        syncFontSizeWithDisplayManager()
         save()
         BedwarsFetcher.resetWarnings()
         Levelhead.displayManager.resetToDefaults()
+    }
+
+    private fun syncDisplayManagerConfig() {
+        val master = Levelhead.displayManager.config
+        var masterChanged = false
+
+        val clampedTextScale = textScale.coerceIn(0.5f, 3.0f)
+        if (sync(textScale, clampedTextScale, { textScale = it }, master.fontSize, clampedTextScale.toDouble(), { master.fontSize = it })) {
+            masterChanged = true
+        }
+
+        val clampedOffset = displayOffset.coerceIn(-2.0f, 2.0f)
+        if (sync(displayOffset, clampedOffset, { displayOffset = it }, master.offset, clampedOffset.toDouble(), { master.offset = it })) {
+            masterChanged = true
+        }
+
+        val clampedRenderDistance = renderDistance.coerceIn(16, 128)
+        if (sync(renderDistance, clampedRenderDistance, { renderDistance = it }, master.renderDistance, clampedRenderDistance, { master.renderDistance = it })) {
+            masterChanged = true
+        }
+
+        val clampedBackgroundOpacity = backgroundOpacity.coerceIn(0f, 100f)
+        val opacityFraction = (clampedBackgroundOpacity / 100f).coerceIn(0f, 1f)
+        if (sync(backgroundOpacity, clampedBackgroundOpacity, { backgroundOpacity = it }, master.backgroundOpacity, opacityFraction, { master.backgroundOpacity = it })) {
+            masterChanged = true
+        }
+
+        if (sync(showBackground, showBackground, { showBackground = it }, master.showBackground, showBackground, { master.showBackground = it })) {
+            masterChanged = true
+        }
+
+        if (sync(textShadow, textShadow, { textShadow = it }, master.textShadow, textShadow, { master.textShadow = it })) {
+            masterChanged = true
+        }
+
+        val clampedPurgeSize = cachePurgeSize.coerceIn(100, 2000)
+        if (sync(cachePurgeSize, clampedPurgeSize, { cachePurgeSize = it }, master.purgeSize, clampedPurgeSize, { master.purgeSize = it })) {
+            masterChanged = true
+        }
+
+        val clampedRenderThrottle = renderThrottleMs.coerceIn(0, 100).toLong()
+        if (sync(renderThrottleMs, clampedRenderThrottle.toInt(), { renderThrottleMs = it }, master.renderThrottleMs, clampedRenderThrottle, { master.renderThrottleMs = it })) {
+            masterChanged = true
+        }
+
+        val clampedFrameSkip = frameSkip.coerceIn(1, 4)
+        if (sync(frameSkip, clampedFrameSkip, { frameSkip = it }, master.frameSkip, clampedFrameSkip, { master.frameSkip = it })) {
+            masterChanged = true
+        }
+
+        val primaryChanged = Levelhead.displayManager.updatePrimaryDisplay { config ->
+            var changed = false
+            if (config.showSelf != showSelf) {
+                config.showSelf = showSelf
+                changed = true
+            }
+
+            val header = headerText.trim()
+            if (config.headerString != header) {
+                config.headerString = header
+                changed = true
+            }
+
+            val javaColor = AwtColor(headerColor.rgb)
+            if (config.headerColor != javaColor) {
+                config.headerColor = javaColor
+                changed = true
+            }
+
+            val footer = footerTemplate.trim()
+            if (config.footerString != footer) {
+                config.footerString = footer
+                changed = true
+            }
+
+            changed
+        }
+
+        if (masterChanged && !primaryChanged) {
+            Levelhead.displayManager.saveConfig()
+        }
+    }
+
+    private fun <T, M> sync(
+        local: T,
+        localTarget: T,
+        updateLocal: (T) -> Unit,
+        master: M,
+        masterTarget: M,
+        updateMaster: (M) -> Unit
+    ): Boolean {
+        if (local != localTarget) {
+            updateLocal(localTarget)
+            return false
+        }
+        if (master != masterTarget) {
+            updateMaster(masterTarget)
+            return true
+        }
+        return false
+    }
+
+    private fun syncFontSizeWithDisplayManager(scale: Float = textScale) {
+        Levelhead.displayManager.config.fontSize = scale.toDouble()
+        Levelhead.displayManager.saveConfig()
     }
 
     fun updateStarCacheTtlMinutes(minutes: Int) {
