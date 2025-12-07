@@ -69,13 +69,18 @@ class DisplayManager(val file: File) {
     }
 
     fun saveConfig() {
+        val headSnapshot = synchronized(aboveHead) {
+            aboveHead.map { gson.toJsonTree(it.config) }
+        }
+        val masterSnapshot = gson.toJsonTree(config)
+
         Levelhead.scope.launch(kotlinx.coroutines.Dispatchers.IO) {
             val jsonObject = JsonObject()
-            jsonObject.add("master", gson.toJsonTree(config))
+            jsonObject.add("master", masterSnapshot)
 
             val head = JsonArray()
-            aboveHead.forEach { display ->
-                head.add(gson.toJsonTree(display.config))
+            headSnapshot.forEach { displayConfig ->
+                head.add(displayConfig)
             }
 
             jsonObject.add("head", head)

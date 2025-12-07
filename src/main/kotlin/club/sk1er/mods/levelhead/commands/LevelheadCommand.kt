@@ -686,14 +686,11 @@ class LevelheadCommand {
     private fun formatColor(color: Color): String = "#%06X".format(Locale.ROOT, color.rgb and 0xFFFFFF)
 
     private suspend fun validateApiKey(key: String): Boolean = withContext(Dispatchers.IO) {
-        val url = HttpUrl.parse("https://api.hypixel.net/key")
-            ?.newBuilder()
-            ?.addQueryParameter("key", key)
-            ?.build()
-            ?: return@withContext false
+        val url = HttpUrl.parse("https://api.hypixel.net/key") ?: return@withContext false
 
         val request = Request.Builder()
             .url(url)
+            .header("API-Key", key)
             .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
             .header("Accept", "application/json")
             .get()

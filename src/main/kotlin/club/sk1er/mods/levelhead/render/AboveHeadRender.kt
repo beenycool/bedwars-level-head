@@ -61,8 +61,8 @@ object AboveHeadRender {
                 offset *= 2
             }
             
-            // FIX: Removed the block that forced offset to 0.0 for the local player.
-            // This ensures your tag is lifted 0.3 blocks up just like everyone else's.
+            // Note: We removed the block that forced offset to 0.0 for the local player
+            // to ensure your tag is lifted 0.3 blocks up just like everyone else's.
             
             // Shift tag down when sneaking
             if (player.isSneaking) {
