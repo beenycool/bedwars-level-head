@@ -318,6 +318,14 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var communitySubmitSecret: String = ""
 
+    @Text(
+        name = "Custom Database URL",
+        placeholder = "Leave blank to use default",
+        description = "Developer option: Override community database URL. Only works when using API key or self-hosting.",
+        category = "Developer"
+    )
+    var customDatabaseUrl: String = ""
+
     @Slider(
         name = "Star Cache TTL (minutes)",
         min = 5f,
@@ -349,6 +357,44 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         migrateLegacyConfig()
         syncDisplayManagerConfig()
         ensureInstallId()
+        setupConditionalVisibility()
+    }
+
+    private fun setupConditionalVisibility() {
+        // Hide community database toggle when using shared backend - it's always enabled
+        hideIf("communityDatabase") { isUsingSharedBackend() }
+    }
+
+    /**
+     * Returns true if the user is using the default shared backend (beeny.hackclub.app).
+     * When using the shared backend, community database is compulsory.
+     */
+    fun isUsingSharedBackend(): Boolean {
+        return proxyBaseUrl.trim().isEmpty() || proxyBaseUrl.trim() == DEFAULT_PROXY_URL
+    }
+
+    /**
+     * Returns true if backend warnings should be suppressed.
+     * Suppress warnings when user has an API key but hasn't set a custom backend/database.
+     */
+    fun shouldSuppressBackendWarnings(): Boolean {
+        return apiKey.isNotBlank() && isUsingSharedBackend() && customDatabaseUrl.isBlank()
+    }
+
+    /**
+     * Resolves the database URL to use for community database requests.
+     * Uses custom URL if set and user has API key or is self-hosting, otherwise falls back to proxy base URL.
+     */
+    fun resolveDbUrl(): String {
+        val customUrl = customDatabaseUrl.trim()
+        if (customUrl.isNotBlank()) {
+            val hasApiKey = apiKey.isNotBlank()
+            val isSelfHosting = !isUsingSharedBackend()
+            if (hasApiKey || isSelfHosting) {
+                return customUrl
+            }
+        }
+        return proxyBaseUrl.trim().ifBlank { DEFAULT_PROXY_URL }
     }
 
     private fun migrateLegacyConfig() {
@@ -450,6 +496,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         proxyBaseUrl = DEFAULT_PROXY_URL
         proxyAuthToken = ""
         communitySubmitSecret = ""
+        customDatabaseUrl = ""
         starCacheTtlMinutes = DEFAULT_STAR_CACHE_TTL_MINUTES
         syncFontSizeWithDisplayManager()
         save()

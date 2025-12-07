@@ -505,3 +505,44 @@ export async function getPlayerQueryPage(params: {
     totalCount,
   };
 }
+
+export interface SystemStats {
+  dbSize: string;
+  indexSize: string;
+  cacheCount: number;
+  apiCallsLastHour: number;
+  avgPayloadSize: string;
+}
+
+export async function getSystemStats(): Promise<SystemStats> {
+  await ensureInitialized();
+
+  // Run queries in parallel for speed
+  const [tableStats, apiStats, cacheStats] = await Promise.all([
+    // 1. DB Size
+    pool.query(`
+      SELECT
+        pg_size_pretty(pg_total_relation_size('player_cache')) as total_size,
+        pg_size_pretty(pg_total_relation_size('player_cache') - pg_relation_size('player_cache')) as index_size
+    `),
+    // 2. API Calls (Last Hour)
+    pool.query(`
+      SELECT count(*) as count
+      FROM hypixel_api_calls
+      WHERE called_at >= (EXTRACT(EPOCH FROM NOW()) * 1000 - (60 * 60 * 1000))
+    `),
+    // 3. Cache specific stats
+    pool.query(`
+      SELECT count(*) as count, pg_size_pretty(avg(pg_column_size(payload))) as avg_size
+      FROM player_cache
+    `)
+  ]);
+
+  return {
+    dbSize: tableStats.rows[0]?.total_size ?? '0 B',
+    indexSize: tableStats.rows[0]?.index_size ?? '0 B',
+    apiCallsLastHour: parseInt(apiStats.rows[0]?.count ?? '0', 10),
+    cacheCount: parseInt(cacheStats.rows[0]?.count ?? '0', 10),
+    avgPayloadSize: cacheStats.rows[0]?.avg_size ?? '0 B'
+  };
+}

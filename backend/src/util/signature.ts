@@ -13,7 +13,11 @@ export function canonicalize(value: unknown): string {
 
     if (value !== null && typeof value === 'object') {
         const entries = Object.entries(value as Record<string, unknown>)
-            .sort(([a], [b]) => a.localeCompare(b))
+            .sort(([a], [b]) => {
+                if (a < b) return -1;
+                if (a > b) return 1;
+                return 0;
+            })
             .map(([key, val]) => `${JSON.stringify(key)}:${canonicalize(val)}`);
         return `{${entries.join(',')}}`;
     }

@@ -39,10 +39,13 @@ object ProxyClient {
 
         val baseConfigured = LevelheadConfig.proxyBaseUrl.isNotBlank()
         if (!baseConfigured) {
-            if (proxyMisconfiguredWarned.compareAndSet(false, true)) {
-                Levelhead.sendChat(
-                    "${ChatColor.RED}Community Database enabled but missing proxy URL. ${ChatColor.YELLOW}Set the proxy base URL in Levelhead settings."
-                )
+            // Suppress warnings when user has API key set and using shared backend
+            if (!LevelheadConfig.shouldSuppressBackendWarnings()) {
+                if (proxyMisconfiguredWarned.compareAndSet(false, true)) {
+                    Levelhead.sendChat(
+                        "${ChatColor.RED}Community Database enabled but missing proxy URL. ${ChatColor.YELLOW}Set the proxy base URL in Levelhead settings."
+                    )
+                }
             }
             return false
         }
@@ -56,7 +59,7 @@ object ProxyClient {
     }
 
     suspend fun fetchPlayer(identifierInput: String, lastFetchedAt: Long?, etag: String? = null): FetchResult {
-        val baseUrl = LevelheadConfig.proxyBaseUrl.trim()
+        val baseUrl = LevelheadConfig.resolveDbUrl()
         val identifier = sanitizeProxyIdentifier(identifierInput)
         val isPublic = LevelheadConfig.proxyAuthToken.isBlank()
         val url = HttpUrl.parse(baseUrl)
@@ -177,7 +180,7 @@ object ProxyClient {
             add("uuids", uuidArray)
         }
 
-        val url = HttpUrl.parse(LevelheadConfig.proxyBaseUrl.trim())
+        val url = HttpUrl.parse(LevelheadConfig.resolveDbUrl())
             ?.newBuilder()
             ?.addPathSegment("api")
             ?.addPathSegment("player")
@@ -280,7 +283,7 @@ object ProxyClient {
     suspend fun submitPlayer(uuid: UUID, data: JsonObject) {
         if (!canContribute()) return
         val normalizedUuid = uuid.toString().replace("-", "").lowercase(Locale.ROOT)
-        val baseUrl = LevelheadConfig.proxyBaseUrl.trim()
+        val baseUrl = LevelheadConfig.resolveDbUrl()
         val url = HttpUrl.parse(baseUrl)
             ?.newBuilder()
             ?.addPathSegment("api")
