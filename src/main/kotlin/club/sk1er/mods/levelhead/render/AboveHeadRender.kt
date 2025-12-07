@@ -2,173 +2,177 @@ package club.sk1er.mods.levelhead.render
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.Levelhead.displayManager
-import club.sk1er.mods.levelhead.config.LevelheadConfig
+import club.sk1er.mods.levelhead.display.LevelheadTag
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import net.minecraft.client.Minecraft
+import net.minecraft.client.gui.FontRenderer
 import net.minecraft.client.renderer.GlStateManager
+import net.minecraft.client.renderer.Tessellator
+import net.minecraft.client.renderer.vertex.DefaultVertexFormats
+import net.minecraft.entity.EntityLivingBase
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraftforge.client.event.RenderLivingEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
-import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
+import org.lwjgl.opengl.GL11
+import java.awt.Color
 
 object AboveHeadRender {
-    // Track last render time per player for throttling
-    private val lastRenderTime: ConcurrentHashMap<UUID, Long> = ConcurrentHashMap()
+
+    private var frameCounter = 0
 
     @SubscribeEvent
-    fun onRenderLiving(event: RenderLivingEvent.Specials.Pre<*>) {
-        val entity = event.entity
-        if (entity !is EntityPlayer) return
-
-        // Basic checks to ensure we should be rendering
+    fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
         if (!displayManager.config.enabled) return
-        if (!LevelheadConfig.enabled) return
         if (!Levelhead.isOnHypixel()) return
-
-        // This check ensures tags only show when Bedwars mode is active (lobby or game)
+        val minecraft = Minecraft.getMinecraft()
+        if (minecraft.gameSettings.hideGUI) return
         if (!BedwarsModeDetector.shouldRenderTags()) return
 
-        val minecraft = Minecraft.getMinecraft()
-        val localPlayer = minecraft.thePlayer ?: return
+        val skip = displayManager.config.frameSkip.coerceAtLeast(1)
+        frameCounter = (frameCounter + 1) % skip
+        if (frameCounter != 0) return
 
-        // Render distance culling - early return before expensive operations
-        val renderDistance = displayManager.config.renderDistance
-        val distanceSq = entity.getDistanceSqToEntity(localPlayer)
-        val maxDistanceSq = (renderDistance * renderDistance).coerceAtMost(4096.0)
-        if (distanceSq > maxDistanceSq) return
+        val player = event.entity as? EntityPlayer ?: return
+        val localPlayer = minecraft.thePlayer
 
-        // Render throttling check
-        val throttleMs = displayManager.config.renderThrottleMs
-        if (throttleMs > 0) {
-            val now = System.currentTimeMillis()
-            val lastRender = lastRenderTime[entity.uniqueID]
-            if (lastRender != null && (now - lastRender) < throttleMs) {
-                return
-            }
-            lastRenderTime[entity.uniqueID] = now
-        }
+        // Frustum Culling Check
+        val camera = net.minecraft.client.renderer.culling.Frustum()
+        val renderViewEntity = minecraft.renderViewEntity ?: localPlayer
+        val viewX = renderViewEntity.posX
+        val viewY = renderViewEntity.posY
+        val viewZ = renderViewEntity.posZ
+        camera.setPosition(viewX, viewY, viewZ)
 
-        // Skip rendering for ourselves in first-person view
-        if (entity == localPlayer && minecraft.gameSettings.thirdPersonView == 0) return
+        if (!camera.isBoundingBoxInFrustum(player.entityBoundingBox)) return
 
-        // Get the primary display configuration
-        val display = displayManager.aboveHead.firstOrNull() ?: return
-        if (!display.config.enabled) return
-
-        // Check showSelf setting
-        if (entity == localPlayer && !display.config.showSelf) return
-
-        // Retrieve the cached stats tag for this player
-        val tag = display.cache[entity.uniqueID] ?: return
-
-        // Build the text to display
-        val text = "${tag.header.value}${tag.footer.value}"
-        if (text.isBlank()) return
-
-        // Calculate position
-        val x = event.x
-        var y = event.y + entity.height + 0.5
-        val z = event.z
-
-        // Adjust for sneaking
-        if (entity.isSneaking) {
-            y -= 0.25
-        }
-
-        // Begin OpenGL rendering
+        // Hoist GL State Setup
         GlStateManager.pushMatrix()
-
-        // Translate to position above player's head
-        GlStateManager.translate(x, y, z)
-
-        // Setup normal vector
-        GlStateManager.glNormal3f(0.0f, 1.0f, 0.0f)
-
-        // Rotate to face the player (billboard effect)
-        val renderManager = minecraft.renderManager
-        GlStateManager.rotate(-renderManager.playerViewY, 0.0f, 1.0f, 0.0f)
-        GlStateManager.rotate(renderManager.playerViewX, 1.0f, 0.0f, 0.0f)
-
-        // Apply scaling with config value, guard against zero or negative values
-        val MIN_SCALE_EPSILON = 0.001f
-        val effectiveScale = kotlin.math.max(kotlin.math.abs(LevelheadConfig.textScale), MIN_SCALE_EPSILON)
-        val scale = 0.025f * effectiveScale
-        GlStateManager.scale(-scale, -scale, scale)
-
-        // Setup OpenGL state for text rendering
+        GlStateManager.enableBlend()
+        GlStateManager.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO)
         GlStateManager.disableLighting()
         GlStateManager.depthMask(false)
-        GlStateManager.enableBlend()
-        GlStateManager.tryBlendFuncSeparate(770, 771, 1, 0)
-        GlStateManager.disableTexture2D()
+        GlStateManager.disableDepth()
 
-        val fontRenderer = minecraft.fontRendererObj
+        val saveAlpha = GL11.glGetFloat(GL11.GL_ALPHA_TEST_REF)
+        GlStateManager.alphaFunc(516, 0.003921569f)
+
+        try {
+            displayManager.aboveHead.forEachIndexed { index, display ->
+                if (!display.config.enabled || (player.isSelf() && !display.config.showSelf)) return@forEachIndexed
+                val tag = display.cache[player.uniqueID] ?: return@forEachIndexed
+                if (!display.loadOrRender(player)) return@forEachIndexed
+
+                var offset = 0.3
+                val hasScoreboardObjective = player.worldScoreboard?.getObjectiveInDisplaySlot(2) != null
+                val isCloseToLocalPlayer = localPlayer?.let { player.getDistanceSqToEntity(it) < 100 } ?: false
+                if (hasScoreboardObjective && isCloseToLocalPlayer) {
+                    offset *= 2
+                }
+                if (player.isSelf()) {
+                    offset = 0.0
+                }
+                offset += displayManager.config.offset
+                renderName(tag, player, event.x, event.y + offset + index * 0.3, event.z, minecraft.fontRendererObj, minecraft.renderManager)
+            }
+        } finally {
+            // Restore GL State
+            GlStateManager.alphaFunc(516, saveAlpha)
+            GlStateManager.enableDepth()
+            GlStateManager.depthMask(true)
+            GlStateManager.enableLighting()
+            GlStateManager.disableBlend()
+            GlStateManager.color(1f, 1f, 1f, 1f)
+            GlStateManager.popMatrix()
+        }
+    }
+
+    private fun EntityPlayer.isSelf(): Boolean {
+        val local = Minecraft.getMinecraft().thePlayer ?: return false
+        return local.uniqueID == this.uniqueID
+    }
+
+    private fun renderName(
+        tag: LevelheadTag,
+        entity: EntityPlayer,
+        x: Double,
+        y: Double,
+        z: Double,
+        renderer: FontRenderer,
+        view: net.minecraft.client.renderer.entity.RenderManager
+    ) {
+        val scale = (0.016666668f * 1.6f * displayManager.config.fontSize).toFloat()
+
+        GlStateManager.pushMatrix()
+        GlStateManager.translate(x.toFloat(), (y + entity.height + 0.5).toFloat(), z.toFloat())
+        GL11.glNormal3f(0.0f, 1.0f, 0.0f)
         
-        // Calculate widths for proper centering
-        val headerText = tag.header.value
-        val footerText = tag.footer.value
-        val headerWidth = fontRenderer.getStringWidth(headerText)
-        val footerWidth = fontRenderer.getStringWidth(footerText)
-        val totalWidth = headerWidth + footerWidth
-        val halfWidth = totalWidth / 2
+        val xMultiplier = if (Minecraft.getMinecraft().gameSettings.thirdPersonView == 2) -1 else 1
+        GlStateManager.rotate(-view.playerViewY, 0.0f, 1.0f, 0.0f)
+        GlStateManager.rotate(view.playerViewX * xMultiplier, 1.0f, 0.0f, 0.0f)
+        GlStateManager.scale(-scale, -scale, scale)
 
-        // Draw semi-transparent background
-        val backgroundColor = 0x40000000 // 25% opacity black
-        drawRect(-halfWidth - 2, -2, halfWidth + 2, fontRenderer.FONT_HEIGHT, backgroundColor)
+        // Note: Lighting, Depth, Blend logic moved to outer loop for batching optimization
 
-        // Re-enable textures for text rendering
-        GlStateManager.enableTexture2D()
+        val halfWidth = renderer.getStringWidth(tag.getString()) / 2
+        val headerWidth = tag.header.getWidth(renderer)
+        drawBackground(halfWidth)
+        renderString(renderer, tag, halfWidth, headerWidth)
 
-        // Determine colors to use - preserve per-section colors
-        val headerColor = if (LevelheadConfig.useCustomColor) {
-            LevelheadConfig.starColor.rgb
-        } else {
-            tag.header.color.rgb
-        }
-        
-        val footerColor = if (LevelheadConfig.useCustomColor) {
-            LevelheadConfig.starColor.rgb
-        } else {
-            tag.footer.color.rgb
-        }
-
-        // Draw header and footer separately with their respective colors
-        val startX = -halfWidth.toFloat()
-        if (headerText.isNotBlank()) {
-            fontRenderer.drawStringWithShadow(headerText, startX, 0f, headerColor)
-        }
-        if (footerText.isNotBlank()) {
-            fontRenderer.drawStringWithShadow(footerText, startX + headerWidth, 0f, footerColor)
-        }
-
-        // Cleanup OpenGL state
-        GlStateManager.depthMask(true)
-        GlStateManager.enableLighting()
-        GlStateManager.disableBlend()
-        GlStateManager.color(1.0f, 1.0f, 1.0f, 1.0f)
         GlStateManager.popMatrix()
     }
 
-    /**
-     * Draws a rectangle using OpenGL.
-     * This is used for the semi-transparent background behind the text.
-     */
-    private fun drawRect(left: Int, top: Int, right: Int, bottom: Int, color: Int) {
-        val alpha = (color shr 24 and 255) / 255.0f
-        val red = (color shr 16 and 255) / 255.0f
-        val green = (color shr 8 and 255) / 255.0f
-        val blue = (color and 255) / 255.0f
-
-        val tessellator = net.minecraft.client.renderer.Tessellator.getInstance()
-        val worldRenderer = tessellator.worldRenderer
-
-        GlStateManager.color(red, green, blue, alpha)
-        worldRenderer.begin(7, net.minecraft.client.renderer.vertex.DefaultVertexFormats.POSITION)
-        worldRenderer.pos(left.toDouble(), bottom.toDouble(), 0.0).endVertex()
-        worldRenderer.pos(right.toDouble(), bottom.toDouble(), 0.0).endVertex()
-        worldRenderer.pos(right.toDouble(), top.toDouble(), 0.0).endVertex()
-        worldRenderer.pos(left.toDouble(), top.toDouble(), 0.0).endVertex()
+    private fun drawBackground(halfWidth: Int) {
+        if (!displayManager.config.showBackground) return
+        val alpha = displayManager.config.backgroundOpacity.coerceIn(0f, 100f) / 100f
+        val tessellator = Tessellator.getInstance()
+        val buffer = tessellator.worldRenderer
+        // Re-enable blend for background transparency is handled by outer loop, 
+        // but we need to ensure texture is unbound for simple color quad drawing if needed, 
+        // though font renderer handles texture binding.
+        // For safety in 1.8.9:
+        GlStateManager.disableTexture2D()
+        buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_COLOR)
+        val left = -halfWidth - 2.0
+        val right = halfWidth + 1.0
+        buffer.pos(left, -1.0, 0.0).color(0f, 0f, 0f, alpha).endVertex()
+        buffer.pos(left, 8.0, 0.0).color(0f, 0f, 0f, alpha).endVertex()
+        buffer.pos(right, 8.0, 0.0).color(0f, 0f, 0f, alpha).endVertex()
+        buffer.pos(right, -1.0, 0.0).color(0f, 0f, 0f, alpha).endVertex()
         tessellator.draw()
+        GlStateManager.enableTexture2D()
+    }
+
+    private fun renderString(renderer: FontRenderer, tag: LevelheadTag, halfWidth: Int, headerWidth: Int) {
+        var x = -halfWidth
+        renderComponent(renderer, tag.header, x)
+        x += headerWidth
+        renderComponent(renderer, tag.footer, x)
+    }
+
+    private fun renderComponent(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int) {
+        if (displayManager.config.textShadow) {
+            GlStateManager.disableDepth()
+            GlStateManager.depthMask(false)
+            // Shadow (faded)
+            renderer.drawString(component.value, x, 0, component.color.withAlphaFactor(0.2f))
+            GlStateManager.enableDepth()
+            GlStateManager.depthMask(true)
+        }
+        // Main text
+        renderer.drawString(component.value, x, 0, component.color.rgb)
+    }
+
+    private fun Color.withAlphaFactor(alpha: Float): Int {
+        val clamped = alpha.coerceIn(0f, 1f)
+        val a = (clamped * 255f).toInt().coerceIn(0, 255)
+        return Color(red, green, blue, a).rgb
+    }
+
+    /**
+     * Scheduled cleanup invoked from Levelhead.onClientTick so cleanup doesn't run on render thread.
+     * Kept as a no-op for compatibility with older file state.
+     */
+    fun performScheduledCleanup() {
+        // no-op: this version of AboveHeadRender does not maintain a render-time cache
     }
 }

@@ -1,6 +1,5 @@
 import { pool, ensureInitialized } from './cache';
-
-const HYPIXEL_API_CALL_WINDOW_MS = 5 * 60 * 1000;
+import { HYPIXEL_API_CALL_WINDOW_MS } from '../config';
 
 export async function recordHypixelApiCall(uuid: string, calledAt: number = Date.now()): Promise<void> {
   await ensureInitialized();
@@ -31,5 +30,3 @@ export async function getHypixelCallCount(
   const parsed = Number.parseInt(rawValue, 10);
   return Number.isFinite(parsed) ? parsed : 0;
 }
-
-export { HYPIXEL_API_CALL_WINDOW_MS };

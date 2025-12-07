@@ -4,6 +4,7 @@ import club.sk1er.mods.levelhead.Levelhead
 import net.minecraft.client.Minecraft
 import net.minecraft.scoreboard.Score
 import net.minecraft.scoreboard.ScorePlayerTeam
+import net.minecraft.util.IChatComponent
 import net.minecraft.util.StringUtils
 import net.minecraftforge.client.event.ClientChatReceivedEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
@@ -15,6 +16,7 @@ object BedwarsModeDetector {
 
     private val teamPattern = Regex("^(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY|GREY):", RegexOption.IGNORE_CASE)
     private val miniServerPattern = Regex("mini\\w+", RegexOption.IGNORE_CASE)
+    private val WHITESPACE_PATTERN = Regex("\\s+")
 
     private var cachedContext: Context = Context.UNKNOWN
     private var lastDetectionTime: Long = 0L
@@ -42,7 +44,8 @@ object BedwarsModeDetector {
 
     fun currentContext(force: Boolean = false): Context {
         val now = System.currentTimeMillis()
-        if (force || cachedContext == Context.UNKNOWN || now - lastDetectionTime > 1_000L) {
+        // Cache context for 5 seconds to reduce scoreboard parsing overhead
+        if (force || cachedContext == Context.UNKNOWN || now - lastDetectionTime > 5_000L) {
             val detected = detectContext()
             if (detected != cachedContext) {
                 val oldContext = cachedContext.takeUnless { it == Context.UNKNOWN } ?: Context.NONE
@@ -101,21 +104,18 @@ object BedwarsModeDetector {
         val displayComponent: Any? = objective.displayName
         val rawTitle = when (displayComponent) {
             null -> ""
+            is IChatComponent -> displayComponent.formattedText
             else -> {
-                val clazz = displayComponent::class.java
-                val formattedMethod = runCatching { clazz.getMethod("getFormattedText") }.getOrNull()
-                    ?: runCatching { clazz.getMethod("getUnformattedText") }.getOrNull()
-                when {
-                    formattedMethod != null -> runCatching {
-                        formattedMethod.invoke(displayComponent) as? String
-                    }.getOrNull()
-                    else -> null
-                } ?: displayComponent.toString()
+                // Fallback: try to invoke getFormattedText on the actual type, then fall back to toString()
+                runCatching {
+                    displayComponent::class.java.getMethod("getFormattedText")
+                        .invoke(displayComponent) as? String
+                }.getOrNull() ?: displayComponent.toString()
             }
         }
         val title = StringUtils.stripControlCodes(rawTitle)
             .uppercase(Locale.ROOT)
-        val normalizedTitle = title.replace("\\s+".toRegex(), "")
+        val normalizedTitle = title.replace(WHITESPACE_PATTERN, "")
         if (!normalizedTitle.contains("BEDWARS")) {
             return Context.NONE
         }

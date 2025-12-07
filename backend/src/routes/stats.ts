@@ -52,6 +52,63 @@ function formatLatency(latency: number | null): string {
   return `${latency.toLocaleString()} ms`;
 }
 
+function toCSV(data: any[]): string {
+  if (data.length === 0) return '';
+  const headers = Object.keys(data[0]);
+  const headerRow = headers.join(',');
+  const rows = data.map(row => {
+    return headers.map(fieldName => {
+      const val = row[fieldName];
+      if (val === null || val === undefined) return '';
+      if (val instanceof Date) return val.toISOString();
+      const str = String(val);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    }).join(',');
+  });
+  return [headerRow, ...rows].join('\n');
+}
+
+router.get('/csv', async (req, res) => {
+  try {
+    const fromParam = typeof req.query.from === 'string' ? req.query.from : undefined;
+    const toParam = typeof req.query.to === 'string' ? req.query.to : undefined;
+    const limitParam = typeof req.query.limit === 'string' ? req.query.limit : undefined;
+
+    const startDate = fromParam ? new Date(fromParam) : undefined;
+    const endDate = toParam ? new Date(toParam) : undefined;
+    const limit = limitParam ? Number.parseInt(limitParam, 10) : undefined;
+
+    const validStartDate = startDate && !Number.isNaN(startDate.getTime()) ? startDate : undefined;
+    const validEndDate = endDate && !Number.isNaN(endDate.getTime()) ? endDate : undefined;
+    const MAX_ALLOWED_LIMIT = 10000;
+    const DEFAULT_CHART_LIMIT = 200;
+    const validLimit = limit !== undefined && Number.isFinite(limit)
+      ? Math.min(Math.max(limit, 1), MAX_ALLOWED_LIMIT)
+      : undefined;
+
+    const hasTimeFilter = Boolean(validStartDate || validEndDate);
+    const effectiveLimit = validLimit ?? (hasTimeFilter ? MAX_ALLOWED_LIMIT : DEFAULT_CHART_LIMIT);
+
+    const data = await getPlayerQueriesWithFilters({
+      startDate: validStartDate,
+      endDate: validEndDate,
+      limit: effectiveLimit,
+    });
+
+    const csv = toCSV(data);
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="stats.csv"');
+    res.send(csv);
+  } catch (error) {
+    console.error('Failed to generate CSV', error);
+    res.status(500).send('Internal Server Error');
+  }
+});
+
 router.get('/', async (req, res, next) => {
   try {
     const requestedPage = Number.parseInt((req.query.page as string) ?? '1', 10);
@@ -72,7 +129,7 @@ router.get('/', async (req, res, next) => {
     const validEndDate = endDate && !Number.isNaN(endDate.getTime()) ? endDate : undefined;
     const MAX_ALLOWED_LIMIT = 10000;
     const DEFAULT_CHART_LIMIT = 200; // Default to 200 rows if no limit specified to prevent loading entire table
-    const validLimit = Number.isFinite(limit)
+    const validLimit = limit !== undefined && Number.isFinite(limit)
       ? Math.min(Math.max(limit, 1), MAX_ALLOWED_LIMIT)
       : undefined;
     const hasTimeFilter = Boolean(validStartDate || validEndDate);
@@ -83,7 +140,7 @@ router.get('/', async (req, res, next) => {
     const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
     const page = Math.min(safePage, totalPages);
     const pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search, totalCountOverride: totalCount });
-    
+
     // Fetch filtered data for charts
     const [chartData, topPlayers] = await Promise.all([
       getPlayerQueriesWithFilters({
@@ -432,6 +489,134 @@ router.get('/', async (req, res, next) => {
         padding-top: 1rem;
         border-top: 1px solid rgba(148, 163, 184, 0.2);
       }
+      .card {
+        position: relative;
+      }
+
+      .latency-chart-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        margin-bottom: 0.75rem;
+      }
+      .latency-chart-controls label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #cbd5f5;
+        font-size: 0.85rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .latency-chart-controls input[type="checkbox"] {
+        accent-color: #38bdf8;
+        cursor: pointer;
+      }
+      .stat-card-controls {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.5rem;
+      }
+      .stat-card-controls select {
+        padding: 0.35rem 0.5rem;
+        border-radius: 6px;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        background: rgba(15, 23, 42, 0.8);
+        color: #e2e8f0;
+        font-size: 0.75rem;
+        cursor: pointer;
+      }
+      .card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+      }
+      .card-header h2 {
+        margin: 0;
+      }
+      .expand-btn {
+        background: rgba(59, 130, 246, 0.2);
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        border-radius: 6px;
+        padding: 0.35rem 0.5rem;
+        color: #cbd5f5;
+        cursor: pointer;
+        font-size: 0.85rem;
+        transition: background 0.2s, transform 0.2s;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+      }
+      .expand-btn:hover {
+        background: rgba(59, 130, 246, 0.4);
+        transform: scale(1.05);
+      }
+      .fullscreen-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(15, 23, 42, 0.95);
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        animation: fadeIn 0.2s ease;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      .fullscreen-modal {
+        width: 90vw;
+        height: 85vh;
+        background: rgba(30, 41, 59, 0.98);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+        border-radius: 16px;
+        padding: 1.5rem;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      }
+      .fullscreen-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+      }
+      .fullscreen-title {
+        font-size: 1.35rem;
+        color: #e2e8f0;
+        margin: 0;
+        font-weight: 600;
+      }
+      .fullscreen-close-btn {
+        background: rgba(239, 68, 68, 0.2);
+        border: 1px solid rgba(239, 68, 68, 0.4);
+        border-radius: 8px;
+        padding: 0.5rem 1rem;
+        color: #fca5a5;
+        cursor: pointer;
+        font-weight: 600;
+        transition: background 0.2s;
+      }
+      .fullscreen-close-btn:hover {
+        background: rgba(239, 68, 68, 0.4);
+      }
+      .fullscreen-chart-container {
+        flex: 1;
+        position: relative;
+        min-height: 0;
+      }
+      .fullscreen-chart-container canvas {
+        width: 100% !important;
+        height: 100% !important;
+      }
     </style>
   </head>
   <body>
@@ -487,9 +672,20 @@ router.get('/', async (req, res, next) => {
         <p class="stat-sub">Based on HTTP status codes</p>
       </div>
       <div class="card stat-card">
-        <p class="stat-label">Latency (p95)</p>
+        <p class="stat-label" id="latencyLabel">Latency (p95)</p>
         <p class="stat-value" id="latencyP95Value">--</p>
         <p class="stat-sub">Derived from real latency samples</p>
+        <div class="stat-card-controls">
+          <label for="latencyMetricSelect">Metric:</label>
+          <select id="latencyMetricSelect">
+            <option value="p50">p50 (Median)</option>
+            <option value="p95" selected>p95</option>
+            <option value="p99">p99</option>
+            <option value="min">Min</option>
+            <option value="max">Max</option>
+            <option value="avg">Average</option>
+          </select>
+        </div>
       </div>
     </div>
 
@@ -501,42 +697,92 @@ router.get('/', async (req, res, next) => {
 
     <div class="dashboard-grid">
       <div class="card">
-        <h2>Cache Performance</h2>
+        <div class="card-header">
+          <h2>Cache Performance</h2>
+          <button class="expand-btn" data-chart="cacheChart" title="Expand chart">⛶</button>
+        </div>
         <div class="chart-shell"><canvas id="cacheChart"></canvas></div>
       </div>
       <div class="card">
-        <h2>Star Distribution</h2>
+        <div class="card-header">
+          <h2>Star Distribution</h2>
+          <button class="expand-btn" data-chart="starChart" title="Expand chart">⛶</button>
+        </div>
         <div class="chart-shell"><canvas id="starChart"></canvas></div>
       </div>
       <div class="card">
-        <h2>Latency Pulse</h2>
+        <div class="card-header">
+          <h2>Latency Pulse</h2>
+          <button class="expand-btn" data-chart="latencyChart" title="Expand chart">⛶</button>
+        </div>
+        <div class="latency-chart-controls">
+          <label>
+            <input type="checkbox" id="includeCacheHits" checked />
+            Include cache hits
+          </label>
+        </div>
         <div class="chart-shell"><canvas id="latencyChart"></canvas></div>
       </div>
       <div class="card">
-        <h2>Status Breakdown</h2>
+        <div class="card-header">
+          <h2>Status Breakdown</h2>
+          <button class="expand-btn" data-chart="statusChart" title="Expand chart">⛶</button>
+        </div>
         <div class="chart-shell"><canvas id="statusChart"></canvas></div>
       </div>
       <div class="card">
-        <h2>Lookup Type Distribution</h2>
+        <div class="card-header">
+          <h2>Lookup Type Distribution</h2>
+          <button class="expand-btn" data-chart="lookupTypeChart" title="Expand chart">⛶</button>
+        </div>
         <div class="chart-shell"><canvas id="lookupTypeChart"></canvas></div>
       </div>
       <div class="card">
-        <h2>Requests Over Time</h2>
+        <div class="card-header">
+          <h2>Requests Over Time</h2>
+          <button class="expand-btn" data-chart="requestsOverTimeChart" title="Expand chart">⛶</button>
+        </div>
         <div class="chart-shell"><canvas id="requestsOverTimeChart"></canvas></div>
       </div>
       <div class="card">
-        <h2>Cache Hit Rate Over Time</h2>
+        <div class="card-header">
+          <h2>Cache Hit Rate Over Time</h2>
+          <button class="expand-btn" data-chart="cacheOverTimeChart" title="Expand chart">⛶</button>
+        </div>
         <div class="chart-shell"><canvas id="cacheOverTimeChart"></canvas></div>
       </div>
       <div class="card">
-        <h2>Latency Distribution</h2>
+        <div class="card-header">
+          <h2>Latency Distribution</h2>
+          <button class="expand-btn" data-chart="latencyDistributionChart" title="Expand chart">⛶</button>
+        </div>
         <div class="chart-shell"><canvas id="latencyDistributionChart"></canvas></div>
       </div>
       <div class="card">
-        <h2>Top Queried Players</h2>
+        <div class="card-header">
+          <h2>Top Queried Players</h2>
+          <button class="expand-btn" data-chart="topPlayersChart" title="Expand chart">⛶</button>
+        </div>
         <div class="chart-shell"><canvas id="topPlayersChart"></canvas></div>
       </div>
     </div>
+
+    <div id="fullscreenOverlay" class="fullscreen-overlay" style="display: none;">
+      <div class="fullscreen-modal">
+        <div class="fullscreen-header">
+          <h3 class="fullscreen-title" id="fullscreenTitle"></h3>
+          <div style="display: flex; gap: 0.5rem;">
+            <a id="fullscreenDownloadBtn" class="fullscreen-close-btn" style="text-decoration: none; display: flex; align-items: center; justify-content: center; background: rgba(59, 130, 246, 0.2); border-color: rgba(59, 130, 246, 0.4); color: #93c5fd;" href="#" target="_blank">Download CSV</a>
+            <button class="fullscreen-close-btn" id="fullscreenCloseBtn">✕ Close</button>
+          </div>
+        </div>
+        <div class="fullscreen-chart-container">
+          <canvas id="fullscreenChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+
 
     <h2>Recent Player Lookups</h2>
     <p class="meta">${pageData.totalCount === 0 ? 'No lookups recorded yet.' : `Showing page ${page} of ${totalPages} (${pageData.totalCount} total lookups).`}</p>
@@ -588,6 +834,11 @@ router.get('/', async (req, res, next) => {
       const topPlayers = pageData.topPlayers || [];
       const filters = pageData.filters || {};
       const charts = [];
+      // Store original chart configs for fullscreen cloning (avoids Chart.js resolver issues)
+
+
+      // Safe deep clone helper that preserves functions but skips Chart.js internal properties
+
 
       // Initialize filter controls
       const fromDateInput = document.getElementById('fromDate');
@@ -771,10 +1022,21 @@ router.get('/', async (req, res, next) => {
       const latencyValues = data
         .map((d) => (typeof d.latencyMs === 'number' && d.latencyMs >= 0 ? d.latencyMs : null))
         .filter((v) => v !== null);
-      const latencyP95 = percentile(latencyValues, 95);
-      const latencyAvg = latencyValues.length
-        ? latencyValues.reduce((sum, value) => sum + (value ?? 0), 0) / latencyValues.length
-        : null;
+      
+      // Calculate all latency metrics
+      const latencyMetrics = {
+        p50: percentile(latencyValues, 50),
+        p95: percentile(latencyValues, 95),
+        p99: percentile(latencyValues, 99),
+        min: latencyValues.length > 0 ? Math.min(...latencyValues) : null,
+        max: latencyValues.length > 0 ? Math.max(...latencyValues) : null,
+        avg: latencyValues.length
+          ? latencyValues.reduce((sum, value) => sum + (value ?? 0), 0) / latencyValues.length
+          : null,
+      };
+      
+      const latencyP95 = latencyMetrics.p95;
+      const latencyAvg = latencyMetrics.avg;
 
       const statusBuckets = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, Other: 0 };
       data.forEach((d) => {
@@ -788,10 +1050,17 @@ router.get('/', async (req, res, next) => {
       const sortedByRequestTime = [...data].sort(
         (a, b) => new Date(a.requestedAt).getTime() - new Date(b.requestedAt).getTime(),
       );
-      const latencySeries = sortedByRequestTime.map((d) => ({
+      
+      // Store original latency series for filtering
+      const allLatencySeries = sortedByRequestTime.map((d) => ({
         x: new Date(d.requestedAt),
         y: typeof d.latencyMs === 'number' && d.latencyMs >= 0 ? d.latencyMs : null,
+        cacheHit: d.cacheHit || false,
       }));
+      
+      // Default: include cache hits
+      let includeCacheHits = true;
+      let latencySeries = allLatencySeries.filter((point) => includeCacheHits || !point.cacheHit);
 
       function setMetric(id, value) {
         const el = document.getElementById(id);
@@ -816,14 +1085,58 @@ router.get('/', async (req, res, next) => {
       setProgress('cacheHitProgress', cacheHitRate);
       setMetric('successRateValue', successRate.toFixed(1) + '%');
       setProgress('successRateProgress', successRate);
-      const latencyDisplay = latencyP95 ?? latencyAvg;
-      setMetric(
-        'latencyP95Value',
-        latencyDisplay === null ? '--' : Math.round(latencyDisplay).toLocaleString() + ' ms',
-      );
+      
+      // Latency metric selection handler
+      const latencyMetricSelect = document.getElementById('latencyMetricSelect');
+      const latencyLabel = document.getElementById('latencyLabel');
+      let selectedLatencyMetric = 'p95';
+      
+      function updateLatencyDisplay() {
+        const metricValue = latencyMetrics[selectedLatencyMetric];
+        const displayValue = metricValue === null ? '--' : Math.round(metricValue).toLocaleString() + ' ms';
+        setMetric('latencyP95Value', displayValue);
+        
+        // Update label
+        const metricLabels = {
+          p50: 'Latency (p50)',
+          p95: 'Latency (p95)',
+          p99: 'Latency (p99)',
+          min: 'Latency (Min)',
+          max: 'Latency (Max)',
+          avg: 'Latency (Average)',
+        };
+        if (latencyLabel) {
+          latencyLabel.textContent = metricLabels[selectedLatencyMetric] || 'Latency';
+        }
+      }
+      
+      if (latencyMetricSelect) {
+        // Load saved preference
+        try {
+          const saved = window.localStorage.getItem('latencyMetric');
+          if (saved && latencyMetrics[saved] !== undefined) {
+            selectedLatencyMetric = saved;
+            latencyMetricSelect.value = saved;
+          }
+        } catch {
+          // ignore
+        }
+        
+        latencyMetricSelect.addEventListener('change', (e) => {
+          selectedLatencyMetric = e.target.value;
+          updateLatencyDisplay();
+          try {
+            window.localStorage.setItem('latencyMetric', selectedLatencyMetric);
+          } catch {
+            // ignore
+          }
+        });
+      }
+      
+      updateLatencyDisplay();
 
       // Render Pie Chart (Cache)
-      charts.push(new Chart(document.getElementById('cacheChart'), {
+      const cacheChartConfig = {
         type: 'doughnut',
         data: {
           labels: ['Cache Hit', 'Network Fetch'],
@@ -837,14 +1150,20 @@ router.get('/', async (req, res, next) => {
             responsive: true,
             maintainAspectRatio: false,
             plugins: {
-                legend: { position: 'bottom', labels: { color: '#cbd5f5' } },
+                legend: { 
+                    position: 'bottom', 
+                    labels: { color: '#cbd5f5' } 
+                },
                 title: { display: false }
             }
         }
-      }));
+      };
+      const cacheChartEl = document.getElementById('cacheChart');
+
+      charts.push(new Chart(cacheChartEl, cacheChartConfig));
 
       // Render Bar Chart (Stars)
-      charts.push(new Chart(document.getElementById('starChart'), {
+      const starChartConfig = {
         type: 'bar',
         data: {
           labels: Object.keys(starRanges),
@@ -876,15 +1195,40 @@ router.get('/', async (req, res, next) => {
             },
             plugins: { legend: { display: false } }
         }
-      }));
+      };
+      const starChartEl = document.getElementById('starChart');
 
+      charts.push(new Chart(starChartEl, starChartConfig));
+
+      function updateLatencyChart() {
+        // Filter latency series based on cache hit inclusion
+        const filteredSeries = includeCacheHits
+          ? allLatencySeries
+          : allLatencySeries.filter((point) => !point.cacheHit);
+        
+        const filteredLabels = filteredSeries.map((point) => {
+          const asDate = point.x instanceof Date ? point.x : new Date(point.x);
+          if (Number.isNaN(asDate.getTime())) return '';
+          return asDate.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        });
+        
+        // Find existing latency chart and update it
+        const latencyChartIndex = charts.findIndex((chart) => chart.canvas.id === 'latencyChart');
+        if (latencyChartIndex >= 0) {
+          const chart = charts[latencyChartIndex];
+          chart.data.labels = filteredLabels;
+          chart.data.datasets[0].data = filteredSeries.map((point) => point.y);
+          chart.update('none'); // Update without animation for better performance
+        }
+      }
+      
       const latencyLabels = sortedByRequestTime.map((d, index) => {
         const asDate = new Date(d.requestedAt);
         if (Number.isNaN(asDate.getTime())) return 'Lookup ' + (index + 1);
         return asDate.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
       });
 
-      charts.push(new Chart(document.getElementById('latencyChart'), {
+      const latencyChartConfig = {
         type: 'line',
         data: {
           labels: latencyLabels,
@@ -916,9 +1260,22 @@ router.get('/', async (req, res, next) => {
           plugins: { legend: { display: false } },
           maintainAspectRatio: false,
         },
-      }));
+      };
+      const latencyChartEl = document.getElementById('latencyChart');
 
-      charts.push(new Chart(document.getElementById('statusChart'), {
+      const latencyChart = new Chart(latencyChartEl, latencyChartConfig);
+      charts.push(latencyChart);
+      
+      // Cache hit toggle handler
+      const includeCacheHitsCheckbox = document.getElementById('includeCacheHits');
+      if (includeCacheHitsCheckbox) {
+        includeCacheHitsCheckbox.addEventListener('change', (e) => {
+          includeCacheHits = e.target.checked;
+          updateLatencyChart();
+        });
+      }
+
+      const statusChartConfig = {
         type: 'doughnut',
         data: {
           labels: Object.keys(statusBuckets),
@@ -932,11 +1289,17 @@ router.get('/', async (req, res, next) => {
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
-            legend: { position: 'bottom', labels: { color: '#cbd5f5' } },
+            legend: { 
+              position: 'bottom', 
+              labels: { color: '#cbd5f5' } 
+            },
             title: { display: false },
           },
         },
-      }));
+      };
+      const statusChartEl = document.getElementById('statusChart');
+
+      charts.push(new Chart(statusChartEl, statusChartConfig));
 
       // 5. Lookup Type Distribution
       const lookupTypeCounts = { UUID: 0, IGN: 0 };
@@ -947,7 +1310,7 @@ router.get('/', async (req, res, next) => {
           lookupTypeCounts.IGN++;
         }
       });
-      charts.push(new Chart(document.getElementById('lookupTypeChart'), {
+      const lookupTypeChartConfig = {
         type: 'doughnut',
         data: {
           labels: ['UUID', 'IGN'],
@@ -961,11 +1324,17 @@ router.get('/', async (req, res, next) => {
           responsive: true,
           maintainAspectRatio: false,
           plugins: {
-            legend: { position: 'bottom', labels: { color: '#cbd5f5' } },
+            legend: { 
+              position: 'bottom', 
+              labels: { color: '#cbd5f5' } 
+            },
             title: { display: false },
           },
         },
-      }));
+      };
+      const lookupTypeChartEl = document.getElementById('lookupTypeChart');
+
+      charts.push(new Chart(lookupTypeChartEl, lookupTypeChartConfig));
 
       // 6. Requests Over Time
       function getTimeBucketInterval(startDate, endDate) {
@@ -1041,7 +1410,7 @@ router.get('/', async (req, res, next) => {
         .sort((a, b) => a - b)
         .map((key) => timeBuckets.get(key));
 
-      charts.push(new Chart(document.getElementById('requestsOverTimeChart'), {
+      const requestsOverTimeChartConfig = {
         type: 'line',
         data: {
           labels: requestsOverTimeLabels,
@@ -1072,7 +1441,10 @@ router.get('/', async (req, res, next) => {
           },
           plugins: { legend: { display: false } },
         },
-      }));
+      };
+      const requestsOverTimeChartEl = document.getElementById('requestsOverTimeChart');
+
+      charts.push(new Chart(requestsOverTimeChartEl, requestsOverTimeChartConfig));
 
       // 7. Cache Hit Rate Over Time
       const cacheOverTimeLabels = Array.from(cacheBuckets.keys())
@@ -1085,7 +1457,7 @@ router.get('/', async (req, res, next) => {
           return bucket.total > 0 ? (bucket.hits / bucket.total) * 100 : 0;
         });
 
-      charts.push(new Chart(document.getElementById('cacheOverTimeChart'), {
+      const cacheOverTimeChartConfig = {
         type: 'line',
         data: {
           labels: cacheOverTimeLabels,
@@ -1117,7 +1489,10 @@ router.get('/', async (req, res, next) => {
           },
           plugins: { legend: { display: false } },
         },
-      }));
+      };
+      const cacheOverTimeChartEl = document.getElementById('cacheOverTimeChart');
+
+      charts.push(new Chart(cacheOverTimeChartEl, cacheOverTimeChartConfig));
 
       // 8. Latency Distribution
       const latencyBins = {
@@ -1138,7 +1513,7 @@ router.get('/', async (req, res, next) => {
         else latencyBins['1000ms+']++;
       });
 
-      charts.push(new Chart(document.getElementById('latencyDistributionChart'), {
+      const latencyDistributionChartConfig = {
         type: 'bar',
         data: {
           labels: Object.keys(latencyBins),
@@ -1165,7 +1540,10 @@ router.get('/', async (req, res, next) => {
           },
           plugins: { legend: { display: false } },
         },
-      }));
+      };
+      const latencyDistributionChartEl = document.getElementById('latencyDistributionChart');
+
+      charts.push(new Chart(latencyDistributionChartEl, latencyDistributionChartConfig));
 
       // 9. Top Players
       const topPlayersLabels = topPlayers.slice(0, 20).map((p) => {
@@ -1173,7 +1551,7 @@ router.get('/', async (req, res, next) => {
       });
       const topPlayersData = topPlayers.slice(0, 20).map((p) => p.queryCount);
 
-      charts.push(new Chart(document.getElementById('topPlayersChart'), {
+      const topPlayersChartConfig = {
         type: 'bar',
         data: {
           labels: topPlayersLabels,
@@ -1201,9 +1579,124 @@ router.get('/', async (req, res, next) => {
           },
           plugins: { legend: { display: false } },
         },
-      }));
+      };
+      const topPlayersChartEl = document.getElementById('topPlayersChart');
+
+      charts.push(new Chart(topPlayersChartEl, topPlayersChartConfig));
 
       applyChartHeight(currentChartHeight);
+
+      // Fullscreen chart handling
+      const chartConfigs = {
+        cacheChart: { title: 'Cache Performance', config: cacheChartConfig },
+        starChart: { title: 'Star Distribution', config: starChartConfig },
+        latencyChart: { title: 'Latency Pulse', config: latencyChartConfig },
+        statusChart: { title: 'Status Breakdown', config: statusChartConfig },
+        lookupTypeChart: { title: 'Lookup Type Distribution', config: lookupTypeChartConfig },
+        requestsOverTimeChart: { title: 'Requests Over Time', config: requestsOverTimeChartConfig },
+        cacheOverTimeChart: { title: 'Cache Hit Rate Over Time', config: cacheOverTimeChartConfig },
+        latencyDistributionChart: { title: 'Latency Distribution', config: latencyDistributionChartConfig },
+        topPlayersChart: { title: 'Top Queried Players', config: topPlayersChartConfig },
+      };
+
+      let fullscreenChartInstance = null;
+
+      function deepCloneConfig(config) {
+        // Deep clone that handles data arrays properly
+        const cloned = {
+          type: config.type,
+          data: {
+            labels: config.data.labels ? [...config.data.labels] : [],
+            datasets: config.data.datasets.map(ds => ({
+              ...ds,
+              data: Array.isArray(ds.data) ? [...ds.data] : ds.data,
+              backgroundColor: Array.isArray(ds.backgroundColor) 
+                ? [...ds.backgroundColor] 
+                : ds.backgroundColor,
+            })),
+          },
+          options: JSON.parse(JSON.stringify(config.options || {})),
+        };
+        return cloned;
+      }
+
+      function openFullscreen(chartId) {
+        const overlay = document.getElementById('fullscreenOverlay');
+        const titleEl = document.getElementById('fullscreenTitle');
+        const downloadBtn = document.getElementById('fullscreenDownloadBtn');
+        const canvas = document.getElementById('fullscreenChart');
+        const info = chartConfigs[chartId];
+        
+        if (!info || !overlay || !canvas) return;
+        
+        // Clean up any existing fullscreen chart
+        if (fullscreenChartInstance) {
+          fullscreenChartInstance.destroy();
+          fullscreenChartInstance = null;
+        }
+        
+        titleEl.textContent = info.title;
+        overlay.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+
+        if (downloadBtn) {
+            const url = new URL(window.location.origin + '/stats/csv');
+            if (filters.from) url.searchParams.set('from', filters.from);
+            if (filters.to) url.searchParams.set('to', filters.to);
+            if (filters.limit) url.searchParams.set('limit', filters.limit);
+            downloadBtn.href = url.toString();
+        }
+        
+        // Clone config to avoid mutating original
+        const clonedConfig = deepCloneConfig(info.config);
+        
+        // Create new chart in fullscreen canvas
+        fullscreenChartInstance = new Chart(canvas, clonedConfig);
+      }
+
+      function closeFullscreen() {
+        const overlay = document.getElementById('fullscreenOverlay');
+        if (fullscreenChartInstance) {
+          fullscreenChartInstance.destroy();
+          fullscreenChartInstance = null;
+        }
+        if (overlay) {
+          overlay.style.display = 'none';
+        }
+        document.body.style.overflow = '';
+      }
+
+      // Attach event listeners to expand buttons
+      document.querySelectorAll('.expand-btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const chartId = btn.getAttribute('data-chart');
+          if (chartId) openFullscreen(chartId);
+        });
+      });
+
+      // Close button handler
+      const closeBtn = document.getElementById('fullscreenCloseBtn');
+      if (closeBtn) {
+        closeBtn.addEventListener('click', closeFullscreen);
+      }
+
+      // Click on overlay background to close
+      const overlay = document.getElementById('fullscreenOverlay');
+      if (overlay) {
+        overlay.addEventListener('click', (e) => {
+          if (e.target.id === 'fullscreenOverlay') {
+            closeFullscreen();
+          }
+        });
+      }
+
+      // Escape key to close
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeFullscreen();
+        }
+      });
+
     </script>
   </body>
 </html>`;
