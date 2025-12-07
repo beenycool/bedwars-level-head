@@ -94,6 +94,9 @@ object HypixelClient {
     }
 
     private fun notifyMissingKey() {
+        // Suppress warnings when user has API key set and using shared backend
+        if (LevelheadConfig.shouldSuppressBackendWarnings()) return
+
         if (missingKeyWarned.compareAndSet(false, true)) {
             Levelhead.sendChat(
                 "${ChatColor.YELLOW}Set your Hypixel API key with ${ChatColor.GOLD}/levelhead apikey <key>${ChatColor.YELLOW} to enable BedWars stats."

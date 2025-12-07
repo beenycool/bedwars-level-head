@@ -4,6 +4,7 @@ import {
   getPlayerQueryPage,
   getPlayerQueriesWithFilters,
   getTopPlayersByQueryCount,
+  getSystemStats,
 } from '../services/history';
 import { escapeHtml } from '../util/html';
 
@@ -143,7 +144,7 @@ router.get('/', async (req, res, next) => {
     const pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search, totalCountOverride: totalCount });
 
     // Fetch filtered data for charts
-    const [chartData, topPlayers] = await Promise.all([
+    const [chartData, topPlayers, sysStats] = await Promise.all([
       getPlayerQueriesWithFilters({
         startDate: validStartDate,
         endDate: validEndDate,
@@ -154,6 +155,7 @@ router.get('/', async (req, res, next) => {
         endDate: validEndDate,
         limit: 20,
       }),
+      getSystemStats(),
     ]);
 
     // Serialise the data so the frontend script can use it
@@ -687,6 +689,28 @@ router.get('/', async (req, res, next) => {
             <option value="avg">Average</option>
           </select>
         </div>
+      </div>
+    </div>
+
+    <h2>Infrastructure Health</h2>
+    <div class="stat-grid">
+      <div class="card stat-card">
+        <p class="stat-label">Database Size</p>
+        <p class="stat-value">${sysStats.dbSize}</p>
+        <p class="stat-sub">Index: ${sysStats.indexSize}</p>
+      </div>
+      <div class="card stat-card">
+        <p class="stat-label">Hypixel API (1h)</p>
+        <p class="stat-value">${sysStats.apiCallsLastHour.toLocaleString()}</p>
+        <div class="progress">
+          <span style="width: ${(sysStats.apiCallsLastHour / 7200) * 100}%"></span>
+        </div>
+        <p class="stat-sub">Quota usage</p>
+      </div>
+      <div class="card stat-card">
+        <p class="stat-label">Cached Profiles</p>
+        <p class="stat-value">${sysStats.cacheCount.toLocaleString()}</p>
+        <p class="stat-sub">Avg payload: ${sysStats.avgPayloadSize}</p>
       </div>
     </div>
 
