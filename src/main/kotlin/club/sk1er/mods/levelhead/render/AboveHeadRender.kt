@@ -35,6 +35,12 @@ object AboveHeadRender {
         val player = event.entity as? EntityPlayer ?: return
         val localPlayer = minecraft.thePlayer
 
+        GlStateManager.disableLighting()
+        GlStateManager.depthMask(false)
+        GlStateManager.disableDepth()
+        GlStateManager.enableBlend()
+        GlStateManager.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO)
+
         displayManager.aboveHead.forEachIndexed { index, display ->
             if (!display.config.enabled || (player.isSelf() && !display.config.showSelf)) return@forEachIndexed
             val tag = display.cache[player.uniqueID] ?: return@forEachIndexed
@@ -56,6 +62,12 @@ object AboveHeadRender {
             offset += displayManager.config.offset
             renderName(tag, player, event.x, event.y + offset + index * 0.3, event.z)
         }
+
+        GlStateManager.depthMask(true)
+        GlStateManager.enableDepth()
+        GlStateManager.disableBlend()
+        GlStateManager.enableLighting()
+        GlStateManager.color(1f, 1f, 1f, 1f)
     }
 
     private fun EntityPlayer.isSelf(): Boolean {
@@ -75,22 +87,11 @@ object AboveHeadRender {
         GlStateManager.rotate(-view.playerViewY, 0.0f, 1.0f, 0.0f)
         GlStateManager.rotate(view.playerViewX * xMultiplier, 1.0f, 0.0f, 0.0f)
         GlStateManager.scale(-scale, -scale, scale)
-        GlStateManager.disableLighting()
-        GlStateManager.depthMask(false)
-        GlStateManager.disableDepth()
-        GlStateManager.enableBlend()
-        GlStateManager.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO)
 
         val halfWidth = renderer.getStringWidth(tag.getString()) / 2
         val headerWidth = tag.header.getWidth(renderer)
         drawBackground(halfWidth)
         renderString(renderer, tag, halfWidth, headerWidth)
-
-        GlStateManager.enableLighting()
-        GlStateManager.disableBlend()
-        GlStateManager.color(1f, 1f, 1f, 1f)
-        GlStateManager.depthMask(true)
-        GlStateManager.enableDepth()
         GlStateManager.popMatrix()
     }
 
@@ -99,6 +100,7 @@ object AboveHeadRender {
         val alpha = displayManager.config.backgroundOpacity.coerceIn(0f, 100f) / 100f
         val tessellator = Tessellator.getInstance()
         val buffer = tessellator.worldRenderer
+        GlStateManager.disableTexture2D()
         buffer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_COLOR)
         val left = -halfWidth - 2.0
         val right = halfWidth + 1.0
@@ -107,6 +109,7 @@ object AboveHeadRender {
         buffer.pos(right, 8.0, 0.0).color(0f, 0f, 0f, alpha).endVertex()
         buffer.pos(right, -1.0, 0.0).color(0f, 0f, 0f, alpha).endVertex()
         tessellator.draw()
+        GlStateManager.enableTexture2D()
     }
 
     private fun renderString(renderer: FontRenderer, tag: LevelheadTag, halfWidth: Int, headerWidth: Int) {
@@ -118,12 +121,7 @@ object AboveHeadRender {
 
     private fun renderComponent(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int) {
         if (displayManager.config.textShadow) {
-            GlStateManager.disableDepth()
-            GlStateManager.depthMask(false)
-            // Shadow (faded)
-            renderer.drawString(component.value, x, 0, component.color.withAlphaFactor(0.2f))
-            GlStateManager.enableDepth()
-            GlStateManager.depthMask(true)
+            renderer.drawString(component.value, x + 1, 0, component.color.withAlphaFactor(0.2f))
         }
         // Main text
         renderer.drawString(component.value, x, 0, component.color.rgb)
