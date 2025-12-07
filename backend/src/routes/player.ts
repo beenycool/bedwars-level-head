@@ -192,4 +192,53 @@ router.post('/batch', enforceRateLimit, async (req, res, next) => {
   }
 });
 
+const uuidOnlyPattern = /^[0-9a-f]{32}$/i;
+
+router.post('/submit', enforceRateLimit, async (req, res, next) => {
+  res.locals.metricsRoute = '/api/player/submit';
+  const body = req.body as { uuid?: unknown; data?: unknown } | undefined;
+
+  if (!body || typeof body !== 'object') {
+    next(new HttpError(400, 'BAD_REQUEST', 'Expected JSON body with uuid and data fields.'));
+    return;
+  }
+
+  const { uuid, data } = body;
+
+  if (typeof uuid !== 'string' || !uuidOnlyPattern.test(uuid.trim())) {
+    next(new HttpError(400, 'INVALID_UUID', 'uuid must be a 32-character hex string (no dashes).'));
+    return;
+  }
+
+  if (!data || typeof data !== 'object') {
+    next(new HttpError(400, 'INVALID_DATA', 'data must be a non-empty object.'));
+    return;
+  }
+
+  const normalizedUuid = uuid.trim().toLowerCase();
+  const cacheKey = `player:${normalizedUuid}`;
+
+  try {
+    const { setCachedPayload } = await import('../services/cache');
+    const { CACHE_TTL_MS } = await import('../config');
+
+    // Build a proxy-compatible payload wrapper
+    const payload = {
+      success: true,
+      contributed: true,
+      data,
+    };
+
+    await setCachedPayload(cacheKey, payload, CACHE_TTL_MS, {
+      etag: `contrib-${Date.now()}`,
+      lastModified: Date.now(),
+    });
+
+    console.info(`[player/submit] Accepted contribution for uuid=${normalizedUuid}`);
+    res.status(202).json({ success: true, message: 'Contribution accepted.' });
+  } catch (error) {
+    next(error);
+  }
+});
+
 export default router;

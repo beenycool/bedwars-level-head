@@ -53,6 +53,20 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Text(name = "Hypixel API Key", placeholder = "Get a key from developer.hypixel.net", secure = true)
     var apiKey: String = ""
 
+    @Switch(
+        name = "Community Database",
+        description = "Fetch stats from the community cache to save API requests. When you have an API key, your lookups will also contribute to the shared cache."
+    )
+    var communityDatabase: Boolean = true
+        set(value) {
+            if (value && apiKey.isBlank()) {
+                Levelhead.sendChat("§eYou need a Hypixel API key to contribute to the community database. §7You can still fetch cached data.")
+            }
+            field = value
+            save()
+            BedwarsFetcher.resetWarnings()
+        }
+
     @Header(text = "Display Settings", category = "Display")
 
     @Slider(
@@ -416,6 +430,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         cachePurgeSize = 500
         renderThrottleMs = 100
         frameSkip = 1
+        communityDatabase = true
         proxyEnabled = true
         proxyBaseUrl = DEFAULT_PROXY_URL
         proxyAuthToken = ""

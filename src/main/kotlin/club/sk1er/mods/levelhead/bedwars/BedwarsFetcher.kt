@@ -21,6 +21,8 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.text.RegexOption
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import net.minecraft.util.EnumChatFormatting as ChatColor
 
 object BedwarsFetcher {
@@ -173,7 +175,7 @@ object BedwarsFetcher {
     }
 
     private fun shouldUseProxy(): Boolean {
-        if (!LevelheadConfig.proxyEnabled) {
+        if (!LevelheadConfig.communityDatabase) {
             proxyMisconfiguredWarned.set(false)
             return false
         }
@@ -182,7 +184,7 @@ object BedwarsFetcher {
         if (!baseConfigured) {
             if (proxyMisconfiguredWarned.compareAndSet(false, true)) {
                 sendMessage(
-                    "${ChatColor.RED}Proxy enabled but missing base URL. ${ChatColor.YELLOW}Set the proxy base URL in Levelhead settings."
+                    "${ChatColor.RED}Community Database enabled but missing proxy URL. ${ChatColor.YELLOW}Set the proxy base URL in Levelhead settings."
                 )
             }
             return false
@@ -190,6 +192,83 @@ object BedwarsFetcher {
 
         proxyMisconfiguredWarned.set(false)
         return true
+    }
+
+    private fun shouldContribute(): Boolean {
+        return LevelheadConfig.communityDatabase && LevelheadConfig.apiKey.isNotBlank() && LevelheadConfig.proxyBaseUrl.isNotBlank()
+    }
+
+    private suspend fun submitToProxy(uuid: UUID, data: JsonObject) {
+        if (!shouldContribute()) return
+
+        val baseUrl = LevelheadConfig.proxyBaseUrl.trim()
+        val url = HttpUrl.parse(baseUrl)
+            ?.newBuilder()
+            ?.addPathSegment("api")
+            ?.addPathSegment("player")
+            ?.addPathSegment("submit")
+            ?.build()
+
+        if (url == null) {
+            Levelhead.logger.warn("Failed to build submit URL from base '{}'", baseUrl.sanitizeForLogs())
+            return
+        }
+
+        val payload = JsonObject().apply {
+            addProperty("uuid", uuid.toString().replace("-", "").lowercase(Locale.ROOT))
+            add("data", data)
+        }
+
+        val request = Request.Builder()
+            .url(url)
+            .post(RequestBody.create(MediaType.parse("application/json"), payload.toString()))
+            .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
+            .header("Accept", "application/json")
+            .header("X-Levelhead-Install", LevelheadConfig.installId)
+            .apply {
+                LevelheadConfig.proxyAuthToken.takeIf { it.isNotBlank() }?.let { token ->
+                    header("Authorization", "Bearer $token")
+                }
+            }
+            .build()
+
+        try {
+            Levelhead.okHttpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    Levelhead.logger.info("Contributed player data for {} to community database", uuid)
+                } else {
+                    Levelhead.logger.warn(
+                        "Failed to contribute player data: {} {}",
+                        response.code(),
+                        response.body()?.string()?.take(100) ?: "no body"
+                    )
+                }
+            }
+        } catch (ex: IOException) {
+            Levelhead.logger.warn("Network error contributing player data: {}", ex.message)
+        } catch (ex: Exception) {
+            Levelhead.logger.error("Error contributing player data", ex)
+        }
+    }
+
+    private fun String.sanitizeForLogs(): String {
+        if (isEmpty()) return this
+        var sanitized = this
+        listOf(LevelheadConfig.apiKey, LevelheadConfig.proxyAuthToken, LevelheadConfig.installId)
+            .filter { it.isNotBlank() }
+            .forEach { secret ->
+                sanitized = sanitized.replace(secret, "***")
+            }
+        sanitized = sanitized.replace(Regex("""(?i)(key|token)=([^&\s]+)""")) { matchResult ->
+            "${matchResult.groupValues[1]}=***"
+        }
+        sanitized = sanitized.replace(Regex("""(?i)"(key|token|api_key|apikey)"\s*:\s*"([^"]+)""")) { matchResult ->
+            "\"${matchResult.groupValues[1]}\":\"***\""
+        }
+        sanitized = sanitized.replace(Regex("""(?i)(authorization\s*:\s*bearer\s+)([^\s"]+)""")) { matchResult ->
+            "${matchResult.groupValues[1]}***"
+        }
+        return sanitized
     }
 
     private suspend fun fetchProxy(identifierInput: String, lastFetchedAt: Long?, etag: String? = null): FetchResult {
@@ -350,6 +429,14 @@ object BedwarsFetcher {
                     return FetchResult.TemporaryError("PARSE_ERROR")
                 }
                 handleRetryAfterHint("hypixel", retryAfterMillis)
+
+                // Contribute to community database if enabled
+                if (shouldContribute()) {
+                    Levelhead.scope.launch(Dispatchers.IO) {
+                        submitToProxy(uuid, json)
+                    }
+                }
+
                 FetchResult.Success(json)
             }
         } catch (ex: IOException) {
@@ -505,26 +592,6 @@ object BedwarsFetcher {
             status,
             body.sanitizeForLogs().take(200)
         )
-    }
-
-    private fun String.sanitizeForLogs(): String {
-        if (isEmpty()) return this
-        var sanitized = this
-        listOf(LevelheadConfig.apiKey, LevelheadConfig.proxyAuthToken, LevelheadConfig.installId)
-            .filter { it.isNotBlank() }
-            .forEach { secret ->
-                sanitized = sanitized.replace(secret, "***")
-            }
-        sanitized = sanitized.replace(Regex("""(?i)(key|token)=([^&\s]+)""")) { matchResult ->
-            "${matchResult.groupValues[1]}=***"
-        }
-        sanitized = sanitized.replace(Regex("""(?i)"(key|token|api_key|apikey)"\s*:\s*"([^"]+)""")) { matchResult ->
-            "\"${matchResult.groupValues[1]}\":\"***\""
-        }
-        sanitized = sanitized.replace(Regex("""(?i)(authorization\s*:\s*bearer\s+)([^\s"]+)""")) { matchResult ->
-            "${matchResult.groupValues[1]}***"
-        }
-        return sanitized
     }
 
     private fun notifyNetworkIssue(ex: IOException) {
