@@ -2,195 +2,126 @@ package club.sk1er.mods.levelhead.render
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.Levelhead.displayManager
-import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import club.sk1er.mods.levelhead.display.LevelheadTag
+import club.sk1er.mods.levelhead.core.BedwarsModeDetector
+import gg.essential.api.EssentialAPI
 import gg.essential.elementa.utils.withAlpha
 import gg.essential.universal.UGraphics
 import gg.essential.universal.UMatrixStack
-import net.minecraft.client.Minecraft
+import gg.essential.universal.UMinecraft
+import gg.essential.universal.UMinecraft.getFontRenderer
+import gg.essential.universal.UMinecraft.getMinecraft
+import gg.essential.universal.wrappers.UPlayer
 import net.minecraft.client.gui.FontRenderer
-import net.minecraft.client.renderer.GlStateManager
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats
 import net.minecraft.entity.EntityLivingBase
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraftforge.client.event.RenderLivingEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import org.lwjgl.opengl.GL11
-import java.awt.Color
 
 object AboveHeadRender {
-
-    private var frameCounter = 0
-
-    // Copied from original Levelhead constants
-    private val DarkChromaColor: Int
-        get() = Color.HSBtoRGB(System.currentTimeMillis() % 1000 / 1000f, 0.8f, 0.2f)
-    private val ChromaColor: Int
-        get() = Color.HSBtoRGB(System.currentTimeMillis() % 1000 / 1000f, 0.8f, 0.8f)
 
     @SubscribeEvent
     fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
         if (!displayManager.config.enabled) return
-        if (!Levelhead.isOnHypixel()) return
-        
-        val minecraft = Minecraft.getMinecraft()
-        if (minecraft.gameSettings.hideGUI) return
+        if (!EssentialAPI.getMinecraftUtil().isHypixel()) return
+        if (getMinecraft().gameSettings.hideGUI) return
         if (!BedwarsModeDetector.shouldRenderTags()) return
 
-        // Performance: Frame skipping - move counter to entity-independent check
-        val skip = displayManager.config.frameSkip.coerceAtLeast(1)
-        frameCounter = (frameCounter + 1) % skip
-        if (frameCounter != 0) return
+        if (event.entity !is EntityPlayer) return
+        val player = event.entity as EntityPlayer
 
-        val player = event.entity as? EntityPlayer ?: return
-        val localPlayer = minecraft.thePlayer ?: return
+        val localPlayer = UMinecraft.getPlayer()
 
         displayManager.aboveHead.forEachIndexed { index, display ->
-            if (!display.config.enabled || (player.uniqueID == localPlayer.uniqueID && !display.config.showSelf)) return@forEachIndexed
-            
-            val tag = display.cache[player.uniqueID] ?: return@forEachIndexed
-            if (!display.loadOrRender(player)) return@forEachIndexed
-
-            // Calculate offset (vanilla behavior + config)
-            var offset = 0.3
-            val hasScoreboardObjective = player.worldScoreboard?.getObjectiveInDisplaySlot(2) != null
-            
-            // Only adjust for scoreboard if close (vanilla behavior)
-            val isCloseToLocalPlayer = player.getDistanceSqToEntity(localPlayer) < 100
-            if (hasScoreboardObjective && isCloseToLocalPlayer) {
-                offset *= 2
+            if (!display.config.enabled || (player.isSelf && !display.config.showSelf)) return@forEachIndexed
+            val tag = display.cache[player.uniqueID]
+            if (display.loadOrRender(player) && tag != null) {
+                // increase offset if there's something in the above name slot for scoreboards
+                var offset = 0.3
+                val hasScoreboardObjective = player.worldScoreboard?.getObjectiveInDisplaySlot(2) != null
+                val isCloseToLocalPlayer = localPlayer?.let { player.getDistanceSqToEntity(it) < 100 } ?: false
+                if (hasScoreboardObjective && isCloseToLocalPlayer) {
+                    offset *= 2
+                }
+                if (player.isSelf) offset = 0.0
+                offset += displayManager.config.offset
+                renderName(tag, player, event.x, event.y + offset + index * 0.3, event.z)
             }
-            
-            // Note: We removed the block that forced offset to 0.0 for the local player
-            // to ensure your tag is lifted 0.3 blocks up just like everyone else's.
-            
-            // Shift tag down when sneaking
-            if (player.isSneaking) {
-                offset -= 0.25
-            }
-            
-            offset += displayManager.config.offset
-            
-            // Render using the ported logic
-            renderName(tag, player, event.x, event.y + offset + index * 0.3, event.z)
         }
     }
 
+    private val EntityPlayer.isSelf: Boolean
+        get() = UPlayer.getUUID() == this.uniqueID
+
     private fun renderName(tag: LevelheadTag, entityIn: EntityPlayer, x: Double, y: Double, z: Double) {
-        val fontRenderer = Minecraft.getMinecraft().fontRendererObj
-        // Original Sk1er scale calculation
-        val textScale = 0.016666668f * 1.6f * displayManager.config.fontSize.toFloat()
-        
-        // Push Matrix using Essential UGraphics/GL wrapper
+        val fontrenderer = getFontRenderer()
+        val textScale = 0.016666668f * 1.6f * displayManager.config.fontSize
         UGraphics.GL.pushMatrix()
-        
-        val mc = Minecraft.getMinecraft()
-        val xMultiplier = if (mc.gameSettings.thirdPersonView == 2) -1 else 1
-        
-        // Translate to position
-        UGraphics.GL.translate(x.toFloat(), (y + entityIn.height + 0.5).toFloat(), z.toFloat())
+        val mc = getMinecraft()
+        val xMultiplier = if (
+            mc.gameSettings?.let { it.thirdPersonView == 2 } == true
+        ) {
+            -1
+        } else {
+            1
+        }
+        UGraphics.GL.translate(x.toFloat() + 0.0f, y.toFloat() + entityIn.height + 0.5f, z.toFloat())
         GL11.glNormal3f(0.0f, 1.0f, 0.0f)
-        
-        // Billboard rotation
         val renderManager = mc.renderManager
         UGraphics.GL.rotate(-renderManager.playerViewY, 0.0f, 1.0f, 0.0f)
         UGraphics.GL.rotate(renderManager.playerViewX * xMultiplier, 1.0f, 0.0f, 0.0f)
-        
-        // Apply Scale
         UGraphics.GL.scale(-textScale, -textScale, textScale)
-        
-        // GL State setup matches original source exactly
         UGraphics.disableLighting()
         UGraphics.depthMask(false)
         UGraphics.disableDepth()
         UGraphics.enableBlend()
-        @Suppress("DEPRECATION")
         UGraphics.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO)
-
-        val stringWidth = fontRenderer.getStringWidth(tag.getString()) / 2
-
-        // Draw Background using UGraphics
-        if (displayManager.config.showBackground) {
-            val opacity = displayManager.config.backgroundOpacity.coerceIn(0f, 1f)
-            val uGraphics = UGraphics.getFromTessellator()
-            
-            @Suppress("DEPRECATION")
-            uGraphics.beginWithDefaultShader(UGraphics.DrawMode.QUADS, DefaultVertexFormats.POSITION_COLOR)
-            
-            uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), -1.0, 0.0)
-                .color(0.0f, 0.0f, 0.0f, opacity).endVertex()
-            uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), 8.0, 0.0)
-                .color(0.0f, 0.0f, 0.0f, opacity).endVertex()
-            uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 1).toDouble(), 8.0, 0.0)
-                .color(0.0f, 0.0f, 0.0f, opacity).endVertex()
-            uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 1).toDouble(), -1.0, 0.0)
-                .color(0.0f, 0.0f, 0.0f, opacity).endVertex()
-            
-            uGraphics.drawDirect()
-        }
-
-        // Render the actual text
-        renderString(fontRenderer, tag)
-
-        // Restore GL State
+        val stringWidth = fontrenderer.getStringWidth(tag.getString()) shr 1
+        val uGraphics = UGraphics.getFromTessellator().beginWithDefaultShader(UGraphics.DrawMode.QUADS, DefaultVertexFormats.POSITION_COLOR)
+        uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), -1.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
+        uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), 8.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
+        uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 1).toDouble(), 8.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
+        uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 1).toDouble(), -1.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
+        uGraphics.drawDirect()
+        renderString(fontrenderer, tag)
         UGraphics.enableLighting()
-        @Suppress("DEPRECATION")
         UGraphics.disableBlend()
         UGraphics.color4f(1.0f, 1.0f, 1.0f, 1.0f)
         UGraphics.GL.popMatrix()
     }
 
     private fun renderString(renderer: FontRenderer, tag: LevelheadTag) {
-        var x = -renderer.getStringWidth(tag.getString()) / 2
-        
-        // Render Header
-        renderComponent(renderer, tag.header, x)
+        var x = -(renderer.getStringWidth(tag.getString()) shr 1)
+        //Render header
+        render(renderer, tag.header, x)
         x += renderer.getStringWidth(tag.header.value)
-        
-        // Render Footer
-        renderComponent(renderer, tag.footer, x)
+        //render footer
+        render(renderer, tag.footer, x)
     }
 
-    private fun renderComponent(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int) {
-        // Pass 1: Shadow / Depth-disabled pass (only if text shadow is enabled)
-        if (displayManager.config.textShadow) {
-            @Suppress("DEPRECATION")
-            UGraphics.disableDepth()
-            @Suppress("DEPRECATION")
-            UGraphics.depthMask(false)
-            
-            if (component.chroma) {
-                renderer.drawString(component.value, x, 0, DarkChromaColor)
-            } else {
-                renderer.drawString(component.value, x, 0, component.color.withAlpha(0.2f).rgb)
-            }
-        }
-
-        // Pass 2: Main Text
-        @Suppress("DEPRECATION")
-        UGraphics.enableDepth()
-        @Suppress("DEPRECATION")
-        UGraphics.depthMask(true)
-        
-        UGraphics.directColor3f(1.0f, 1.0f, 1.0f)
-        
+    private fun render(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int) {
+        UGraphics.disableDepth()
+        UGraphics.depthMask(false)
         if (component.chroma) {
-            renderer.drawString(component.value, x, 0, ChromaColor)
+            renderer.drawString(component.value, x, 0, Levelhead.DarkChromaColor)
+        } else {
+            renderer.drawString(component.value, x, 0, component.color.withAlpha(0.2f).rgb)
+        }
+        UGraphics.enableDepth()
+        UGraphics.depthMask(true)
+        UGraphics.directColor3f(1.0f, 1.0f, 1.0f)
+        if (component.chroma) {
+            renderer.drawString(component.value, x, 0, Levelhead.ChromaColor)
         } else {
             UGraphics.color4f(
                 component.color.red / 255f,
                 component.color.green / 255f,
                 component.color.blue / 255f,
-                0.5f
+                .5f
             )
             renderer.drawString(component.value, x, 0, component.color.rgb)
         }
-    }
-
-    /**
-     * Stub for compatibility with Levelhead.kt
-     */
-    fun performScheduledCleanup() {
-        // No-op: This renderer implementation does not use the cache that required cleanup.
     }
 }
