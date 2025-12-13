@@ -529,7 +529,7 @@ export async function getSystemStats(): Promise<SystemStats> {
     pool.query(`
       SELECT count(*) as count
       FROM hypixel_api_calls
-      WHERE called_at >= (EXTRACT(EPOCH FROM NOW()) * 1000 - 3600000)
+      WHERE called_at >= (EXTRACT(EPOCH FROM NOW()) * 1000 - (60 * 60 * 1000))
     `),
     // 3. Cache specific stats
     pool.query(`

@@ -172,6 +172,8 @@ router.get('/', async (req, res, next) => {
       },
     }).replace(/</g, '\\u003c');
 
+    const quotaPct = Math.max(0, Math.min(100, (sysStats.apiCallsLastHour / (120 * 60)) * 100));
+
     const rows = pageData.rows
       .map((entry) => {
         const lookupIdentifier =
@@ -698,21 +700,21 @@ router.get('/', async (req, res, next) => {
     <div class="stat-grid">
       <div class="card stat-card">
         <p class="stat-label">Database Size</p>
-        <p class="stat-value">${sysStats.dbSize}</p>
-        <p class="stat-sub">Index: ${sysStats.indexSize}</p>
+        <p class="stat-value">${escapeHtml(sysStats.dbSize)}</p>
+        <p class="stat-sub">Index: ${escapeHtml(sysStats.indexSize)}</p>
       </div>
       <div class="card stat-card">
         <p class="stat-label">Hypixel API (1h)</p>
-        <p class="stat-value">${sysStats.apiCallsLastHour.toLocaleString()}</p>
+        <p class="stat-value">${escapeHtml(sysStats.apiCallsLastHour.toLocaleString())}</p>
         <div class="progress">
-          <span style="width: ${(sysStats.apiCallsLastHour / 7200) * 100}%"></span>
+          <span style="width: ${quotaPct}%"></span>
         </div>
         <p class="stat-sub">Quota usage</p>
       </div>
       <div class="card stat-card">
         <p class="stat-label">Cached Profiles</p>
-        <p class="stat-value">${sysStats.cacheCount.toLocaleString()}</p>
-        <p class="stat-sub">Avg payload: ${sysStats.avgPayloadSize}</p>
+        <p class="stat-value">${escapeHtml(sysStats.cacheCount.toLocaleString())}</p>
+        <p class="stat-sub">Avg payload: ${escapeHtml(sysStats.avgPayloadSize)}</p>
       </div>
     </div>
 
