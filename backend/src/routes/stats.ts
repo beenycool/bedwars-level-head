@@ -6,6 +6,7 @@ import {
   getTopPlayersByQueryCount,
   getSystemStats,
 } from '../services/history';
+import { getRedisStats } from '../services/redis';
 import { escapeHtml } from '../util/html';
 
 const router = Router();
@@ -144,7 +145,7 @@ router.get('/', async (req, res, next) => {
     const pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search, totalCountOverride: totalCount });
 
     // Fetch filtered data for charts
-    const [chartData, topPlayers, sysStats] = await Promise.all([
+    const [chartData, topPlayers, sysStats, redisStats] = await Promise.all([
       getPlayerQueriesWithFilters({
         startDate: validStartDate,
         endDate: validEndDate,
@@ -156,6 +157,7 @@ router.get('/', async (req, res, next) => {
         limit: 20,
       }),
       getSystemStats(),
+      getRedisStats(),
     ]);
 
     // Serialise the data so the frontend script can use it
@@ -713,6 +715,42 @@ router.get('/', async (req, res, next) => {
         <p class="stat-sub">Avg payload: ${sysStats.avgPayloadSize}</p>
       </div>
     </div>
+
+    <h2>Redis Rate Limiting</h2>
+    <div class="stat-grid">
+      <div class="card stat-card">
+        <p class="stat-label">Status</p>
+        <p class="stat-value" style="color: ${redisStats.connected ? '#22c55e' : '#ef4444'}">${redisStats.connected ? '● Connected' : '○ Disconnected'}</p>
+        <p class="stat-sub">${redisStats.connected ? 'Rate limiting active' : 'Falling back to Postgres'}</p>
+      </div>
+      <div class="card stat-card">
+        <p class="stat-label">Memory Usage</p>
+        <p class="stat-value">${escapeHtml(redisStats.memoryUsed)}</p>
+        <div class="progress">
+          <span style="width: ${redisStats.memoryPercent.toFixed(1)}%; background: ${redisStats.memoryPercent > 80 ? 'linear-gradient(90deg, #f87171, #ef4444)' : 'linear-gradient(90deg, #22d3ee, #3b82f6)'}"></span>
+        </div>
+        <p class="stat-sub">Max: ${escapeHtml(redisStats.memoryMax)} (${redisStats.memoryPercent.toFixed(1)}%)</p>
+      </div>
+      <div class="card stat-card">
+        <p class="stat-label">Active Rate Limit Keys</p>
+        <p class="stat-value">${redisStats.rateLimitKeys.toLocaleString()}</p>
+        <p class="stat-sub">Currently tracked IPs (Redis)</p>
+      </div>
+      <div class="card stat-card">
+        <p class="stat-label">Local Memory Cache</p>
+        <p class="stat-value">${redisStats.localCacheSize.toLocaleString()}</p>
+        <div class="progress">
+          <span style="width: ${((redisStats.localCacheSize / redisStats.localCacheMaxSize) * 100).toFixed(1)}%"></span>
+        </div>
+        <p class="stat-sub">Max: ${redisStats.localCacheMaxSize.toLocaleString()} entries</p>
+      </div>
+      <div class="card stat-card">
+        <p class="stat-label">Stats Buckets</p>
+        <p class="stat-value">${redisStats.statsKeys.toLocaleString()}</p>
+        <p class="stat-sub">HLL + counter keys</p>
+      </div>
+    </div>
+
 
     <div class="chart-toolbar">
       <label for="chartHeightRange">Chart height</label>

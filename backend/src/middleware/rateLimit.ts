@@ -7,7 +7,7 @@ import {
 } from '../config';
 import { HttpError } from '../util/httpError';
 import { rateLimitBlocksTotal } from '../services/metrics';
-import { pool } from '../services/cache';
+import { incrementRateLimit, trackGlobalStats, isRedisAvailable } from '../services/redis';
 import { calculateDynamicRateLimit } from '../services/dynamicRateLimit';
 
 interface DynamicLimitCacheEntry {
@@ -22,11 +22,6 @@ export interface RateLimitOptions {
   getBucketKey(req: Request): string;
   metricLabel?: string;
   getDynamicMax?: () => Promise<number>;
-}
-
-interface RateLimitRow {
-  count: number;
-  window_start: number | string;
 }
 
 const dynamicLimitCache: DynamicLimitCacheEntry = {
@@ -81,18 +76,22 @@ export function createRateLimitMiddleware({
   getDynamicMax,
 }: RateLimitOptions): RequestHandler {
   return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
-    const now = Date.now();
-
-    let key: string;
+    let ip: string;
     try {
-      key = getBucketKey(req);
+      ip = getBucketKey(req);
     } catch (error) {
       next(error);
       return;
     }
 
+    // If Redis is not available, fail open (allow request)
+    if (!isRedisAvailable()) {
+      console.warn('[rate-limit] Redis unavailable, failing open');
+      next();
+      return;
+    }
+
     try {
-      const windowStartCutoff = now - windowMs;
       let effectiveMax = max;
       if (getDynamicMax) {
         try {
@@ -104,41 +103,36 @@ export function createRateLimitMiddleware({
           console.error('Failed to compute dynamic rate limit; falling back to static value', dynamicError);
         }
       }
-      const result = await pool.query<RateLimitRow>(
-        `
-        INSERT INTO rate_limits (key, count, window_start)
-        VALUES ($1, 1, $2)
-        ON CONFLICT (key) DO UPDATE
-        SET
-          count = CASE
-            WHEN rate_limits.window_start < $3 THEN 1
-            ELSE rate_limits.count + 1
-          END,
-          window_start = CASE
-            WHEN rate_limits.window_start < $3 THEN $2
-            ELSE rate_limits.window_start
-          END
-        RETURNING count, window_start
-        `,
-        [key, now, windowStartCutoff],
-      );
 
-      const row = result.rows[0];
-      const count = row.count;
-      const windowStartRaw = row.window_start;
-      const windowStart =
-        typeof windowStartRaw === 'string' ? Number.parseInt(windowStartRaw, 10) : windowStartRaw;
+      const result = await incrementRateLimit(ip, windowMs);
 
-      console.info('[rate-limit] upsert', {
-        key,
+      // If Redis operation failed, fail open
+      if (result === null) {
+        console.warn('[rate-limit] Redis increment failed, failing open');
+        // Fire-and-forget stats tracking (with catch to prevent unhandled rejection)
+        void trackGlobalStats(ip).catch((err) => {
+          console.error('[rate-limit] trackGlobalStats failed', err);
+        });
+        next();
+        return;
+      }
+
+      const { count, ttl } = result;
+
+      console.info('[rate-limit] check', {
+        ip: ip.substring(0, 8) + '...', // Log partial IP for privacy
         count,
-        windowStart: new Date(windowStart).toISOString(),
-        windowMs,
+        ttl,
         max: effectiveMax,
       });
 
+      // Fire-and-forget stats tracking (with catch to prevent unhandled rejection)
+      void trackGlobalStats(ip).catch((err) => {
+        console.error('[rate-limit] trackGlobalStats failed', err);
+      });
+
       if (count > effectiveMax) {
-        const retryAfterSeconds = Math.ceil((windowStart + windowMs - now) / 1000);
+        const retryAfterSeconds = Math.max(1, Math.ceil(ttl / 1000));
         const retryAfterHeader = retryAfterSeconds.toString();
         const labelValue = metricLabel ?? 'unknown';
         rateLimitBlocksTotal.inc({ type: labelValue });
@@ -155,7 +149,9 @@ export function createRateLimitMiddleware({
 
       next();
     } catch (error) {
-      next(error);
+      // On any error, fail open
+      console.error('[rate-limit] unexpected error, failing open', error);
+      next();
     }
   };
 }
@@ -164,8 +160,7 @@ export const enforceRateLimit = createRateLimitMiddleware({
   windowMs: RATE_LIMIT_WINDOW_MS,
   max: RATE_LIMIT_MAX,
   getBucketKey(req: Request) {
-    const ip = getClientIpAddress(req);
-    return `private:${ip}`;
+    return getClientIpAddress(req);
   },
   metricLabel: 'private',
   getDynamicMax: resolveDynamicLimitValue,

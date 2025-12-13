@@ -253,9 +253,6 @@ object Levelhead {
     fun onClientTick(event: TickEvent.ClientTickEvent) {
         // Only process once per tick (at END phase) to avoid double processing
         if (event.phase != TickEvent.Phase.END) return
-        // Perform scheduled cleanup for AboveHeadRender's lastRenderTime map
-        // This moves the cleanup off the render thread to prevent micro-stutters
-        AboveHeadRender.performScheduledCleanup()
         displayManager.tick()
     }
 
@@ -388,6 +385,12 @@ object Levelhead {
             }
         }
     }
+
+    /**
+     * Retrieves cached BedWars stats for a player by UUID.
+     * Used by mixins (e.g., Tab list) to display stats without modifying the cache.
+     */
+    fun getCachedStats(uuid: UUID): CachedBedwarsStats? = statsCache[uuid]
 
     fun clearCachedStats() {
         statsCache.clear()

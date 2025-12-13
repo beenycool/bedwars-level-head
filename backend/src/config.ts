@@ -171,3 +171,10 @@ function buildUserAgent(version: string, revision: string): string {
 export const BACKEND_VERSION = readPackageVersion();
 export const BUILD_REVISION = resolveRevision();
 export const OUTBOUND_USER_AGENT = buildUserAgent(BACKEND_VERSION, BUILD_REVISION);
+
+// Redis configuration for rate limiting
+export const REDIS_URL = process.env.REDIS_URL ?? '';
+export const REDIS_COMMAND_TIMEOUT = parseIntEnv('REDIS_COMMAND_TIMEOUT', 2000);
+export const REDIS_KEY_SALT = process.env.REDIS_KEY_SALT ?? '';
+export const REDIS_STATS_BUCKET_SIZE_MS = parseIntEnv('REDIS_STATS_BUCKET_SIZE_MS', 60 * 1000);
+export const REDIS_STATS_CACHE_TTL_MS = parseIntEnv('REDIS_STATS_CACHE_TTL_MS', 2000);

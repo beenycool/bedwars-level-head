@@ -104,24 +104,16 @@ object AboveHeadRender {
     private fun render(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int) {
         UGraphics.disableDepth()
         UGraphics.depthMask(false)
-        if (component.chroma) {
-            renderer.drawString(component.value, x, 0, Levelhead.DarkChromaColor)
-        } else {
-            renderer.drawString(component.value, x, 0, component.color.withAlpha(0.2f).rgb)
-        }
+        renderer.drawString(component.value, x, 0, component.color.withAlpha(0.2f).rgb)
         UGraphics.enableDepth()
         UGraphics.depthMask(true)
         UGraphics.directColor3f(1.0f, 1.0f, 1.0f)
-        if (component.chroma) {
-            renderer.drawString(component.value, x, 0, Levelhead.ChromaColor)
-        } else {
-            UGraphics.color4f(
-                component.color.red / 255f,
-                component.color.green / 255f,
-                component.color.blue / 255f,
-                .5f
-            )
-            renderer.drawString(component.value, x, 0, component.color.rgb)
-        }
+        UGraphics.color4f(
+            component.color.red / 255f,
+            component.color.green / 255f,
+            component.color.blue / 255f,
+            .5f
+        )
+        renderer.drawString(component.value, x, 0, component.color.rgb)
     }
 }
