@@ -2,100 +2,118 @@ package club.sk1er.mods.levelhead.render
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.Levelhead.displayManager
+import club.sk1er.mods.levelhead.display.LevelheadTag
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
-import net.minecraft.util.EnumChatFormatting
-import net.minecraftforge.event.entity.player.PlayerEvent
+import gg.essential.api.EssentialAPI
+import gg.essential.elementa.utils.withAlpha
+import gg.essential.universal.UGraphics
+import gg.essential.universal.UMatrixStack
+import gg.essential.universal.UMinecraft
+import gg.essential.universal.UMinecraft.getFontRenderer
+import gg.essential.universal.UMinecraft.getMinecraft
+import gg.essential.universal.wrappers.UPlayer
+import net.minecraft.client.gui.FontRenderer
+import net.minecraft.client.renderer.vertex.DefaultVertexFormats
+import net.minecraft.entity.EntityLivingBase
+import net.minecraft.entity.player.EntityPlayer
+import net.minecraftforge.client.event.RenderLivingEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
-import java.awt.Color
-import kotlin.math.pow
-import kotlin.math.sqrt
+import org.lwjgl.opengl.GL11
 
 object AboveHeadRender {
 
     @SubscribeEvent
-    fun onNameFormat(event: PlayerEvent.NameFormat) {
-        // Basic checks to ensure we should be modifying the name
+    fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
         if (!displayManager.config.enabled) return
-        if (!Levelhead.isOnHypixel()) return
-
-        // This check ensures tags only show when Bedwars mode is active (lobby or game)
-        // Remove this line if you want stats to show everywhere on Hypixel
+        if (!EssentialAPI.getMinecraftUtil().isHypixel()) return
+        if (getMinecraft().gameSettings.hideGUI) return
         if (!BedwarsModeDetector.shouldRenderTags()) return
 
-        val player = event.entityPlayer
+        if (event.entity !is EntityPlayer) return
+        val player = event.entity as EntityPlayer
 
-        // Get the primary display configuration
-        val display = displayManager.aboveHead.firstOrNull() ?: return
-        if (!display.config.enabled) return
+        val localPlayer = UMinecraft.getPlayer()
 
-        // Retrieve the cached stats tag for this player
-        val tag = display.cache[player.uniqueID] ?: return
-
-        // Calculate nearest Minecraft color codes from the Config's RGB values
-        // because NameFormat requires strings, not raw RGB drawing
-        val headerColorCode = getNearestColorCode(display.config.headerColor)
-        val footerColorCode = getNearestColorCode(tag.footer.color)
-
-        // Construct the string: "HeaderValue FooterValue"
-        // Example output: "§bLevel: §654✫"
-        val headerText = "$headerColorCode${tag.header.value}"
-        val footerText = "$footerColorCode${tag.footer.value}"
-
-        val fullTag = "$headerText$footerText"
-
-        // Append the stats to the existing username.
-        // You can change the order to "$fullTag ${event.displayname}" if you want it before the name.
-        event.displayname = "${event.displayname} $fullTag"
-    }
-
-    /**
-     * Helper to convert the mod's Java AWT Color to the nearest Minecraft EnumChatFormatting code.
-     * This ensures the text isn't just plain white when injected into the nametag.
-     */
-    private fun getNearestColorCode(color: Color): EnumChatFormatting {
-        var nearest = EnumChatFormatting.WHITE
-        var minDistance = Double.MAX_VALUE
-
-        for (code in EnumChatFormatting.values()) {
-            if (!code.isColor) continue
-
-            // Map Minecraft color codes to approximations
-            val codeColor = getChatColorValue(code) ?: continue
-
-            val dist = sqrt(
-                (color.red - codeColor.red).toDouble().pow(2.0) +
-                    (color.green - codeColor.green).toDouble().pow(2.0) +
-                    (color.blue - codeColor.blue).toDouble().pow(2.0)
-            )
-
-            if (dist < minDistance) {
-                minDistance = dist
-                nearest = code
+        displayManager.aboveHead.forEachIndexed { index, display ->
+            if (!display.config.enabled || (player.isSelf && !display.config.showSelf)) return@forEachIndexed
+            val tag = display.cache[player.uniqueID]
+            if (display.loadOrRender(player) && tag != null) {
+                // increase offset if there's something in the above name slot for scoreboards
+                var offset = 0.3
+                val hasScoreboardObjective = player.worldScoreboard?.getObjectiveInDisplaySlot(2) != null
+                val isCloseToLocalPlayer = localPlayer?.let { player.getDistanceSqToEntity(it) < 100 } ?: false
+                if (hasScoreboardObjective && isCloseToLocalPlayer) {
+                    offset *= 2
+                }
+                if (player.isSelf) offset = 0.0
+                offset += displayManager.config.offset
+                renderName(tag, player, event.x, event.y + offset + index * 0.3, event.z)
             }
         }
-        return nearest
     }
 
-    private fun getChatColorValue(chatColor: EnumChatFormatting): Color? {
-        // Hardcoded mapping of 1.8.9 color codes to RGB
-        return when (chatColor) {
-            EnumChatFormatting.BLACK -> Color(0, 0, 0)
-            EnumChatFormatting.DARK_BLUE -> Color(0, 0, 170)
-            EnumChatFormatting.DARK_GREEN -> Color(0, 170, 0)
-            EnumChatFormatting.DARK_AQUA -> Color(0, 170, 170)
-            EnumChatFormatting.DARK_RED -> Color(170, 0, 0)
-            EnumChatFormatting.DARK_PURPLE -> Color(170, 0, 170)
-            EnumChatFormatting.GOLD -> Color(255, 170, 0)
-            EnumChatFormatting.GRAY -> Color(170, 170, 170)
-            EnumChatFormatting.DARK_GRAY -> Color(85, 85, 85)
-            EnumChatFormatting.BLUE -> Color(85, 85, 255)
-            EnumChatFormatting.GREEN -> Color(85, 255, 85)
-            EnumChatFormatting.AQUA -> Color(85, 255, 255)
-            EnumChatFormatting.RED -> Color(255, 85, 85)
-            EnumChatFormatting.LIGHT_PURPLE -> Color(255, 85, 255)
-            EnumChatFormatting.YELLOW -> Color(255, 255, 85)
-            EnumChatFormatting.WHITE -> Color(255, 255, 255)
-            else -> null
+    private val EntityPlayer.isSelf: Boolean
+        get() = UPlayer.getUUID() == this.uniqueID
+
+    private fun renderName(tag: LevelheadTag, entityIn: EntityPlayer, x: Double, y: Double, z: Double) {
+        val fontrenderer = getFontRenderer()
+        val textScale = 0.016666668f * 1.6f * displayManager.config.fontSize
+        UGraphics.GL.pushMatrix()
+        val mc = getMinecraft()
+        val xMultiplier = if (
+            mc.gameSettings?.let { it.thirdPersonView == 2 } == true
+        ) {
+            -1
+        } else {
+            1
         }
+        UGraphics.GL.translate(x.toFloat() + 0.0f, y.toFloat() + entityIn.height + 0.5f, z.toFloat())
+        GL11.glNormal3f(0.0f, 1.0f, 0.0f)
+        val renderManager = mc.renderManager
+        UGraphics.GL.rotate(-renderManager.playerViewY, 0.0f, 1.0f, 0.0f)
+        UGraphics.GL.rotate(renderManager.playerViewX * xMultiplier, 1.0f, 0.0f, 0.0f)
+        UGraphics.GL.scale(-textScale, -textScale, textScale)
+        UGraphics.disableLighting()
+        UGraphics.depthMask(false)
+        UGraphics.disableDepth()
+        UGraphics.enableBlend()
+        UGraphics.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO)
+        val stringWidth = fontrenderer.getStringWidth(tag.getString()) shr 1
+        val uGraphics = UGraphics.getFromTessellator().beginWithDefaultShader(UGraphics.DrawMode.QUADS, DefaultVertexFormats.POSITION_COLOR)
+        uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), -1.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
+        uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), 8.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
+        uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 1).toDouble(), 8.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
+        uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 1).toDouble(), -1.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
+        uGraphics.drawDirect()
+        renderString(fontrenderer, tag)
+        UGraphics.enableLighting()
+        UGraphics.disableBlend()
+        UGraphics.color4f(1.0f, 1.0f, 1.0f, 1.0f)
+        UGraphics.GL.popMatrix()
+    }
+
+    private fun renderString(renderer: FontRenderer, tag: LevelheadTag) {
+        var x = -(renderer.getStringWidth(tag.getString()) shr 1)
+        //Render header
+        render(renderer, tag.header, x)
+        x += renderer.getStringWidth(tag.header.value)
+        //render footer
+        render(renderer, tag.footer, x)
+    }
+
+    private fun render(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int) {
+        UGraphics.disableDepth()
+        UGraphics.depthMask(false)
+        renderer.drawString(component.value, x, 0, component.color.withAlpha(0.2f).rgb)
+        UGraphics.enableDepth()
+        UGraphics.depthMask(true)
+        UGraphics.directColor3f(1.0f, 1.0f, 1.0f)
+        UGraphics.color4f(
+            component.color.red / 255f,
+            component.color.green / 255f,
+            component.color.blue / 255f,
+            .5f
+        )
+        renderer.drawString(component.value, x, 0, component.color.rgb)
     }
 }

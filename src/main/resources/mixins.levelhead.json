@@ -4,5 +4,7 @@
   "refmap": "mixins.levelhead.refmap.json",
   "mixins": [],
   "verbose": false,
-  "client": []
+  "client": [
+    "MixinGuiPlayerTabOverlay"
+  ]
 }

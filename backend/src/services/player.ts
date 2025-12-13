@@ -1,3 +1,4 @@
+import { LRUCache } from 'lru-cache';
 import { CACHE_TTL_MS } from '../config';
 import { HttpError } from '../util/httpError';
 import { CacheEntry, CacheMetadata, getCacheEntry, setCachedPayload } from './cache';
@@ -13,8 +14,10 @@ function buildCacheKey(prefix: string, value: string): string {
   return `${prefix}:${value}`;
 }
 
-const memoizedResults = new Map<string, { expiresAt: number; value: ResolvedPlayer }>();
-const MEMOIZED_TTL_MS = 2_000;
+const memoizedResults = new LRUCache<string, ResolvedPlayer>({
+  max: 1000,
+  ttl: 5 * 60 * 1000, // 5 minutes
+});
 
 const inFlightRequests = new Map<string, Promise<ResolvedPlayer>>();
 
@@ -77,26 +80,12 @@ function memoKey(prefix: string, value: string): string {
 
 function getMemoized(prefix: string, value: string): ResolvedPlayer | null {
   const key = memoKey(prefix, value);
-  const entry = memoizedResults.get(key);
-  if (entry && entry.expiresAt > Date.now()) {
-    return entry.value;
-  }
-
-  memoizedResults.delete(key);
-  return null;
+  return memoizedResults.get(key) ?? null;
 }
 
 function setMemoized(prefix: string, value: string, resolved: ResolvedPlayer): void {
   const key = memoKey(prefix, value);
-  const expiresAt = Date.now() + MEMOIZED_TTL_MS;
-  memoizedResults.set(key, { expiresAt, value: resolved });
-
-  setTimeout(() => {
-    const entry = memoizedResults.get(key);
-    if (entry && entry.expiresAt <= Date.now()) {
-      memoizedResults.delete(key);
-    }
-  }, MEMOIZED_TTL_MS);
+  memoizedResults.set(key, resolved);
 }
 
 function summarizeCacheEntry(entry: CacheEntry<ProxyPlayerPayload>): CacheMetadata {

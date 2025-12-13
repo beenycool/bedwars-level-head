@@ -112,6 +112,7 @@ export const TRUST_PROXY_ENABLED = TRUST_PROXY !== false;
 export const HYPIXEL_API_BASE_URL = process.env.HYPIXEL_API_BASE_URL ?? 'https://api.hypixel.net';
 
 export const CLOUD_FLARE_TUNNEL = process.env.CLOUDFLARE_TUNNEL ?? '';
+export const COMMUNITY_SUBMIT_SECRET = process.env.COMMUNITY_SUBMIT_SECRET?.trim() ?? '';
 
 const HOURS = 60 * 60 * 1000;
 const defaultCacheTtl = 72 * HOURS;
@@ -121,12 +122,13 @@ const maximumCacheTtl = 72 * HOURS;
 
 export const CACHE_TTL_MS = Math.min(Math.max(rawCacheTtl, minimumCacheTtl), maximumCacheTtl);
 
-export const CACHE_DB_POOL_MIN = parseIntEnv('CACHE_DB_POOL_MIN', 0);
-export const CACHE_DB_POOL_MAX = parseIntEnv('CACHE_DB_POOL_MAX', 10);
+export const CACHE_DB_POOL_MIN = parseIntEnv('CACHE_DB_POOL_MIN', 2);
+export const CACHE_DB_POOL_MAX = parseIntEnv('CACHE_DB_POOL_MAX', 20);
 
 export const HYPIXEL_TIMEOUT_MS = parseIntEnv('HYPIXEL_TIMEOUT_MS', 5 * 1000);
 export const HYPIXEL_RETRY_DELAY_MIN_MS = parseIntEnv('HYPIXEL_RETRY_DELAY_MIN_MS', 50);
 export const HYPIXEL_RETRY_DELAY_MAX_MS = parseIntEnv('HYPIXEL_RETRY_DELAY_MAX_MS', 150);
+export const HYPIXEL_API_CALL_WINDOW_MS = parseIntEnv('HYPIXEL_API_CALL_WINDOW_MS', 5 * 60 * 1000);
 
 export const CACHE_DB_URL = requiredEnv('CACHE_DB_URL');
 
@@ -169,3 +171,10 @@ function buildUserAgent(version: string, revision: string): string {
 export const BACKEND_VERSION = readPackageVersion();
 export const BUILD_REVISION = resolveRevision();
 export const OUTBOUND_USER_AGENT = buildUserAgent(BACKEND_VERSION, BUILD_REVISION);
+
+// Redis configuration for rate limiting
+export const REDIS_URL = process.env.REDIS_URL ?? '';
+export const REDIS_COMMAND_TIMEOUT = parseIntEnv('REDIS_COMMAND_TIMEOUT', 2000);
+export const REDIS_KEY_SALT = process.env.REDIS_KEY_SALT ?? '';
+export const REDIS_STATS_BUCKET_SIZE_MS = parseIntEnv('REDIS_STATS_BUCKET_SIZE_MS', 60 * 1000);
+export const REDIS_STATS_CACHE_TTL_MS = parseIntEnv('REDIS_STATS_CACHE_TTL_MS', 2000);

@@ -1,6 +1,5 @@
 import { Pool } from 'pg';
-import { CACHE_DB_URL, CACHE_DB_POOL_MAX, CACHE_DB_POOL_MIN } from '../config';
-import { HYPIXEL_API_CALL_WINDOW_MS } from './hypixelTracker';
+import { CACHE_DB_URL, CACHE_DB_POOL_MAX, CACHE_DB_POOL_MIN, HYPIXEL_API_CALL_WINDOW_MS } from '../config';
 import { recordCacheHit, recordCacheMiss } from './metrics';
 
 interface DatabaseError extends Error {
@@ -9,7 +8,7 @@ interface DatabaseError extends Error {
 }
 
 interface CacheRow {
-  payload: string;
+  payload: unknown; // JSONB - pg driver parses it automatically
   expires_at: number | string;
   etag: string | null;
   last_modified: number | string | null;
@@ -72,7 +71,7 @@ const initialization = pool
   .query(
     `CREATE TABLE IF NOT EXISTS player_cache (
       cache_key TEXT PRIMARY KEY,
-      payload TEXT NOT NULL,
+      payload JSONB NOT NULL,
       expires_at BIGINT NOT NULL,
       etag TEXT,
       last_modified BIGINT
@@ -117,6 +116,12 @@ const initialization = pool
     );
     await pool.query(
       'CREATE INDEX IF NOT EXISTS idx_hypixel_calls_time ON hypixel_api_calls (called_at)',
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_player_cache_expires ON player_cache (expires_at)',
+    );
+    await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits (window_start)',
     );
     console.info('[cache] hypixel_api_calls table is ready');
   })
@@ -174,8 +179,14 @@ function mapRow<T>(row: CacheRow): CacheEntry<T> {
         ? Number.parseInt(lastModifiedRaw, 10)
         : lastModifiedRaw;
 
+  // payload may be JSONB (already parsed) or legacy TEXT containing JSON; handle both
+  let parsedPayload: unknown = row.payload;
+  if (typeof row.payload === 'string') {
+    parsedPayload = JSON.parse(row.payload);
+  }
+
   return {
-    value: JSON.parse(row.payload) as T,
+    value: parsedPayload as T,
     expiresAt,
     etag: row.etag,
     lastModified,

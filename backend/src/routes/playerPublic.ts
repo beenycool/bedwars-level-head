@@ -3,50 +3,15 @@ import { enforcePublicRateLimit } from '../middleware/rateLimitPublic';
 import { resolvePlayer, ResolvedPlayer } from '../services/player';
 import { recordPlayerQuery } from '../services/history';
 import { computeBedwarsStar } from '../util/bedwars';
+import { isValidBedwarsObject } from '../util/typeChecks';
 
-function parseIfModifiedSince(value: string | undefined): number | undefined {
-  if (!value) {
-    return undefined;
-  }
-
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? undefined : parsed;
-}
+import { extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely } from '../util/requestUtils';
 
 const router = Router();
 
-async function recordQuerySafely(payload: Parameters<typeof recordPlayerQuery>[0]): Promise<void> {
-  try {
-    await recordPlayerQuery(payload);
-  } catch (error) {
-    console.error('Failed to record public player query', {
-      error,
-      identifier: payload.identifier,
-      lookupType: payload.lookupType,
-      responseStatus: payload.responseStatus,
-    });
-  }
-}
 
-function extractBedwarsExperience(payload: ResolvedPlayer['payload']): number | null {
-  const bedwars = payload.data?.bedwars ?? payload.bedwars;
-  if (!bedwars || typeof bedwars !== 'object') {
-    return null;
-  }
 
-  const record = bedwars as Record<string, unknown>;
-  const rawValue = record.bedwars_experience ?? record.Experience ?? record.experience;
-  if (rawValue === undefined || rawValue === null) {
-    return null;
-  }
 
-  const numeric = Number(rawValue);
-  if (!Number.isFinite(numeric) || numeric < 0) {
-    return null;
-  }
-
-  return numeric;
-}
 
 router.get('/:identifier', enforcePublicRateLimit, async (req, res, next) => {
   const { identifier } = req.params;

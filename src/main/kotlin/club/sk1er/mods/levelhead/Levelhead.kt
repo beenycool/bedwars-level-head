@@ -2,6 +2,7 @@ package club.sk1er.mods.levelhead
 
 import cc.polyfrost.oneconfig.utils.commands.CommandManager
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
+import club.sk1er.mods.levelhead.bedwars.FetchResult
 import club.sk1er.mods.levelhead.commands.LevelheadCommand
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
@@ -19,6 +20,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
@@ -38,6 +40,7 @@ import net.minecraftforge.fml.common.Mod
 import net.minecraftforge.fml.common.event.FMLPostInitializationEvent
 import net.minecraftforge.fml.common.event.FMLPreInitializationEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
+import net.minecraftforge.fml.common.gameevent.TickEvent
 import net.minecraftforge.fml.common.network.FMLNetworkEvent
 import okhttp3.Dns
 import okhttp3.OkHttpClient
@@ -127,7 +130,6 @@ object Levelhead {
     private const val MODRINTH_API_BASE = "https://api.modrinth.com/v2"
     private const val TARGET_MC_VERSION = "1.8.9"
     private const val TARGET_LOADER = "forge"
-    private const val MAX_STATS_CACHE_ENTRIES = 500
 
     private val minecraft: Minecraft
         get() = Minecraft.getMinecraft()
@@ -247,6 +249,13 @@ object Levelhead {
         }
     }
 
+    @SubscribeEvent
+    fun onClientTick(event: TickEvent.ClientTickEvent) {
+        // Only process once per tick (at END phase) to avoid double processing
+        if (event.phase != TickEvent.Phase.END) return
+        displayManager.tick()
+    }
+
     fun fetchBatch(requests: List<LevelheadRequest>): Job {
         return worldScope.launch {
             if (!Levelhead.isOnHypixel()) return@launch
@@ -282,52 +291,88 @@ object Levelhead {
             val remaining = pending.toMutableList()
 
             if (LevelheadConfig.proxyEnabled) {
-                val proxyEligible = remaining
-                    .filter { inFlightStatsRequests[it.uuid] == null }
-                    .onEach { entry ->
-                        if (entry.registerForRefresh && entry.displays.isNotEmpty()) {
-                            registerDisplaysForRefresh(entry.uuid, entry.displays)
-                        }
+                // 1. Identify requests that are not currently being fetched by another thread
+                val proxyCandidates = remaining.filter { inFlightStatsRequests.containsKey(it.uuid).not() }
+
+                // 2. Immediately "claim" these UUIDs by putting a placeholder into the map.
+                // This prevents the race condition where a second thread sees them as free and sends a duplicate request.
+                val batchLocks = proxyCandidates.associate { entry ->
+                    val deferred = CompletableDeferred<CachedBedwarsStats?>()
+                    // Use putIfAbsent to be thread-safe. If it returns null, we successfully claimed the lock.
+                    val existing = inFlightStatsRequests.putIfAbsent(entry.uuid, deferred)
+                    
+                    if (entry.registerForRefresh && entry.displays.isNotEmpty()) {
+                        registerDisplaysForRefresh(entry.uuid, entry.displays)
                     }
 
-                proxyEligible
+                    // If existing is null, we own the lock. If not, someone else beat us to it (ignore this one).
+                    entry.uuid to (if (existing == null) deferred else null)
+                }.filterValues { it != null }.mapValues { it.value!! }
+
+                // Only proceed with UUIDs we successfully locked
+                val lockedEligible = proxyCandidates.filter { batchLocks.containsKey(it.uuid) }
+
+                lockedEligible
                     .map { it.uuid }
                     .chunked(20)
                     .forEach { chunk ->
                         lastFetchAttemptAt = System.currentTimeMillis()
+                        
+                        // Perform the network request
                         val results = BedwarsFetcher.fetchBatchFromProxy(chunk)
+                        
                         chunk.forEach { uuid ->
                             val result = results[uuid]
                             val entry = remaining.find { it.uuid == uuid }
-                            if (entry == null || result == null) return@forEach
+                            val lock = batchLocks[uuid]
+
+                            if (entry == null || result == null) {
+                                // Something went wrong, release lock with null so waiters stop waiting
+                                lock?.complete(null)
+                                inFlightStatsRequests.remove(uuid)
+                                return@forEach
+                            }
+
                             when (result) {
-                                is BedwarsFetcher.FetchResult.Success -> {
+                                is FetchResult.Success -> {
                                     lastFetchSuccessAt = System.currentTimeMillis()
-                                    val cachedEntry = buildCachedStats(result.payload)
+                                    val cachedEntry = buildCachedStats(result.payload, result.etag)
                                     handleStatsUpdate(uuid, cachedEntry)
                                     applyStatsToRequests(uuid, entry.requests, cachedEntry)
                                     remaining.remove(entry)
-                                }
 
+                                    // SUCCESS: Complete the lock with data and remove from inFlight map
+                                    lock?.complete(cachedEntry)
+                                    inFlightStatsRequests.remove(uuid)
+                                }
                                 else -> {
                                     if (entry.registerForRefresh && entry.displays.isNotEmpty()) {
                                         registerDisplaysForRefresh(entry.uuid, entry.displays)
                                     }
 
+                                    // Check if we should remove from 'remaining' (to skip fallback)
                                     val proxyErrorReason = when (result) {
-                                        is BedwarsFetcher.FetchResult.TemporaryError -> result.reason
-                                        is BedwarsFetcher.FetchResult.PermanentError -> result.reason
+                                        is FetchResult.TemporaryError -> result.reason
+                                        is FetchResult.PermanentError -> result.reason
                                         else -> null
                                     }
 
-                                    if (
-                                        LevelheadConfig.proxyEnabled &&
-                                        entry.cached != null &&
-                                        proxyErrorReason != null &&
-                                        (proxyErrorReason.startsWith("PROXY_") || proxyErrorReason.startsWith("HTTP_"))
-                                    ) {
+                                    val shouldSkipFallback = LevelheadConfig.proxyEnabled &&
+                                            entry.cached != null &&
+                                            proxyErrorReason != null &&
+                                            (proxyErrorReason.startsWith("PROXY_") || proxyErrorReason.startsWith("HTTP_"))
+
+                                    if (shouldSkipFallback) {
                                         remaining.remove(entry)
+                                        // Completed, but failed.
+                                        lock?.complete(null)
+                                    } else {
+                                        // Fallback required. 
+                                        // We complete with null so any *other* threads waiting on this batch stop waiting.
+                                        // We remove from inFlightStatsRequests so the fallback logic (ensureStatsFetch) can create a NEW individual request.
+                                        lock?.complete(null)
                                     }
+                                    inFlightStatsRequests.remove(uuid)
                                 }
                             }
                         }
@@ -340,6 +385,12 @@ object Levelhead {
             }
         }
     }
+
+    /**
+     * Retrieves cached BedWars stats for a player by UUID.
+     * Used by mixins (e.g., Tab list) to display stats without modifying the cache.
+     */
+    fun getCachedStats(uuid: UUID): CachedBedwarsStats? = statsCache[uuid]
 
     fun clearCachedStats() {
         statsCache.clear()
@@ -408,24 +459,25 @@ object Levelhead {
                 try {
                     lastFetchAttemptAt = System.currentTimeMillis()
                     rateLimiter.consume()
-                    when (val result = BedwarsFetcher.fetchPlayer(uuid, cached?.fetchedAt)) {
-                        is BedwarsFetcher.FetchResult.Success -> {
+                    when (val result = BedwarsFetcher.fetchPlayer(uuid, cached?.fetchedAt, cached?.etag)) {
+                        is FetchResult.Success -> {
                             lastFetchSuccessAt = System.currentTimeMillis()
-                            val entry = buildCachedStats(result.payload)
+                            val entry = buildCachedStats(result.payload, result.etag)
                             handleStatsUpdate(uuid, entry)
                             entry
                         }
-                        BedwarsFetcher.FetchResult.NotModified -> {
+                        FetchResult.NotModified -> {
                             lastFetchSuccessAt = System.currentTimeMillis()
+                            // Reuse existing cached stats with updated fetchedAt, preserving etag
                             val refreshed = cached?.copy(fetchedAt = System.currentTimeMillis())
                             refreshed?.let { handleStatsUpdate(uuid, it) }
                             refreshed
                         }
-                        is BedwarsFetcher.FetchResult.TemporaryError -> {
+                        is FetchResult.TemporaryError -> {
                             handleStatsUpdate(uuid, cached)
                             null
                         }
-                        is BedwarsFetcher.FetchResult.PermanentError -> {
+                        is FetchResult.PermanentError -> {
                             handleStatsUpdate(uuid, cached)
                             null
                         }
@@ -450,13 +502,13 @@ object Levelhead {
         return deferred
     }
 
-    private fun buildCachedStats(payload: JsonObject): CachedBedwarsStats {
+    private fun buildCachedStats(payload: JsonObject, etag: String? = null): CachedBedwarsStats {
         val experience = BedwarsStar.extractExperience(payload)
         val star = experience?.let { BedwarsStar.calculateStar(it) }
         val fkdr = BedwarsFetcher.parseBedwarsFkdr(payload)
         val winstreak = BedwarsFetcher.parseBedwarsWinstreak(payload)
         val fetchedAt = System.currentTimeMillis()
-        return CachedBedwarsStats(star, experience, fkdr, winstreak, fetchedAt)
+        return CachedBedwarsStats(star, experience, fkdr, winstreak, fetchedAt, etag)
     }
 
     private fun resetWorldScope() {
@@ -526,9 +578,11 @@ object Levelhead {
             .keys
         expiredKeys.forEach { statsCache.remove(it) }
 
-        if (statsCache.size <= MAX_STATS_CACHE_ENTRIES) return
+        // Use configurable purge size from MasterConfig
+        val maxCacheSize = displayManager.config.purgeSize
+        if (statsCache.size <= maxCacheSize) return
 
-        val overflow = statsCache.size - MAX_STATS_CACHE_ENTRIES
+        val overflow = statsCache.size - maxCacheSize
         if (overflow <= 0) return
 
         statsCache.entries
@@ -566,7 +620,18 @@ object Levelhead {
         }
         val baseStyle = starValue?.let { BedwarsStar.styleForStar(it) }
             ?: BedwarsStar.PrestigeStyle(display.config.footerColor, false)
-        val style = baseStyle.copy(chroma = false)
+        
+        // Check if data is stale (> 1 hour old)
+        val age = System.currentTimeMillis() - (starData?.fetchedAt ?: 0L)
+        val isStale = age > 3600 * 1000 // 1 hour
+        
+        // If stale, force a gray color or reduce opacity logic in the footer color
+        val finalColor = if (isStale && starData != null) {
+            Color.GRAY // Or blend baseStyle.color with gray
+        } else {
+            baseStyle.color
+        }
+        
         val tag = LevelheadTag.build(uuid) {
             header {
                 value = "${display.config.headerString}: "
@@ -575,8 +640,8 @@ object Levelhead {
             }
             footer {
                 value = footerValue
-                color = style.color
-                chroma = style.chroma
+                color = finalColor
+                chroma = if (isStale) false else baseStyle.chroma // Disable chroma if stale
             }
         }
         display.cache[uuid] = tag
@@ -605,7 +670,8 @@ object Levelhead {
         val experience: Long?,
         val fkdr: Double?,
         val winstreak: Int?,
-        val fetchedAt: Long
+        val fetchedAt: Long,
+        val etag: String? = null
     ) {
         fun isExpired(ttl: Duration, now: Long = System.currentTimeMillis()): Boolean {
             return now - fetchedAt >= ttl.toMillis()

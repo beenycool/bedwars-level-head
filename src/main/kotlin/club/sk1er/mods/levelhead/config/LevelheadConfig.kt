@@ -12,7 +12,6 @@ import cc.polyfrost.oneconfig.config.data.Mod
 import cc.polyfrost.oneconfig.config.data.ModType
 import club.sk1er.mods.levelhead.Levelhead.jsonParser
 import com.google.gson.JsonObject
-import com.google.gson.annotations.SerializedName
 import net.minecraft.client.Minecraft
 import org.apache.commons.io.FileUtils
 import java.io.File
@@ -21,19 +20,53 @@ import java.time.Duration
 import java.util.Locale
 import java.util.UUID
 
-object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedwars-levelhead.json") {
-    private const val DEFAULT_PROXY_URL = "https://beeny.hackclub.app"
+private const val DEFAULT_PROXY_URL = "https://beeny.hackclub.app"
+private const val _MIN_STAR_CACHE_TTL_MINUTES = 5
+private const val _MAX_STAR_CACHE_TTL_MINUTES = 180
+private const val _DEFAULT_STAR_CACHE_TTL_MINUTES = 45
 
-    const val MIN_STAR_CACHE_TTL_MINUTES = 5
-    const val MAX_STAR_CACHE_TTL_MINUTES = 180
-    const val DEFAULT_STAR_CACHE_TTL_MINUTES = 45
-    @Header(text = "General")
-    @Switch(name = "Enabled", description = "Toggle the BedWars Levelhead overlay")
-    @SerializedName("bedwarsEnabled")
-    var enabled: Boolean = true
+object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedwars-levelhead.json") {
+    // Expose constants as @JvmStatic functions - functions are not serialized by Gson
+    @JvmStatic
+    fun getMinStarCacheTtlMinutes() = _MIN_STAR_CACHE_TTL_MINUTES
+    
+    @JvmStatic
+    fun getMaxStarCacheTtlMinutes() = _MAX_STAR_CACHE_TTL_MINUTES
+    
+    @JvmStatic
+    fun getDefaultStarCacheTtlMinutes() = _DEFAULT_STAR_CACHE_TTL_MINUTES
+    
+    // Provide property-like access for Kotlin (computed properties compile to methods, not fields)
+    val MIN_STAR_CACHE_TTL_MINUTES: Int get() = _MIN_STAR_CACHE_TTL_MINUTES
+    val MAX_STAR_CACHE_TTL_MINUTES: Int get() = _MAX_STAR_CACHE_TTL_MINUTES
+    val DEFAULT_STAR_CACHE_TTL_MINUTES: Int get() = _DEFAULT_STAR_CACHE_TTL_MINUTES
+
+
 
     @Text(name = "Hypixel API Key", placeholder = "Get a key from developer.hypixel.net", secure = true)
     var apiKey: String = ""
+
+    @Switch(
+        name = "Community Database",
+        description = "Fetch stats from the community cache to save API requests. When you have an API key, your lookups will also contribute to the shared cache."
+    )
+    var communityDatabase: Boolean = true
+        set(value) {
+            if (value && apiKey.isBlank()) {
+                Levelhead.sendChat("§eYou need a Hypixel API key to contribute to the community database. §7You can still fetch cached data.")
+            }
+            field = value
+            save()
+            BedwarsFetcher.resetWarnings()
+        }
+
+    @Switch(
+        name = "Show Tab Stats",
+        description = "Display FKDR next to player names in the Tab list."
+    )
+    var showTabStats: Boolean = true
+
+
 
     @Header(text = "Developer Options", category = "Developer")
     @Switch(
@@ -59,15 +92,32 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var proxyAuthToken: String = ""
 
+    @Text(
+        name = "Submission Secret",
+        secure = true,
+        description = "Developer option: HMAC secret for signing community submissions. Must match the backend.",
+        category = "Developer"
+    )
+    var communitySubmitSecret: String = ""
+
+    @Text(
+        name = "Custom Database URL",
+        placeholder = "Leave blank to use default",
+        description = "Developer option: Override community database URL. Only works when using API key or self-hosting.",
+        category = "Developer"
+    )
+    var customDatabaseUrl: String = ""
+
+    @Header(text = "Star Cache Settings", category = "Developer")
     @Slider(
         name = "Star Cache TTL (minutes)",
-        min = 5f,
-        max = 180f,
-        step = 1,
+        description = "How long to cache player stars before refreshing. Higher values reduce API calls but may show outdated data.",
         category = "Developer",
-        description = "Developer option: adjust cache duration. Do not change this unless you know what you are doing."
+        min = _MIN_STAR_CACHE_TTL_MINUTES,
+        max = _MAX_STAR_CACHE_TTL_MINUTES,
+        step = 1
     )
-    var starCacheTtlMinutes: Int = DEFAULT_STAR_CACHE_TTL_MINUTES
+    var starCacheTtlMinutes: Int = _DEFAULT_STAR_CACHE_TTL_MINUTES
 
     @Button(
         name = "Reset Settings",
@@ -83,12 +133,50 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var installId: String = ""
 
     val starCacheTtl: Duration
-        get() = Duration.ofMinutes(starCacheTtlMinutes.coerceIn(MIN_STAR_CACHE_TTL_MINUTES, MAX_STAR_CACHE_TTL_MINUTES).toLong())
+        get() = Duration.ofMinutes(starCacheTtlMinutes.coerceIn(_MIN_STAR_CACHE_TTL_MINUTES, _MAX_STAR_CACHE_TTL_MINUTES).toLong())
 
     init {
         initialize()
         migrateLegacyConfig()
         ensureInstallId()
+        setupConditionalVisibility()
+    }
+
+    private fun setupConditionalVisibility() {
+        // Hide community database toggle when using shared backend - it's always enabled
+        hideIf("communityDatabase") { isUsingSharedBackend() }
+    }
+
+    /**
+     * Returns true if the user is using the default shared backend (beeny.hackclub.app).
+     * When using the shared backend, community database is compulsory.
+     */
+    fun isUsingSharedBackend(): Boolean {
+        return proxyBaseUrl.trim().isEmpty() || proxyBaseUrl.trim() == DEFAULT_PROXY_URL
+    }
+
+    /**
+     * Returns true if backend warnings should be suppressed.
+     * Suppress warnings when user has an API key but hasn't set a custom backend/database.
+     */
+    fun shouldSuppressBackendWarnings(): Boolean {
+        return apiKey.isNotBlank() && isUsingSharedBackend() && customDatabaseUrl.isBlank()
+    }
+
+    /**
+     * Resolves the database URL to use for community database requests.
+     * Uses custom URL if set and user has API key or is self-hosting, otherwise falls back to proxy base URL.
+     */
+    fun resolveDbUrl(): String {
+        val customUrl = customDatabaseUrl.trim()
+        if (customUrl.isNotBlank()) {
+            val hasApiKey = apiKey.isNotBlank()
+            val isSelfHosting = !isUsingSharedBackend()
+            if (hasApiKey || isSelfHosting) {
+                return customUrl
+            }
+        }
+        return proxyBaseUrl.trim().ifBlank { DEFAULT_PROXY_URL }
     }
 
     private fun migrateLegacyConfig() {
@@ -168,11 +256,14 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     }
 
     private fun resetToDefaults() {
-        enabled = true
         apiKey = ""
+        communityDatabase = true
+        showTabStats = true
         proxyEnabled = true
         proxyBaseUrl = DEFAULT_PROXY_URL
         proxyAuthToken = ""
+        communitySubmitSecret = ""
+        customDatabaseUrl = ""
         starCacheTtlMinutes = DEFAULT_STAR_CACHE_TTL_MINUTES
         save()
         BedwarsFetcher.resetWarnings()

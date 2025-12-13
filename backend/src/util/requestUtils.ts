@@ -1,0 +1,60 @@
+
+import { recordPlayerQuery } from '../services/history';
+import { ResolvedPlayer } from '../services/player';
+import { isValidBedwarsObject } from './typeChecks';
+
+/**
+ * Parses the If-Modified-Since header string into a timestamp number.
+ * Returns undefined if the header is missing or invalid.
+ */
+export function parseIfModifiedSince(value: string | undefined): number | undefined {
+    if (!value) {
+        return undefined;
+    }
+
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? undefined : parsed;
+}
+
+/**
+ * Records a player query to the history service, handling any errors gracefully.
+ */
+export async function recordQuerySafely(payload: Parameters<typeof recordPlayerQuery>[0]): Promise<void> {
+    try {
+        await recordPlayerQuery(payload);
+    } catch (error) {
+        console.error('Failed to record player query', {
+            error,
+            identifier: payload.identifier,
+            lookupType: payload.lookupType,
+            responseStatus: payload.responseStatus,
+        });
+    }
+}
+
+/**
+ * Extracts Bedwars experience from a resolved player payload.
+ * Returns null if the experience cannot be found or is invalid.
+ */
+export function extractBedwarsExperience(payload: ResolvedPlayer['payload']): number | null {
+    const bedwars =
+        payload.data?.bedwars ??
+        payload.bedwars ??
+        (isValidBedwarsObject(payload.data) ? payload.data : undefined);
+    if (!isValidBedwarsObject(bedwars)) {
+        return null;
+    }
+
+    const record = bedwars as Record<string, unknown>;
+    const rawValue = record.bedwars_experience ?? record.Experience ?? record.experience;
+    if (rawValue === undefined || rawValue === null) {
+        return null;
+    }
+
+    const numeric = Number(rawValue);
+    if (!Number.isFinite(numeric) || numeric < 0) {
+        return null;
+    }
+
+    return numeric;
+}

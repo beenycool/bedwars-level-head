@@ -6,8 +6,10 @@ import {
   HYPIXEL_API_QUOTA,
   RATE_LIMIT_MAX,
   RATE_LIMIT_WINDOW_MS,
+  REDIS_URL,
 } from '../config';
 import { getActivePrivateUserCount, getPrivateRequestCount } from './cache';
+import { getGlobalStats, isRedisAvailable } from './redis';
 import {
   activeUsersGauge,
   dynamicRateLimitGauge,
@@ -26,10 +28,22 @@ export async function calculateDynamicRateLimit(): Promise<number> {
     return RATE_LIMIT_MAX;
   }
 
-  const now = Date.now();
-  const windowCutoff = now - RATE_LIMIT_WINDOW_MS;
-  const activeUsers = await getActivePrivateUserCount(windowCutoff);
-  const requestCount = await getPrivateRequestCount(windowCutoff);
+  let activeUsers: number;
+  let requestCount: number;
+
+  // Use Redis stats if available, otherwise fall back to Postgres
+  if (REDIS_URL && isRedisAvailable()) {
+    const stats = await getGlobalStats(RATE_LIMIT_WINDOW_MS);
+    activeUsers = stats.activeUsers;
+    requestCount = stats.requestCount;
+  } else {
+    // Fallback to Postgres-based stats
+    const now = Date.now();
+    const windowCutoff = now - RATE_LIMIT_WINDOW_MS;
+    activeUsers = await getActivePrivateUserCount(windowCutoff);
+    requestCount = await getPrivateRequestCount(windowCutoff);
+  }
+
   const hypixelCalls = await getHypixelCallCount();
   const remainingQuota = Math.max(0, HYPIXEL_API_QUOTA - hypixelCalls);
   const cacheHitRatio = getCacheHitRatio();
