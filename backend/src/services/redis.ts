@@ -25,7 +25,7 @@ function getRedisClient(): Redis | null {
             enableOfflineQueue: false,
             maxRetriesPerRequest: 1,
             commandTimeout: REDIS_COMMAND_TIMEOUT,
-            lazyConnect: true,
+            lazyConnect: false,
             retryStrategy: (times) => {
                 // Exponential backoff capped at 3s, only for reconnection (not per-request)
                 return Math.min(times * 100, 3000);
