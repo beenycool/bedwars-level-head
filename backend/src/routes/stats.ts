@@ -112,6 +112,67 @@ router.get('/csv', async (req, res) => {
   }
 });
 
+router.get('/data', async (req, res, next) => {
+  try {
+    const fromParam = typeof req.query.from === 'string' ? req.query.from : undefined;
+    const toParam = typeof req.query.to === 'string' ? req.query.to : undefined;
+    const limitParam = typeof req.query.limit === 'string' ? req.query.limit : undefined;
+
+    const startDate = fromParam ? new Date(fromParam) : undefined;
+    const endDate = toParam ? new Date(toParam) : undefined;
+    const limit = limitParam ? Number.parseInt(limitParam, 10) : undefined;
+
+    const validStartDate = startDate && !Number.isNaN(startDate.getTime()) ? startDate : undefined;
+    const validEndDate = endDate && !Number.isNaN(endDate.getTime()) ? endDate : undefined;
+    const MAX_ALLOWED_LIMIT = 10000;
+    const DEFAULT_CHART_LIMIT = 200;
+    const validLimit = limit !== undefined && Number.isFinite(limit)
+      ? Math.min(Math.max(limit, 1), MAX_ALLOWED_LIMIT)
+      : undefined;
+
+    const hasTimeFilter = Boolean(validStartDate || validEndDate);
+    const effectiveLimit = validLimit ?? (hasTimeFilter ? MAX_ALLOWED_LIMIT : DEFAULT_CHART_LIMIT);
+
+    // Additional data for table update (dashboard is usually page 1)
+    const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const page = 1;
+
+    // Fetch all data in parallel
+    const [chartData, topPlayers, sysStats, redisStats, pageData, totalCount] = await Promise.all([
+      getPlayerQueriesWithFilters({
+        startDate: validStartDate,
+        endDate: validEndDate,
+        limit: effectiveLimit,
+      }),
+      getTopPlayersByQueryCount({
+        startDate: validStartDate,
+        endDate: validEndDate,
+        limit: 20,
+      }),
+      getSystemStats(),
+      getRedisStats(),
+      getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search }),
+      getPlayerQueryCount({ search }),
+    ]);
+
+    res.json({
+      chartData,
+      topPlayers,
+      sysStats,
+      redisStats,
+      pageData: { ...pageData, totalCount }, // Include total count for pagination context if needed
+      filters: {
+        from: validStartDate?.toISOString(),
+        to: validEndDate?.toISOString(),
+        limit: validLimit,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.get('/', async (req, res, next) => {
   try {
     const requestedPage = Number.parseInt((req.query.page as string) ?? '1', 10);
@@ -496,6 +557,65 @@ router.get('/', async (req, res, next) => {
         padding-top: 1rem;
         border-top: 1px solid rgba(148, 163, 184, 0.2);
       }
+      .refresh-controls {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(148, 163, 184, 0.2);
+        flex-wrap: wrap;
+      }
+      .refresh-controls label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #cbd5f5;
+        font-size: 0.9rem;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .refresh-controls select {
+        padding: 0.4rem 0.6rem;
+        border-radius: 8px;
+        border: 1px solid rgba(148, 163, 184, 0.3);
+        background: rgba(15, 23, 42, 0.8);
+        color: #e2e8f0;
+        font-size: 0.9rem;
+      }
+      .refresh-controls .muted {
+        margin-left: auto;
+        font-variant-numeric: tabular-nums;
+        color: #94a3b8;
+        font-size: 0.85rem;
+      }
+      .refresh-btn {
+        padding: 0.4rem 0.8rem;
+        border-radius: 8px;
+        border: 1px solid rgba(148, 163, 184, 0.35);
+        background: rgba(16, 185, 129, 0.15);
+        color: #6ee7b7;
+        font-weight: 600;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.9rem;
+        transition: background 0.2s;
+      }
+      .refresh-btn:hover {
+        background: rgba(16, 185, 129, 0.25);
+      }
+      .refresh-btn svg {
+         width: 14px;
+         height: 14px;
+         fill: currentColor;
+      }
+      .refresh-btn.loading svg {
+        animation: spin 1s linear infinite;
+      }
+      @keyframes spin { 100% { transform: rotate(360deg); } }
+
       .card {
         position: relative;
       }
@@ -658,6 +778,26 @@ router.get('/', async (req, res, next) => {
         </div>
       </form>
       <p class="meta filter-summary" id="filterSummary"></p>
+      
+      <div class="refresh-controls">
+        <label>
+          <input type="checkbox" id="autoRefreshToggle" />
+          Auto-refresh every
+        </label>
+        <select id="refreshInterval">
+          <option value="10000">10s</option>
+          <option value="30000" selected>30s</option>
+          <option value="60000">1m</option>
+          <option value="300000">5m</option>
+        </select>
+        
+        <span id="refreshCountdown" class="muted" style="min-width: 120px; text-align: right;"></span>
+        
+        <button id="refreshNowBtn" class="refresh-btn">
+          <svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+          Refresh Now
+        </button>
+      </div>
     </div>
 
     <div class="stat-grid">
@@ -1761,6 +1901,366 @@ router.get('/', async (req, res, next) => {
           closeFullscreen();
         }
       });
+
+      // ---------------------------------------------------------
+      // AUTO REFRESH LOGIC
+      // ---------------------------------------------------------
+      
+      // Client-side helper functions for formatting (mirrors server-side)
+      function escapeHtmlClient(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      }
+      
+      function formatDateClient(date) {
+        return new Date(date).toISOString();
+      }
+      
+      function timeAgoClient(date) {
+        const dateObj = date instanceof Date ? date : new Date(date);
+        const seconds = Math.floor((new Date().getTime() - dateObj.getTime()) / 1000);
+        if (seconds < 5) return 'just now';
+        
+        const intervals = [
+          { label: 'year', seconds: 31536000 },
+          { label: 'month', seconds: 2592000 },
+          { label: 'week', seconds: 604800 },
+          { label: 'day', seconds: 86400 },
+          { label: 'hour', seconds: 3600 },
+          { label: 'minute', seconds: 60 }
+        ];
+        
+        for (const interval of intervals) {
+          const count = Math.floor(seconds / interval.seconds);
+          if (count >= 1) {
+            return \`\${count} \${interval.label}\${count !== 1 ? 's' : ''} ago\`;
+          }
+        }
+        return \`\${Math.floor(seconds)} second\${Math.floor(seconds) !== 1 ? 's' : ''} ago\`;
+      }
+      
+      function formatStarsClient(stars) {
+        if (stars === null || stars === undefined || Number.isNaN(stars)) return '--';
+        return String(stars);
+      }
+      
+      function formatLatencyClient(latency) {
+        if (latency === null || latency === undefined || Number.isNaN(latency) || latency < 0) return '--';
+        return \`\${latency.toLocaleString()} ms\`;
+      }
+      
+      let autoRefreshEnabled = false;
+      let refreshIntervalMs = 30000;
+      let refreshTimer = null;
+      let countdownTimer = null;
+      let nextRefreshTime = null;
+      let isRefreshing = false;
+
+      const autoRefreshToggle = document.getElementById('autoRefreshToggle');
+      const refreshIntervalSelect = document.getElementById('refreshInterval');
+      const refreshCountdownEl = document.getElementById('refreshCountdown');
+      const refreshNowBtn = document.getElementById('refreshNowBtn');
+
+      // Load preferences from localStorage
+      try {
+        const savedAuto = window.localStorage.getItem('autoRefreshEnabled');
+        if (savedAuto === 'true') {
+          autoRefreshEnabled = true;
+          if (autoRefreshToggle) autoRefreshToggle.checked = true;
+        }
+        
+        const savedInterval = window.localStorage.getItem('refreshIntervalMs');
+        if (savedInterval) {
+          refreshIntervalMs = parseInt(savedInterval, 10);
+          if (refreshIntervalSelect) refreshIntervalSelect.value = savedInterval;
+        }
+      } catch (e) {
+        console.warn('Failed to load refresh preferences', e);
+      }
+
+      function updateCountdown() {
+        if (!autoRefreshEnabled || !nextRefreshTime) {
+          if (refreshCountdownEl) refreshCountdownEl.textContent = '';
+          return;
+        }
+        
+        const now = Date.now();
+        const diff = Math.max(0, nextRefreshTime - now);
+        const seconds = Math.ceil(diff / 1000);
+        
+        if (refreshCountdownEl) {
+          if (isRefreshing) {
+            refreshCountdownEl.textContent = 'Refreshing...';
+          } else {
+            refreshCountdownEl.textContent = \`Next update in \${seconds}s\`;
+          }
+        }
+      }
+
+      function scheduleNextRefresh() {
+        if (!autoRefreshEnabled) return;
+        nextRefreshTime = Date.now() + refreshIntervalMs;
+        if (refreshTimer) clearTimeout(refreshTimer);
+        refreshTimer = setTimeout(fetchLatestData, refreshIntervalMs);
+        
+        if (countdownTimer) clearInterval(countdownTimer);
+        countdownTimer = setInterval(updateCountdown, 1000);
+        updateCountdown();
+      }
+
+      function stopAutoRefreshLogic() {
+        if (refreshTimer) clearTimeout(refreshTimer);
+        if (countdownTimer) clearInterval(countdownTimer);
+        refreshTimer = null;
+        countdownTimer = null;
+        nextRefreshTime = null;
+        updateCountdown();
+      }
+
+      async function fetchLatestData() {
+        if (isRefreshing) return;
+        isRefreshing = true;
+        updateCountdown();
+        
+        if (refreshNowBtn) refreshNowBtn.classList.add('loading');
+        
+        try {
+          // Construct URL with current filters from page URL
+          const url = new URL(window.location.origin + '/stats/data');
+          const currentUrl = new URL(window.location.href);
+          
+          if (currentUrl.searchParams.has('from')) url.searchParams.set('from', currentUrl.searchParams.get('from'));
+          if (currentUrl.searchParams.has('to')) url.searchParams.set('to', currentUrl.searchParams.get('to'));
+          if (currentUrl.searchParams.has('limit')) url.searchParams.set('limit', currentUrl.searchParams.get('limit'));
+          if (currentUrl.searchParams.has('q')) url.searchParams.set('q', currentUrl.searchParams.get('q'));
+          
+          const res = await fetch(url);
+          if (!res.ok) throw new Error(\`HTTP \${res.status}\`);
+          
+          const json = await res.json();
+          updateDashboard(json);
+          
+        } catch (error) {
+          console.error('Failed to refresh data', error);
+          if (refreshCountdownEl) refreshCountdownEl.textContent = 'Update failed';
+        } finally {
+          isRefreshing = false;
+          if (refreshNowBtn) refreshNowBtn.classList.remove('loading');
+          // Schedule next refresh if still enabled
+          if (autoRefreshEnabled) {
+            scheduleNextRefresh();
+          }
+        }
+      }
+
+      function updateDashboard(json) {
+        const { chartData, topPlayers, sysStats, redisStats, pageData } = json;
+        
+        // Re-calculate derived metrics
+        const cacheHitsCount = chartData.filter((d) => d.cacheHit).length;
+        const totalReqs = chartData.length;
+        const newCacheHitRate = totalReqs === 0 ? 0 : (cacheHitsCount / totalReqs) * 100;
+        const succCount = chartData.filter((d) => d.responseStatus >= 200 && d.responseStatus < 400).length;
+        const newSuccRate = totalReqs === 0 ? 0 : (succCount / totalReqs) * 100;
+        
+        const latVals = chartData
+          .map((d) => (typeof d.latencyMs === 'number' && d.latencyMs >= 0 ? d.latencyMs : null))
+          .filter((v) => v !== null);
+        
+        // Update global latencyMetrics object
+        latencyMetrics.p50 = percentile(latVals, 50);
+        latencyMetrics.p95 = percentile(latVals, 95);
+        latencyMetrics.p99 = percentile(latVals, 99);
+        latencyMetrics.min = latVals.length > 0 ? Math.min(...latVals) : null;
+        latencyMetrics.max = latVals.length > 0 ? Math.max(...latVals) : null;
+        latencyMetrics.avg = latVals.length
+          ? latVals.reduce((sum, value) => sum + (value ?? 0), 0) / latVals.length
+          : null;
+        
+        // Update Stat Cards
+        setMetric('totalLookupsValue', totalReqs.toLocaleString());
+        const totalLookupsSub = document.getElementById('totalLookupsSub');
+        if (totalLookupsSub) {
+          if (json.filters && json.filters.limit) {
+            totalLookupsSub.textContent = \`Showing \${totalReqs.toLocaleString()} of \${json.filters.limit} limit\`;
+          } else {
+            totalLookupsSub.textContent = \`\${totalReqs.toLocaleString()} total lookups\`;
+          }
+        }
+        
+        setMetric('cacheHitRateValue', newCacheHitRate.toFixed(1) + '%');
+        setProgress('cacheHitProgress', newCacheHitRate);
+        
+        setMetric('successRateValue', newSuccRate.toFixed(1) + '%');
+        setProgress('successRateProgress', newSuccRate);
+        
+        updateLatencyDisplay(); // Refreshes the displayed latency metric based on selection
+        
+        // Update Charts
+        // 1. Cache Chart
+        const cacheChart = charts.find(c => c.canvas && c.canvas.id === 'cacheChart');
+        if (cacheChart) {
+          cacheChart.data.datasets[0].data = [cacheHitsCount, totalReqs - cacheHitsCount];
+          cacheChart.update();
+          if (chartConfigs['cacheChart']) {
+            chartConfigs['cacheChart'].config.data.datasets[0].data = [cacheHitsCount, totalReqs - cacheHitsCount];
+          }
+        }
+        
+        // 2. Star Chart
+        const newStarRanges = { Unknown: 0, '0-10': 0, '11-50': 0, '51-100': 0, '100+': 0 };
+        chartData.forEach((d) => {
+          if (d.stars === null || d.stars === undefined || d.stars < 0) {
+            newStarRanges.Unknown++;
+          } else {
+            const s = d.stars;
+            if (s <= 10) newStarRanges['0-10']++;
+            else if (s <= 50) newStarRanges['11-50']++;
+            else if (s <= 100) newStarRanges['51-100']++;
+            else newStarRanges['100+']++;
+          }
+        });
+        const starChart = charts.find(c => c.canvas && c.canvas.id === 'starChart');
+        if (starChart) {
+          starChart.data.datasets[0].data = Object.values(newStarRanges);
+          starChart.update();
+          if (chartConfigs['starChart']) {
+            chartConfigs['starChart'].config.data.datasets[0].data = Object.values(newStarRanges);
+          }
+        }
+        
+        // 3. Latency Chart - update allLatencySeries by mutating the array
+        const sorted = [...chartData].sort((a, b) => new Date(a.requestedAt).getTime() - new Date(b.requestedAt).getTime());
+        const newLatencySeries = sorted.map((d) => ({
+          x: new Date(d.requestedAt),
+          y: typeof d.latencyMs === 'number' && d.latencyMs >= 0 ? d.latencyMs : null,
+          cacheHit: d.cacheHit || false,
+        }));
+        
+        // Mutate the const array contents
+        allLatencySeries.length = 0;
+        allLatencySeries.push(...newLatencySeries);
+        
+        // Call existing updateLatencyChart function if available
+        if (typeof updateLatencyChart === 'function') {
+          updateLatencyChart();
+        }
+        
+        // 4. Status Chart
+        const newStatusBuckets = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, Other: 0 };
+        chartData.forEach((d) => {
+          if (d.responseStatus >= 200 && d.responseStatus < 300) newStatusBuckets['2xx']++;
+          else if (d.responseStatus >= 300 && d.responseStatus < 400) newStatusBuckets['3xx']++;
+          else if (d.responseStatus >= 400 && d.responseStatus < 500) newStatusBuckets['4xx']++;
+          else if (d.responseStatus >= 500 && d.responseStatus < 600) newStatusBuckets['5xx']++;
+          else newStatusBuckets.Other++;
+        });
+        const statusChart = charts.find(c => c.canvas && c.canvas.id === 'statusChart');
+        if (statusChart) {
+          statusChart.data.datasets[0].data = Object.values(newStatusBuckets);
+          statusChart.update();
+          if (chartConfigs['statusChart']) {
+            chartConfigs['statusChart'].config.data.datasets[0].data = Object.values(newStatusBuckets);
+          }
+        }
+        
+        // 5. Top Players Chart
+        const topPlayersLabels = topPlayers.slice(0, 20).map(p => p.resolvedUsername || p.identifier);
+        const topPlayersDataArr = topPlayers.slice(0, 20).map(p => p.queryCount);
+        
+        const topPlayersChart = charts.find(c => c.canvas && c.canvas.id === 'topPlayersChart');
+        if (topPlayersChart) {
+          topPlayersChart.data.labels = topPlayersLabels;
+          topPlayersChart.data.datasets[0].data = topPlayersDataArr;
+          topPlayersChart.update();
+          if (chartConfigs['topPlayersChart']) {
+            chartConfigs['topPlayersChart'].config.data.labels = topPlayersLabels;
+            chartConfigs['topPlayersChart'].config.data.datasets[0].data = topPlayersDataArr;
+          }
+        }
+        
+        // 6. Update Recent Player Lookups Table
+        if (pageData && pageData.rows) {
+          const tbody = document.querySelector('table tbody');
+          if (tbody) {
+            const rowsHtml = pageData.rows.map((entry) => {
+              const lookupIdentifier =
+                entry.lookupType === 'uuid' && entry.resolvedUsername
+                  ? entry.resolvedUsername
+                  : entry.identifier;
+              const lookup = \`\${entry.lookupType.toUpperCase()}: \${lookupIdentifier}\`;
+              const resolved = entry.nicked === true ? '(nicked)' : entry.resolvedUsername ?? entry.resolvedUuid ?? 'unknown';
+              const cacheSource = entry.cacheHit ? 'Cache' : entry.cacheSource === 'network' ? 'Network' : entry.cacheSource;
+              
+              const encodedIdentifier = encodeURIComponent(entry.identifier);
+              const lookupLink = entry.lookupType === 'uuid'
+                ? \`https://namemc.com/profile/\${encodedIdentifier}\`
+                : \`https://namemc.com/search?q=\${encodedIdentifier}\`;
+              
+              return \`<tr>
+                <td title="\${escapeHtmlClient(formatDateClient(entry.requestedAt))}">\${escapeHtmlClient(timeAgoClient(entry.requestedAt))}</td>
+                <td><a href="\${lookupLink}" target="_blank" class="lookup-link">\${escapeHtmlClient(lookup)}</a></td>
+                <td>\${escapeHtmlClient(resolved)}</td>
+                <td class="stars">\${escapeHtmlClient(formatStarsClient(entry.stars))}</td>
+                <td>\${escapeHtmlClient(cacheSource)}\${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
+                <td>\${entry.responseStatus}</td>
+                <td class="latency">\${escapeHtmlClient(formatLatencyClient(entry.latencyMs))}</td>
+              </tr>\`;
+            }).join('\\n');
+            
+            tbody.innerHTML = rowsHtml || '<tr><td colspan="7">No lookups recorded yet.</td></tr>';
+          }
+        }
+        
+        // Update "last refreshed" indicator
+        if (refreshCountdownEl) refreshCountdownEl.textContent = 'Updated just now';
+      }
+
+      // Event Listeners
+      if (autoRefreshToggle) {
+        autoRefreshToggle.addEventListener('change', (e) => {
+          autoRefreshEnabled = e.target.checked;
+          try {
+            window.localStorage.setItem('autoRefreshEnabled', autoRefreshEnabled);
+          } catch (err) { /* ignore */ }
+          
+          if (autoRefreshEnabled) {
+            fetchLatestData(); // Fetch immediately on enable
+          } else {
+            stopAutoRefreshLogic();
+          }
+        });
+      }
+      
+      if (refreshIntervalSelect) {
+        refreshIntervalSelect.addEventListener('change', (e) => {
+          refreshIntervalMs = parseInt(e.target.value, 10);
+          try {
+            window.localStorage.setItem('refreshIntervalMs', refreshIntervalMs);
+          } catch (err) { /* ignore */ }
+          
+          if (autoRefreshEnabled) {
+            // Restart timer with new interval
+            scheduleNextRefresh();
+          }
+        });
+      }
+      
+      if (refreshNowBtn) {
+        refreshNowBtn.addEventListener('click', () => {
+          fetchLatestData();
+        });
+      }
+      
+      // Start auto-refresh if enabled from localStorage
+      if (autoRefreshEnabled) {
+        scheduleNextRefresh();
+      }
 
     </script>
   </body>
