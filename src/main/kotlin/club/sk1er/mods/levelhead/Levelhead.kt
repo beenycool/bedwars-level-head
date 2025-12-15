@@ -582,13 +582,16 @@ object Levelhead {
         val maxCacheSize = displayManager.config.purgeSize
         if (statsCache.size <= maxCacheSize) return
 
-        val overflow = statsCache.size - maxCacheSize
+        val entriesSnapshot = statsCache.entries.toList()
+        val overflow = entriesSnapshot.size - maxCacheSize
         if (overflow <= 0) return
 
-        statsCache.entries
+        // When we're over the limit, remove at least `overflow` entries so a single trim brings the cache back
+        // under the configured cap. Evict the oldest entries first based on fetch time.
+        entriesSnapshot
             .sortedBy { it.value.fetchedAt }
             .take(overflow)
-            .forEach { (key, _) -> statsCache.remove(key) }
+            .forEach { statsCache.remove(it.key) }
     }
 
     private fun applyStatsToRequests(
