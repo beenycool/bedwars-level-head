@@ -1,0 +1,14 @@
+name: Ping Healthcheck
+
+on:
+  schedule:
+    - cron: "*/13 * * * *"
+  workflow_dispatch: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          curl -fsS https://bedwars-level-head.onrender.com/healthz
