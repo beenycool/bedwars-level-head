@@ -88,7 +88,9 @@ export function createRateLimitMiddleware({
       // Use getClientIp for global stats tracking if provided, otherwise extract from bucketKey
       clientIp = getClientIp ? getClientIp(req) : bucketKey;
       // Use getCost if provided, otherwise default to 1
-      cost = getCost ? Math.max(1, getCost(req)) : 1;
+      // Validate that cost is a finite positive number to prevent DoS attacks with Infinity/NaN
+      const rawCost = getCost ? getCost(req) : 1;
+      cost = Number.isFinite(rawCost) && rawCost > 0 ? Math.floor(rawCost) : 1;
     } catch (error) {
       next(error);
       return;
@@ -188,12 +190,17 @@ export const enforceBatchRateLimit = createRateLimitMiddleware({
     if (!body || !Array.isArray(body.uuids)) {
       return 1; // Minimum cost for invalid/empty requests
     }
-    // Filter to unique, non-empty strings and count them
-    const normalizedInput = body.uuids
-      .map((value) => (typeof value === 'string' ? value.trim() : ''))
-      .filter((value) => value.length > 0);
-    const uniqueCount = new Set(normalizedInput).size;
-    return Math.max(1, uniqueCount); // Minimum cost of 1
+    // Count unique, non-empty strings in a single pass
+    const uniqueIdentifiers = new Set<string>();
+    for (const value of body.uuids) {
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed.length > 0) {
+          uniqueIdentifiers.add(trimmed);
+        }
+      }
+    }
+    return Math.max(1, uniqueIdentifiers.size); // Minimum cost of 1
   },
   metricLabel: 'batch',
   getDynamicMax: resolveDynamicLimitValue,

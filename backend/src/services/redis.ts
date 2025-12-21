@@ -72,6 +72,9 @@ function hashIp(ip: string): string {
 
 // Atomic increment with TTL set only on first creation
 // ARGV[1] = windowMs, ARGV[2] = cost (amount to increment)
+// Note: In Redis Lua, numeric comparisons work correctly because INCRBY returns a number
+// and we convert ARGV[2] to a number with tonumber(). The TTL is set when current == cost,
+// meaning this is the first increment for this key in the window.
 const ATOMIC_INCR_SCRIPT = `
 local cost = tonumber(ARGV[2]) or 1
 local current = redis.call("INCRBY", KEYS[1], cost)
