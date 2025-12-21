@@ -21,6 +21,7 @@ export interface RateLimitOptions {
   max: number;
   getBucketKey(req: Request): string;
   getClientIp?(req: Request): string; // Optional: used for global stats tracking, defaults to getBucketKey
+  getCost?(req: Request): number; // Optional: cost per request for token-bucket limiting, defaults to 1
   metricLabel?: string;
   getDynamicMax?: () => Promise<number>;
 }
@@ -74,16 +75,20 @@ export function createRateLimitMiddleware({
   max,
   getBucketKey,
   getClientIp,
+  getCost,
   metricLabel,
   getDynamicMax,
 }: RateLimitOptions): RequestHandler {
   return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
     let bucketKey: string;
     let clientIp: string;
+    let cost: number;
     try {
       bucketKey = getBucketKey(req);
       // Use getClientIp for global stats tracking if provided, otherwise extract from bucketKey
       clientIp = getClientIp ? getClientIp(req) : bucketKey;
+      // Use getCost if provided, otherwise default to 1
+      cost = getCost ? Math.max(1, getCost(req)) : 1;
     } catch (error) {
       next(error);
       return;
@@ -106,7 +111,7 @@ export function createRateLimitMiddleware({
         }
       }
 
-      const result = await incrementRateLimit(bucketKey, windowMs);
+      const result = await incrementRateLimit(bucketKey, windowMs, cost);
 
       // If Redis operation failed, fail open
       if (result === null) {
@@ -124,6 +129,7 @@ export function createRateLimitMiddleware({
       console.info('[rate-limit] check', {
         ip: bucketKey.substring(0, 8) + '...', // Log partial bucket key for privacy
         count,
+        cost,
         ttl,
         max: effectiveMax,
       });
@@ -165,5 +171,30 @@ export const enforceRateLimit = createRateLimitMiddleware({
     return getClientIpAddress(req);
   },
   metricLabel: 'private',
+  getDynamicMax: resolveDynamicLimitValue,
+});
+
+// Cost-based rate limiter for batch endpoint
+// Each identifier in the batch counts as one token toward the rate limit
+export const enforceBatchRateLimit = createRateLimitMiddleware({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_MAX,
+  getBucketKey(req: Request) {
+    return getClientIpAddress(req);
+  },
+  getCost(req: Request) {
+    // Cost is the number of UUIDs in the batch request
+    const body = req.body as { uuids?: unknown } | undefined;
+    if (!body || !Array.isArray(body.uuids)) {
+      return 1; // Minimum cost for invalid/empty requests
+    }
+    // Filter to unique, non-empty strings and count them
+    const normalizedInput = body.uuids
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter((value) => value.length > 0);
+    const uniqueCount = new Set(normalizedInput).size;
+    return Math.max(1, uniqueCount); // Minimum cost of 1
+  },
+  metricLabel: 'batch',
   getDynamicMax: resolveDynamicLimitValue,
 });
