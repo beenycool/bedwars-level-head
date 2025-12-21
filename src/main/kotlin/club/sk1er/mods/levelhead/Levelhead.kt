@@ -622,7 +622,7 @@ object Levelhead {
             footerValue = footerValue.replace("%ws%", winstreakString, true)
         }
         val baseStyle = starValue?.let { BedwarsStar.styleForStar(it) }
-            ?: BedwarsStar.PrestigeStyle(display.config.footerColor, false)
+            ?: BedwarsStar.PrestigeStyle(display.config.footerColor, false, "")
         
         // Check if data is stale (> 1 hour old)
         val age = System.currentTimeMillis() - (starData?.fetchedAt ?: 0L)
