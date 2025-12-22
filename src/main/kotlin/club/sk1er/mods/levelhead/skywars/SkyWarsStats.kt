@@ -38,6 +38,8 @@ object SkyWarsStats {
      * Uses simplified formula based on Hypixel's level calculation.
      */
     fun calculateLevel(experience: Long): Int {
+        // Return level 1 for invalid experience values (negative or zero)
+        // This is a safeguard; actual players should have positive experience
         if (experience <= 0L) return 1
         
         // SkyWars level calculation is roughly:
@@ -67,17 +69,16 @@ object SkyWarsStats {
 
     /**
      * Parse SkyWars experience from a player JSON response.
+     * Looks for 'skywars_experience' (preferred) or 'experience' within the SkyWars stats object.
+     * Note: 'experience' is searched within the SkyWars stats context, not the root JSON.
      */
     fun parseExperience(json: JsonObject): Long? {
         val skywars = findSkyWarsStats(json) ?: return null
-        return skywars.entrySet()
-            .firstOrNull { (key, _) ->
-                key.equals("skywars_experience", ignoreCase = true) ||
-                key.equals("experience", ignoreCase = true)
-            }
-            ?.value
-            ?.takeIf { !it.isJsonNull }
+        // Prefer specific 'skywars_experience' key, fall back to 'experience'
+        return skywars.get("skywars_experience")?.takeIf { !it.isJsonNull }
             ?.let { runCatching { it.asLong }.getOrNull() }
+            ?: skywars.get("experience")?.takeIf { !it.isJsonNull }
+                ?.let { runCatching { it.asLong }.getOrNull() }
     }
 
     /**

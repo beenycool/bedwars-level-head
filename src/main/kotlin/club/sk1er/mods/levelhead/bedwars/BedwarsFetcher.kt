@@ -40,7 +40,8 @@ object BedwarsFetcher {
                 // Try proxy first, fall back to direct API
                 if (ProxyClient.isAvailable()) {
                     val proxyResult = ProxyClient.fetchPlayer(uuid.toString(), lastFetchedAt, etag)
-                    if (proxyResult !is FetchResult.TemporaryError && proxyResult !is FetchResult.PermanentError) {
+                    // Return proxy result if successful or cached (not an error state)
+                    if (proxyResult is FetchResult.Success || proxyResult is FetchResult.NotModified) {
                         return proxyResult
                     }
                 }

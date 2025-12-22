@@ -12,19 +12,33 @@ object DuelsStats {
     /**
      * Division thresholds for Duels based on overall wins.
      * Each division has a minimum wins requirement and a display name.
+     * These thresholds are based on Hypixel's Duels division system.
+     * 
+     * Division progression (wins required):
+     * - Rookie: 0
+     * - Iron: 50
+     * - Gold: 100
+     * - Diamond: 250
+     * - Master: 500
+     * - Legend: 1,000
+     * - Grandmaster: 2,000
+     * - Godlike: 5,000
+     * - Celestial: 10,000
+     * - Divine: 25,000
+     * - Ascended: 50,000
      */
     private val divisions = listOf(
-        Division(0, "Rookie", Color(170, 170, 170)),           // Gray
-        Division(50, "Iron", Color(255, 255, 255)),             // White
-        Division(100, "Gold", Color(255, 170, 0)),              // Gold
-        Division(250, "Diamond", Color(85, 255, 255)),          // Aqua
-        Division(500, "Master", Color(0, 170, 0)),              // Green
-        Division(1000, "Legend", Color(170, 0, 0)),             // Dark Red
-        Division(2000, "Grandmaster", Color(255, 255, 85)),     // Yellow
-        Division(5000, "Godlike", Color(170, 0, 170)),          // Purple
-        Division(10000, "Celestial", Color(255, 85, 255)),      // Light Purple
-        Division(25000, "Divine", Color(85, 85, 255)),          // Blue
-        Division(50000, "Ascended", Color(255, 85, 85))         // Light Red
+        Division(minWins = 0, name = "Rookie", color = Color(170, 170, 170)),           // Gray
+        Division(minWins = 50, name = "Iron", color = Color(255, 255, 255)),             // White
+        Division(minWins = 100, name = "Gold", color = Color(255, 170, 0)),              // Gold
+        Division(minWins = 250, name = "Diamond", color = Color(85, 255, 255)),          // Aqua
+        Division(minWins = 500, name = "Master", color = Color(0, 170, 0)),              // Green
+        Division(minWins = 1000, name = "Legend", color = Color(170, 0, 0)),             // Dark Red
+        Division(minWins = 2000, name = "Grandmaster", color = Color(255, 255, 85)),     // Yellow
+        Division(minWins = 5000, name = "Godlike", color = Color(170, 0, 170)),          // Purple
+        Division(minWins = 10000, name = "Celestial", color = Color(255, 85, 255)),      // Light Purple
+        Division(minWins = 25000, name = "Divine", color = Color(85, 85, 255)),          // Blue
+        Division(minWins = 50000, name = "Ascended", color = Color(255, 85, 85))         // Light Red
     )
 
     data class Division(val minWins: Int, val name: String, val color: Color)
