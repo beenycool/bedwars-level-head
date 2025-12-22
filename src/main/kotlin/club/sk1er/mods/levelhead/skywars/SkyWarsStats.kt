@@ -5,8 +5,8 @@ import java.awt.Color
 
 /**
  * Utility object for calculating SkyWars levels and stats.
- * SkyWars uses an XP-based leveling system with prestiges every 5 levels.
- * Based on official Hypixel API structure.
+ * SkyWars uses an XP-based leveling system with prestiges every 10 levels.
+ * Based on official Hypixel API structure and 25Karma implementation.
  */
 object SkyWarsStats {
     private val xpTable = longArrayOf(
@@ -28,31 +28,48 @@ object SkyWarsStats {
 
     /**
      * Official Hypixel SkyWars prestige tiers.
-     * Each prestige tier has a unique textIcon symbol.
+     * Each prestige tier unlocks every 10 levels.
      */
     data class PrestigeStyle(
         val id: String,
         val name: String,
         val minLevel: Int,
         val color: Color,
-        val colorCode: String,
-        val textIcon: String
+        val colorCode: String
     )
 
     private val prestigeStyles = listOf(
-        PrestigeStyle("STONE", "Stone", 0, Color(170, 170, 170), "7", "✫"),
-        PrestigeStyle("IRON", "Iron", 5, Color(255, 255, 255), "f", "✫"),
-        PrestigeStyle("GOLD", "Gold", 10, Color(255, 170, 0), "6", "✫"),
-        PrestigeStyle("DIAMOND", "Diamond", 15, Color(85, 255, 255), "b", "✦"),
-        PrestigeStyle("EMERALD", "Emerald", 20, Color(0, 170, 0), "2", "✦"),
-        PrestigeStyle("SAPPHIRE", "Sapphire", 25, Color(0, 170, 170), "3", "✌"),
-        PrestigeStyle("RUBY", "Ruby", 30, Color(170, 0, 0), "4", "❦"),
-        PrestigeStyle("CRYSTAL", "Crystal", 35, Color(255, 85, 255), "d", "✵"),
-        PrestigeStyle("OPAL", "Opal", 40, Color(85, 85, 255), "9", "❣"),
-        PrestigeStyle("AMETHYST", "Amethyst", 45, Color(170, 0, 170), "5", "☯"),
-        PrestigeStyle("RAINBOW", "Rainbow", 50, Color(255, 85, 85), "c", "✺"),
-        PrestigeStyle("FIRST_CLASS", "First Class", 55, Color(255, 255, 85), "e", "⚝"),
-        PrestigeStyle("MYTHIC", "Mythic", 60, Color(255, 255, 255), "f", "ಠ_ಠ")
+        PrestigeStyle("stone_prestige", "Stone", 0, Color(170, 170, 170), "7"),
+        PrestigeStyle("iron_prestige", "Iron", 10, Color(255, 255, 255), "f"),
+        PrestigeStyle("gold_prestige", "Gold", 20, Color(255, 170, 0), "6"),
+        PrestigeStyle("diamond_prestige", "Diamond", 30, Color(85, 255, 255), "b"),
+        PrestigeStyle("ruby_prestige", "Ruby", 40, Color(255, 85, 85), "c"),
+        PrestigeStyle("crystal_prestige", "Crystal", 50, Color(255, 85, 255), "d"),
+        PrestigeStyle("amethyst_prestige", "Amethyst", 60, Color(170, 0, 170), "5"),
+        PrestigeStyle("opal_prestige", "Opal", 70, Color(85, 85, 255), "9"),
+        PrestigeStyle("topaz_prestige", "Topaz", 80, Color(255, 255, 85), "e"),
+        PrestigeStyle("jade_prestige", "Jade", 90, Color(85, 255, 85), "a"),
+        PrestigeStyle("mythic_i_prestige", "Mythic", 100, Color(255, 85, 85), "c")
+    )
+
+    /**
+     * Default emblems that appear at specific level milestones.
+     * Players can customize these, but these are the defaults shown.
+     */
+    data class EmblemMilestone(val minLevel: Int, val emblem: String, val name: String)
+
+    private val defaultEmblems = listOf(
+        EmblemMilestone(0, "✯", "default"),
+        EmblemMilestone(50, "^_^", "carrots_for_eyes"),
+        EmblemMilestone(100, "@_@", "formerly_known"),
+        EmblemMilestone(150, "δvδ", "reflex_angle_eyebrows"),
+        EmblemMilestone(200, "zz_zz", "two_tired"),
+        EmblemMilestone(250, "■·■", "slime"),
+        EmblemMilestone(300, "ಠ_ಠ", "same_great_taste"),
+        EmblemMilestone(350, "o...0", "misaligned"),
+        EmblemMilestone(400, ">u<", "converge_on_tongue"),
+        EmblemMilestone(450, "v-v", "no_evil"),
+        EmblemMilestone(500, "༼つ◕_◕༽つ", "three_fourths_jam")
     )
 
     /**
@@ -82,6 +99,14 @@ object SkyWarsStats {
      */
     fun getPrestigeStyle(level: Int): PrestigeStyle {
         return prestigeStyles.lastOrNull { level >= it.minLevel } ?: prestigeStyles.first()
+    }
+
+    /**
+     * Get the default emblem for a given level.
+     * Returns the highest emblem milestone the player has reached.
+     */
+    fun getDefaultEmblem(level: Int): String {
+        return defaultEmblems.lastOrNull { level >= it.minLevel }?.emblem ?: "✯"
     }
 
     /**
@@ -175,13 +200,14 @@ object SkyWarsStats {
     }
 
     /**
-     * Format a SkyWars level for display with appropriate prestige color and icon.
-     * Returns format: [Level{Icon}]
-     * Example: §f[60ಠ_ಠ] for Mythic prestige
+     * Format a SkyWars level for display with appropriate prestige color and emblem.
+     * Returns format: [Level{Emblem}]
+     * Example: §c[100@_@] for Mythic prestige at level 100
      */
     fun formatLevelTag(level: Int): String {
         val style = getPrestigeStyle(level)
-        return "§${style.colorCode}[$level${style.textIcon}]"
+        val emblem = getDefaultEmblem(level)
+        return "§${style.colorCode}[$level$emblem]"
     }
 }
 
