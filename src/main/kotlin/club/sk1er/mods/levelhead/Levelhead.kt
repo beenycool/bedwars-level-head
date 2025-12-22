@@ -16,7 +16,11 @@ import club.sk1er.mods.levelhead.core.dashUUID
 import club.sk1er.mods.levelhead.core.trimmed
 import club.sk1er.mods.levelhead.display.LevelheadDisplay
 import club.sk1er.mods.levelhead.display.LevelheadTag
+import club.sk1er.mods.levelhead.duels.DuelsFetcher
+import club.sk1er.mods.levelhead.duels.DuelsModeDetector
 import club.sk1er.mods.levelhead.render.AboveHeadRender
+import club.sk1er.mods.levelhead.skywars.SkyWarsFetcher
+import club.sk1er.mods.levelhead.skywars.SkyWarsModeDetector
 import com.google.gson.Gson
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -222,6 +226,8 @@ object Levelhead {
     fun postInit(@Suppress("UNUSED_PARAMETER") event: FMLPostInitializationEvent) {
         MinecraftForge.EVENT_BUS.register(AboveHeadRender)
         MinecraftForge.EVENT_BUS.register(BedwarsModeDetector)
+        MinecraftForge.EVENT_BUS.register(DuelsModeDetector)
+        MinecraftForge.EVENT_BUS.register(SkyWarsModeDetector)
         MinecraftForge.EVENT_BUS.register(this)
         CommandManager.INSTANCE.registerCommand(LevelheadCommand())
         CommandManager.INSTANCE.registerCommand(WhoisCommand())
@@ -232,6 +238,8 @@ object Levelhead {
     @SubscribeEvent
     fun joinServer(@Suppress("UNUSED_PARAMETER") event: FMLNetworkEvent.ClientConnectedToServerEvent) {
         BedwarsFetcher.resetWarnings()
+        DuelsFetcher.resetWarnings()
+        SkyWarsFetcher.resetWarnings()
         resetWorldScope()
         rateLimiter.resetState()
         displayManager.clearCachesWithoutRefetch()

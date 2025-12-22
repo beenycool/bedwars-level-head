@@ -2,6 +2,7 @@ package club.sk1er.mods.levelhead.config
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
+import club.sk1er.mods.levelhead.core.BackendMode
 import club.sk1er.mods.levelhead.core.GameMode
 import cc.polyfrost.oneconfig.config.Config
 import cc.polyfrost.oneconfig.config.annotations.Button
@@ -230,7 +231,23 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var showTabStats: Boolean = true
 
+    @Dropdown(
+        name = "Backend Mode",
+        description = "Choose how stats are fetched. Proxy Only uses community cache, Direct API uses your key, Fallback tries both, Offline uses only cached data.",
+        options = ["Proxy Only", "Direct API", "Fallback", "Offline"]
+    )
+    var backendModeIndex: Int = 2 // Default to Fallback
+        set(value) {
+            field = value
+            save()
+            BedwarsFetcher.resetWarnings()
+        }
 
+    /**
+     * Get the current BackendMode based on the dropdown selection.
+     */
+    val backendMode: BackendMode
+        get() = BackendMode.fromIndex(backendModeIndex)
 
     @Header(text = "Developer Options", category = "Developer")
     @Switch(
