@@ -5,7 +5,6 @@ import club.sk1er.mods.levelhead.Levelhead.gson
 import club.sk1er.mods.levelhead.Levelhead.jsonParser
 import club.sk1er.mods.levelhead.config.DisplayConfig
 import club.sk1er.mods.levelhead.config.MasterConfig
-import club.sk1er.mods.levelhead.core.BedwarsModeDetector.Context
 import club.sk1er.mods.levelhead.display.AboveHeadDisplay
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
@@ -22,7 +21,7 @@ class DisplayManager(val file: File) {
 
     var config = MasterConfig()
     val aboveHead: MutableList<AboveHeadDisplay> = ArrayList()
-    private var lastKnownContext: Context = Context.UNKNOWN
+    private var wasInGame: Boolean = false
 
     init {
         readConfig()
@@ -119,17 +118,19 @@ class DisplayManager(val file: File) {
     @OptIn(ExperimentalStdlibApi::class)
     fun joinWorld(resetDetector: Boolean = false) {
         if (resetDetector) {
-            BedwarsModeDetector.onWorldJoin()
+            ModeManager.onWorldJoin()
         }
-        val context = BedwarsModeDetector.currentContext(force = resetDetector)
-        if (!BedwarsModeDetector.shouldRequestData()) {
-            if (lastKnownContext.isBedwars) {
+        
+        val inGame = ModeManager.shouldRequestData()
+        if (!inGame) {
+            if (wasInGame) {
                 clearCachesWithoutRefetch()
             }
-            lastKnownContext = context.takeUnless { it == Context.UNKNOWN } ?: lastKnownContext
+            wasInGame = false
             return
         }
-        lastKnownContext = context.takeUnless { it == Context.UNKNOWN } ?: lastKnownContext
+        
+        wasInGame = true
         requestAllDisplays()
     }
 
@@ -137,7 +138,7 @@ class DisplayManager(val file: File) {
     fun playerJoin(player: EntityPlayer) {
         if (!config.enabled) return
         if (player.isNPC) return
-        if (!BedwarsModeDetector.shouldRequestData()) return
+        if (!ModeManager.shouldRequestData()) return
         val displays = aboveHead.filter { it.config.enabled }
         val requests = displays.filter { !it.cache.containsKey(player.uniqueID) }
             .map { display ->
@@ -177,7 +178,7 @@ class DisplayManager(val file: File) {
 
     fun clearCache() {
         clearCachesWithoutRefetch()
-        if (BedwarsModeDetector.shouldRequestData()) {
+        if (ModeManager.shouldRequestData()) {
             requestAllDisplays()
         }
     }
@@ -213,7 +214,7 @@ class DisplayManager(val file: File) {
 
         if (!enabled) {
             clearCachesWithoutRefetch()
-        } else if (BedwarsModeDetector.shouldRequestData()) {
+        } else if (ModeManager.shouldRequestData()) {
             requestAllDisplays()
         }
 
@@ -223,7 +224,7 @@ class DisplayManager(val file: File) {
     @OptIn(ExperimentalStdlibApi::class)
     fun requestAllDisplays() {
         if (!config.enabled) return
-        if (!BedwarsModeDetector.shouldRequestData()) return
+        if (!ModeManager.shouldRequestData()) return
         val displays = aboveHead.filter { it.config.enabled }
         if (displays.isEmpty()) return
         Minecraft.getMinecraft().theWorld?.playerEntities
@@ -259,7 +260,7 @@ class DisplayManager(val file: File) {
         adjustIndices()
         saveConfig()
         clearCachesWithoutRefetch()
-        if (config.enabled && BedwarsModeDetector.shouldRequestData()) {
+        if (config.enabled && ModeManager.shouldRequestData()) {
             requestAllDisplays()
         }
     }
