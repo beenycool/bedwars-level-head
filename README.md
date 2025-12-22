@@ -37,8 +37,6 @@ For fine-grained control, edit `config/levelhead.json` in your `.minecraft` dire
 
 To restore the mod to its original settings, open the BedWars Levelhead configuration screen (via OneConfig) and click **Reset Settings**. This resets both general options and display settings back to their defaults.
 
-Need to avoid network calls? Enable **Offline Mode** from the Levelhead settings (Developer tab) to use only cached BedWars stats while you configure or play.
-
 
 ### Credits & License
 This project is a fork of the original **Levelhead** mod created by **Sk1er LLC** and is licensed under the **GNU General Public License v3**. Credit also goes to the Hypixel team for providing the public API that powers BedWars stats.
