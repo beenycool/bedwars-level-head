@@ -5,7 +5,8 @@ import java.awt.Color
 
 /**
  * Utility object for calculating SkyWars levels and stats.
- * SkyWars uses an XP-based leveling system similar to BedWars.
+ * SkyWars uses an XP-based leveling system with prestiges every 5 levels.
+ * Based on official Hypixel API structure.
  */
 object SkyWarsStats {
     private val xpTable = longArrayOf(
@@ -26,23 +27,33 @@ object SkyWarsStats {
     private const val XP_PER_LEVEL_AFTER_TABLE = 10000L
 
     /**
-     * Prestige colors for SkyWars based on level brackets.
+     * Official Hypixel SkyWars prestige tiers.
+     * Each prestige tier has a unique textIcon symbol.
      */
-    private val prestigeStyles = listOf(
-        PrestigeStyle(0, Color(170, 170, 170), "7"),      // 0-59: None (Gray)
-        PrestigeStyle(60, Color(255, 255, 255), "f"),     // 60-119: Iron (White)
-        PrestigeStyle(120, Color(255, 170, 0), "6"),      // 120-179: Gold
-        PrestigeStyle(180, Color(85, 255, 255), "b"),     // 180-239: Diamond (Aqua)
-        PrestigeStyle(240, Color(0, 170, 0), "2"),        // 240-299: Emerald (Dark Green)
-        PrestigeStyle(300, Color(0, 170, 170), "3"),      // 300-359: Sapphire (Dark Aqua)
-        PrestigeStyle(360, Color(170, 0, 0), "4"),        // 360-419: Ruby (Dark Red)
-        PrestigeStyle(420, Color(255, 85, 255), "d"),     // 420-479: Crystal (Light Purple)
-        PrestigeStyle(480, Color(85, 85, 255), "9"),      // 480-539: Opal (Blue)
-        PrestigeStyle(540, Color(170, 0, 170), "5"),      // 540-599: Amethyst (Dark Purple)
-        PrestigeStyle(600, Color(255, 85, 85), "c")       // 600+: Mythic (Red)
+    data class PrestigeStyle(
+        val id: String,
+        val name: String,
+        val minLevel: Int,
+        val color: Color,
+        val colorCode: String,
+        val textIcon: String
     )
 
-    data class PrestigeStyle(val minLevel: Int, val color: Color, val colorCode: String)
+    private val prestigeStyles = listOf(
+        PrestigeStyle("STONE", "Stone", 0, Color(170, 170, 170), "7", "✫"),
+        PrestigeStyle("IRON", "Iron", 5, Color(255, 255, 255), "f", "✫"),
+        PrestigeStyle("GOLD", "Gold", 10, Color(255, 170, 0), "6", "✫"),
+        PrestigeStyle("DIAMOND", "Diamond", 15, Color(85, 255, 255), "b", "✦"),
+        PrestigeStyle("EMERALD", "Emerald", 20, Color(0, 170, 0), "2", "✦"),
+        PrestigeStyle("SAPPHIRE", "Sapphire", 25, Color(0, 170, 170), "3", "✌"),
+        PrestigeStyle("RUBY", "Ruby", 30, Color(170, 0, 0), "4", "❦"),
+        PrestigeStyle("CRYSTAL", "Crystal", 35, Color(255, 85, 255), "d", "✵"),
+        PrestigeStyle("OPAL", "Opal", 40, Color(85, 85, 255), "9", "❣"),
+        PrestigeStyle("AMETHYST", "Amethyst", 45, Color(170, 0, 170), "5", "☯"),
+        PrestigeStyle("RAINBOW", "Rainbow", 50, Color(255, 85, 85), "c", "✺"),
+        PrestigeStyle("FIRST_CLASS", "First Class", 55, Color(255, 255, 85), "e", "⚝"),
+        PrestigeStyle("MYTHIC", "Mythic", 60, Color(255, 255, 255), "f", "ಠ_ಠ")
+    )
 
     /**
      * Calculate the SkyWars level from experience using the official piecewise progression.
@@ -67,30 +78,18 @@ object SkyWarsStats {
 
     /**
      * Get prestige style for a given level.
+     * Returns the highest prestige tier the player has unlocked.
      */
     fun getPrestigeStyle(level: Int): PrestigeStyle {
         return prestigeStyles.lastOrNull { level >= it.minLevel } ?: prestigeStyles.first()
     }
 
     /**
-     * Get the star symbol for display based on level.
-     */
-    fun getStarSymbol(level: Int): String {
-        return when {
-            level >= 600 -> "✰"
-            level >= 300 -> "✪"
-            else -> "⋆"
-        }
-    }
-
-    /**
      * Parse SkyWars experience from a player JSON response.
      * Looks for 'skywars_experience' (preferred) or 'experience' within the SkyWars stats object.
-     * Note: 'experience' is searched within the SkyWars stats context, not the root JSON.
      */
     fun parseExperience(json: JsonObject): Long? {
         val skywars = findSkyWarsStats(json) ?: return null
-        // Prefer specific 'skywars_experience' key, fall back to 'experience'
         return skywars.get("skywars_experience")?.takeIf { !it.isJsonNull }
             ?.let { runCatching { it.asLong }.getOrNull() }
             ?: skywars.get("experience")?.takeIf { !it.isJsonNull }
@@ -176,12 +175,13 @@ object SkyWarsStats {
     }
 
     /**
-     * Format a SkyWars level for display with appropriate color.
+     * Format a SkyWars level for display with appropriate prestige color and icon.
+     * Returns format: [Level{Icon}]
+     * Example: §f[60ಠ_ಠ] for Mythic prestige
      */
     fun formatLevelTag(level: Int): String {
         val style = getPrestigeStyle(level)
-        val symbol = getStarSymbol(level)
-        return "§${style.colorCode}[$level$symbol]"
+        return "§${style.colorCode}[$level${style.textIcon}]"
     }
 }
 
