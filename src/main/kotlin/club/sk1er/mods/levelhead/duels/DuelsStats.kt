@@ -6,41 +6,36 @@ import java.awt.Color
 /**
  * Utility object for calculating Duels divisions and stats.
  * Duels uses a division system based on wins rather than experience like BedWars.
+ * Based on official Hypixel Duels division system and 25Karma implementation.
  */
 object DuelsStats {
     /**
      * Division thresholds for Duels based on overall wins.
      * Each division has a minimum wins requirement and a display name.
-     * These thresholds are based on Hypixel's Duels division system.
-     * 
-     * Division progression (wins required):
-     * - Ascended: 50,000+
-     * - Divine: 25,000+
-     * - Celestial: 10,000+
-     * - Godlike: 5,000+
-     * - Grandmaster: 2,000+
-     * - Legend: 1,000+
-     * - Master: 500+
-     * - Diamond: 250+
-     * - Gold: 100+
-     * - Iron: 50+
-     * - Rookie: 0-49
+     * Legend+ divisions (2000+ wins) are displayed in bold.
      */
-    private val divisions = listOf(
-        Division(minWins = 50000, name = "Ascended", color = Color(255, 85, 85)),        // Light Red
-        Division(minWins = 25000, name = "Divine", color = Color(85, 85, 255)),          // Blue
-        Division(minWins = 10000, name = "Celestial", color = Color(255, 85, 255)),      // Light Purple
-        Division(minWins = 5000, name = "Godlike", color = Color(170, 0, 170)),          // Purple
-        Division(minWins = 2000, name = "Grandmaster", color = Color(255, 255, 85)),     // Yellow
-        Division(minWins = 1000, name = "Legend", color = Color(170, 0, 0)),             // Dark Red
-        Division(minWins = 500, name = "Master", color = Color(0, 170, 0)),              // Green
-        Division(minWins = 250, name = "Diamond", color = Color(85, 255, 255)),          // Aqua
-        Division(minWins = 100, name = "Gold", color = Color(255, 170, 0)),              // Gold
-        Division(minWins = 50, name = "Iron", color = Color(255, 255, 255)),             // White
-        Division(minWins = 0, name = "Rookie", color = Color(170, 170, 170))             // Gray
+    data class Division(
+        val minWins: Int,
+        val name: String,
+        val color: Color,
+        val colorCode: String,
+        val bold: Boolean = false
     )
 
-    data class Division(val minWins: Int, val name: String, val color: Color)
+    private val divisions = listOf(
+        Division(100000, "ASCENDED", Color(255, 85, 85), "c", bold = true),
+        Division(50000, "DIVINE", Color(255, 85, 255), "d", bold = true),
+        Division(25000, "CELESTIAL", Color(85, 255, 255), "b", bold = true),
+        Division(10000, "Godlike", Color(170, 0, 170), "5", bold = true),
+        Division(5000, "Grandmaster", Color(255, 255, 85), "e", bold = true),
+        Division(2000, "Legend", Color(170, 0, 0), "4", bold = true),
+        Division(1000, "Master", Color(0, 170, 0), "2", bold = false),
+        Division(500, "Diamond", Color(0, 170, 170), "3", bold = false),
+        Division(250, "Gold", Color(255, 170, 0), "6", bold = false),
+        Division(100, "Iron", Color(255, 255, 255), "f", bold = false),
+        Division(50, "Rookie", Color(170, 170, 170), "7", bold = false),
+        Division(0, "None", Color(170, 170, 170), "7", bold = false)
+    )
 
     /**
      * Calculate the division for a given number of wins.
@@ -146,20 +141,39 @@ object DuelsStats {
     /**
      * Style configuration for a division display.
      */
-    data class DivisionStyle(val color: Color, val symbol: String)
+    data class DivisionStyle(val color: Color, val colorCode: String, val bold: Boolean, val symbol: String)
 
     /**
-     * Get the display style for a given division.
+     * Get the display style for a given division based on wins.
      */
     fun styleForDivision(wins: Int): DivisionStyle {
         val division = getDivision(wins)
         val symbol = when {
-            wins >= 50000 -> "⚔"
-            wins >= 10000 -> "✦"
-            wins >= 2000 -> "★"
-            else -> "✧"
+            wins >= 100000 -> "⚔"    // ⚔ ASCENDED
+            wins >= 50000 -> "✺"     // ✺ DIVINE
+            wins >= 25000 -> "✵"     // ✵ CELESTIAL
+            wins >= 10000 -> "✯"     // ✯ Godlike
+            wins >= 5000 -> "★"      // ★ Grandmaster
+            wins >= 2000 -> "✫"      // ✫ Legend
+            wins >= 1000 -> "✦"      // ✦ Master
+            wins >= 500 -> "♦"       // ♦ Diamond
+            wins >= 250 -> "✹"       // ✹ Gold
+            wins >= 100 -> "•"       // • Iron
+            else -> "·"               // · Rookie/None
         }
-        return DivisionStyle(division.color, symbol)
+        return DivisionStyle(division.color, division.colorCode, division.bold, symbol)
+    }
+
+    /**
+     * Format a Duels division for display.
+     * Returns format: [Division Symbol] for non-bold or §l[Division Symbol] for bold divisions.
+     * Example: §4§l[Legend ✫] for Legend division
+     */
+    fun formatDivisionTag(wins: Int): String {
+        val division = getDivision(wins)
+        val style = styleForDivision(wins)
+        val boldFormat = if (division.bold) "§l" else ""
+        return "§${division.colorCode}$boldFormat[${division.name} ${style.symbol}]"
     }
 }
 
