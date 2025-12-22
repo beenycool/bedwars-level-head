@@ -12,18 +12,23 @@ interface CacheRow {
   expires_at: number | string;
   etag: string | null;
   last_modified: number | string | null;
+  source: string | null;
 }
+
+export type CacheSource = 'hypixel' | 'community_verified' | 'community_unverified';
 
 export interface CacheEntry<T> {
   value: T;
   expiresAt: number;
   etag: string | null;
   lastModified: number | null;
+  source: CacheSource | null;
 }
 
 export interface CacheMetadata {
   etag?: string | null;
   lastModified?: number | null;
+  source?: CacheSource | null;
 }
 
 export const pool = new Pool({
@@ -88,6 +93,10 @@ const initialization = pool
       {
         column: 'last_modified',
         query: 'ALTER TABLE player_cache ADD COLUMN IF NOT EXISTS last_modified BIGINT',
+      },
+      {
+        column: 'source',
+        query: 'ALTER TABLE player_cache ADD COLUMN IF NOT EXISTS source TEXT',
       },
     ];
 
@@ -185,18 +194,25 @@ function mapRow<T>(row: CacheRow): CacheEntry<T> {
     parsedPayload = JSON.parse(row.payload);
   }
 
+  // Validate source is a known value, default to null for legacy entries
+  const source = row.source as CacheSource | null;
+  const validSource = source === 'hypixel' || source === 'community_verified' || source === 'community_unverified'
+    ? source
+    : null;
+
   return {
     value: parsedPayload as T,
     expiresAt,
     etag: row.etag,
     lastModified,
+    source: validSource,
   };
 }
 
 export async function getCacheEntry<T>(key: string, includeExpired = false): Promise<CacheEntry<T> | null> {
   await ensureInitialized();
   const result = await pool.query<CacheRow>(
-    'SELECT payload, expires_at, etag, last_modified FROM player_cache WHERE cache_key = $1',
+    'SELECT payload, expires_at, etag, last_modified, source FROM player_cache WHERE cache_key = $1',
     [key],
   );
   const row = result.rows[0];
@@ -249,20 +265,21 @@ export async function setCachedPayload<T>(
   const expiresAt = Date.now() + ttlMs;
   const payload = JSON.stringify(value);
   await pool.query(
-    `INSERT INTO player_cache (cache_key, payload, expires_at, etag, last_modified)
-     VALUES ($1, $2, $3, $4, $5)
+    `INSERT INTO player_cache (cache_key, payload, expires_at, etag, last_modified, source)
+     VALUES ($1, $2, $3, $4, $5, $6)
      ON CONFLICT (cache_key) DO UPDATE
      SET payload = EXCLUDED.payload,
          expires_at = EXCLUDED.expires_at,
          etag = EXCLUDED.etag,
-         last_modified = EXCLUDED.last_modified`,
-    [key, payload, expiresAt, metadata.etag ?? null, metadata.lastModified ?? null],
+         last_modified = EXCLUDED.last_modified,
+         source = EXCLUDED.source`,
+    [key, payload, expiresAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
   );
   const expiresIso = new Date(expiresAt).toISOString();
   const lastModifiedIso =
     typeof metadata.lastModified === 'number' ? new Date(metadata.lastModified).toISOString() : metadata.lastModified;
   console.info(
-    `[cache] stored key=${key} expires_at=${expiresIso} etag=${metadata.etag ?? 'null'} last_modified=${lastModifiedIso ?? 'null'}`,
+    `[cache] stored key=${key} expires_at=${expiresIso} etag=${metadata.etag ?? 'null'} last_modified=${lastModifiedIso ?? 'null'} source=${metadata.source ?? 'null'}`,
   );
 }
 

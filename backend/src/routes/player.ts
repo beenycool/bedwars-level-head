@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { enforceRateLimit } from '../middleware/rateLimit';
+import { enforceRateLimit, enforceBatchRateLimit } from '../middleware/rateLimit';
 import { resolvePlayer, ResolvedPlayer } from '../services/player';
 import { recordPlayerQuery } from '../services/history';
 import { computeBedwarsStar } from '../util/bedwars';
@@ -10,7 +10,7 @@ import { canonicalize } from '../util/signature';
 import { isValidBedwarsObject } from '../util/typeChecks';
 
 import { extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely } from '../util/requestUtils';
-import { getCacheEntry } from '../services/cache';
+import { getCacheEntry, CacheSource } from '../services/cache';
 import { COMMUNITY_SUBMIT_SECRET } from '../config';
 
 const router = Router();
@@ -75,7 +75,7 @@ router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
 
 const identifierPattern = /^(?:[0-9a-f]{32}|[a-zA-Z0-9_]{1,16})$/;
 
-router.post('/batch', enforceRateLimit, async (req, res, next) => {
+router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
   res.locals.metricsRoute = '/api/player/batch';
   const uuidsValue = (req.body as { uuids?: unknown })?.uuids;
 
@@ -167,6 +167,10 @@ const uuidOnlyPattern = /^[0-9a-f]{32}$/i;
 
 
 
+interface VerificationResult {
+  valid: boolean;
+  source: CacheSource | null;
+}
 
 function verifySignedSubmission(uuid: string, data: unknown, signature?: string): boolean {
   if (!COMMUNITY_SUBMIT_SECRET || !signature) {
@@ -187,37 +191,46 @@ function verifySignedSubmission(uuid: string, data: unknown, signature?: string)
   }
 }
 
-async function verifyHypixelOrigin(uuid: string, data: unknown, signature?: string): Promise<boolean> {
+async function verifyHypixelOrigin(uuid: string, data: unknown, signature?: string): Promise<VerificationResult> {
   try {
     const submittedData = data as Record<string, unknown>;
     const cacheKey = `player:${uuid}`;
     const cached = await getCacheEntry<ResolvedPlayer['payload']>(cacheKey);
     const cachedBedwars = cached?.value?.data?.bedwars ?? cached?.value?.bedwars;
 
-    if (cachedBedwars && isValidBedwarsObject(cachedBedwars) && matchesCriticalFields(cachedBedwars, submittedData)) {
-      return true;
+    // Only accept cache-based verification if the cache entry originated from Hypixel
+    // This prevents "self-reinforcing cache poisoning" where community submissions
+    // validate against other community submissions
+    if (cached?.source === 'hypixel' && cachedBedwars && isValidBedwarsObject(cachedBedwars) && matchesCriticalFields(cachedBedwars, submittedData)) {
+      return { valid: true, source: 'community_verified' };
     }
 
+    // Signed submissions are verified by HMAC, so they are trusted
     if (verifySignedSubmission(uuid, data, signature)) {
-      return true;
+      return { valid: true, source: 'community_verified' };
     }
 
+    // Fallback: fetch fresh data from Hypixel and compare
     const { fetchHypixelPlayer } = await import('../services/hypixel');
     const result = await fetchHypixelPlayer(uuid);
 
     if (!result.payload || result.notModified) {
-      return false;
+      return { valid: false, source: null };
     }
 
     const hypixelData = result.payload.data?.bedwars;
     if (!isValidBedwarsObject(hypixelData)) {
-      return false;
+      return { valid: false, source: null };
     }
 
-    return matchesCriticalFields(hypixelData, submittedData);
+    if (matchesCriticalFields(hypixelData, submittedData)) {
+      return { valid: true, source: 'community_verified' };
+    }
+
+    return { valid: false, source: null };
   } catch (error) {
     console.error('Failed to verify Hypixel origin:', error);
-    return false;
+    return { valid: false, source: null };
   }
 }
 
@@ -266,8 +279,8 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
   const normalizedUuid = uuid.trim().toLowerCase();
 
   // Verify origin to prevent cache poisoning
-  const isValidOrigin = await verifyHypixelOrigin(normalizedUuid, data, signature);
-  if (!isValidOrigin) {
+  const verificationResult = await verifyHypixelOrigin(normalizedUuid, data, signature);
+  if (!verificationResult.valid) {
     next(
       new HttpError(
         403,
@@ -292,12 +305,14 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
       bedwars: data,
     };
 
+    // Store with verified source to prevent self-reinforcing cache poisoning
     await setCachedPayload(cacheKey, payload, CACHE_TTL_MS, {
       etag: `contrib-${Date.now()}`,
       lastModified: Date.now(),
+      source: verificationResult.source,
     });
 
-    console.info(`[player/submit] Accepted contribution for uuid=${normalizedUuid}`);
+    console.info(`[player/submit] Accepted contribution for uuid=${normalizedUuid} source=${verificationResult.source}`);
     res.status(202).json({ success: true, message: 'Contribution accepted.' });
   } catch (error) {
     next(error);

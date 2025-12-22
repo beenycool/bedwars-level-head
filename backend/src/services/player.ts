@@ -142,7 +142,11 @@ async function fetchByUuid(uuid: string, conditional?: HypixelFetchOptions): Pro
 
   if (response.notModified && cacheEntry) {
     const payload = cacheEntry.value;
-    await setCachedPayload(cacheKey, payload, CACHE_TTL_MS, cacheMetadata);
+    // Preserve source when revalidating, default to 'hypixel' for legacy entries
+    await setCachedPayload(cacheKey, payload, CACHE_TTL_MS, {
+      ...cacheMetadata,
+      source: cacheEntry.source ?? 'hypixel',
+    });
     const resolved: ResolvedPlayer = {
       payload,
       etag: cacheEntry.etag,
@@ -168,7 +172,8 @@ async function fetchByUuid(uuid: string, conditional?: HypixelFetchOptions): Pro
   const etag = response.etag ?? cacheEntry?.etag ?? null;
   const lastModified = response.lastModified ?? cacheEntry?.lastModified ?? null;
 
-  await setCachedPayload(cacheKey, payload, CACHE_TTL_MS, { etag, lastModified });
+  // Fresh data from Hypixel API is always marked as source='hypixel'
+  await setCachedPayload(cacheKey, payload, CACHE_TTL_MS, { etag, lastModified, source: 'hypixel' });
 
   const resolved: ResolvedPlayer = {
     payload,
@@ -228,7 +233,8 @@ async function fetchByIgn(ign: string): Promise<ResolvedPlayer> {
   const profile = await lookupProfileByUsername(ign);
   if (!profile) {
     const nickedPayload = buildNickedPayload();
-    await setCachedPayload(ignCacheKey, nickedPayload, CACHE_TTL_MS, { etag: 'nicked', lastModified: Date.now() });
+    // Nicked players are determined via Mojang lookup, so mark as hypixel source
+    await setCachedPayload(ignCacheKey, nickedPayload, CACHE_TTL_MS, { etag: 'nicked', lastModified: Date.now(), source: 'hypixel' });
     const resolved: ResolvedPlayer = {
       payload: nickedPayload,
       etag: 'nicked',
@@ -252,9 +258,11 @@ async function fetchByIgn(ign: string): Promise<ResolvedPlayer> {
     lookupValue: normalizedIgn,
     username: profile.name ?? normalizedIgn,
   };
+  // IGN cache inherits source from UUID lookup (always 'hypixel' for server-fetched data)
   await setCachedPayload(ignCacheKey, resolved.payload, CACHE_TTL_MS, {
     etag: resolved.etag,
     lastModified: resolved.lastModified,
+    source: 'hypixel',
   });
   setMemoized('ign', normalizedIgn, resolved);
   return resolved;

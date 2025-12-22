@@ -22,7 +22,7 @@ describe('Canonicalization', () => {
       'åb': { 'ß': true, a: 'z' },
       'ā': null,
     };
-    // Top-level key ordering: 'b' (0x62), 'åb' (0x00E5...), 'ā' (0x0101...)
+    // Top-level key ordering: 'b' (U+0062), 'åb' (U+00E5...), 'ā' (U+0101...)
     // Inner object 'åb' keys ordered: 'a' then 'ß'
     expect(canonicalize(data)).toBe('{"b":[1,"x"],"åb":{"a":"z","ß":true},"ā":null}');
   });

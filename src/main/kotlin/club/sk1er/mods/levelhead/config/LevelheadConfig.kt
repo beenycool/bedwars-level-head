@@ -5,16 +5,20 @@ import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import cc.polyfrost.oneconfig.config.Config
 import cc.polyfrost.oneconfig.config.annotations.Button
 import cc.polyfrost.oneconfig.config.annotations.Header
+import cc.polyfrost.oneconfig.config.annotations.Info
 import cc.polyfrost.oneconfig.config.annotations.Slider
 import cc.polyfrost.oneconfig.config.annotations.Switch
 import cc.polyfrost.oneconfig.config.annotations.Text
+import cc.polyfrost.oneconfig.config.data.InfoType
 import cc.polyfrost.oneconfig.config.data.Mod
 import cc.polyfrost.oneconfig.config.data.ModType
 import club.sk1er.mods.levelhead.Levelhead.jsonParser
 import com.google.gson.JsonObject
 import net.minecraft.client.Minecraft
 import org.apache.commons.io.FileUtils
+import java.awt.Desktop
 import java.io.File
+import java.net.URI
 import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.Locale
@@ -24,6 +28,12 @@ private const val DEFAULT_PROXY_URL = "https://beeny.hackclub.app"
 private const val _MIN_STAR_CACHE_TTL_MINUTES = 5
 private const val _MAX_STAR_CACHE_TTL_MINUTES = 180
 private const val _DEFAULT_STAR_CACHE_TTL_MINUTES = 45
+private const val _MIN_STAR_CACHE_TTL_MINUTES_SLIDER = 5f
+private const val _MAX_STAR_CACHE_TTL_MINUTES_SLIDER = 180f
+private const val GITHUB_REPO_URL = "https://github.com/beenycool/bedwars-level-head"
+private const val UPSTREAM_LEVELHEAD_URL = "https://github.com/Sk1erLLC/Levelhead"
+private const val MODRINTH_URL = "https://modrinth.com/mod/bedwars-level-head"
+private const val ABOUT_VERSION_TEXT = "Version: " + Levelhead.VERSION
 
 object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedwars-levelhead.json") {
     // Expose constants as @JvmStatic functions - functions are not serialized by Gson
@@ -41,6 +51,63 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     val MAX_STAR_CACHE_TTL_MINUTES: Int get() = _MAX_STAR_CACHE_TTL_MINUTES
     val DEFAULT_STAR_CACHE_TTL_MINUTES: Int get() = _DEFAULT_STAR_CACHE_TTL_MINUTES
 
+
+    @Header(text = "About", category = "About")
+    @Info(
+        text = "BedWars Levelhead shows BedWars stars above players' heads on Hypixel.",
+        type = InfoType.INFO,
+        category = "About"
+    )
+    @Transient
+    var aboutDescription: String = ""
+
+    @Info(
+        text = ABOUT_VERSION_TEXT,
+        type = InfoType.INFO,
+        category = "About"
+    )
+    @Transient
+    var aboutVersion: String = ""
+
+    @Info(
+        text = "Credits: Based on the original Levelhead mod by Sk1er LLC.",
+        type = InfoType.INFO,
+        category = "About"
+    )
+    @Transient
+    var aboutCredits: String = ""
+
+    @Info(
+        text = "Licensed under the GNU GPL v3.",
+        type = InfoType.INFO,
+        category = "About"
+    )
+    @Transient
+    var aboutLicense: String = ""
+
+    @Button(
+        name = "Modrinth",
+        text = "Open Page",
+        description = "Open the Modrinth download page.",
+        category = "About"
+    )
+    fun openModrinth() = openUrl(MODRINTH_URL)
+
+    @Button(
+        name = "Source Code",
+        text = "Open GitHub",
+        description = "Open the BedWars Levelhead source code repository.",
+        category = "About"
+    )
+    fun openSource() = openUrl(GITHUB_REPO_URL)
+
+    @Button(
+        name = "Original Levelhead",
+        text = "Open GitHub",
+        description = "Open the original Levelhead repository (upstream).",
+        category = "About"
+    )
+    fun openUpstream() = openUrl(UPSTREAM_LEVELHEAD_URL)
 
 
     @Text(name = "Hypixel API Key", placeholder = "Get a key from developer.hypixel.net", secure = true)
@@ -113,8 +180,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         name = "Star Cache TTL (minutes)",
         description = "How long to cache player stars before refreshing. Higher values reduce API calls but may show outdated data.",
         category = "Developer",
-        min = _MIN_STAR_CACHE_TTL_MINUTES,
-        max = _MAX_STAR_CACHE_TTL_MINUTES,
+        min = _MIN_STAR_CACHE_TTL_MINUTES_SLIDER,
+        max = _MAX_STAR_CACHE_TTL_MINUTES_SLIDER,
         step = 1
     )
     var starCacheTtlMinutes: Int = _DEFAULT_STAR_CACHE_TTL_MINUTES
@@ -275,5 +342,18 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         starCacheTtlMinutes = clamped
         save()
         BedwarsFetcher.resetWarnings()
+    }
+
+    private fun openUrl(url: String) {
+        try {
+            if (!Desktop.isDesktopSupported() || !Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                Levelhead.sendChat("§eOpen this link in your browser: §b$url")
+                return
+            }
+            Desktop.getDesktop().browse(URI(url))
+        } catch (e: Exception) {
+            Levelhead.sendChat("§cFailed to open link. §eOpen it manually: §b$url")
+            Levelhead.logger.debug("Failed to open URL: {}", url, e)
+        }
     }
 }

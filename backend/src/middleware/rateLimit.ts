@@ -7,7 +7,7 @@ import {
 } from '../config';
 import { HttpError } from '../util/httpError';
 import { rateLimitBlocksTotal } from '../services/metrics';
-import { incrementRateLimit, trackGlobalStats, isRedisAvailable } from '../services/redis';
+import { incrementRateLimit, trackGlobalStats } from '../services/redis';
 import { calculateDynamicRateLimit } from '../services/dynamicRateLimit';
 
 interface DynamicLimitCacheEntry {
@@ -20,6 +20,8 @@ export interface RateLimitOptions {
   windowMs: number;
   max: number;
   getBucketKey(req: Request): string;
+  getClientIp?(req: Request): string; // Optional: used for global stats tracking, defaults to getBucketKey
+  getCost?(req: Request): number; // Optional: cost per request for token-bucket limiting, defaults to 1
   metricLabel?: string;
   getDynamicMax?: () => Promise<number>;
 }
@@ -72,24 +74,31 @@ export function createRateLimitMiddleware({
   windowMs,
   max,
   getBucketKey,
+  getClientIp,
+  getCost,
   metricLabel,
   getDynamicMax,
 }: RateLimitOptions): RequestHandler {
   return async (req: Request, _res: Response, next: NextFunction): Promise<void> => {
-    let ip: string;
+    let bucketKey: string;
+    let clientIp: string;
+    let cost: number;
     try {
-      ip = getBucketKey(req);
+      bucketKey = getBucketKey(req);
+      // Use getClientIp for global stats tracking if provided, otherwise extract from bucketKey
+      clientIp = getClientIp ? getClientIp(req) : bucketKey;
+      // Use getCost if provided, otherwise default to 1
+      // Validate that cost is a finite positive number to prevent DoS attacks with Infinity/NaN
+      const rawCost = getCost ? getCost(req) : 1;
+      cost = Number.isFinite(rawCost) && rawCost > 0 ? Math.floor(rawCost) : 1;
     } catch (error) {
       next(error);
       return;
     }
 
-    // If Redis is not available, fail open (allow request)
-    if (!isRedisAvailable()) {
-      console.warn('[rate-limit] Redis unavailable, failing open');
-      next();
-      return;
-    }
+    // Note: We always enforce rate limiting using incrementRateLimit() which has
+    // built-in in-memory fallback when Redis is unavailable. This ensures rate
+    // limiting remains effective even during Redis outages.
 
     try {
       let effectiveMax = max;
@@ -104,13 +113,13 @@ export function createRateLimitMiddleware({
         }
       }
 
-      const result = await incrementRateLimit(ip, windowMs);
+      const result = await incrementRateLimit(bucketKey, windowMs, cost);
 
       // If Redis operation failed, fail open
       if (result === null) {
         console.warn('[rate-limit] Redis increment failed, failing open');
-        // Fire-and-forget stats tracking (with catch to prevent unhandled rejection)
-        void trackGlobalStats(ip).catch((err) => {
+        // Fire-and-forget stats tracking with raw client IP (not prefixed bucket key)
+        void trackGlobalStats(clientIp).catch((err) => {
           console.error('[rate-limit] trackGlobalStats failed', err);
         });
         next();
@@ -120,14 +129,15 @@ export function createRateLimitMiddleware({
       const { count, ttl } = result;
 
       console.info('[rate-limit] check', {
-        ip: ip.substring(0, 8) + '...', // Log partial IP for privacy
+        ip: bucketKey.substring(0, 8) + '...', // Log partial bucket key for privacy
         count,
+        cost,
         ttl,
         max: effectiveMax,
       });
 
-      // Fire-and-forget stats tracking (with catch to prevent unhandled rejection)
-      void trackGlobalStats(ip).catch((err) => {
+      // Fire-and-forget stats tracking with raw client IP (not prefixed bucket key)
+      void trackGlobalStats(clientIp).catch((err) => {
         console.error('[rate-limit] trackGlobalStats failed', err);
       });
 
@@ -163,5 +173,35 @@ export const enforceRateLimit = createRateLimitMiddleware({
     return getClientIpAddress(req);
   },
   metricLabel: 'private',
+  getDynamicMax: resolveDynamicLimitValue,
+});
+
+// Cost-based rate limiter for batch endpoint
+// Each identifier in the batch counts as one token toward the rate limit
+export const enforceBatchRateLimit = createRateLimitMiddleware({
+  windowMs: RATE_LIMIT_WINDOW_MS,
+  max: RATE_LIMIT_MAX,
+  getBucketKey(req: Request) {
+    return getClientIpAddress(req);
+  },
+  getCost(req: Request) {
+    // Cost is the number of UUIDs in the batch request
+    const body = req.body as { uuids?: unknown } | undefined;
+    if (!body || !Array.isArray(body.uuids)) {
+      return 1; // Minimum cost for invalid/empty requests
+    }
+    // Count unique, non-empty strings in a single pass
+    const uniqueIdentifiers = new Set<string>();
+    for (const value of body.uuids) {
+      if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed.length > 0) {
+          uniqueIdentifiers.add(trimmed);
+        }
+      }
+    }
+    return Math.max(1, uniqueIdentifiers.size); // Minimum cost of 1
+  },
+  metricLabel: 'batch',
   getDynamicMax: resolveDynamicLimitValue,
 });
