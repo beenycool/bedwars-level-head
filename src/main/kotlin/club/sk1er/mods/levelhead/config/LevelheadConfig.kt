@@ -133,6 +133,13 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var showTabStats: Boolean = true
 
+    @Switch(
+        name = "Offline Mode",
+        description = "Use cached BedWars stats only. When enabled, no network requests will be made.",
+        category = "Developer"
+    )
+    var offlineMode: Boolean = false
+
 
 
     @Header(text = "Developer Options", category = "Developer")
@@ -326,6 +333,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         apiKey = ""
         communityDatabase = true
         showTabStats = true
+        offlineMode = false
         proxyEnabled = true
         proxyBaseUrl = DEFAULT_PROXY_URL
         proxyAuthToken = ""
