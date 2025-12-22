@@ -11,5 +11,6 @@ export const enforcePublicRateLimit = createRateLimitMiddleware({
   windowMs: PUBLIC_RATE_LIMIT_WINDOW_MS,
   max: PUBLIC_RATE_LIMIT_MAX,
   getBucketKey,
+  getClientIp: getClientIpAddress, // Pass raw IP for global stats tracking
   metricLabel: 'public',
 });

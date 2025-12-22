@@ -71,9 +71,14 @@ function hashIp(ip: string): string {
 // ---------------------------------------------------------------------------
 
 // Atomic increment with TTL set only on first creation
+// ARGV[1] = windowMs, ARGV[2] = cost (amount to increment)
+// Note: In Redis Lua, numeric comparisons work correctly because INCRBY returns a number
+// and we convert ARGV[2] to a number with tonumber(). The TTL is set when current == cost,
+// meaning this is the first increment for this key in the window.
 const ATOMIC_INCR_SCRIPT = `
-local current = redis.call("INCR", KEYS[1])
-if current == 1 then
+local cost = tonumber(ARGV[2]) or 1
+local current = redis.call("INCRBY", KEYS[1], cost)
+if current == cost then
   redis.call("PEXPIRE", KEYS[1], ARGV[1])
 end
 return {current, redis.call("PTTL", KEYS[1])}
@@ -134,7 +139,7 @@ setInterval(() => {
     }
 }, 60000).unref(); // Every minute
 
-export async function incrementRateLimit(ip: string, windowMs: number): Promise<RateLimitResult | null> {
+export async function incrementRateLimit(ip: string, windowMs: number, cost: number = 1): Promise<RateLimitResult | null> {
     const ipHash = hashIp(ip);
     const cacheKey = `rl:${ipHash}`;
     const now = Date.now();
@@ -144,7 +149,7 @@ export async function incrementRateLimit(ip: string, windowMs: number): Promise<
 
     // If we have a valid local entry in the current window
     if (local && (now - local.windowStart) < windowMs) {
-        local.count++;
+        local.count += cost;
 
         // Decide if we need to sync to Redis
         const countDelta = local.count - local.lastSyncedCount;
@@ -170,13 +175,13 @@ export async function incrementRateLimit(ip: string, windowMs: number): Promise<
         // No Redis, use pure in-memory
         if (!local || (now - local.windowStart) >= windowMs) {
             local = {
-                count: 1,
+                count: cost,
                 windowStart: now,
                 lastSyncedCount: 0,
                 lastSyncTime: now,
             };
         } else {
-            local.count++;
+            local.count += cost;
         }
 
         // Enforce max cache size (LRU-style: delete oldest)
@@ -193,7 +198,7 @@ export async function incrementRateLimit(ip: string, windowMs: number): Promise<
     }
 
     try {
-        const result = await client.eval(ATOMIC_INCR_SCRIPT, 1, cacheKey, windowMs.toString()) as [number, number];
+        const result = await client.eval(ATOMIC_INCR_SCRIPT, 1, cacheKey, windowMs.toString(), cost.toString()) as [number, number];
 
         // Store in local cache
         local = {
@@ -220,9 +225,9 @@ export async function incrementRateLimit(ip: string, windowMs: number): Promise<
 
         // Fallback to local-only
         if (!local || (now - local.windowStart) >= windowMs) {
-            local = { count: 1, windowStart: now, lastSyncedCount: 0, lastSyncTime: now };
+            local = { count: cost, windowStart: now, lastSyncedCount: 0, lastSyncTime: now };
         } else {
-            local.count++;
+            local.count += cost;
         }
         localRateLimits.set(cacheKey, local);
 
