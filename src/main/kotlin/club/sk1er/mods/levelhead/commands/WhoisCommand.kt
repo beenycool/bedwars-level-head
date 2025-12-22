@@ -47,7 +47,8 @@ class WhoisCommand {
             return
         }
 
-        sendMessage("${ChatColor.YELLOW}Looking up BedWars stats for ${ChatColor.GOLD}$trimmedIdentifier${ChatColor.YELLOW}...")
+        val currentGameMode = Levelhead.displayManager.primaryDisplay()?.config?.gameMode?.displayName ?: "BedWars"
+        sendMessage("${ChatColor.YELLOW}Looking up $currentGameMode stats for ${ChatColor.GOLD}$trimmedIdentifier${ChatColor.YELLOW}...")
         Levelhead.scope.launch {
             try {
                 val result = lookupWhois(trimmedIdentifier)
@@ -64,7 +65,7 @@ class WhoisCommand {
                     sendMessage("${ChatColor.RED}${ex.message}")
                 }
             } catch (throwable: Throwable) {
-                Levelhead.logger.error("Failed to resolve BedWars stats for {}", identifier, throwable)
+                Levelhead.logger.error("Failed to resolve stats for {}", identifier, throwable)
                 Minecraft.getMinecraft().addScheduledTask {
                     sendMessage("${ChatColor.RED}Unexpected error while fetching stats. Check logs for details.")
                 }

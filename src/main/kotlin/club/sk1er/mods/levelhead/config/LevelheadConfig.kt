@@ -173,7 +173,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     @Dropdown(
         name = "Game Mode",
-        description = "Select which game mode stats to display. Note: Only BedWars is fully supported currently.",
+        description = "Select which game mode stats to display. BedWars is the primary mode; Duels and SkyWars support is planned for future updates.",
         category = "Display",
         options = ["BedWars", "Duels", "SkyWars"]
     )

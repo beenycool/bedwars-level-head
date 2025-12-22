@@ -23,6 +23,8 @@ import org.lwjgl.opengl.GL11
 
 object AboveHeadRender {
 
+    private const val BELOW_NAMETAG_Y_OFFSET = -0.1f
+
     @SubscribeEvent
     fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
         if (!displayManager.config.enabled) return
@@ -71,7 +73,7 @@ object AboveHeadRender {
     private val EntityPlayer.isSelf: Boolean
         get() = UPlayer.getUUID() == this.uniqueID
 
-    private fun renderName(tag: LevelheadTag, entityIn: EntityPlayer, x: Double, y: Double, z: Double, position: MasterConfig.DisplayPosition) {
+    private fun renderName(tag: LevelheadTag, entityIn: EntityPlayer, x: Double, y: Double, z: Double, displayPosition: MasterConfig.DisplayPosition) {
         val fontrenderer = getFontRenderer()
         val textScale = 0.016666668f * 1.6f * displayManager.config.fontSize
         UGraphics.GL.pushMatrix()
@@ -85,9 +87,9 @@ object AboveHeadRender {
         }
         
         // Adjust Y position based on display position
-        val yOffset = when (position) {
+        val yOffset = when (displayPosition) {
             MasterConfig.DisplayPosition.ABOVE -> entityIn.height + 0.5f
-            MasterConfig.DisplayPosition.BELOW -> -0.1f // Below the player's feet area / nametag
+            MasterConfig.DisplayPosition.BELOW -> BELOW_NAMETAG_Y_OFFSET
         }
         
         UGraphics.GL.translate(x.toFloat() + 0.0f, y.toFloat() + yOffset, z.toFloat())
