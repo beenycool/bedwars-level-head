@@ -286,6 +286,13 @@ object Levelhead {
                 }
 
             if (pending.isEmpty()) return@launch
+
+            if (LevelheadConfig.offlineMode) {
+                pending.forEach { entry ->
+                    applyStatsToRequests(entry.uuid, entry.requests, entry.cached)
+                }
+                return@launch
+            }
             if (!BedwarsModeDetector.isInBedwarsMatch()) return@launch
 
             val remaining = pending.toMutableList()
@@ -439,6 +446,9 @@ object Levelhead {
         displays: Collection<LevelheadDisplay>,
         registerForRefresh: Boolean
     ): Deferred<CachedBedwarsStats?> {
+        if (LevelheadConfig.offlineMode) {
+            return CompletableDeferred(cached)
+        }
         if (registerForRefresh && displays.isNotEmpty()) {
             registerDisplaysForRefresh(uuid, displays)
         }
