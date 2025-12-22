@@ -4,10 +4,12 @@ import cc.polyfrost.oneconfig.utils.commands.CommandManager
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import club.sk1er.mods.levelhead.bedwars.FetchResult
 import club.sk1er.mods.levelhead.commands.LevelheadCommand
+import club.sk1er.mods.levelhead.commands.WhoisCommand
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import club.sk1er.mods.levelhead.core.BedwarsStar
 import club.sk1er.mods.levelhead.core.DisplayManager
+import club.sk1er.mods.levelhead.core.GameMode
 import club.sk1er.mods.levelhead.core.RateLimiter
 import club.sk1er.mods.levelhead.core.RateLimiter.Metrics
 import club.sk1er.mods.levelhead.core.dashUUID
@@ -222,6 +224,7 @@ object Levelhead {
         MinecraftForge.EVENT_BUS.register(BedwarsModeDetector)
         MinecraftForge.EVENT_BUS.register(this)
         CommandManager.INSTANCE.registerCommand(LevelheadCommand())
+        CommandManager.INSTANCE.registerCommand(WhoisCommand())
         scheduleUpdateCheck()
         showWelcomeMessageIfNeeded()
     }
@@ -600,7 +603,7 @@ object Levelhead {
         starData: CachedBedwarsStats?
     ) {
         requests
-            .filter { it.type == BedwarsModeDetector.BEDWARS_STAR_TYPE }
+            .filter { it.type == GameMode.BEDWARS.typeId }
             .forEach { req -> updateDisplayCache(req.display, uuid, starData) }
     }
 

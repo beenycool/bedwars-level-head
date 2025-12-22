@@ -104,12 +104,12 @@ class DisplayManager(val file: File) {
         var migrated = false
         val legacyHeaders = setOf("Level", "Levelhead", "Network Level")
         aboveHead.forEachIndexed { index, display ->
-            if (display.config.type != BedwarsModeDetector.BEDWARS_STAR_TYPE) {
+            if (display.config.type != GameMode.BEDWARS.typeId) {
                 if (index == 0 && legacyHeaders.any { display.config.headerString.equals(it, ignoreCase = true) }) {
-                    display.config.headerString = BedwarsModeDetector.DEFAULT_HEADER
+                    display.config.headerString = GameMode.BEDWARS.defaultHeader
                 }
-                Levelhead.logger.info("Migrating legacy display #${index + 1} from type '${display.config.type}' to '${BedwarsModeDetector.BEDWARS_STAR_TYPE}'.")
-                display.config.type = BedwarsModeDetector.BEDWARS_STAR_TYPE
+                Levelhead.logger.info("Migrating legacy display #${index + 1} from type '${display.config.type}' to '${GameMode.BEDWARS.typeId}'.")
+                display.config.type = GameMode.BEDWARS.typeId
                 migrated = true
             }
         }
@@ -246,13 +246,15 @@ class DisplayManager(val file: File) {
         config.renderThrottleMs = 0L
         config.frameSkip = 1
         config.textShadow = false
+        config.displayPosition = MasterConfig.DisplayPosition.ABOVE
         aboveHead.clear()
         val defaultDisplay = AboveHeadDisplay(DisplayConfig())
         // Ensure DisplayConfig defaults match LevelheadConfig defaults
         defaultDisplay.config.showSelf = true
-        defaultDisplay.config.headerString = "BedWars"
+        defaultDisplay.config.headerString = GameMode.BEDWARS.defaultHeader
         defaultDisplay.config.headerColor = Color(85, 255, 255)
         defaultDisplay.config.footerString = "%star%"
+        defaultDisplay.config.type = GameMode.BEDWARS.typeId
         aboveHead.add(defaultDisplay)
         adjustIndices()
         saveConfig()

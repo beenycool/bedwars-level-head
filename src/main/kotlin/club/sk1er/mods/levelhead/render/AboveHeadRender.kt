@@ -2,6 +2,7 @@ package club.sk1er.mods.levelhead.render
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.Levelhead.displayManager
+import club.sk1er.mods.levelhead.config.MasterConfig
 import club.sk1er.mods.levelhead.display.LevelheadTag
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import gg.essential.api.EssentialAPI
@@ -33,21 +34,36 @@ object AboveHeadRender {
         val player = event.entity as EntityPlayer
 
         val localPlayer = UMinecraft.getPlayer()
+        val displayPosition = displayManager.config.displayPosition
 
         displayManager.aboveHead.forEachIndexed { index, display ->
             if (!display.config.enabled || (player.isSelf && !display.config.showSelf)) return@forEachIndexed
             val tag = display.cache[player.uniqueID]
             if (display.loadOrRender(player) && tag != null) {
-                // increase offset if there's something in the above name slot for scoreboards
-                var offset = 0.3
+                // Calculate base offset based on display position
+                var offset = when (displayPosition) {
+                    MasterConfig.DisplayPosition.ABOVE -> 0.3
+                    MasterConfig.DisplayPosition.BELOW -> -0.3
+                }
+                
                 val hasScoreboardObjective = player.worldScoreboard?.getObjectiveInDisplaySlot(2) != null
                 val isCloseToLocalPlayer = localPlayer?.let { player.getDistanceSqToEntity(it) < 100 } ?: false
-                if (hasScoreboardObjective && isCloseToLocalPlayer) {
+                
+                // Adjust offset for scoreboard when displaying above
+                if (displayPosition == MasterConfig.DisplayPosition.ABOVE && hasScoreboardObjective && isCloseToLocalPlayer) {
                     offset *= 2
                 }
+                
                 if (player.isSelf) offset = 0.0
                 offset += displayManager.config.offset
-                renderName(tag, player, event.x, event.y + offset + index * 0.3, event.z)
+                
+                // Adjust index offset direction based on position
+                val indexOffset = when (displayPosition) {
+                    MasterConfig.DisplayPosition.ABOVE -> index * 0.3
+                    MasterConfig.DisplayPosition.BELOW -> -(index * 0.3)
+                }
+                
+                renderName(tag, player, event.x, event.y + offset + indexOffset, event.z, displayPosition)
             }
         }
     }
@@ -55,7 +71,7 @@ object AboveHeadRender {
     private val EntityPlayer.isSelf: Boolean
         get() = UPlayer.getUUID() == this.uniqueID
 
-    private fun renderName(tag: LevelheadTag, entityIn: EntityPlayer, x: Double, y: Double, z: Double) {
+    private fun renderName(tag: LevelheadTag, entityIn: EntityPlayer, x: Double, y: Double, z: Double, position: MasterConfig.DisplayPosition) {
         val fontrenderer = getFontRenderer()
         val textScale = 0.016666668f * 1.6f * displayManager.config.fontSize
         UGraphics.GL.pushMatrix()
@@ -67,7 +83,14 @@ object AboveHeadRender {
         } else {
             1
         }
-        UGraphics.GL.translate(x.toFloat() + 0.0f, y.toFloat() + entityIn.height + 0.5f, z.toFloat())
+        
+        // Adjust Y position based on display position
+        val yOffset = when (position) {
+            MasterConfig.DisplayPosition.ABOVE -> entityIn.height + 0.5f
+            MasterConfig.DisplayPosition.BELOW -> -0.1f // Below the player's feet area / nametag
+        }
+        
+        UGraphics.GL.translate(x.toFloat() + 0.0f, y.toFloat() + yOffset, z.toFloat())
         GL11.glNormal3f(0.0f, 1.0f, 0.0f)
         val renderManager = mc.renderManager
         UGraphics.GL.rotate(-renderManager.playerViewY, 0.0f, 1.0f, 0.0f)

@@ -6,6 +6,7 @@ import club.sk1er.mods.levelhead.bedwars.FetchResult
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import club.sk1er.mods.levelhead.core.BedwarsStar
+import club.sk1er.mods.levelhead.core.GameMode
 import club.sk1er.mods.levelhead.core.dashUUID
 import cc.polyfrost.oneconfig.utils.commands.annotations.Command
 import cc.polyfrost.oneconfig.utils.commands.annotations.Greedy
@@ -71,7 +72,7 @@ class LevelheadCommand {
         val enabled = Levelhead.displayManager.config.enabled
         val enabledColor = if (enabled) ChatColor.GREEN else ChatColor.RED
         val primaryDisplay = Levelhead.displayManager.primaryDisplay()
-        val header = primaryDisplay?.config?.headerString ?: BedwarsModeDetector.DEFAULT_HEADER
+        val header = primaryDisplay?.config?.headerString ?: GameMode.BEDWARS.defaultHeader
         val showSelf = primaryDisplay?.config?.showSelf ?: true
         val offset = Levelhead.displayManager.config.offset
         val proxyState = when {
@@ -598,7 +599,7 @@ class LevelheadCommand {
 
     private fun sendDisplayOverview() {
         val primaryDisplay = Levelhead.displayManager.primaryDisplay()
-        val headerText = primaryDisplay?.config?.headerString ?: BedwarsModeDetector.DEFAULT_HEADER
+        val headerText = primaryDisplay?.config?.headerString ?: GameMode.BEDWARS.defaultHeader
         val headerColor = primaryDisplay?.config?.headerColor ?: Color(85, 255, 255)
         val showSelf = primaryDisplay?.config?.showSelf ?: true
         val offset = Levelhead.displayManager.config.offset
@@ -644,7 +645,7 @@ class LevelheadCommand {
     }
 
     private fun currentHeaderText(): String {
-        return Levelhead.displayManager.primaryDisplay()?.config?.headerString ?: BedwarsModeDetector.DEFAULT_HEADER
+        return Levelhead.displayManager.primaryDisplay()?.config?.headerString ?: GameMode.BEDWARS.defaultHeader
     }
 
     private fun currentHeaderColor(): Color {

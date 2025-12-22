@@ -11,7 +11,10 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import java.util.Locale
 
 object BedwarsModeDetector {
+    // Legacy constants - kept for backward compatibility
+    @Deprecated("Use GameMode.BEDWARS.typeId instead", ReplaceWith("GameMode.BEDWARS.typeId"))
     const val BEDWARS_STAR_TYPE = "BEDWARS_STAR"
+    @Deprecated("Use GameMode.BEDWARS.defaultHeader instead", ReplaceWith("GameMode.BEDWARS.defaultHeader"))
     const val DEFAULT_HEADER = "BedWars Star"
 
     private val teamPattern = Regex("^(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY|GREY):", RegexOption.IGNORE_CASE)
