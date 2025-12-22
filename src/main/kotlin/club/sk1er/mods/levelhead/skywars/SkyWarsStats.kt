@@ -1,6 +1,5 @@
 package club.sk1er.mods.levelhead.skywars
 
-import club.sk1er.mods.levelhead.bedwars.FetchResult
 import com.google.gson.JsonObject
 import java.awt.Color
 
@@ -9,10 +8,22 @@ import java.awt.Color
  * SkyWars uses an XP-based leveling system similar to BedWars.
  */
 object SkyWarsStats {
-    // XP thresholds for SkyWars levels (approximate based on Hypixel formulas)
-    // SkyWars uses a prestige system with levels 1-60 per prestige, then prestige level increases
-    private const val XP_PER_LEVEL_BASE = 10000L
-    private const val LEVELS_PER_PRESTIGE = 60
+    private val xpTable = longArrayOf(
+        0,    // Level 1
+        20,   // Level 2
+        70,   // Level 3
+        150,  // Level 4
+        250,  // Level 5
+        500,  // Level 6
+        1000, // Level 7
+        2000, // Level 8
+        3500, // Level 9
+        6000, // Level 10
+        10000,// Level 11
+        15000 // Level 12
+    )
+
+    private const val XP_PER_LEVEL_AFTER_TABLE = 10000L
 
     /**
      * Prestige colors for SkyWars based on level brackets.
@@ -34,19 +45,24 @@ object SkyWarsStats {
     data class PrestigeStyle(val minLevel: Int, val color: Color, val colorCode: String)
 
     /**
-     * Calculate the SkyWars level from experience.
-     * Uses simplified formula based on Hypixel's level calculation.
+     * Calculate the SkyWars level from experience using the official piecewise progression.
      */
     fun calculateLevel(experience: Long): Int {
-        // Return level 1 for invalid experience values (negative or zero)
-        // This is a safeguard; actual players should have positive experience
         if (experience <= 0L) return 1
-        
-        // SkyWars level calculation is roughly:
-        // Each level requires base XP, with scaling
-        // Simplified: level = sqrt(experience / 10000) + 1
-        val level = (Math.sqrt(experience.toDouble() / XP_PER_LEVEL_BASE) + 1).toInt()
-        return level.coerceAtLeast(1)
+
+        // Levels 1-12 use the XP table; afterwards, every level costs 10k XP
+        for (i in 0 until xpTable.lastIndex) {
+            val current = xpTable[i]
+            val next = xpTable[i + 1]
+            if (experience < next) {
+                val progress = (experience - current).toDouble() / (next - current).toDouble()
+                return (i + 1 + progress).toInt().coerceAtLeast(1)
+            }
+        }
+
+        val extraXp = experience - xpTable.last()
+        val additionalLevels = (extraXp / XP_PER_LEVEL_AFTER_TABLE).toInt()
+        return 12 + additionalLevels
     }
 
     /**

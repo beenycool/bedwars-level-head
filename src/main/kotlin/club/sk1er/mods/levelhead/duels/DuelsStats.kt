@@ -1,6 +1,5 @@
 package club.sk1er.mods.levelhead.duels
 
-import club.sk1er.mods.levelhead.bedwars.FetchResult
 import com.google.gson.JsonObject
 import java.awt.Color
 
@@ -28,17 +27,17 @@ object DuelsStats {
      * - Ascended: 50,000
      */
     private val divisions = listOf(
-        Division(minWins = 0, name = "Rookie", color = Color(170, 170, 170)),           // Gray
-        Division(minWins = 50, name = "Iron", color = Color(255, 255, 255)),             // White
-        Division(minWins = 100, name = "Gold", color = Color(255, 170, 0)),              // Gold
-        Division(minWins = 250, name = "Diamond", color = Color(85, 255, 255)),          // Aqua
-        Division(minWins = 500, name = "Master", color = Color(0, 170, 0)),              // Green
-        Division(minWins = 1000, name = "Legend", color = Color(170, 0, 0)),             // Dark Red
-        Division(minWins = 2000, name = "Grandmaster", color = Color(255, 255, 85)),     // Yellow
-        Division(minWins = 5000, name = "Godlike", color = Color(170, 0, 170)),          // Purple
-        Division(minWins = 10000, name = "Celestial", color = Color(255, 85, 255)),      // Light Purple
-        Division(minWins = 25000, name = "Divine", color = Color(85, 85, 255)),          // Blue
-        Division(minWins = 50000, name = "Ascended", color = Color(255, 85, 85))         // Light Red
+        Division(minWins = 50, name = "Rookie", color = Color(170, 170, 170)),           // Gray
+        Division(minWins = 100, name = "Iron", color = Color(255, 255, 255)),            // White
+        Division(minWins = 250, name = "Gold", color = Color(255, 170, 0)),              // Gold
+        Division(minWins = 500, name = "Diamond", color = Color(85, 255, 255)),          // Aqua
+        Division(minWins = 1000, name = "Master", color = Color(0, 170, 0)),             // Green
+        Division(minWins = 2000, name = "Legend", color = Color(170, 0, 0)),             // Dark Red
+        Division(minWins = 5000, name = "Grandmaster", color = Color(255, 255, 85)),     // Yellow
+        Division(minWins = 10000, name = "Godlike", color = Color(170, 0, 170)),         // Purple
+        Division(minWins = 25000, name = "Celestial", color = Color(255, 85, 255)),      // Light Purple
+        Division(minWins = 50000, name = "Divine", color = Color(85, 85, 255)),          // Blue
+        Division(minWins = 100000, name = "Ascended", color = Color(255, 85, 85))        // Light Red
     )
 
     data class Division(val minWins: Int, val name: String, val color: Color)

@@ -1,13 +1,14 @@
 package club.sk1er.mods.levelhead.skywars
 
 import club.sk1er.mods.levelhead.Levelhead
-import club.sk1er.mods.levelhead.bedwars.FetchResult
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.executeWithRetries
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.handleRetryAfterHint
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.parseRetryAfterMillis
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.sanitizeForLogs
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.toHttpDateString
+import club.sk1er.mods.levelhead.bedwars.FetchResult
 import club.sk1er.mods.levelhead.config.LevelheadConfig
+import club.sk1er.mods.levelhead.core.BackendMode
 import com.google.gson.JsonObject
 import okhttp3.HttpUrl
 import okhttp3.Request
@@ -27,20 +28,30 @@ object SkyWarsFetcher {
     private val missingKeyWarned = AtomicBoolean(false)
 
     /**
-     * Fetch SkyWars stats for a player.
-     * Tries proxy first if available, then falls back to direct Hypixel API.
+     * Fetch SkyWars stats for a player using the configured backend mode.
      */
     suspend fun fetchPlayer(uuid: UUID, lastFetchedAt: Long? = null, etag: String? = null): FetchResult {
-        // Try proxy first if enabled and configured
-        if (isProxyAvailable()) {
-            val proxyResult = fetchFromProxy(uuid.toString(), lastFetchedAt, etag)
-            if (proxyResult !is FetchResult.TemporaryError) {
-                return proxyResult
+        return when (LevelheadConfig.backendMode) {
+            BackendMode.OFFLINE -> FetchResult.PermanentError("OFFLINE_MODE")
+            BackendMode.PROXY_ONLY -> {
+                if (isProxyAvailable()) {
+                    fetchFromProxy(uuid.toString(), lastFetchedAt, etag)
+                } else {
+                    FetchResult.PermanentError("PROXY_UNAVAILABLE")
+                }
+            }
+            BackendMode.DIRECT_API -> fetchFromHypixel(uuid)
+            BackendMode.FALLBACK -> {
+                if (isProxyAvailable()) {
+                    val proxyResult = fetchFromProxy(uuid.toString(), lastFetchedAt, etag)
+                    if (proxyResult is FetchResult.Success || proxyResult is FetchResult.NotModified) {
+                        return proxyResult
+                    }
+                }
+
+                fetchFromHypixel(uuid)
             }
         }
-
-        // Fall back to direct Hypixel API
-        return fetchFromHypixel(uuid)
     }
 
     /**

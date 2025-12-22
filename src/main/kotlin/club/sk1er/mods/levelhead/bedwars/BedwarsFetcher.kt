@@ -9,6 +9,14 @@ import kotlinx.coroutines.launch
 import java.util.UUID
 
 object BedwarsFetcher {
+    private fun contributeToCommunityDatabase(uuid: UUID, payload: JsonObject) {
+        if (ProxyClient.canContribute()) {
+            Levelhead.scope.launch(Dispatchers.IO) {
+                ProxyClient.submitPlayer(uuid, payload)
+            }
+        }
+    }
+
     suspend fun fetchPlayer(uuid: UUID, lastFetchedAt: Long?, etag: String? = null): FetchResult {
         return when (LevelheadConfig.backendMode) {
             BackendMode.OFFLINE -> {
@@ -26,14 +34,12 @@ object BedwarsFetcher {
             BackendMode.DIRECT_API -> {
                 // Only use direct Hypixel API
                 val hypixelResult = HypixelClient.fetchPlayer(uuid)
-                
+
                 // Contribute to community database if new data fetched from Hypixel
-                if (hypixelResult is FetchResult.Success && ProxyClient.canContribute()) {
-                    Levelhead.scope.launch(Dispatchers.IO) {
-                        ProxyClient.submitPlayer(uuid, hypixelResult.payload)
-                    }
+                if (hypixelResult is FetchResult.Success) {
+                    contributeToCommunityDatabase(uuid, hypixelResult.payload)
                 }
-                
+
                 hypixelResult
             }
             BackendMode.FALLBACK -> {
@@ -47,12 +53,10 @@ object BedwarsFetcher {
                 }
 
                 val hypixelResult = HypixelClient.fetchPlayer(uuid)
-                
+
                 // Contribute to community database if new data fetched from Hypixel
-                if (hypixelResult is FetchResult.Success && ProxyClient.canContribute()) {
-                    Levelhead.scope.launch(Dispatchers.IO) {
-                        ProxyClient.submitPlayer(uuid, hypixelResult.payload)
-                    }
+                if (hypixelResult is FetchResult.Success) {
+                    contributeToCommunityDatabase(uuid, hypixelResult.payload)
                 }
 
                 hypixelResult
