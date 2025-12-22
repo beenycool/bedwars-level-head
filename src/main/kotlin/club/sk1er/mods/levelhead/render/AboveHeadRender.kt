@@ -23,8 +23,6 @@ import org.lwjgl.opengl.GL11
 
 object AboveHeadRender {
 
-    private const val BELOW_NAMETAG_Y_OFFSET = -0.1f
-
     @SubscribeEvent
     fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
         if (!displayManager.config.enabled) return
@@ -86,12 +84,9 @@ object AboveHeadRender {
             1
         }
         
-        // Adjust Y position based on display position
-        val yOffset = when (displayPosition) {
-            MasterConfig.DisplayPosition.ABOVE -> entityIn.height + 0.5f
-            MasterConfig.DisplayPosition.BELOW -> BELOW_NAMETAG_Y_OFFSET
-        }
-        
+        // The y parameter already includes the direction for ABOVE/BELOW. Offset from the player's head.
+        val yOffset = entityIn.height + 0.5f
+
         UGraphics.GL.translate(x.toFloat() + 0.0f, y.toFloat() + yOffset, z.toFloat())
         GL11.glNormal3f(0.0f, 1.0f, 0.0f)
         val renderManager = mc.renderManager

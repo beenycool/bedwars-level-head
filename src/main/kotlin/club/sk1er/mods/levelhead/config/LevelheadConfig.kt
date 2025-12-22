@@ -166,8 +166,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var displayPositionIndex: Int = 0
         set(value) {
             field = value
-            Levelhead.displayManager.config.displayPosition = 
-                if (value == 0) MasterConfig.DisplayPosition.ABOVE else MasterConfig.DisplayPosition.BELOW
+            Levelhead.displayManager.config.displayPosition =
+                MasterConfig.DisplayPosition.entries.getOrNull(value) ?: MasterConfig.DisplayPosition.ABOVE
             Levelhead.displayManager.saveConfig()
         }
 
@@ -180,12 +180,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var gameModeIndex: Int = 0
         set(value) {
             field = value
-            val mode = when(value) {
-                0 -> GameMode.BEDWARS
-                1 -> GameMode.DUELS
-                2 -> GameMode.SKYWARS
-                else -> GameMode.BEDWARS
-            }
+            val mode = GameMode.entries.getOrNull(value) ?: GameMode.BEDWARS
             Levelhead.displayManager.updatePrimaryDisplay { config ->
                 config.gameMode = mode
                 config.headerString = mode.defaultHeader
