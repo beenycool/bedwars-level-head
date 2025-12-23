@@ -1,28 +1,67 @@
 package club.sk1er.mods.levelhead.bedwars
 
 import club.sk1er.mods.levelhead.Levelhead
+import club.sk1er.mods.levelhead.config.LevelheadConfig
+import club.sk1er.mods.levelhead.core.BackendMode
 import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.UUID
 
 object BedwarsFetcher {
-    suspend fun fetchPlayer(uuid: UUID, lastFetchedAt: Long?, etag: String? = null): FetchResult {
-        if (ProxyClient.isAvailable()) {
-            // Using ProxyClient's fetch logic which handles sanitization internally
-            return ProxyClient.fetchPlayer(uuid.toString(), lastFetchedAt, etag)
-        }
-
-        val hypixelResult = HypixelClient.fetchPlayer(uuid)
-        
-        // Contribute to community database if new data fetched from Hypixel
-        if (hypixelResult is FetchResult.Success && ProxyClient.canContribute()) {
+    private fun contributeToCommunityDatabase(uuid: UUID, payload: JsonObject) {
+        if (ProxyClient.canContribute()) {
             Levelhead.scope.launch(Dispatchers.IO) {
-                ProxyClient.submitPlayer(uuid, hypixelResult.payload)
+                ProxyClient.submitPlayer(uuid, payload)
             }
         }
+    }
 
-        return hypixelResult
+    suspend fun fetchPlayer(uuid: UUID, lastFetchedAt: Long?, etag: String? = null): FetchResult {
+        return when (LevelheadConfig.backendMode) {
+            BackendMode.OFFLINE -> {
+                // In offline mode, return a permanent error indicating no network
+                FetchResult.PermanentError("OFFLINE_MODE")
+            }
+            BackendMode.PROXY_ONLY -> {
+                // Only use proxy, don't fall back to direct API
+                if (ProxyClient.isAvailable()) {
+                    ProxyClient.fetchPlayer(uuid.toString(), lastFetchedAt, etag)
+                } else {
+                    FetchResult.PermanentError("PROXY_UNAVAILABLE")
+                }
+            }
+            BackendMode.DIRECT_API -> {
+                // Only use direct Hypixel API
+                val hypixelResult = HypixelClient.fetchPlayer(uuid)
+
+                // Contribute to community database if new data fetched from Hypixel
+                if (hypixelResult is FetchResult.Success) {
+                    contributeToCommunityDatabase(uuid, hypixelResult.payload)
+                }
+
+                hypixelResult
+            }
+            BackendMode.FALLBACK -> {
+                // Try proxy first, fall back to direct API
+                if (ProxyClient.isAvailable()) {
+                    val proxyResult = ProxyClient.fetchPlayer(uuid.toString(), lastFetchedAt, etag)
+                    // Return proxy result if successful or cached (not an error state)
+                    if (proxyResult is FetchResult.Success || proxyResult is FetchResult.NotModified) {
+                        return proxyResult
+                    }
+                }
+
+                val hypixelResult = HypixelClient.fetchPlayer(uuid)
+
+                // Contribute to community database if new data fetched from Hypixel
+                if (hypixelResult is FetchResult.Success) {
+                    contributeToCommunityDatabase(uuid, hypixelResult.payload)
+                }
+
+                hypixelResult
+            }
+        }
     }
 
     suspend fun fetchProxyPlayer(identifier: String, lastFetchedAt: Long? = null, etag: String? = null): FetchResult {
@@ -33,6 +72,10 @@ object BedwarsFetcher {
     }
 
     suspend fun fetchBatchFromProxy(uuids: List<UUID>): Map<UUID, FetchResult> {
+        // In offline mode, return empty results
+        if (LevelheadConfig.backendMode == BackendMode.OFFLINE) {
+            return uuids.associateWith { FetchResult.PermanentError("OFFLINE_MODE") }
+        }
         return ProxyClient.fetchBatch(uuids)
     }
 

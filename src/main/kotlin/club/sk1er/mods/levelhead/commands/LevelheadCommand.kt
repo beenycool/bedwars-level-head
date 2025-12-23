@@ -2,6 +2,7 @@ package club.sk1er.mods.levelhead.commands
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.commands.WhoisService
+import club.sk1er.mods.levelhead.config.ConfigProfiles
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import club.sk1er.mods.levelhead.core.GameMode
@@ -386,6 +387,74 @@ class LevelheadCommand {
         sendMessage("${ChatColor.YELLOW}Mod enabled: ${formatToggle(Levelhead.displayManager.config.enabled)}${ChatColor.YELLOW}, show self: ${formatToggle(Levelhead.displayManager.primaryDisplay()?.config?.showSelf ?: true)}")
         sendMessage("${ChatColor.YELLOW}Star cache entries: ${ChatColor.GOLD}${snapshot.cacheSize}${ChatColor.YELLOW}, display cache entries: ${ChatColor.GOLD}$displayCache")
         sendMessage("${ChatColor.YELLOW}Rate limiter remaining: ${ChatColor.GOLD}${snapshot.rateLimitRemaining}${ChatColor.YELLOW}, proxy: ${if (snapshot.proxyEnabled) ChatColor.GREEN else ChatColor.GRAY}${if (snapshot.proxyEnabled) "enabled" else "disabled"}${ChatColor.YELLOW}")
+    }
+
+    @SubCommand
+    fun profile(@Greedy args: String = "") {
+        val parsedArgs = args.split(" ")
+            .mapNotNull { it.takeIf(String::isNotBlank) }
+
+        if (parsedArgs.isEmpty()) {
+            sendProfileHelp()
+            return
+        }
+
+        when (parsedArgs[0].lowercase(Locale.ROOT)) {
+            "list" -> {
+                sendMessage("${ChatColor.GREEN}Available presets:")
+                ConfigProfiles.Preset.entries.forEach { preset ->
+                    sendMessage("${ChatColor.YELLOW}- ${ChatColor.GOLD}${preset.displayName}${ChatColor.YELLOW}: ${ChatColor.GRAY}${preset.description}")
+                }
+            }
+            "apply" -> {
+                val presetName = parsedArgs.getOrNull(1)?.trim()
+                if (presetName.isNullOrEmpty()) {
+                    sendMessage("${ChatColor.RED}Specify a preset name.${ChatColor.YELLOW} Use ${ChatColor.GOLD}/levelhead profile list${ChatColor.YELLOW} to see available presets.")
+                    return
+                }
+                val preset = ConfigProfiles.Preset.entries.find { 
+                    it.displayName.equals(presetName, ignoreCase = true) || it.name.equals(presetName, ignoreCase = true)
+                }
+                if (preset == null) {
+                    sendMessage("${ChatColor.RED}Unknown preset '$presetName'.${ChatColor.YELLOW} Use ${ChatColor.GOLD}/levelhead profile list${ChatColor.YELLOW} to see available presets.")
+                    return
+                }
+                val profile = ConfigProfiles.getPreset(preset)
+                ConfigProfiles.applyProfile(profile)
+                sendMessage("${ChatColor.GREEN}Applied ${ChatColor.GOLD}${preset.displayName}${ChatColor.GREEN} profile!")
+            }
+            "export" -> {
+                val exported = ConfigProfiles.exportProfile()
+                GuiScreen.setClipboardString(exported)
+                sendMessage("${ChatColor.GREEN}Exported current configuration to clipboard. Share it with others!")
+            }
+            "import" -> {
+                val clipboard = GuiScreen.getClipboardString()
+                if (clipboard.isNullOrBlank()) {
+                    sendMessage("${ChatColor.RED}Clipboard is empty.${ChatColor.YELLOW} Copy a profile JSON to your clipboard first.")
+                    return
+                }
+                val profile = ConfigProfiles.importProfile(clipboard)
+                if (profile == null) {
+                    sendMessage("${ChatColor.RED}Invalid profile data in clipboard.${ChatColor.YELLOW} Make sure you copied a valid Levelhead profile.")
+                    return
+                }
+                ConfigProfiles.applyProfile(profile)
+                sendMessage("${ChatColor.GREEN}Imported and applied profile ${ChatColor.GOLD}${profile.name}${ChatColor.GREEN}!")
+            }
+            else -> {
+                sendMessage("${ChatColor.RED}Unknown profile action '${parsedArgs[0]}'.")
+                sendProfileHelp()
+            }
+        }
+    }
+
+    private fun sendProfileHelp() {
+        sendMessage("${ChatColor.YELLOW}Profile commands:")
+        sendMessage("${ChatColor.GRAY}  ${ChatColor.GOLD}/levelhead profile list${ChatColor.GRAY} - Show available presets")
+        sendMessage("${ChatColor.GRAY}  ${ChatColor.GOLD}/levelhead profile apply <name>${ChatColor.GRAY} - Apply a preset")
+        sendMessage("${ChatColor.GRAY}  ${ChatColor.GOLD}/levelhead profile export${ChatColor.GRAY} - Export config to clipboard")
+        sendMessage("${ChatColor.GRAY}  ${ChatColor.GOLD}/levelhead profile import${ChatColor.GRAY} - Import config from clipboard")
     }
 
     private fun handleDisplayHeader(args: List<String>) {
