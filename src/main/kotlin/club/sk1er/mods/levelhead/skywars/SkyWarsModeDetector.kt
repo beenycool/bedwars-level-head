@@ -1,4 +1,4 @@
-package club.sk1er.mods.levelhead.core
+package club.sk1er.mods.levelhead.skywars
 
 import club.sk1er.mods.levelhead.Levelhead
 import net.minecraft.client.Minecraft
@@ -10,15 +10,11 @@ import net.minecraftforge.client.event.ClientChatReceivedEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import java.util.Locale
 
-object BedwarsModeDetector {
-    // Legacy constants - kept for backward compatibility
-    @Deprecated("Use GameMode.BEDWARS.typeId instead", ReplaceWith("GameMode.BEDWARS.typeId"))
-    const val BEDWARS_STAR_TYPE = "BEDWARS_STAR"
-    @Deprecated("Use GameMode.BEDWARS.defaultHeader instead", ReplaceWith("GameMode.BEDWARS.defaultHeader"))
-    const val DEFAULT_HEADER = "BedWars Star"
-
-    private val teamPattern = Regex("^(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY|GREY):", RegexOption.IGNORE_CASE)
-    private val miniServerPattern = Regex("mini\\w+", RegexOption.IGNORE_CASE)
+/**
+ * Detects when the player is in a SkyWars game on Hypixel.
+ * Similar to BedwarsModeDetector but for SkyWars game mode.
+ */
+object SkyWarsModeDetector {
     private val WHITESPACE_PATTERN = Regex("\\s+")
 
     private var cachedContext: Context = Context.UNKNOWN
@@ -34,7 +30,7 @@ object BedwarsModeDetector {
         LOBBY,
         MATCH;
 
-        val isBedwars: Boolean
+        val isSkyWars: Boolean
             get() = this == LOBBY || this == MATCH
     }
 
@@ -62,14 +58,14 @@ object BedwarsModeDetector {
         return cachedContext
     }
 
-    fun isInBedwarsLobby(): Boolean = currentContext().let { it == Context.LOBBY }
+    fun isInSkyWarsLobby(): Boolean = currentContext().let { it == Context.LOBBY }
 
-    fun isInBedwarsMatch(): Boolean = currentContext().let { it == Context.MATCH }
+    fun isInSkyWarsMatch(): Boolean = currentContext().let { it == Context.MATCH }
 
-    fun isInBedwars(): Boolean = currentContext().isBedwars
+    fun isInSkyWars(): Boolean = currentContext().isSkyWars
 
     fun shouldRequestData(): Boolean {
-        return Levelhead.isOnHypixel() && isInBedwars()
+        return Levelhead.isOnHypixel() && isInSkyWars()
     }
 
     fun shouldRenderTags(): Boolean {
@@ -79,8 +75,8 @@ object BedwarsModeDetector {
 
     private fun handleContextChange(old: Context, new: Context) {
         when {
-            !old.isBedwars && new.isBedwars -> Levelhead.displayManager.requestAllDisplays()
-            old.isBedwars && !new.isBedwars -> Levelhead.displayManager.clearCachesWithoutRefetch()
+            !old.isSkyWars && new.isSkyWars -> Levelhead.displayManager.requestAllDisplays()
+            old.isSkyWars && !new.isSkyWars -> Levelhead.displayManager.clearCachesWithoutRefetch()
         }
     }
 
@@ -109,7 +105,6 @@ object BedwarsModeDetector {
             null -> ""
             is IChatComponent -> displayComponent.formattedText
             else -> {
-                // Fallback: try to invoke getFormattedText on the actual type, then fall back to toString()
                 runCatching {
                     displayComponent::class.java.getMethod("getFormattedText")
                         .invoke(displayComponent) as? String
@@ -119,7 +114,7 @@ object BedwarsModeDetector {
         val title = StringUtils.stripControlCodes(rawTitle)
             .uppercase(Locale.ROOT)
         val normalizedTitle = title.replace(WHITESPACE_PATTERN, "")
-        if (!normalizedTitle.contains("BEDWARS")) {
+        if (!normalizedTitle.contains("SKYWARS")) {
             return Context.NONE
         }
 
@@ -132,7 +127,12 @@ object BedwarsModeDetector {
             .filter { it.isNotBlank() }
             .toList()
 
-        if (lines.any { teamPattern.containsMatchIn(it) }) {
+        // In SkyWars, look for indicators like "Players:" or "Kills:"
+        if (lines.any { 
+            it.contains("Players Left:", ignoreCase = true) || 
+            it.contains("Kills:", ignoreCase = true) ||
+            it.contains("Next Event:", ignoreCase = true)
+        }) {
             return Context.MATCH
         }
 
@@ -184,12 +184,10 @@ object BedwarsModeDetector {
 
         val normalized = StringUtils.stripControlCodes(rawText).lowercase(Locale.ROOT)
         val detectedContext = when {
-            normalized.contains("protect your bed and destroy the enemy beds") -> Context.MATCH
-            normalized.contains("the game starts in") -> Context.MATCH
-            normalized.contains("game starts in") -> Context.MATCH
-            normalized.contains("sending you to mini") -> Context.LOBBY
-            normalized.contains("bed wars") -> Context.LOBBY
-            miniServerPattern.containsMatchIn(normalized) -> Context.LOBBY
+            normalized.contains("the game starts in") && normalized.contains("second") -> Context.MATCH
+            normalized.contains("cages open in") -> Context.MATCH
+            normalized.contains("you died!") && normalized.contains("skywars") -> Context.MATCH
+            normalized.contains("skywars") && normalized.contains("click to play") -> Context.LOBBY
             else -> Context.NONE
         }
 

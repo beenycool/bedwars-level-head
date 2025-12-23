@@ -2,8 +2,11 @@ package club.sk1er.mods.levelhead.config
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
+import club.sk1er.mods.levelhead.core.BackendMode
+import club.sk1er.mods.levelhead.core.GameMode
 import cc.polyfrost.oneconfig.config.Config
 import cc.polyfrost.oneconfig.config.annotations.Button
+import cc.polyfrost.oneconfig.config.annotations.Dropdown
 import cc.polyfrost.oneconfig.config.annotations.Header
 import cc.polyfrost.oneconfig.config.annotations.Info
 import cc.polyfrost.oneconfig.config.annotations.Slider
@@ -33,6 +36,9 @@ private const val _MAX_STAR_CACHE_TTL_MINUTES_SLIDER = 180f
 private const val GITHUB_REPO_URL = "https://github.com/beenycool/bedwars-level-head"
 private const val UPSTREAM_LEVELHEAD_URL = "https://github.com/Sk1erLLC/Levelhead"
 private const val MODRINTH_URL = "https://modrinth.com/mod/bedwars-level-head"
+private const val DISCORD_URL = "https://discord.gg/hypixel"
+private const val WIKI_URL = "https://github.com/beenycool/bedwars-level-head/wiki"
+private const val CHANGELOG_URL = "https://github.com/beenycool/bedwars-level-head/releases"
 private const val ABOUT_VERSION_TEXT = "Version: " + Levelhead.VERSION
 
 object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedwars-levelhead.json") {
@@ -52,6 +58,9 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     val DEFAULT_STAR_CACHE_TTL_MINUTES: Int get() = _DEFAULT_STAR_CACHE_TTL_MINUTES
 
 
+    // ===============================
+    // About Section
+    // ===============================
     @Header(text = "About", category = "About")
     @Info(
         text = "BedWars Levelhead shows BedWars stars above players' heads on Hypixel.",
@@ -78,6 +87,14 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var aboutCredits: String = ""
 
     @Info(
+        text = "Contributors: Sk1er, boomboompower, FalseHonesty, Sychic, Sk1erLLC, beenycool",
+        type = InfoType.INFO,
+        category = "About"
+    )
+    @Transient
+    var aboutContributors: String = ""
+
+    @Info(
         text = "Licensed under the GNU GPL v3.",
         type = InfoType.INFO,
         category = "About"
@@ -85,6 +102,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Transient
     var aboutLicense: String = ""
 
+    @Header(text = "Links", category = "About")
     @Button(
         name = "Modrinth",
         text = "Open Page",
@@ -109,7 +127,87 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     fun openUpstream() = openUrl(UPSTREAM_LEVELHEAD_URL)
 
+    @Button(
+        name = "Changelog",
+        text = "View Releases",
+        description = "View the changelog and update history.",
+        category = "About"
+    )
+    fun openChangelog() = openUrl(CHANGELOG_URL)
 
+    @Button(
+        name = "Documentation",
+        text = "Open Wiki",
+        description = "Open the documentation and configuration guide.",
+        category = "About"
+    )
+    fun openWiki() = openUrl(WIKI_URL)
+
+    // ===============================
+    // Display Settings Section
+    // ===============================
+    @Header(text = "Display Settings", category = "Display")
+    @Switch(
+        name = "Enable Levelhead",
+        description = "Enable or disable the levelhead display entirely.",
+        category = "Display"
+    )
+    var levelheadEnabled: Boolean = true
+        set(value) {
+            field = value
+            Levelhead.displayManager.setEnabled(value)
+        }
+
+    @Dropdown(
+        name = "Display Position",
+        description = "Choose whether to display the levelhead above or below the player's nametag.",
+        category = "Display",
+        options = ["Above Nametag", "Below Nametag"]
+    )
+    var displayPositionIndex: Int = 0
+        set(value) {
+            field = value
+            Levelhead.displayManager.config.displayPosition =
+                MasterConfig.DisplayPosition.entries.getOrNull(value) ?: MasterConfig.DisplayPosition.ABOVE
+            Levelhead.displayManager.saveConfig()
+        }
+
+    @Dropdown(
+        name = "Game Mode",
+        description = "Select which game mode stats to display. BedWars is the primary mode; Duels and SkyWars support is planned for future updates.",
+        category = "Display",
+        options = ["BedWars", "Duels", "SkyWars"]
+    )
+    var gameModeIndex: Int = 0
+        set(value) {
+            field = value
+            val mode = GameMode.entries.getOrNull(value) ?: GameMode.BEDWARS
+            Levelhead.displayManager.updatePrimaryDisplay { config ->
+                config.gameMode = mode
+                config.headerString = mode.defaultHeader
+                true
+            }
+            Levelhead.displayManager.clearCache()
+        }
+
+    @Switch(
+        name = "Show Self",
+        description = "Display your own levelhead above your head.",
+        category = "Display"
+    )
+    var showSelf: Boolean = true
+        set(value) {
+            field = value
+            Levelhead.displayManager.updatePrimaryDisplay { config ->
+                config.showSelf = value
+                true
+            }
+        }
+
+    // ===============================
+    // General Settings Section
+    // ===============================
+    @Header(text = "General Settings")
     @Text(name = "Hypixel API Key", placeholder = "Get a key from developer.hypixel.net", secure = true)
     var apiKey: String = ""
 
@@ -133,7 +231,23 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var showTabStats: Boolean = true
 
+    @Dropdown(
+        name = "Backend Mode",
+        description = "Choose how stats are fetched. Proxy Only uses community cache, Direct API uses your key, Fallback tries both, Offline uses only cached data.",
+        options = ["Proxy Only", "Direct API", "Fallback", "Offline"]
+    )
+    var backendModeIndex: Int = 2 // Default to Fallback
+        set(value) {
+            field = value
+            save()
+            BedwarsFetcher.resetWarnings()
+        }
 
+    /**
+     * Get the current BackendMode based on the dropdown selection.
+     */
+    val backendMode: BackendMode
+        get() = BackendMode.fromIndex(backendModeIndex)
 
     @Header(text = "Developer Options", category = "Developer")
     @Switch(
@@ -332,6 +446,10 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         communitySubmitSecret = ""
         customDatabaseUrl = ""
         starCacheTtlMinutes = DEFAULT_STAR_CACHE_TTL_MINUTES
+        levelheadEnabled = true
+        displayPositionIndex = 0
+        gameModeIndex = 0
+        showSelf = true
         save()
         BedwarsFetcher.resetWarnings()
         Levelhead.displayManager.resetToDefaults()
