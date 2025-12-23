@@ -1,5 +1,11 @@
 import { Pool } from 'pg';
-import { CACHE_DB_URL, CACHE_DB_POOL_MAX, CACHE_DB_POOL_MIN, HYPIXEL_API_CALL_WINDOW_MS } from '../config';
+import {
+  CACHE_DB_URL,
+  CACHE_DB_POOL_MAX,
+  CACHE_DB_POOL_MIN,
+  HYPIXEL_API_CALL_WINDOW_MS,
+  CACHE_DB_SIZE_LIMIT_BYTES,
+} from '../config';
 import { recordCacheHit, recordCacheMiss } from './metrics';
 
 interface DatabaseError extends Error {
@@ -150,6 +156,8 @@ export async function purgeExpiredEntries(now: number = Date.now()): Promise<voi
   if (purged > 0) {
     console.info(`[cache] purged ${purged} expired entries`);
   }
+
+  await enforceDbSizeLimit();
 
   const historyResult = await pool.query(
     "DELETE FROM player_query_history WHERE requested_at < NOW() - INTERVAL '30 days'",
@@ -311,6 +319,38 @@ export async function closeCache(): Promise<void> {
   await ensureInitialized();
   await pool.end();
   console.info('[cache] PostgreSQL pool closed');
+}
+
+export async function enforceDbSizeLimit(): Promise<void> {
+  if (CACHE_DB_SIZE_LIMIT_BYTES <= 0) return;
+
+  await ensureInitialized();
+
+  try {
+    const sizeResult = await pool.query('SELECT pg_database_size(current_database()) as size');
+    const currentSize = parseInt(sizeResult.rows[0].size, 10);
+
+    if (currentSize > CACHE_DB_SIZE_LIMIT_BYTES) {
+      console.warn(
+        `[cache] DB size ${currentSize} exceeds limit ${CACHE_DB_SIZE_LIMIT_BYTES}. Evicting entries...`,
+      );
+      // Delete oldest 1000 entries
+      const deleteResult = await pool.query(`
+        DELETE FROM player_cache
+        WHERE cache_key IN (
+            SELECT cache_key FROM player_cache
+            ORDER BY last_modified ASC NULLS FIRST
+            LIMIT 1000
+        )
+      `);
+      const deleted = deleteResult.rowCount ?? 0;
+      if (deleted > 0) {
+        console.info(`[cache] Evicted ${deleted} entries to free space.`);
+      }
+    }
+  } catch (err) {
+    console.error('[cache] Failed to enforce DB size limit', err);
+  }
 }
 
 export async function getActivePrivateUserCount(since: number): Promise<number> {
