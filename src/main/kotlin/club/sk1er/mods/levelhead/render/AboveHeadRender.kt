@@ -1,6 +1,10 @@
+/*
+ * Copyright (c) 2025 beenycool
+ * Licensed under the GNU General Public License v3.0
+ */
+
 package club.sk1er.mods.levelhead.render
 
-import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.Levelhead.displayManager
 import club.sk1er.mods.levelhead.display.LevelheadTag
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
@@ -32,17 +36,13 @@ object AboveHeadRender {
         if (event.entity !is EntityPlayer) return
         val player = event.entity as EntityPlayer
 
-        val localPlayer = UMinecraft.getPlayer()
-
         displayManager.aboveHead.forEachIndexed { index, display ->
             if (!display.config.enabled || (player.isSelf && !display.config.showSelf)) return@forEachIndexed
             val tag = display.cache[player.uniqueID]
             if (display.loadOrRender(player) && tag != null) {
                 // increase offset if there's something in the above name slot for scoreboards
                 var offset = 0.3
-                val hasScoreboardObjective = player.worldScoreboard?.getObjectiveInDisplaySlot(2) != null
-                val isCloseToLocalPlayer = localPlayer?.let { player.getDistanceSqToEntity(it) < 100 } ?: false
-                if (hasScoreboardObjective && isCloseToLocalPlayer) {
+                if (player.worldScoreboard.getObjectiveInDisplaySlot(2) != null && player.getDistanceSqToEntity(UMinecraft.getPlayer()!!) < 100) {
                     offset *= 2
                 }
                 if (player.isSelf) offset = 0.0
