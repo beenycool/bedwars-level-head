@@ -58,6 +58,7 @@ function parseTrustProxyEnv(value: string | undefined): TrustProxyValue {
 }
 
 export const ADMIN_API_KEYS = requiredStringListEnv('ADMIN_API_KEYS');
+export const CRON_API_KEYS = requiredStringListEnv('CRON_API_KEYS');
 
 function parseIntEnv(name: string, defaultValue: number): number {
   const raw = process.env[name];
@@ -95,6 +96,8 @@ export const RATE_LIMIT_WINDOW_MS = parseIntEnv('RATE_LIMIT_WINDOW_MS', 5 * 60 *
 export const RATE_LIMIT_MAX = parseIntEnv('RATE_LIMIT_MAX', 300);
 export const PUBLIC_RATE_LIMIT_WINDOW_MS = parseIntEnv('PUBLIC_RATE_LIMIT_WINDOW_MS', 60 * 1000);
 export const PUBLIC_RATE_LIMIT_MAX = parseIntEnv('PUBLIC_RATE_LIMIT_MAX', 60);
+export const CRON_RATE_LIMIT_WINDOW_MS = parseIntEnv('CRON_RATE_LIMIT_WINDOW_MS', 60 * 60 * 1000);
+export const CRON_RATE_LIMIT_MAX = parseIntEnv('CRON_RATE_LIMIT_MAX', 10);
 export const DYNAMIC_RATE_LIMIT_ENABLED = parseBooleanEnv('DYNAMIC_RATE_LIMIT_ENABLED', true);
 export const DYNAMIC_RATE_LIMIT_MIN = Math.max(1, parseIntEnv('DYNAMIC_RATE_LIMIT_MIN', 10));
 export const DYNAMIC_RATE_LIMIT_MAX = Math.max(

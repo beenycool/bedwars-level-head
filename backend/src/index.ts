@@ -22,6 +22,7 @@ import {
 import adminRouter from './routes/admin';
 import statsRouter from './routes/stats';
 import configRouter from './routes/config';
+import cronRouter from './routes/cron';
 
 const app = express();
 
@@ -74,6 +75,7 @@ app.use('/api/public/player', playerPublicRouter);
 app.use('/api/player', playerRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/config', configRouter);
+app.use('/api/cron', cronRouter);
 app.use('/stats', statsRouter);
 
 app.get('/healthz', async (_req, res) => {

@@ -63,10 +63,13 @@ The backend uses environment variables for all secrets and tunables. The `.env.e
 | `HYPIXEL_API_KEY` | ✅ | Hypixel API key owned by the proxy operator. |
 | `CACHE_DB_URL` | ✅ | PostgreSQL connection string for the response cache database. |
 | `ADMIN_API_KEYS` | ✅ | Comma-separated list of tokens required to access administrative endpoints. |
+| `CRON_API_KEYS` | ✅ | Comma-separated list of tokens required to access cron endpoints. |
 | `RATE_LIMIT_MAX` | ❌ | Requests per IP allowed per window (defaults to `300`). |
 | `RATE_LIMIT_WINDOW_MS` | ❌ | Window length in milliseconds for the private route limit (defaults to `300000`, i.e. 5 minutes). |
 | `PUBLIC_RATE_LIMIT_MAX` | ❌ | Requests per IP allowed per window on public routes (defaults to `60`). |
 | `PUBLIC_RATE_LIMIT_WINDOW_MS` | ❌ | Window length for public route rate limits (defaults to `60000`, i.e. 1 minute). |
+| `CRON_RATE_LIMIT_MAX` | ❌ | Requests per IP allowed per window on cron routes (defaults to `10`). |
+| `CRON_RATE_LIMIT_WINDOW_MS` | ❌ | Window length for cron route rate limits (defaults to `3600000`, i.e. 1 hour). |
 | `PORT` | ❌ | Port to bind to (defaults to `3000`). |
 | `HOST` | ❌ | Host/IP to bind to (defaults to `0.0.0.0`). |
 | `HYPIXEL_API_BASE_URL` | ❌ | Override for Hypixel API base URL. |
@@ -90,7 +93,16 @@ Administrative endpoints require clients to present a valid API token via one of
 - `Authorization: Bearer <token>` header (recommended)
 - `X-Admin-Token: <token>` header
 
-Query string authentication is explicitly rejected to avoid leaking secrets via logs, proxies, or browser history. Multiple tokens can be configured by providing a comma-separated list in `ADMIN_API_KEYS`.
+QuerCron access
+
+Cron endpoints require clients to present a valid API token via one of the following methods:
+
+- `Authorization: Bearer <token>` header (recommended)
+- `X-Cron-Token: <token>` header
+
+Multiple tokens can be configured by providing a comma-separated list in `CRON_API_KEYS`.
+
+### y string authentication is explicitly rejected to avoid leaking secrets via logs, proxies, or browser history. Multiple tokens can be configured by providing a comma-separated list in `ADMIN_API_KEYS`.
 
 ### Proxy awareness
 
@@ -117,6 +129,10 @@ The built-in rate limiter stores buckets in memory, so limits apply per process.
 Requests to Hypixel and Mojang include a `User-Agent` string of the form `Levelhead-Proxy/<version> (rev:<sha>)`. Set `BACKEND_VERSION` and `BUILD_SHA` to override these values when deploying custom builds so upstream providers can correlate traffic with your release.
 
 ## API Endpoints
+
+### Cron Routes
+
+- `POST /api/cron/ping` - Authenticated ping endpoint for uptime monitoring. Requires a cron token and is rate-limited per client IP using the `CRON_RATE_LIMIT_*` configuration.
 
 ### Player Routes
 

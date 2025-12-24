@@ -115,7 +115,7 @@ object StatsFormatter {
         config: DisplayConfig
     ): Triple<String, Color, Boolean> {
         val levelValue = stats.level
-        val starString = levelValue?.let { "$it${SkyWarsStats.getStarSymbol(it)}" } ?: "?"
+        val starString = levelValue?.let { "$it${SkyWarsStats.getDefaultEmblem(it)}" } ?: "?"
         val winsString = stats.wins?.toString() ?: "?"
         val lossesString = stats.losses?.toString() ?: "?"
         val wlrString = SkyWarsStats.calculateWLR(stats.wins, stats.losses)
