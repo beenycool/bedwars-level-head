@@ -72,6 +72,7 @@ const historyBuffer: PlayerQueryRecord[] = [];
 const MAX_HISTORY_BUFFER = 50_000;
 const BATCH_FLUSH_INTERVAL = 5000; // 5 seconds
 let flushInterval: NodeJS.Timeout | null = null;
+let supportsPgTotalRelationSize: boolean | null = null;
 
 const initialization = (async () => {
   try {
@@ -110,6 +111,15 @@ const initialization = (async () => {
       CREATE INDEX IF NOT EXISTS idx_player_query_history_latency
       ON player_query_history (latency_ms)
     `);
+
+    // Detect whether pg_total_relation_size exists (some Postgres-compatible DBs like CockroachDB do not implement it)
+    try {
+      await pool.query(`SELECT pg_total_relation_size('player_cache') as size_check`);
+      supportsPgTotalRelationSize = true;
+    } catch (err) {
+      supportsPgTotalRelationSize = false;
+      console.info('[history] pg_total_relation_size not available; DB size queries will be skipped');
+    }
   } catch (error) {
     console.error('Failed to initialize player_query_history table', error);
     throw error;
@@ -518,22 +528,32 @@ export async function getSystemStats(): Promise<SystemStats> {
   await ensureInitialized();
 
   // Run queries in parallel for speed, but handle environments where Postgres-specific functions may be missing.
-  const tableStatsPromise = pool
-    .query(`
-      SELECT
-        pg_total_relation_size('player_cache') as total_size_bytes,
-        (pg_total_relation_size('player_cache') - pg_relation_size('player_cache')) as index_size_bytes
-    `)
-    .catch((error) => {
-      console.warn('[history] unable to fetch table sizes, falling back to nulls', error);
-      return { rows: [{ total_size_bytes: null, index_size_bytes: null }] } as { rows: Array<{ total_size_bytes?: string | number | null; index_size_bytes?: string | number | null }>; };
-    });
+  const tableStatsPromise = (supportsPgTotalRelationSize === false)
+    ? Promise.resolve({ rows: [{ total_size_bytes: null, index_size_bytes: null }] } as any)
+    : pool
+        .query(`
+          SELECT
+            pg_total_relation_size('player_cache') as total_size_bytes,
+            (pg_total_relation_size('player_cache') - pg_relation_size('player_cache')) as index_size_bytes
+        `)
+        .catch((error) => {
+          console.warn('[history] unable to fetch table sizes, falling back to nulls', error);
+          // If the function is missing, avoid future attempts
+          try {
+            const code = (error as any)?.code;
+            const msg = (error as Error).message ?? '';
+            if (code === '42883' || msg.includes('pg_total_relation_size')) {
+              supportsPgTotalRelationSize = false;
+            }
+          } catch (_) { /* ignore */ }
+          return { rows: [{ total_size_bytes: null, index_size_bytes: null }] } as any;
+        });
 
   const apiStatsPromise = pool
     .query(`
       SELECT count(*) as count
       FROM hypixel_api_calls
-      WHERE called_at >= (EXTRACT(EPOCH FROM NOW()) * 1000 - (60 * 60 * 1000))
+      WHERE called_at >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000)
     `)
     .catch((error) => {
       console.warn('[history] unable to fetch api stats, falling back to zero', error);
