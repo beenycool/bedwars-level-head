@@ -520,6 +520,7 @@ function formatBytes(bytes: number): string {
   const safeBytes = Math.max(bytes, 0);
   if (safeBytes === 0) return '0 B';
 
+  // Values above this threshold are rounded to whole numbers; smaller values keep one decimal.
   const roundThreshold = 10;
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   const exponent = Math.min(Math.floor(Math.log(safeBytes) / Math.log(1024)), units.length - 1);
@@ -536,9 +537,13 @@ export async function getSystemStats(): Promise<SystemStats> {
   const [tableStats, apiStats, cacheStats] = await Promise.all([
     // 1. DB Size
     pool.query(`
+      WITH rel_sizes AS (
+        SELECT pg_total_relation_size('player_cache')::bigint AS total_size_bytes
+      )
       SELECT
-        pg_total_relation_size('player_cache')::bigint as total_size_bytes,
-        (pg_total_relation_size('player_cache') - pg_relation_size('player_cache'))::bigint as index_size_bytes
+        total_size_bytes,
+        (total_size_bytes - pg_relation_size('player_cache'))::bigint AS index_size_bytes
+      FROM rel_sizes
     `),
     // 2. API Calls (Last Hour)
     pool.query(
