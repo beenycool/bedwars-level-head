@@ -517,32 +517,65 @@ export interface SystemStats {
 export async function getSystemStats(): Promise<SystemStats> {
   await ensureInitialized();
 
-  // Run queries in parallel for speed
-  const [tableStats, apiStats, cacheStats] = await Promise.all([
-    // 1. DB Size
-    pool.query(`
+  // Run queries in parallel for speed, but handle environments where Postgres-specific functions may be missing.
+  const tableStatsPromise = pool
+    .query(`
       SELECT
-        pg_size_pretty(pg_total_relation_size('player_cache')) as total_size,
-        pg_size_pretty(pg_total_relation_size('player_cache') - pg_relation_size('player_cache')) as index_size
-    `),
-    // 2. API Calls (Last Hour)
-    pool.query(`
+        pg_total_relation_size('player_cache') as total_size_bytes,
+        (pg_total_relation_size('player_cache') - pg_relation_size('player_cache')) as index_size_bytes
+    `)
+    .catch((error) => {
+      console.warn('[history] unable to fetch table sizes, falling back to nulls', error);
+      return { rows: [{ total_size_bytes: null, index_size_bytes: null }] } as { rows: Array<{ total_size_bytes?: string | number | null; index_size_bytes?: string | number | null }>; };
+    });
+
+  const apiStatsPromise = pool
+    .query(`
       SELECT count(*) as count
       FROM hypixel_api_calls
       WHERE called_at >= (EXTRACT(EPOCH FROM NOW()) * 1000 - (60 * 60 * 1000))
-    `),
-    // 3. Cache specific stats
-    pool.query(`
-      SELECT count(*) as count, pg_size_pretty(avg(pg_column_size(payload))) as avg_size
+    `)
+    .catch((error) => {
+      console.warn('[history] unable to fetch api stats, falling back to zero', error);
+      return { rows: [{ count: '0' }] } as any;
+    });
+
+  const cacheStatsPromise = pool
+    .query(`
+      SELECT count(*) as count, avg(octet_length(payload::text)) as avg_size_bytes
       FROM player_cache
     `)
+    .catch((error) => {
+      console.warn('[history] unable to fetch cache stats, falling back to zeros', error);
+      return { rows: [{ count: '0', avg_size_bytes: null }] } as any;
+    });
+
+  const [tableStats, apiStats, cacheStats] = await Promise.all([
+    tableStatsPromise,
+    apiStatsPromise,
+    cacheStatsPromise,
   ]);
 
+  function bytesToHuman(raw: string | number | null | undefined): string {
+    const bytes = raw === null || raw === undefined ? 0 : Number.parseInt(String(raw), 10);
+    if (Number.isNaN(bytes) || bytes <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    let value = bytes;
+    while (value >= 1024 && i < units.length - 1) {
+      value = value / 1024;
+      i += 1;
+    }
+    // show one decimal for non-integer values
+    const formatted = value % 1 === 0 ? String(value) : value.toFixed(1);
+    return `${formatted} ${units[i]}`;
+  }
+
   return {
-    dbSize: tableStats.rows[0]?.total_size ?? '0 B',
-    indexSize: tableStats.rows[0]?.index_size ?? '0 B',
+    dbSize: bytesToHuman(tableStats.rows[0]?.total_size_bytes ?? null),
+    indexSize: bytesToHuman(tableStats.rows[0]?.index_size_bytes ?? null),
     apiCallsLastHour: parseInt(apiStats.rows[0]?.count ?? '0', 10),
     cacheCount: parseInt(cacheStats.rows[0]?.count ?? '0', 10),
-    avgPayloadSize: cacheStats.rows[0]?.avg_size ?? '0 B'
+    avgPayloadSize: bytesToHuman(cacheStats.rows[0]?.avg_size_bytes ?? null)
   };
 }
