@@ -520,10 +520,11 @@ function formatBytes(bytes: number): string {
   const safeBytes = Math.max(bytes, 0);
   if (safeBytes === 0) return '0 B';
 
+  const roundThreshold = 10;
   const units = ['B', 'KB', 'MB', 'GB', 'TB'];
   const exponent = Math.min(Math.floor(Math.log(safeBytes) / Math.log(1024)), units.length - 1);
   const value = safeBytes / 1024 ** exponent;
-  const rounded = value >= 10 ? Math.round(value) : Number(value.toFixed(1));
+  const rounded = value >= roundThreshold ? Math.round(value) : Number(value.toFixed(1));
 
   return `${rounded} ${units[exponent]}`;
 }
