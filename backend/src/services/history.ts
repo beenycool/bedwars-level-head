@@ -161,7 +161,7 @@ async function flushHistoryBuffer(): Promise<void> {
       record.resolvedUuid, record.resolvedUsername, record.stars,
       record.nicked, record.cacheSource, record.cacheHit,
       record.revalidated, record.installId, record.responseStatus,
-      record.latencyMs ?? null,
+      record.latencyMs != null ? Math.round(record.latencyMs) : null,
     ]);
 
     const queryText = `
