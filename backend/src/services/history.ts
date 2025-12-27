@@ -514,6 +514,22 @@ export interface SystemStats {
   avgPayloadSize: string;
 }
 
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes)) return '0 B';
+
+  const safeBytes = Math.max(bytes, 0);
+  if (safeBytes === 0) return '0 B';
+
+  // Values above this threshold are rounded to whole numbers; smaller values keep one decimal.
+  const roundThreshold = 10;
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const exponent = Math.min(Math.floor(Math.log(safeBytes) / Math.log(1024)), units.length - 1);
+  const value = safeBytes / 1024 ** exponent;
+  const rounded = value >= roundThreshold ? Math.round(value) : Number(value.toFixed(1));
+
+  return `${rounded} ${units[exponent]}`;
+}
+
 export async function getSystemStats(): Promise<SystemStats> {
   await ensureInitialized();
 
@@ -521,28 +537,35 @@ export async function getSystemStats(): Promise<SystemStats> {
   const [tableStats, apiStats, cacheStats] = await Promise.all([
     // 1. DB Size
     pool.query(`
+      WITH rel_sizes AS (
+        SELECT pg_total_relation_size('player_cache')::bigint AS total_size_bytes
+      )
       SELECT
-        pg_size_pretty(pg_total_relation_size('player_cache')) as total_size,
-        pg_size_pretty(pg_total_relation_size('player_cache') - pg_relation_size('player_cache')) as index_size
+        total_size_bytes,
+        (total_size_bytes - pg_relation_size('player_cache'))::bigint AS index_size_bytes
+      FROM rel_sizes
     `),
     // 2. API Calls (Last Hour)
-    pool.query(`
-      SELECT count(*) as count
-      FROM hypixel_api_calls
-      WHERE called_at >= (EXTRACT(EPOCH FROM NOW()) * 1000 - (60 * 60 * 1000))
-    `),
+    pool.query(
+      `
+        SELECT count(*) as count
+        FROM hypixel_api_calls
+        WHERE called_at >= $1
+      `,
+      [Date.now() - 60 * 60 * 1000],
+    ),
     // 3. Cache specific stats
     pool.query(`
-      SELECT count(*) as count, pg_size_pretty(avg(pg_column_size(payload))) as avg_size
+      SELECT count(*) as count, coalesce(avg(pg_column_size(payload)), 0)::bigint as avg_size_bytes
       FROM player_cache
     `)
   ]);
 
   return {
-    dbSize: tableStats.rows[0]?.total_size ?? '0 B',
-    indexSize: tableStats.rows[0]?.index_size ?? '0 B',
+    dbSize: formatBytes(Number(tableStats.rows[0]?.total_size_bytes ?? 0)),
+    indexSize: formatBytes(Number(tableStats.rows[0]?.index_size_bytes ?? 0)),
     apiCallsLastHour: parseInt(apiStats.rows[0]?.count ?? '0', 10),
     cacheCount: parseInt(cacheStats.rows[0]?.count ?? '0', 10),
-    avgPayloadSize: cacheStats.rows[0]?.avg_size ?? '0 B'
+    avgPayloadSize: formatBytes(Number(cacheStats.rows[0]?.avg_size_bytes ?? 0))
   };
 }
