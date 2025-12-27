@@ -61,7 +61,7 @@ The backend uses environment variables for all secrets and tunables. The `.env.e
 | Variable | Required | Description |
 | --- | --- | --- |
 | `HYPIXEL_API_KEY` | ✅ | Hypixel API key owned by the proxy operator. |
-| `CACHE_DB_URL` | ✅ | PostgreSQL connection string for the response cache database. |
+| `CACHE_DB_URL` | ✅ | Database connection string for the response cache. Supports PostgreSQL and Azure SQL. |
 | `ADMIN_API_KEYS` | ✅ | Comma-separated list of tokens required to access administrative endpoints. |
 | `CRON_API_KEYS` | ✅ | Comma-separated list of tokens required to access cron endpoints. |
 | `RATE_LIMIT_MAX` | ❌ | Requests per IP allowed per window (defaults to `300`). |
@@ -85,6 +85,18 @@ The backend uses environment variables for all secrets and tunables. The `.env.e
 | `BUILD_SHA` | ❌ | Optional revision/Git SHA included in outbound `User-Agent` headers and Prometheus build metrics. |
 
 Set these variables in your deployment environment or `.env` file.
+
+### Database support
+
+The backend supports two database providers for caching and history:
+
+1.  **PostgreSQL** (default): Use a connection string starting with `postgresql://` or `postgres://`.
+2.  **Azure SQL Database**: Use a connection string starting with `sqlserver://` or `mssql://`.
+
+Example Azure SQL connection string:
+`sqlserver://levelhead.database.windows.net:1433;database=cache;user=admin;password=secret;encrypt=true`
+
+When using Azure SQL Free Tier, ensure your connection string includes `encrypt=true` as required by Azure. The backend will automatically detect the database type and adjust its SQL syntax accordingly.
 
 ### Administrative access
 

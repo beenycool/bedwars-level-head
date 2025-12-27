@@ -135,6 +135,10 @@ export const HYPIXEL_API_CALL_WINDOW_MS = parseIntEnv('HYPIXEL_API_CALL_WINDOW_M
 
 export const CACHE_DB_URL = requiredEnv('CACHE_DB_URL');
 
+export const DATABASE_TYPE = CACHE_DB_URL.startsWith('sqlserver://') || CACHE_DB_URL.startsWith('mssql://')
+  ? 'AZURE_SQL'
+  : 'POSTGRESQL';
+
 function readPackageVersion(): string {
   const override = process.env.BACKEND_VERSION?.trim();
   if (override) {

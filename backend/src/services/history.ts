@@ -1,8 +1,9 @@
 import { Mutex } from 'async-mutex';
 import { pool } from './cache';
+import { DatabaseType } from './database/adapter';
 
 interface PlayerQueryHistoryRow {
-  id: string;
+  id: string | number;
   identifier: string;
   normalized_identifier: string;
   lookup_type: 'uuid' | 'ign';
@@ -16,7 +17,7 @@ interface PlayerQueryHistoryRow {
   install_id: string | null;
   response_status: number;
   latency_ms: number | null;
-  requested_at: Date;
+  requested_at: Date | string;
 }
 
 export interface PlayerQueryRecord {
@@ -76,49 +77,78 @@ let supportsPgTotalRelationSize: boolean | null = null;
 
 const initialization = (async () => {
   try {
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS player_query_history (
-        id BIGSERIAL PRIMARY KEY,
-        identifier TEXT NOT NULL,
-        normalized_identifier TEXT NOT NULL,
-        lookup_type TEXT NOT NULL,
-        resolved_uuid TEXT,
-        resolved_username TEXT,
-        stars INTEGER,
-        nicked BOOLEAN NOT NULL DEFAULT FALSE,
-        cache_source TEXT NOT NULL,
-        cache_hit BOOLEAN NOT NULL DEFAULT FALSE,
-        revalidated BOOLEAN NOT NULL DEFAULT FALSE,
-        install_id TEXT,
-        response_status INTEGER NOT NULL,
-        latency_ms INTEGER,
-        requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-    await pool.query(`
-      ALTER TABLE player_query_history
-      ADD COLUMN IF NOT EXISTS latency_ms INTEGER
-    `);
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_player_query_history_requested_at
-      ON player_query_history (requested_at DESC)
-    `);
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_player_query_history_identifier
-      ON player_query_history (normalized_identifier)
-    `);
-    await pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_player_query_history_latency
-      ON player_query_history (latency_ms)
-    `);
+    if (pool.type === DatabaseType.POSTGRESQL) {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS player_query_history (
+          id BIGSERIAL PRIMARY KEY,
+          identifier TEXT NOT NULL,
+          normalized_identifier TEXT NOT NULL,
+          lookup_type TEXT NOT NULL,
+          resolved_uuid TEXT,
+          resolved_username TEXT,
+          stars INTEGER,
+          nicked BOOLEAN NOT NULL DEFAULT FALSE,
+          cache_source TEXT NOT NULL,
+          cache_hit BOOLEAN NOT NULL DEFAULT FALSE,
+          revalidated BOOLEAN NOT NULL DEFAULT FALSE,
+          install_id TEXT,
+          response_status INTEGER NOT NULL,
+          latency_ms INTEGER,
+          requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      await pool.query(`
+        ALTER TABLE player_query_history
+        ADD COLUMN IF NOT EXISTS latency_ms INTEGER
+      `);
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_player_query_history_requested_at
+        ON player_query_history (requested_at DESC)
+      `);
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_player_query_history_identifier
+        ON player_query_history (normalized_identifier)
+      `);
+      await pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_player_query_history_latency
+        ON player_query_history (latency_ms)
+      `);
 
-    // Detect whether pg_total_relation_size exists (some Postgres-compatible DBs like CockroachDB do not implement it)
-    try {
-      await pool.query(`SELECT pg_total_relation_size('player_cache') as size_check`);
-      supportsPgTotalRelationSize = true;
-    } catch (err) {
+      // Detect whether pg_total_relation_size exists
+      try {
+        await pool.query(`SELECT pg_total_relation_size('player_cache') as size_check`);
+        supportsPgTotalRelationSize = true;
+      } catch (err) {
+        supportsPgTotalRelationSize = false;
+        console.info('[history] pg_total_relation_size not available; DB size queries will be skipped');
+      }
+    } else {
+      await pool.query(`
+        IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[player_query_history]') AND type in (N'U'))
+        CREATE TABLE player_query_history (
+          id BIGINT IDENTITY(1,1) PRIMARY KEY,
+          identifier NVARCHAR(MAX) NOT NULL,
+          normalized_identifier NVARCHAR(450) NOT NULL,
+          lookup_type NVARCHAR(MAX) NOT NULL,
+          resolved_uuid NVARCHAR(MAX),
+          resolved_username NVARCHAR(MAX),
+          stars INTEGER,
+          nicked BIT NOT NULL DEFAULT 0,
+          cache_source NVARCHAR(MAX) NOT NULL,
+          cache_hit BIT NOT NULL DEFAULT 0,
+          revalidated BIT NOT NULL DEFAULT 0,
+          install_id NVARCHAR(MAX),
+          response_status INTEGER NOT NULL,
+          latency_ms INTEGER,
+          requested_at DATETIME2 NOT NULL DEFAULT GETDATE()
+        )
+      `);
+      await pool.query("IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[player_query_history]') AND name = 'latency_ms') ALTER TABLE player_query_history ADD latency_ms INTEGER");
+      await pool.query("IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_player_query_history_requested_at') CREATE INDEX idx_player_query_history_requested_at ON player_query_history (requested_at DESC)");
+      await pool.query("IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_player_query_history_identifier') CREATE INDEX idx_player_query_history_identifier ON player_query_history (normalized_identifier)");
+      await pool.query("IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_player_query_history_latency') CREATE INDEX idx_player_query_history_latency ON player_query_history (latency_ms)");
+      
       supportsPgTotalRelationSize = false;
-      console.info('[history] pg_total_relation_size not available; DB size queries will be skipped');
     }
   } catch (error) {
     console.error('Failed to initialize player_query_history table', error);
@@ -130,9 +160,7 @@ async function ensureInitialized(): Promise<void> {
   await initialization;
 }
 
-// Create a new flush function
 async function flushHistoryBuffer(): Promise<void> {
-  // Atomically copy and clear buffer
   const batch = await bufferMutex.runExclusive(() => {
     if (historyBuffer.length === 0) {
       return [];
@@ -145,68 +173,78 @@ async function flushHistoryBuffer(): Promise<void> {
   if (batch.length === 0) return;
 
   await ensureInitialized();
-  const client = await pool.connect();
 
   try {
-    await client.query('BEGIN');
-
-    // Build bulk INSERT with VALUES clause
-    const values = batch.map((_: PlayerQueryRecord, i: number) => {
+    // Adapter handles basic parameter conversion. For bulk insert, we'll build it manually or use simple loops if needed.
+    // For now, let's keep it simple and use a single query with many parameters.
+    
+    const params: any[] = [];
+    const rows: string[] = [];
+    
+    batch.forEach((record, i) => {
       const base = i * 13;
-      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`;
-    }).join(', ');
-
-    const params = batch.flatMap((record: PlayerQueryRecord) => [
-      record.identifier, record.normalizedIdentifier, record.lookupType,
-      record.resolvedUuid, record.resolvedUsername, record.stars,
-      record.nicked, record.cacheSource, record.cacheHit,
-      record.revalidated, record.installId, record.responseStatus,
-      record.latencyMs ?? null,
-    ]);
+      if (pool.type === DatabaseType.POSTGRESQL) {
+        rows.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`);
+      } else {
+        rows.push(`(@p${base + 1}, @p${base + 2}, @p${base + 3}, @p${base + 4}, @p${base + 5}, @p${base + 6}, @p${base + 7}, @p${base + 8}, @p${base + 9}, @p${base + 10}, @p${base + 11}, @p${base + 12}, @p${base + 13})`);
+      }
+      
+      params.push(
+        record.identifier, record.normalizedIdentifier, record.lookupType,
+        record.resolvedUuid, record.resolvedUsername, record.stars,
+        record.nicked, record.cacheSource, record.cacheHit,
+        record.revalidated, record.installId, record.responseStatus,
+        record.latencyMs ?? null
+      );
+    });
 
     const queryText = `
       INSERT INTO player_query_history (
         identifier, normalized_identifier, lookup_type, resolved_uuid, 
         resolved_username, stars, nicked, cache_source, cache_hit, 
         revalidated, install_id, response_status, latency_ms
-      ) VALUES ${values}
+      ) VALUES ${rows.join(', ')}
     `;
 
-    await client.query(queryText, params);
-    await client.query('COMMIT');
+    // Note: AzureSqlAdapter.query currently does $ to @ replacement, but we built @ explicitly for MS SQL here.
+    // We should be careful about double replacement if we use $ here.
+    // Actually, our adapter replaces $1, $2 with @p1, @p2. So if we use $ consistently, it should work.
+    
+    const universalRows = batch.map((_, i) => {
+      const base = i * 13;
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`;
+    });
+    
+    const universalQuery = `
+      INSERT INTO player_query_history (
+        identifier, normalized_identifier, lookup_type, resolved_uuid, 
+        resolved_username, stars, nicked, cache_source, cache_hit, 
+        revalidated, install_id, response_status, latency_ms
+      ) VALUES ${universalRows.join(', ')}
+    `;
+
+    await pool.query(universalQuery, params);
     console.info(`[history] Flushed ${batch.length} records in batch`);
   } catch (err) {
-    await client.query('ROLLBACK');
     console.error('[history] Failed to flush batch', err);
-    // Put items back in buffer for retry (with mutex protection)
     await bufferMutex.runExclusive(() => {
-      historyBuffer.unshift(...batch); // unshift to preserve order
+      historyBuffer.unshift(...batch);
     });
-  } finally {
-    client.release();
   }
 }
 
-// Replace the existing recordPlayerQuery with this buffered version
 export async function recordPlayerQuery(record: PlayerQueryRecord): Promise<void> {
-  // Push to memory instead of writing immediately (with mutex protection)
   await bufferMutex.runExclusive(() => {
     if (historyBuffer.length >= MAX_HISTORY_BUFFER) {
-      // Drop oldest entry to prevent unbounded growth
       historyBuffer.shift();
-      console.warn(
-        `[history] buffer at capacity (${MAX_HISTORY_BUFFER}); dropping oldest entry to admit new records`,
-      );
+      console.warn(`[history] buffer at capacity (${MAX_HISTORY_BUFFER}); dropping oldest entry`);
     }
     historyBuffer.push(record);
   });
 }
 
-// Start the interval in your initialization logic
 export function startHistoryFlushInterval(): void {
-  if (flushInterval !== null) {
-    return; // Already started
-  }
+  if (flushInterval !== null) return;
   flushInterval = setInterval(() => {
     void flushHistoryBuffer().catch((error) => {
       console.error('[history] Unhandled error in flush interval', error);
@@ -214,7 +252,6 @@ export function startHistoryFlushInterval(): void {
   }, BATCH_FLUSH_INTERVAL);
 }
 
-// Stop the interval for graceful shutdown
 export function stopHistoryFlushInterval(): void {
   if (flushInterval !== null) {
     clearInterval(flushInterval);
@@ -222,36 +259,23 @@ export function stopHistoryFlushInterval(): void {
   }
 }
 
-// Export flushHistoryBuffer for graceful shutdown
 export { flushHistoryBuffer };
 
 export async function getRecentPlayerQueries(limit = 50): Promise<PlayerQuerySummary[]> {
   await ensureInitialized();
-  const result = await pool.query<PlayerQueryHistoryRow>(
-    `
-      SELECT
-        identifier,
-        normalized_identifier,
-        lookup_type,
-        resolved_uuid,
-        resolved_username,
-        stars,
-        nicked,
-        cache_source,
-        cache_hit,
-        revalidated,
-        install_id,
-        response_status,
-        latency_ms,
-        requested_at
-      FROM player_query_history
-      ORDER BY requested_at DESC
-      LIMIT $1
-    `,
-    [limit],
-  );
+  const sql = pool.type === DatabaseType.POSTGRESQL
+    ? `SELECT identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
+       FROM player_query_history ORDER BY requested_at DESC LIMIT $1`
+    : `SELECT TOP ($1) identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
+       FROM player_query_history ORDER BY requested_at DESC`;
 
-  return result.rows.map((row) => ({
+  const result = await pool.query<PlayerQueryHistoryRow>(sql, [limit]);
+
+  return result.rows.map(mapRowToSummary);
+}
+
+function mapRowToSummary(row: PlayerQueryHistoryRow): PlayerQuerySummary {
+  return {
     identifier: row.identifier,
     normalizedIdentifier: row.normalized_identifier,
     lookupType: row.lookup_type,
@@ -266,7 +290,7 @@ export async function getRecentPlayerQueries(limit = 50): Promise<PlayerQuerySum
     responseStatus: row.response_status,
     latencyMs: row.latency_ms ?? null,
     requestedAt: new Date(row.requested_at),
-  }));
+  };
 }
 
 function buildDateRangeClause(
@@ -310,56 +334,33 @@ export async function getPlayerQueriesWithFilters(params: {
     1,
   );
 
-  // If time filters are present but no limit specified, use MAX_ALLOWED_LIMIT
-  // to show all data within the time range. Otherwise, use default limit.
   const hasTimeFilters = params.startDate !== undefined || params.endDate !== undefined;
   const requestedLimit = params.limit !== undefined && params.limit > 0
     ? Math.min(params.limit, MAX_ALLOWED_LIMIT)
     : (hasTimeFilters ? MAX_ALLOWED_LIMIT : DEFAULT_PLAYER_QUERIES_LIMIT);
-  const limitClause = `LIMIT $${dateParams.length + 1}`;
+  
   const queryParams = [...dateParams, requestedLimit];
-
-  const result = await pool.query<PlayerQueryHistoryRow>(
-    `
-      SELECT
-        identifier,
-        normalized_identifier,
-        lookup_type,
-        resolved_uuid,
-        resolved_username,
-        stars,
-        nicked,
-        cache_source,
-        cache_hit,
-        revalidated,
-        install_id,
-        response_status,
-        latency_ms,
-        requested_at
+  
+  let sql;
+  if (pool.type === DatabaseType.POSTGRESQL) {
+    sql = `
+      SELECT identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
       FROM player_query_history
       ${dateClause}
       ORDER BY requested_at DESC
-      ${limitClause}
-    `,
-    queryParams,
-  );
+      LIMIT $${dateParams.length + 1}
+    `;
+  } else {
+    sql = `
+      SELECT TOP ($${dateParams.length + 1}) identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
+      FROM player_query_history
+      ${dateClause}
+      ORDER BY requested_at DESC
+    `;
+  }
 
-  return result.rows.map((row) => ({
-    identifier: row.identifier,
-    normalizedIdentifier: row.normalized_identifier,
-    lookupType: row.lookup_type,
-    resolvedUuid: row.resolved_uuid,
-    resolvedUsername: row.resolved_username,
-    stars: row.stars,
-    nicked: row.nicked,
-    cacheSource: row.cache_source as 'cache' | 'network',
-    cacheHit: row.cache_hit,
-    revalidated: row.revalidated,
-    installId: row.install_id,
-    responseStatus: row.response_status,
-    latencyMs: row.latency_ms ?? null,
-    requestedAt: new Date(row.requested_at),
-  }));
+  const result = await pool.query<PlayerQueryHistoryRow>(sql, queryParams);
+  return result.rows.map(mapRowToSummary);
 }
 
 export async function getTopPlayersByQueryCount(params: {
@@ -378,34 +379,37 @@ export async function getTopPlayersByQueryCount(params: {
   const limit = params.limit ?? 20;
   const queryParams = [...dateParams, limit];
 
-  const result = await pool.query<{
-    normalized_identifier: string;
-    resolved_username: string | null;
-    query_count: string;
-  }>(
-    `
-      SELECT
-        normalized_identifier,
-        MAX(resolved_username) as resolved_username,
-        COUNT(*) as query_count
+  let sql;
+  if (pool.type === DatabaseType.POSTGRESQL) {
+    sql = `
+      SELECT normalized_identifier, MAX(resolved_username) as resolved_username, COUNT(*) as query_count
       FROM player_query_history
       ${dateClause}
       GROUP BY normalized_identifier
       ORDER BY query_count DESC
       LIMIT $${dateParams.length + 1}
-    `,
-    queryParams,
-  );
+    `;
+  } else {
+    sql = `
+      SELECT TOP ($${dateParams.length + 1}) normalized_identifier, MAX(resolved_username) as resolved_username, COUNT(*) as query_count
+      FROM player_query_history
+      ${dateClause}
+      GROUP BY normalized_identifier
+      ORDER BY query_count DESC
+    `;
+  }
+
+  const result = await pool.query<{
+    normalized_identifier: string;
+    resolved_username: string | null;
+    query_count: string | number;
+  }>(sql, queryParams);
 
   return result.rows.map((row) => ({
     identifier: row.normalized_identifier,
     resolvedUsername: row.resolved_username,
-    queryCount: Number.parseInt(row.query_count, 10),
+    queryCount: typeof row.query_count === 'string' ? Number.parseInt(row.query_count, 10) : Number(row.query_count),
   }));
-}
-
-function escapeSearchTerm(term: string): string {
-  return term.replace(/[%_\\]/g, (match) => `\\${match}`);
 }
 
 function buildSearchClause(searchTerm: string | undefined, startIndex: number): { clause: string; params: string[] } {
@@ -414,28 +418,32 @@ function buildSearchClause(searchTerm: string | undefined, startIndex: number): 
   }
 
   const placeholder = `$${startIndex}`;
-  const searchValue = `%${escapeSearchTerm(searchTerm)}%`;
-  const clause = `WHERE normalized_identifier ILIKE ${placeholder} ESCAPE '\\\\' OR resolved_username ILIKE ${placeholder} ESCAPE '\\\\' OR resolved_uuid ILIKE ${placeholder} ESCAPE '\\\\'`;
+  const searchValue = `%${searchTerm.replace(/[%_\\]/g, (match) => `\\${match}`)}%`;
+  
+  let clause;
+  if (pool.type === DatabaseType.POSTGRESQL) {
+    clause = `WHERE normalized_identifier ILIKE ${placeholder} ESCAPE '\\\\' OR resolved_username ILIKE ${placeholder} ESCAPE '\\\\' OR resolved_uuid ILIKE ${placeholder} ESCAPE '\\\\'`;
+  } else {
+    // SQL Server is usually case-insensitive by default with its default collation.
+    // We use [key] notation for identifier if it's a reserved word, but here they aren't.
+    clause = `WHERE normalized_identifier LIKE ${placeholder} ESCAPE '\\' OR resolved_username LIKE ${placeholder} ESCAPE '\\' OR resolved_uuid LIKE ${placeholder} ESCAPE '\\'`;
+  }
 
   return { clause, params: [searchValue] };
 }
 
 export async function getPlayerQueryCount(params: { search?: string }): Promise<number> {
   await ensureInitialized();
-
   const searchTerm = params.search?.trim();
   const { clause, params: searchParams } = buildSearchClause(searchTerm, 1);
 
-  const countResult = await pool.query<{ count: string }>(
-    `
-      SELECT COUNT(*) AS count
-      FROM player_query_history
-      ${clause}
-    `,
+  const result = await pool.query<{ count: string | number }>(
+    `SELECT COUNT(*) AS count FROM player_query_history ${clause}`,
     searchParams,
   );
 
-  return Number.parseInt(countResult.rows[0]?.count ?? '0', 10);
+  const raw = result.rows[0]?.count ?? '0';
+  return typeof raw === 'string' ? Number.parseInt(raw, 10) : Number(raw);
 }
 
 export async function getPlayerQueryPage(params: {
@@ -446,72 +454,41 @@ export async function getPlayerQueryPage(params: {
 }): Promise<PlayerQueryPage> {
   await ensureInitialized();
 
-  const page = Number.isFinite(params.page) && params.page > 0 ? Math.floor(params.page) : 1;
+  const page = Math.max(Math.floor(params.page) || 1, 1);
   const pageSize = Math.min(Math.max(Math.floor(params.pageSize) || 1, 1), 200);
   const offset = (page - 1) * pageSize;
 
   const searchTerm = params.search?.trim();
-  const hasSearch = Boolean(searchTerm);
   const { clause: whereClause, params: searchParams } = buildSearchClause(searchTerm, 3);
 
-  const rowsResult = await pool.query<PlayerQueryHistoryRow>(
-    `
-      SELECT
-        identifier,
-        normalized_identifier,
-        lookup_type,
-        resolved_uuid,
-        resolved_username,
-        stars,
-        nicked,
-        cache_source,
-        cache_hit,
-        revalidated,
-        install_id,
-        response_status,
-        latency_ms,
-        requested_at
+  let sql;
+  if (pool.type === DatabaseType.POSTGRESQL) {
+    sql = `
+      SELECT identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
       FROM player_query_history
       ${whereClause}
       ORDER BY requested_at DESC
-      LIMIT $1
-      OFFSET $2
-    `,
-    hasSearch ? [pageSize, offset, ...searchParams] : [pageSize, offset],
-  );
+      LIMIT $1 OFFSET $2
+    `;
+  } else {
+    sql = `
+      SELECT identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
+      FROM player_query_history
+      ${whereClause}
+      ORDER BY requested_at DESC
+      OFFSET $2 ROWS FETCH NEXT $1 ROWS ONLY
+    `;
+  }
+
+  const rowsResult = await pool.query<PlayerQueryHistoryRow>(sql, [pageSize, offset, ...searchParams]);
 
   let totalCount = params.totalCountOverride;
   if (totalCount === undefined) {
-    const { clause: countWhereClause, params: countParams } = buildSearchClause(searchTerm, 1);
-    const countResult = await pool.query<{ count: string }>(
-      `
-        SELECT COUNT(*) AS count
-        FROM player_query_history
-        ${countWhereClause}
-      `,
-      countParams,
-    );
-
-    totalCount = Number.parseInt(countResult.rows[0]?.count ?? '0', 10);
+    totalCount = await getPlayerQueryCount({ search: searchTerm });
   }
 
   return {
-    rows: rowsResult.rows.map((row) => ({
-      identifier: row.identifier,
-      normalizedIdentifier: row.normalized_identifier,
-      lookupType: row.lookup_type,
-      resolvedUuid: row.resolved_uuid,
-      resolvedUsername: row.resolved_username,
-      stars: row.stars,
-      nicked: row.nicked,
-      cacheSource: row.cache_source as 'cache' | 'network',
-      cacheHit: row.cache_hit,
-      revalidated: row.revalidated,
-      installId: row.install_id,
-      responseStatus: row.response_status,
-      latencyMs: row.latency_ms ?? null,
-      requestedAt: new Date(row.requested_at),
-    })),
+    rows: rowsResult.rows.map(mapRowToSummary),
     totalCount,
   };
 }
@@ -527,48 +504,42 @@ export interface SystemStats {
 export async function getSystemStats(): Promise<SystemStats> {
   await ensureInitialized();
 
-  // Run queries in parallel for speed, but handle environments where Postgres-specific functions may be missing.
-  const tableStatsPromise = (supportsPgTotalRelationSize === false)
-    ? Promise.resolve({ rows: [{ total_size_bytes: null, index_size_bytes: null }] } as any)
-    : pool
-        .query(`
-          SELECT
-            pg_total_relation_size('player_cache') as total_size_bytes,
-            (pg_total_relation_size('player_cache') - pg_relation_size('player_cache')) as index_size_bytes
-        `)
-        .catch((error) => {
-          console.warn('[history] unable to fetch table sizes, falling back to nulls', error);
-          // If the function is missing, avoid future attempts
-          try {
-            const code = (error as any)?.code;
-            const msg = (error as Error).message ?? '';
-            if (code === '42883' || msg.includes('pg_total_relation_size')) {
-              supportsPgTotalRelationSize = false;
-            }
-          } catch (_) { /* ignore */ }
-          return { rows: [{ total_size_bytes: null, index_size_bytes: null }] } as any;
-        });
+  let tableStatsPromise;
+  if (pool.type === DatabaseType.POSTGRESQL && supportsPgTotalRelationSize !== false) {
+    tableStatsPromise = pool.query(`
+      SELECT pg_total_relation_size('player_cache') as total_size_bytes,
+             (pg_total_relation_size('player_cache') - pg_relation_size('player_cache')) as index_size_bytes
+    `).catch(() => ({ rows: [{ total_size_bytes: null, index_size_bytes: null }] }));
+  } else if (pool.type === DatabaseType.AZURE_SQL) {
+    // SQL Server equivalent for table size
+    tableStatsPromise = pool.query(`
+      SELECT 
+        (SUM(a.total_pages) * 8 * 1024) AS total_size_bytes,
+        (SUM(a.used_pages) * 8 * 1024 - SUM(CASE WHEN p.index_id < 2 THEN a.data_pages ELSE 0 END) * 8 * 1024) AS index_size_bytes
+      FROM sys.tables t
+      JOIN sys.indexes i ON t.object_id = i.object_id
+      JOIN sys.partitions p ON i.object_id = p.object_id AND i.index_id = p.index_id
+      JOIN sys.allocation_units a ON p.partition_id = a.container_id
+      WHERE t.name = 'player_cache'
+      GROUP BY t.name
+    `).catch(() => ({ rows: [{ total_size_bytes: null, index_size_bytes: null }] }));
+  } else {
+    tableStatsPromise = Promise.resolve({ rows: [{ total_size_bytes: null, index_size_bytes: null }] });
+  }
 
-  const apiStatsPromise = pool
-    .query(`
-      SELECT count(*) as count
-      FROM hypixel_api_calls
-      WHERE called_at >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000)
-    `)
-    .catch((error) => {
-      console.warn('[history] unable to fetch api stats, falling back to zero', error);
-      return { rows: [{ count: '0' }] } as any;
-    });
+  const apiStatsQuery = pool.type === DatabaseType.POSTGRESQL
+    ? `SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000)`
+    : `SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (DATEDIFF_BIG(ms, '1970-01-01', DATEADD(hour, -1, GETDATE())))`;
 
-  const cacheStatsPromise = pool
-    .query(`
-      SELECT count(*) as count, avg(octet_length(payload::text)) as avg_size_bytes
-      FROM player_cache
-    `)
-    .catch((error) => {
-      console.warn('[history] unable to fetch cache stats, falling back to zeros', error);
-      return { rows: [{ count: '0', avg_size_bytes: null }] } as any;
-    });
+  const apiStatsPromise = pool.query<{ count: string | number }>(apiStatsQuery)
+    .catch(() => ({ rows: [{ count: 0 }] }));
+
+  const cacheStatsQuery = pool.type === DatabaseType.POSTGRESQL
+    ? `SELECT count(*) as count, avg(octet_length(payload::text)) as avg_size_bytes FROM player_cache`
+    : `SELECT count(*) as count, avg(len(payload)) as avg_size_bytes FROM player_cache`;
+
+  const cacheStatsPromise = pool.query<{ count: string | number, avg_size_bytes: string | number | null }>(cacheStatsQuery)
+    .catch(() => ({ rows: [{ count: 0, avg_size_bytes: null }] }));
 
   const [tableStats, apiStats, cacheStats] = await Promise.all([
     tableStatsPromise,
@@ -586,16 +557,15 @@ export async function getSystemStats(): Promise<SystemStats> {
       value = value / 1024;
       i += 1;
     }
-    // show one decimal for non-integer values
     const formatted = value % 1 === 0 ? String(value) : value.toFixed(1);
     return `${formatted} ${units[i]}`;
   }
 
   return {
-    dbSize: bytesToHuman(tableStats.rows[0]?.total_size_bytes ?? null),
-    indexSize: bytesToHuman(tableStats.rows[0]?.index_size_bytes ?? null),
-    apiCallsLastHour: parseInt(apiStats.rows[0]?.count ?? '0', 10),
-    cacheCount: parseInt(cacheStats.rows[0]?.count ?? '0', 10),
-    avgPayloadSize: bytesToHuman(cacheStats.rows[0]?.avg_size_bytes ?? null)
+    dbSize: bytesToHuman(tableStats.rows[0]?.total_size_bytes),
+    indexSize: bytesToHuman(tableStats.rows[0]?.index_size_bytes),
+    apiCallsLastHour: Number(apiStats.rows[0]?.count ?? 0),
+    cacheCount: Number(cacheStats.rows[0]?.count ?? 0),
+    avgPayloadSize: bytesToHuman(cacheStats.rows[0]?.avg_size_bytes)
   };
 }
