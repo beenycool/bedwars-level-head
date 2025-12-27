@@ -178,10 +178,9 @@ async function flushHistoryBuffer(): Promise<void> {
     // Adapter handles basic parameter conversion. For bulk insert, we'll build it manually or use simple loops if needed.
     // For now, let's keep it simple and use a single query with many parameters.
     
-    const params: any[] = [];
     const rows: string[] = [];
-    
-    batch.forEach((record, i) => {
+
+    const rowStrings = batch.map((record, i) => {
       const base = i * 13;
       return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`;
     }).join(', ');
@@ -196,10 +195,10 @@ async function flushHistoryBuffer(): Promise<void> {
 
     const queryText = `
       INSERT INTO player_query_history (
-        identifier, normalized_identifier, lookup_type, resolved_uuid, 
-        resolved_username, stars, nicked, cache_source, cache_hit, 
+        identifier, normalized_identifier, lookup_type, resolved_uuid,
+        resolved_username, stars, nicked, cache_source, cache_hit,
         revalidated, install_id, response_status, latency_ms
-      ) VALUES ${rows.join(', ')}
+      ) VALUES ${rowStrings}
     `;
 
     // Note: AzureSqlAdapter.query currently does $ to @ replacement, but we built @ explicitly for MS SQL here.
@@ -558,10 +557,10 @@ export async function getSystemStats(): Promise<SystemStats> {
   }
 
   return {
-    dbSize: bytesToHuman(tableStats.rows[0]?.total_size_bytes),
-    indexSize: bytesToHuman(tableStats.rows[0]?.index_size_bytes),
-    apiCallsLastHour: Number(apiStats.rows[0]?.count ?? 0),
-    cacheCount: Number(cacheStats.rows[0]?.count ?? 0),
-    avgPayloadSize: bytesToHuman(cacheStats.rows[0]?.avg_size_bytes)
+    dbSize: bytesToHuman((tableStats.rows[0] as any)?.total_size_bytes),
+    indexSize: bytesToHuman((tableStats.rows[0] as any)?.index_size_bytes),
+    apiCallsLastHour: Number((apiStats.rows[0] as any)?.count ?? 0),
+    cacheCount: Number((cacheStats.rows[0] as any)?.count ?? 0),
+    avgPayloadSize: bytesToHuman((cacheStats.rows[0] as any)?.avg_size_bytes)
   };
 }

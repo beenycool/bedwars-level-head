@@ -38,13 +38,13 @@ export class AzureSqlAdapter implements DatabaseAdapter {
       .replace(/CREATE TABLE IF NOT EXISTS (\w+) \(/g, (match, tableName) => {
         return `IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[${tableName}]') AND type in (N'U')) CREATE TABLE ${tableName} (`;
       })
-      .replace(/INSERT INTO (\w+) (.+) ON CONFLICT \((.+)\) DO UPDATE SET (.+)/g, (match, table, cols, conflictCol, updateSet) => {
+      .replace(/INSERT INTO (\w+) (.+) ON CONFLICT \((.+)\) DO UPDATE SET (.+)/g, (match: string, table: string, cols: string, conflictCol: string, updateSet: string) => {
         // Simple UPSERT transformation for PG 'ON CONFLICT'
         // This is a very basic regex and might need refinement for complex cases
         // For our specific use cases in player_cache, it's usually enough
         return `
           MERGE ${table} AS target
-          USING (SELECT ${cols.replace(/\((.+)\) VALUES \((.+)\)/, (m, c, v) => {
+          USING (SELECT ${cols.replace(/\((.+)\) VALUES \((.+)\)/, (m: string, c: string, v: string) => {
             const cArray = c.split(',').map((s: string) => s.trim());
             const vArray = v.split(',').map((s: string) => s.trim());
             return cArray.map((col: string, i: number) => `${vArray[i]} AS ${col}`).join(', ');
