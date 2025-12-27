@@ -59,7 +59,7 @@ router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
       revalidated: resolved.revalidated,
       installId: null,
       responseStatus,
-      latencyMs: Number((process.hrtime.bigint() - startedAt) / BigInt(1_000_000)),
+      latencyMs: Number(process.hrtime.bigint() - startedAt) / 1_000_000,
     });
 
     if (notModified) {
@@ -133,7 +133,7 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
             revalidated: resolved.revalidated,
             installId: null,
             responseStatus: 200,
-            latencyMs: Number((process.hrtime.bigint() - startedAt) / BigInt(1_000_000)),
+            latencyMs: Number(process.hrtime.bigint() - startedAt) / 1_000_000,
           });
 
           return { identifier, payload: resolved.payload };

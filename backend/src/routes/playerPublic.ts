@@ -53,7 +53,7 @@ router.get('/:identifier', enforcePublicRateLimit, async (req, res, next) => {
       revalidated: resolved.revalidated,
       installId: null,
       responseStatus,
-      latencyMs: Number((process.hrtime.bigint() - startedAt) / BigInt(1_000_000)),
+      latencyMs: Number(process.hrtime.bigint() - startedAt) / 1_000_000,
     });
 
     if (notModified) {

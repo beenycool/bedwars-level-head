@@ -110,7 +110,8 @@ async function fetchByUuid(uuid: string, conditional?: HypixelFetchOptions): Pro
   const cacheKey = buildCacheKey('player', normalizedUuid);
   const memoized = getMemoized('player', normalizedUuid);
   if (memoized) {
-    return memoized;
+    // Return a copy marked as cache source so the logger knows it wasn't a network call
+    return { ...memoized, source: 'cache' };
   }
 
   const cacheEntry = await getCacheEntry<ProxyPlayerPayload>(cacheKey, true);
@@ -196,7 +197,7 @@ async function fetchByIgn(ign: string): Promise<ResolvedPlayer> {
   const ignCacheKey = buildCacheKey('ign', normalizedIgn);
   const memoized = getMemoized('ign', normalizedIgn);
   if (memoized) {
-    return memoized;
+    return { ...memoized, source: 'cache' };
   }
 
   const cacheEntry = await getCacheEntry<ProxyPlayerPayload>(ignCacheKey, true);
@@ -298,7 +299,10 @@ export async function resolvePlayer(
   if (inFlightKey) {
     const pending = inFlightRequests.get(inFlightKey);
     if (pending) {
-      return pending;
+      // Wait for the pending request, then mark this specific request as a cache hit
+      // because it piggybacked off an existing one.
+      const result = await pending;
+      return { ...result, source: 'cache' };
     }
   }
 
