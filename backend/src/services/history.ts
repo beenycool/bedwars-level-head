@@ -183,20 +183,16 @@ async function flushHistoryBuffer(): Promise<void> {
     
     batch.forEach((record, i) => {
       const base = i * 13;
-      if (pool.type === DatabaseType.POSTGRESQL) {
-        rows.push(`($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`);
-      } else {
-        rows.push(`(@p${base + 1}, @p${base + 2}, @p${base + 3}, @p${base + 4}, @p${base + 5}, @p${base + 6}, @p${base + 7}, @p${base + 8}, @p${base + 9}, @p${base + 10}, @p${base + 11}, @p${base + 12}, @p${base + 13})`);
-      }
-      
-      params.push(
-        record.identifier, record.normalizedIdentifier, record.lookupType,
-        record.resolvedUuid, record.resolvedUsername, record.stars,
-        record.nicked, record.cacheSource, record.cacheHit,
-        record.revalidated, record.installId, record.responseStatus,
-        record.latencyMs ?? null
-      );
-    });
+      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`;
+    }).join(', ');
+
+    const params = batch.flatMap((record: PlayerQueryRecord) => [
+      record.identifier, record.normalizedIdentifier, record.lookupType,
+      record.resolvedUuid, record.resolvedUsername, record.stars,
+      record.nicked, record.cacheSource, record.cacheHit,
+      record.revalidated, record.installId, record.responseStatus,
+      record.latencyMs != null ? Math.round(record.latencyMs) : null,
+    ]);
 
     const queryText = `
       INSERT INTO player_query_history (
