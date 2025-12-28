@@ -103,6 +103,9 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var aboutLicense: String = ""
 
     @Header(text = "Links", category = "About")
+    @Transient
+    var linksHeader: String = ""
+
     @Button(
         name = "Modrinth",
         text = "Open Page",

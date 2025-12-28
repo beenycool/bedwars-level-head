@@ -17,10 +17,15 @@ import net.minecraft.util.ChatComponentText
 import net.minecraft.util.EnumChatFormatting as ChatColor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import net.minecraft.entity.player.EntityPlayer
+import okhttp3.HttpUrl
 import okhttp3.MediaType
 import okhttp3.Request
 import okhttp3.RequestBody
+import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
+import club.sk1er.mods.levelhead.commands.PlayerIdentifiers
+import com.google.gson.JsonObject
 import java.awt.Color
 import java.util.Locale
 import java.util.UUID
@@ -567,7 +572,7 @@ class LevelheadCommand {
             .takeIf { it.isNotEmpty() }
             ?.let { raw ->
                 val collapsed = raw.replace("-", "")
-                if (UUID_NO_DASH_PATTERN.matches(collapsed)) collapsed.lowercase(Locale.ROOT) else raw
+                if (PlayerIdentifiers.UUID_NO_DASH_PATTERN.matches(collapsed)) collapsed.lowercase(Locale.ROOT) else raw
             }
 
         Levelhead.scope.launch {
@@ -750,7 +755,7 @@ class LevelheadCommand {
         val url = HttpUrl.parse("https://api.hypixel.net/key") ?: return@withContext false
 
         val request = Request.Builder()
-            .url(url)
+            .url(url.toString())
             .header("API-Key", key)
             .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
             .header("Accept", "application/json")
@@ -784,7 +789,7 @@ class LevelheadCommand {
         }
         val requestBody = RequestBody.create(JSON_MEDIA_TYPE, payload.toString())
         val request = Request.Builder()
-            .url(url)
+            .url(url.toString())
             .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
             .header("Accept", "application/json")
             .header("X-Levelhead-Install", LevelheadConfig.installId)

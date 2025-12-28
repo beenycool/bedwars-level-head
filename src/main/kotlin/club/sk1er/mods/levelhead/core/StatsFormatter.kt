@@ -101,7 +101,7 @@ object StatsFormatter {
         footerValue = footerValue.replace("%ws%", winstreakString, ignoreCase = true)
         
         val style = stats.wins?.let { DuelsStats.styleForDivision(it) }
-            ?: DuelsStats.DivisionStyle(config.footerColor, "✧")
+            ?: DuelsStats.DivisionStyle(config.footerColor, "", false, "✧")
         
         return Triple(footerValue, style.color, false)
     }
