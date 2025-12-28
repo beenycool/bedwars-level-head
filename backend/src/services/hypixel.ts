@@ -1,5 +1,5 @@
 import axios, { type AxiosResponseHeaders, type RawAxiosResponseHeaders } from 'axios';
-import https from 'node:https'; // [cite: 483] - Added import
+import https from 'node:https';
 import {
   HYPIXEL_API_BASE_URL,
   HYPIXEL_API_KEY,
