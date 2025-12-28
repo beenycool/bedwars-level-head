@@ -185,6 +185,26 @@ export class AzureSqlAdapter implements DatabaseAdapter {
       throw new Error(`Invalid connection string: server is required. Got: ${JSON.stringify({...config, password: '***'})}`);
     }
 
+    // Clean up server address (remove tcp: prefix if present)
+    if (config.server.toLowerCase().startsWith('tcp:')) {
+        config.server = config.server.substring(4);
+    }
+
+    // Log password length for debugging
+    if (config.password) {
+        console.log(`[database] Password length: ${config.password.length}`);
+    } else {
+        console.log('[database] No password provided');
+    }
+
+    // Azure SQL specific fix: Ensure username is in user@server format if not already
+    // This is often required for Azure SQL Database
+    if (config.server.includes('.database.windows.net') && config.user && !config.user.includes('@')) {
+        const serverName = config.server.split('.')[0];
+        config.user = `${config.user}@${serverName}`;
+        console.log(`[database] Updated Azure SQL username to ${config.user}`);
+    }
+
     return config as mssql.config;
   }
 
