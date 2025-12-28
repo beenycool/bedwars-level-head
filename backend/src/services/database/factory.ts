@@ -17,17 +17,18 @@ export function getDatabaseType(connectionString: string): DatabaseType {
 
 export function createAdapter(connectionString: string): DatabaseAdapter {
   const type = getDatabaseType(connectionString);
-  
+
   if (type === DatabaseType.AZURE_SQL) {
     return new AzureSqlAdapter(connectionString);
   }
-  
+
   return new PostgresAdapter({
     connectionString,
     min: CACHE_DB_POOL_MIN,
     max: CACHE_DB_POOL_MAX,
   });
 }
+
 
 // Singleton instance
 export const database = createAdapter(CACHE_DB_URL);
