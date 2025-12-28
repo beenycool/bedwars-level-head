@@ -11,17 +11,18 @@ import {
 import { HttpError } from '../util/httpError';
 import { recordHypixelApiCall } from './hypixelTracker';
 
-// Create a dedicated HTTPS Agent
+// Define a custom HTTPS agent to force IPv4 and enable Keep-Alive
 const agent = new https.Agent({
-  keepAlive: true,      // Reuse connections (Huge speedup for batches)
-  keepAliveMsecs: 1000,
-  family: 4,            // Force IPv4 to prevent 2s timeouts
+  keepAlive: true,       // Reuse existing connections for batch requests
+  keepAliveMsecs: 1000,  // Keep sockets open for 1s
+  maxSockets: 50,        // Allow up to 50 parallel connections
+  family: 4,             // STRICTLY force IPv4 to bypass the 2s IPv6 timeout
 });
 
 const hypixelClient = axios.create({
   baseURL: HYPIXEL_API_BASE_URL,
   timeout: HYPIXEL_TIMEOUT_MS,
-  httpsAgent: agent,    // Attach the agent here
+  httpsAgent: agent,     // Attach the custom agent here
   headers: {
     'User-Agent': OUTBOUND_USER_AGENT,
   },
