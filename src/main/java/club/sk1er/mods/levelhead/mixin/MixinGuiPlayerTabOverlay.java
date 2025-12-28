@@ -37,14 +37,16 @@ public class MixinGuiPlayerTabOverlay {
         }
 
         // Fetch cached stats
-        Levelhead.CachedBedwarsStats stats = Levelhead.INSTANCE.getCachedStats(uuid);
-        if (stats == null) {
+        club.sk1er.mods.levelhead.core.GameStats stats = Levelhead.INSTANCE.getCachedStats(uuid);
+        if (stats == null || !(stats instanceof club.sk1er.mods.levelhead.core.GameStats.Bedwars)) {
             return;
         }
 
+        club.sk1er.mods.levelhead.core.GameStats.Bedwars bedwarsStats = (club.sk1er.mods.levelhead.core.GameStats.Bedwars) stats;
+
         // Get FKDR value
-        Double fkdr = stats.getFkdr();
-        Integer star = stats.getStar();
+        Double fkdr = bedwarsStats.getFkdr();
+        Integer star = bedwarsStats.getStar();
 
         // Determine color based on FKDR thresholds
         String fkdrColorCode;
