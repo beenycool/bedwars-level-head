@@ -1,4 +1,5 @@
 import axios, { type AxiosResponseHeaders, type RawAxiosResponseHeaders } from 'axios';
+import https from 'node:https';
 import {
   HYPIXEL_API_BASE_URL,
   HYPIXEL_API_KEY,
@@ -10,9 +11,17 @@ import {
 import { HttpError } from '../util/httpError';
 import { recordHypixelApiCall } from './hypixelTracker';
 
+// Create a dedicated HTTPS Agent
+const agent = new https.Agent({
+  keepAlive: true,      // Reuse connections (Huge speedup for batches)
+  keepAliveMsecs: 1000,
+  family: 4,            // Force IPv4 to prevent 2s timeouts
+});
+
 const hypixelClient = axios.create({
   baseURL: HYPIXEL_API_BASE_URL,
   timeout: HYPIXEL_TIMEOUT_MS,
+  httpsAgent: agent,    // Attach the agent here
   headers: {
     'User-Agent': OUTBOUND_USER_AGENT,
   },
