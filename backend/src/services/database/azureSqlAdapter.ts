@@ -27,7 +27,7 @@ export class AzureSqlAdapter implements DatabaseAdapter {
     const config: any = {
       options: {
         encrypt: true,
-        trustServerCertificate: false
+        trustServerCertificate: true // Changed to true to avoid potential certificate validation issues
       }
     };
 
@@ -69,81 +69,115 @@ export class AzureSqlAdapter implements DatabaseAdapter {
       .replace(/^sqlserver:\/\//i, '')
       .replace(/^mssql:\/\//i, '');
 
-    const parts = withoutPrefix.split(';');
-    
     // Helper to process key-value pairs
     const processPair = (key: string, value: string) => {
         const lowerKey = key.toLowerCase();
+        let cleanValue = value.trim();
+        
+        // Handle quoting
+        if ((cleanValue.startsWith('{') && cleanValue.endsWith('}')) || 
+            (cleanValue.startsWith('"') && cleanValue.endsWith('"')) ||
+            (cleanValue.startsWith("'") && cleanValue.endsWith("'"))) {
+            cleanValue = cleanValue.substring(1, cleanValue.length - 1);
+        }
+
         switch (lowerKey) {
             case 'server':
             case 'data source':
             case 'addr':
             case 'address':
                 // Handle server,port or server:port
-                if (value.includes(',')) {
-                    const [srv, port] = value.split(',');
+                if (cleanValue.includes(',')) {
+                    const [srv, port] = cleanValue.split(',');
                     config.server = srv.trim();
                     config.port = parseInt(port.trim(), 10);
-                } else if (value.includes(':')) {
-                    const [srv, port] = value.split(':');
+                } else if (cleanValue.includes(':')) {
+                    const [srv, port] = cleanValue.split(':');
                     config.server = srv.trim();
                     config.port = parseInt(port.trim(), 10);
                 } else {
-                    config.server = value;
+                    config.server = cleanValue;
                 }
                 break;
             case 'database':
             case 'initial catalog':
-                config.database = value;
+                config.database = cleanValue;
                 break;
             case 'user':
             case 'uid':
             case 'user id':
             case 'username':
-                config.user = value;
+                config.user = cleanValue;
                 break;
             case 'password':
             case 'pwd':
-                config.password = value;
+                config.password = cleanValue;
                 break;
             case 'encrypt':
-                config.options.encrypt = value.toLowerCase() === 'true';
+                config.options.encrypt = cleanValue.toLowerCase() === 'true';
                 break;
             case 'trustservercertificate':
-                config.options.trustServerCertificate = value.toLowerCase() === 'true';
+                config.options.trustServerCertificate = cleanValue.toLowerCase() === 'true';
                 break;
         }
     };
 
-    // First pass: look for key=value pairs
-    let firstPartIsKeyVal = false;
-    for (const part of parts) {
-        const trimmed = part.trim();
-        if (!trimmed) continue;
-        
-        const equalIndex = trimmed.indexOf('=');
-        if (equalIndex > 0) {
-            const key = trimmed.substring(0, equalIndex).trim();
-            const value = trimmed.substring(equalIndex + 1).trim();
-            processPair(key, value);
-            if (parts.indexOf(part) === 0) firstPartIsKeyVal = true;
-        }
-    }
+    const rawParts = withoutPrefix.split(';');
+    let currentKey = '';
+    let currentValue = '';
 
-    // If server is not set yet, and the first part was NOT a key=value pair, assume it's the server address
-    if (!config.server && !firstPartIsKeyVal && parts.length > 0) {
-        const firstPart = parts[0].trim();
-        if (firstPart) {
-             if (firstPart.includes(':')) {
-                const lastColonIndex = firstPart.lastIndexOf(':');
-                config.server = firstPart.substring(0, lastColonIndex);
-                const portStr = firstPart.substring(lastColonIndex + 1);
-                config.port = parseInt(portStr, 10) || 1433;
+    for (let i = 0; i < rawParts.length; i++) {
+        const part = rawParts[i];
+        
+        // Check if we are inside a quoted value
+        let insideQuote = false;
+        if (currentKey && currentValue) {
+            const trimmedVal = currentValue.trim();
+            // Check for unbalanced quotes
+            if (trimmedVal.startsWith("'") && !trimmedVal.endsWith("'")) insideQuote = true;
+            else if (trimmedVal.startsWith('"') && !trimmedVal.endsWith('"')) insideQuote = true;
+            else if (trimmedVal.startsWith('{') && !trimmedVal.endsWith('}')) insideQuote = true;
+            // Edge case: just the opening quote
+            if (trimmedVal === "'" || trimmedVal === '"' || trimmedVal === '{') insideQuote = true;
+        }
+
+        if (insideQuote) {
+            currentValue += ';' + part;
+            continue;
+        }
+
+        const equalIndex = part.indexOf('=');
+        if (equalIndex > 0) {
+             if (currentKey) {
+                 processPair(currentKey, currentValue);
+             }
+             currentKey = part.substring(0, equalIndex).trim();
+             currentValue = part.substring(equalIndex + 1);
+        } else {
+            if (currentKey) {
+                currentValue += ';' + part;
             } else {
-                config.server = firstPart;
-                config.port = 1433;
+                // Handle the "ServerName" at start case (no key)
+                if (i === 0 && !config.server) {
+                     const firstPart = part.trim();
+                     if (firstPart) {
+                        if (firstPart.includes(':')) {
+                            const lastColonIndex = firstPart.lastIndexOf(':');
+                            config.server = firstPart.substring(0, lastColonIndex);
+                            const portStr = firstPart.substring(lastColonIndex + 1);
+                            config.port = parseInt(portStr, 10) || 1433;
+                        } else {
+                            config.server = firstPart;
+                            config.port = 1433;
+                        }
+                     }
+                }
             }
         }
+    }
+    // Process the last pair
+    if (currentKey) {
+        processPair(currentKey, currentValue);
     }
 
     // Validate required fields
