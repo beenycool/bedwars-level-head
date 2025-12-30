@@ -27,7 +27,7 @@ import java.time.Duration
 import java.util.Locale
 import java.util.UUID
 
-private const val DEFAULT_PROXY_URL = "https://beeny.hackclub.app"
+private const val DEFAULT_PROXY_URL = "https://bedwars-level-head.onrender.com/"
 private const val _MIN_STAR_CACHE_TTL_MINUTES = 5
 private const val _MAX_STAR_CACHE_TTL_MINUTES = 180
 private const val _DEFAULT_STAR_CACHE_TTL_MINUTES = 45
@@ -79,7 +79,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var aboutVersion: String = ""
 
     @Info(
-        text = "Credits: Based on the original Levelhead mod by Sk1er LLC.",
+        text = "This mod is lovingly maintained and built on the shoulders of giants - huge thanks to the original Levelhead team at Sk1er LLC for creating the foundation that made all this possible.",
         type = InfoType.INFO,
         category = "About"
     )
@@ -95,7 +95,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var aboutContributors: String = ""
 
     @Info(
-        text = "Licensed under the GNU GPL v3.",
+        text = "Licensed under the GNU GPL v3 - free as in freedom, just like the spirit of Minecraft modding should be!",
         type = InfoType.INFO,
         category = "About"
     )
@@ -108,40 +108,40 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     @Button(
         name = "Modrinth",
-        text = "Open Page",
-        description = "Open the Modrinth download page.",
+        text = "Download Here",
+        description = "Grab the latest version from Modrinth - the best place to get mods!",
         category = "About"
     )
     fun openModrinth() = openUrl(MODRINTH_URL)
 
     @Button(
         name = "Source Code",
-        text = "Open GitHub",
-        description = "Open the BedWars Levelhead source code repository.",
+        text = "View on GitHub",
+        description = "Check out the code, contribute, or just see how the magic happens!",
         category = "About"
     )
     fun openSource() = openUrl(GITHUB_REPO_URL)
 
     @Button(
         name = "Original Levelhead",
-        text = "Open GitHub",
-        description = "Open the original Levelhead repository (upstream).",
+        text = "Meet the Original",
+        description = "Pay respects to the legendary original Levelhead mod that started it all.",
         category = "About"
     )
     fun openUpstream() = openUrl(UPSTREAM_LEVELHEAD_URL)
 
     @Button(
         name = "Changelog",
-        text = "View Releases",
-        description = "View the changelog and update history.",
+        text = "What's New?",
+        description = "See what's changed, what's fixed, and what's coming next!",
         category = "About"
     )
     fun openChangelog() = openUrl(CHANGELOG_URL)
 
     @Button(
         name = "Documentation",
-        text = "Open Wiki",
-        description = "Open the documentation and configuration guide.",
+        text = "How to Use",
+        description = "New to the mod? Check out the setup guide and tips!",
         category = "About"
     )
     fun openWiki() = openUrl(WIKI_URL)
@@ -175,24 +175,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             Levelhead.displayManager.saveConfig()
         }
 
-    @Dropdown(
-        name = "Game Mode",
-        description = "Select which game mode stats to display. BedWars is the primary mode; Duels and SkyWars support is planned for future updates.",
-        category = "Display",
-        options = ["BedWars", "Duels", "SkyWars"]
-    )
-    var gameModeIndex: Int = 0
-        set(value) {
-            field = value
-            val mode = GameMode.entries.getOrNull(value) ?: GameMode.BEDWARS
-            Levelhead.displayManager.updatePrimaryDisplay { config ->
-                config.gameMode = mode
-                config.headerString = mode.defaultHeader
-                true
-            }
-            Levelhead.displayManager.clearCache()
-        }
-
     @Switch(
         name = "Show Self",
         description = "Display your own levelhead above your head.",
@@ -211,8 +193,33 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     // General Settings Section
     // ===============================
     @Header(text = "General Settings")
-    @Text(name = "Hypixel API Key", placeholder = "Get a key from developer.hypixel.net", secure = true)
+    
+    @Info(
+        text = "Enter your Hypixel API key to fetch fresh stats directly from Hypixel. Get one at developer.hypixel.net",
+        type = InfoType.INFO
+    )
+    @Transient
+    var apiKeyInfo: String = ""
+    
+    @Text(
+        name = "Hypixel API Key", 
+        placeholder = "Paste your API key here (get one from developer.hypixel.net)", 
+        secure = true,
+        description = "Your Hypixel API key. Required for Direct API mode and to contribute to the community database."
+    )
     var apiKey: String = ""
+
+    @Dropdown(
+        name = "Backend Mode",
+        description = "Choose how stats are fetched. Community API uses shared database (fastest), Own API Key uses your key (most accurate), Fallback tries both (recommended), Offline uses only cached data.",
+        options = ["Community API", "Own API Key", "Fallback (Recommended)", "Offline Mode"]
+    )
+    var backendModeIndex: Int = 2 // Default to Fallback
+        set(value) {
+            field = value
+            save()
+            BedwarsFetcher.resetWarnings()
+        }
 
     @Switch(
         name = "Community Database",
@@ -233,13 +240,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         description = "Display FKDR next to player names in the Tab list."
     )
     var showTabStats: Boolean = true
-
-    @Dropdown(
-        name = "Backend Mode",
-        description = "Choose how stats are fetched. Proxy Only uses community cache, Direct API uses your key, Fallback tries both, Offline uses only cached data.",
-        options = ["Proxy Only", "Direct API", "Fallback", "Offline"]
-    )
-    var backendModeIndex: Int = 2 // Default to Fallback
         set(value) {
             field = value
             save()
@@ -258,7 +258,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         description = "Developer option: route requests through the Levelhead backend. Do not change this unless you know what you are doing.",
         category = "Developer"
     )
-    var proxyEnabled: Boolean = true
+    var proxyEnabled: Boolean = false
 
     @Text(
         name = "Proxy Base URL",
@@ -332,11 +332,13 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     }
 
     /**
-     * Returns true if the user is using the default shared backend (beeny.hackclub.app).
+     * Returns true if the user is using the default shared backend (bedwars-level-head.onrender.com).
      * When using the shared backend, community database is compulsory.
      */
     fun isUsingSharedBackend(): Boolean {
-        return proxyBaseUrl.trim().isEmpty() || proxyBaseUrl.trim() == DEFAULT_PROXY_URL
+        val trimmed = proxyBaseUrl.trim()
+        val defaultTrimmed = DEFAULT_PROXY_URL.trim()
+        return trimmed.isEmpty() || trimmed == defaultTrimmed || trimmed.removeSuffix("/") == defaultTrimmed.removeSuffix("/")
     }
 
     /**
@@ -443,7 +445,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         apiKey = ""
         communityDatabase = true
         showTabStats = true
-        proxyEnabled = true
+        proxyEnabled = false
         proxyBaseUrl = DEFAULT_PROXY_URL
         proxyAuthToken = ""
         communitySubmitSecret = ""
@@ -451,7 +453,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         starCacheTtlMinutes = DEFAULT_STAR_CACHE_TTL_MINUTES
         levelheadEnabled = true
         displayPositionIndex = 0
-        gameModeIndex = 0
         showSelf = true
         save()
         BedwarsFetcher.resetWarnings()
