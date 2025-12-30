@@ -1,6 +1,7 @@
 import { Mutex } from 'async-mutex';
 import { pool } from './cache';
 import { DatabaseType } from './database/adapter';
+import { getRedisCacheStats } from './redis';
 
 interface PlayerQueryHistoryRow {
   id: string | number;
@@ -499,28 +500,8 @@ export interface SystemStats {
 export async function getSystemStats(): Promise<SystemStats> {
   await ensureInitialized();
 
-  let tableStatsPromise;
-  if (pool.type === DatabaseType.POSTGRESQL && supportsPgTotalRelationSize !== false) {
-    tableStatsPromise = pool.query(`
-      SELECT pg_total_relation_size('player_cache') as total_size_bytes,
-             (pg_total_relation_size('player_cache') - pg_relation_size('player_cache')) as index_size_bytes
-    `).catch(() => ({ rows: [{ total_size_bytes: null, index_size_bytes: null }] }));
-  } else if (pool.type === DatabaseType.AZURE_SQL) {
-    // SQL Server equivalent for table size
-    tableStatsPromise = pool.query(`
-      SELECT 
-        (SUM(a.total_pages) * 8 * 1024) AS total_size_bytes,
-        (SUM(a.used_pages) * 8 * 1024 - SUM(CASE WHEN p.index_id < 2 THEN a.data_pages ELSE 0 END) * 8 * 1024) AS index_size_bytes
-      FROM sys.tables t
-      JOIN sys.indexes i ON t.object_id = i.object_id
-      JOIN sys.partitions p ON i.object_id = p.object_id AND i.index_id = p.index_id
-      JOIN sys.allocation_units a ON p.partition_id = a.container_id
-      WHERE t.name = 'player_cache'
-      GROUP BY t.name
-    `).catch(() => ({ rows: [{ total_size_bytes: null, index_size_bytes: null }] }));
-  } else {
-    tableStatsPromise = Promise.resolve({ rows: [{ total_size_bytes: null, index_size_bytes: null }] });
-  }
+  // Get Redis cache stats (moved from PostgreSQL player_cache)
+  const redisCacheStats = await getRedisCacheStats();
 
   const apiStatsQuery = pool.type === DatabaseType.POSTGRESQL
     ? `SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000)`
@@ -529,18 +510,7 @@ export async function getSystemStats(): Promise<SystemStats> {
   const apiStatsPromise = pool.query<{ count: string | number }>(apiStatsQuery)
     .catch(() => ({ rows: [{ count: 0 }] }));
 
-  const cacheStatsQuery = pool.type === DatabaseType.POSTGRESQL
-    ? `SELECT count(*) as count, avg(octet_length(payload::text)) as avg_size_bytes FROM player_cache`
-    : `SELECT count(*) as count, avg(len(payload)) as avg_size_bytes FROM player_cache`;
-
-  const cacheStatsPromise = pool.query<{ count: string | number, avg_size_bytes: string | number | null }>(cacheStatsQuery)
-    .catch(() => ({ rows: [{ count: 0, avg_size_bytes: null }] }));
-
-  const [tableStats, apiStats, cacheStats] = await Promise.all([
-    tableStatsPromise,
-    apiStatsPromise,
-    cacheStatsPromise,
-  ]);
+  const [apiStats] = await Promise.all([apiStatsPromise]);
 
   function bytesToHuman(raw: string | number | null | undefined): string {
     const bytes = raw === null || raw === undefined ? 0 : Number.parseInt(String(raw), 10);
@@ -557,10 +527,10 @@ export async function getSystemStats(): Promise<SystemStats> {
   }
 
   return {
-    dbSize: bytesToHuman((tableStats.rows[0] as any)?.total_size_bytes),
-    indexSize: bytesToHuman((tableStats.rows[0] as any)?.index_size_bytes),
+    dbSize: redisCacheStats.memoryUsed,
+    indexSize: 'N/A (Redis)',
     apiCallsLastHour: Number((apiStats.rows[0] as any)?.count ?? 0),
-    cacheCount: Number((cacheStats.rows[0] as any)?.count ?? 0),
-    avgPayloadSize: bytesToHuman((cacheStats.rows[0] as any)?.avg_size_bytes)
+    cacheCount: redisCacheStats.cacheKeys,
+    avgPayloadSize: bytesToHuman(redisCacheStats.memoryUsedBytes / Math.max(1, redisCacheStats.cacheKeys)),
   };
 }

@@ -1,7 +1,15 @@
-import { HYPIXEL_API_CALL_WINDOW_MS, DATABASE_TYPE } from '../config';
+import { HYPIXEL_API_CALL_WINDOW_MS, DATABASE_TYPE, REDIS_URL, CACHE_TTL_MS } from '../config';
 import { recordCacheHit, recordCacheMiss } from './metrics';
 import { database as pool } from './database/factory';
 import { DatabaseType } from './database/adapter';
+import {
+    getPlayerCacheEntry,
+    setPlayerCacheEntry,
+    clearPlayerCacheEntry,
+    clearAllPlayerCacheEntries,
+    deletePlayerCacheEntries,
+    isRedisAvailable,
+} from './redis';
 
 interface DatabaseError extends Error {
   code?: string | number;
@@ -76,65 +84,11 @@ async function ensureRateLimitTable(): Promise<void> {
 }
 
 const initialization = (async () => {
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    await pool.query(
-      `CREATE TABLE IF NOT EXISTS player_cache (
-        cache_key TEXT PRIMARY KEY,
-        payload JSONB NOT NULL,
-        expires_at BIGINT NOT NULL,
-        etag TEXT,
-        last_modified BIGINT
-      )`,
-    );
-  } else {
-    await pool.query(
-      `IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[player_cache]') AND type in (N'U'))
-       CREATE TABLE player_cache (
-         cache_key NVARCHAR(450) PRIMARY KEY,
-         payload NVARCHAR(MAX) NOT NULL,
-         expires_at BIGINT NOT NULL,
-         etag NVARCHAR(MAX),
-         last_modified BIGINT
-       )`,
-    );
-  }
-
-  console.info('[cache] player_cache table is ready');
+  // Player cache moved to Redis - no PostgreSQL player_cache table needed
+  console.info('[cache] player cache: using Redis');
 
   await ensureRateLimitTable();
   console.info('[cache] rate_limits table is ready');
-
-  const alterStatements: Array<{ column: string; pgQuery: string; msQuery: string }> = [
-    { 
-      column: 'etag', 
-      pgQuery: 'ALTER TABLE player_cache ADD COLUMN IF NOT EXISTS etag TEXT',
-      msQuery: "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[player_cache]') AND name = 'etag') ALTER TABLE player_cache ADD etag NVARCHAR(MAX)"
-    },
-    {
-      column: 'last_modified',
-      pgQuery: 'ALTER TABLE player_cache ADD COLUMN IF NOT EXISTS last_modified BIGINT',
-      msQuery: "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[player_cache]') AND name = 'last_modified') ALTER TABLE player_cache ADD last_modified BIGINT"
-    },
-    {
-      column: 'source',
-      pgQuery: 'ALTER TABLE player_cache ADD COLUMN IF NOT EXISTS source TEXT',
-      msQuery: "IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[player_cache]') AND name = 'source') ALTER TABLE player_cache ADD source NVARCHAR(MAX)"
-    },
-  ];
-
-  for (const { column, pgQuery, msQuery } of alterStatements) {
-    try {
-      await pool.query(pool.type === DatabaseType.POSTGRESQL ? pgQuery : msQuery);
-    } catch (error) {
-      const dbError = error as DatabaseError | undefined;
-      if (dbError?.code === '42701' || dbError?.code === 2705) {
-        console.info(`[cache] column ${column} already exists (concurrent migration handled)`);
-        continue;
-      }
-      console.error(`[cache] failed to ensure column ${column} exists`, error);
-      throw error;
-    }
-  }
 
   if (pool.type === DatabaseType.POSTGRESQL) {
     await pool.query(
@@ -145,7 +99,6 @@ const initialization = (async () => {
       )`,
     );
     await pool.query('CREATE INDEX IF NOT EXISTS idx_hypixel_calls_time ON hypixel_api_calls (called_at)');
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_player_cache_expires ON player_cache (expires_at)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits (window_start)');
   } else {
     await pool.query(
@@ -157,10 +110,9 @@ const initialization = (async () => {
        )`,
     );
     await pool.query("IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_hypixel_calls_time') CREATE INDEX idx_hypixel_calls_time ON hypixel_api_calls (called_at)");
-    await pool.query("IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_player_cache_expires') CREATE INDEX idx_player_cache_expires ON player_cache (expires_at)");
     await pool.query("IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_rate_limits_window') CREATE INDEX idx_rate_limits_window ON rate_limits (window_start)");
   }
-  
+
   console.info('[cache] hypixel_api_calls table is ready');
 })();
 
@@ -170,16 +122,13 @@ export async function ensureInitialized(): Promise<void> {
 
 export async function purgeExpiredEntries(now: number = Date.now()): Promise<void> {
   await ensureInitialized();
-  const result = await pool.query('DELETE FROM player_cache WHERE expires_at <= $1', [now]);
-  const purged = result.rowCount;
-  if (purged > 0) {
-    console.info(`[cache] purged ${purged} expired entries`);
-  }
+
+  // Redis player_cache handles TTL automatically - no manual purge needed
 
   const historyQuery = pool.type === DatabaseType.POSTGRESQL
     ? "DELETE FROM player_query_history WHERE requested_at < NOW() - INTERVAL '30 days'"
     : "DELETE FROM player_query_history WHERE requested_at < DATEADD(day, -30, GETDATE())";
-  
+
   const historyResult = await pool.query(historyQuery);
   const purgedHistory = historyResult.rowCount;
   if (purgedHistory > 0) {
@@ -236,6 +185,19 @@ function mapRow<T>(row: CacheRow): CacheEntry<T> {
 
 export async function getCacheEntry<T>(key: string, includeExpired = false): Promise<CacheEntry<T> | null> {
   await ensureInitialized();
+
+  // Try Redis first if available
+  if (isRedisAvailable()) {
+    const entry = await getPlayerCacheEntry<T>(key);
+    if (entry) {
+      recordCacheHit();
+      return entry;
+    }
+    recordCacheMiss('absent');
+    return null;
+  }
+
+  // Fallback to PostgreSQL
   const result = await pool.query<CacheRow>(
     'SELECT payload, expires_at, etag, last_modified, source FROM player_cache WHERE cache_key = $1',
     [key],
@@ -276,6 +238,14 @@ export async function setCachedPayload<T>(
   metadata: CacheMetadata = {},
 ): Promise<void> {
   await ensureInitialized();
+
+  // Use Redis if available
+  if (isRedisAvailable()) {
+    await setPlayerCacheEntry(key, value, ttlMs, metadata);
+    return;
+  }
+
+  // Fallback to PostgreSQL
   const expiresAt = Date.now() + ttlMs;
   const payload = JSON.stringify(value);
 
@@ -312,6 +282,13 @@ export async function setCachedPayload<T>(
 
 export async function clearAllCacheEntries(): Promise<number> {
   await ensureInitialized();
+
+  // Use Redis if available
+  if (isRedisAvailable()) {
+    return await clearAllPlayerCacheEntries();
+  }
+
+  // Fallback to PostgreSQL
   const result = await pool.query('DELETE FROM player_cache');
   return result.rowCount;
 }
@@ -322,6 +299,13 @@ export async function deleteCacheEntries(keys: string[]): Promise<number> {
   }
 
   await ensureInitialized();
+
+  // Use Redis if available
+  if (isRedisAvailable()) {
+    return await deletePlayerCacheEntries(keys);
+  }
+
+  // Fallback to PostgreSQL
   let result;
   if (pool.type === DatabaseType.POSTGRESQL) {
     result = await pool.query('DELETE FROM player_cache WHERE cache_key = ANY($1)', [keys]);
