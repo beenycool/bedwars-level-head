@@ -49,6 +49,10 @@ export function extractBedwarsExperience(payload: ResolvedPlayer['payload']): nu
         return numeric;
     }
 
+    if (!payload) {
+        return null;
+    }
+
     const payloadRecord = payload as Record<string, unknown>;
     const dataCandidate = (payloadRecord as { data?: unknown }).data;
     const bedwarsCandidate = (payloadRecord as { bedwars?: unknown }).bedwars;

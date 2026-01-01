@@ -33,8 +33,11 @@ export interface HypixelPlayerResponse {
   cause?: string;
   player?: {
     uuid?: string;
+    displayname?: string;
     stats?: {
       Bedwars?: Record<string, unknown>;
+      Duels?: Record<string, unknown>;
+      SkyWars?: Record<string, unknown>;
     };
   } | null;
 }

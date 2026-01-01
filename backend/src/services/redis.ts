@@ -595,10 +595,9 @@ export async function setPlayerCacheEntry<T>(
 
     try {
         const expiresAt = Date.now() + ttlMs;
-        const payload = JSON.stringify(value);
 
         const data = JSON.stringify({
-            payload,
+            payload: value,
             expires_at: expiresAt,
             etag: metadata.etag ?? null,
             last_modified: metadata.lastModified ?? null,

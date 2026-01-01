@@ -416,23 +416,25 @@ export async function getPlayerStatsFromCache(
         const redisKey = `cache:${key}`;
         const data = await client.get(redisKey);
         if (data) {
-          let row: CacheRow;
+          let row: CacheRow | undefined;
           try {
             row = JSON.parse(data) as CacheRow;
           } catch {
             await client.del(redisKey);
-            row = null;
+            // Skip processing this cache entry
           }
-          const entry = row ? mapRow<MinimalPlayerStats>(row) : null;
-          if (entry) {
-            const now = Date.now();
-            if (entry.expiresAt > now) {
-              recordCacheHit();
-              recordCacheTierHit('l1');
-              l1Hit = true;
-              return entry;
+          if (row) {
+            const entry = mapRow<MinimalPlayerStats>(row);
+            if (entry) {
+              const now = Date.now();
+              if (entry.expiresAt > now) {
+                recordCacheHit();
+                recordCacheTierHit('l1');
+                l1Hit = true;
+                return entry;
+              }
+              await client.del(redisKey);
             }
-            await client.del(redisKey);
           }
         }
       }

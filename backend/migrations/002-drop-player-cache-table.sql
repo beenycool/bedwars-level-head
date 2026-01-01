@@ -1,5 +1,5 @@
--- Migration: Drop player_cache table (player caching moved to Redis)
--- Run this after verifying Redis cache is working correctly
+-- Migration: Drop player_cache table (player caching moved to two-tier L1 Redis + L2 SQL cache)
+-- Run this after verifying Redis L1 cache is working correctly and migration 003 has added player_stats_cache tables
 --
 -- This script is safe to run multiple times (IF EXISTS / IF NOT EXISTS checks)
 
