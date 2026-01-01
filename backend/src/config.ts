@@ -28,6 +28,18 @@ function requiredStringListEnv(name: string): string[] {
   return values;
 }
 
+function optionalStringListEnv(name: string): string[] {
+  const raw = process.env[name];
+  if (!raw) {
+    return [];
+  }
+
+  return raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+}
+
 type TrustProxyValue = false | true | number | string;
 
 function parseTrustProxyEnv(value: string | undefined): TrustProxyValue {
@@ -58,7 +70,7 @@ function parseTrustProxyEnv(value: string | undefined): TrustProxyValue {
 }
 
 export const ADMIN_API_KEYS = requiredStringListEnv('ADMIN_API_KEYS');
-export const CRON_API_KEYS = requiredStringListEnv('CRON_API_KEYS');
+export const CRON_API_KEYS = optionalStringListEnv('CRON_API_KEYS');
 
 function parseIntEnv(name: string, defaultValue: number): number {
   const raw = process.env[name];
@@ -67,6 +79,20 @@ function parseIntEnv(name: string, defaultValue: number): number {
   }
 
   const parsed = Number.parseInt(raw, 10);
+  if (Number.isNaN(parsed)) {
+    return defaultValue;
+  }
+
+  return parsed;
+}
+
+function parseFloatEnv(name: string, defaultValue: number): number {
+  const raw = process.env[name];
+  if (raw === undefined) {
+    return defaultValue;
+  }
+
+  const parsed = Number.parseFloat(raw);
   if (Number.isNaN(parsed)) {
     return defaultValue;
   }
@@ -124,6 +150,36 @@ const minimumCacheTtl = 1 * HOURS;
 const maximumCacheTtl = 72 * HOURS;
 
 export const CACHE_TTL_MS = Math.min(Math.max(rawCacheTtl, minimumCacheTtl), maximumCacheTtl);
+
+export const PLAYER_L2_TTL_MS = Math.min(
+  Math.max(parseIntEnv('PLAYER_L2_TTL_MS', defaultCacheTtl), minimumCacheTtl),
+  maximumCacheTtl,
+);
+export const IGN_L2_TTL_MS = Math.min(
+  Math.max(parseIntEnv('IGN_L2_TTL_MS', PLAYER_L2_TTL_MS), minimumCacheTtl),
+  maximumCacheTtl,
+);
+export const PLAYER_L1_TTL_MIN_MS = Math.max(60 * 1000, parseIntEnv('PLAYER_L1_TTL_MIN_MS', 15 * 60 * 1000));
+export const PLAYER_L1_TTL_MAX_MS = Math.max(
+  PLAYER_L1_TTL_MIN_MS,
+  parseIntEnv('PLAYER_L1_TTL_MAX_MS', 6 * 60 * 60 * 1000),
+);
+export const PLAYER_L1_TTL_FALLBACK_MS = Math.min(
+  Math.max(parseIntEnv('PLAYER_L1_TTL_FALLBACK_MS', 2 * 60 * 60 * 1000), PLAYER_L1_TTL_MIN_MS),
+  PLAYER_L1_TTL_MAX_MS,
+);
+export const PLAYER_L1_TARGET_UTILIZATION = Math.min(
+  Math.max(parseFloatEnv('PLAYER_L1_TARGET_UTILIZATION', 0.7), 0.1),
+  0.95,
+);
+export const PLAYER_L1_SAFETY_FACTOR = Math.min(
+  Math.max(parseFloatEnv('PLAYER_L1_SAFETY_FACTOR', 0.6), 0.1),
+  1,
+);
+export const PLAYER_L1_INFO_REFRESH_MS = Math.max(30 * 1000, parseIntEnv('PLAYER_L1_INFO_REFRESH_MS', 5 * 60 * 1000));
+export const REDIS_CACHE_MAX_BYTES = Math.max(0, parseIntEnv('REDIS_CACHE_MAX_BYTES', 30 * 1024 * 1024));
+export const CACHE_DB_WARM_WINDOW_MS = Math.max(0, parseIntEnv('CACHE_DB_WARM_WINDOW_MS', 15 * 60 * 1000));
+export const CACHE_DB_ALLOW_COLD_READS = parseBooleanEnv('CACHE_DB_ALLOW_COLD_READS', false);
 
 export const CACHE_DB_POOL_MIN = parseIntEnv('CACHE_DB_POOL_MIN', 2);
 export const CACHE_DB_POOL_MAX = parseIntEnv('CACHE_DB_POOL_MAX', 20);

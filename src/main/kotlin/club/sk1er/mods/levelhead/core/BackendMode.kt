@@ -8,11 +8,11 @@ enum class BackendMode(
     val description: String
 ) {
     /**
-     * Use only the community proxy/database for stats.
+     * Use only the community database/cache for stats.
      * Fastest and doesn't require an API key but may have less fresh data.
      */
-    PROXY_ONLY(
-        displayName = "Proxy Only",
+    COMMUNITY_CACHE_ONLY(
+        displayName = "Community API",
         description = "Use only the community database (fastest, no API key needed)"
     ),
 
@@ -21,17 +21,17 @@ enum class BackendMode(
      * Requires an API key, most up-to-date data but rate limited.
      */
     DIRECT_API(
-        displayName = "Direct API",
+        displayName = "Own API Key",
         description = "Use only your Hypixel API key (most accurate, requires API key)"
     ),
 
     /**
-     * Try proxy first, fall back to direct API if proxy fails.
-     * Best of both worlds - fast when proxy works, reliable when it doesn't.
+     * Try community database first, fall back to direct API if database fails.
+     * Best of both worlds - fast when database works, reliable when it doesn't.
      */
     FALLBACK(
-        displayName = "Fallback",
-        description = "Try proxy first, use API key if proxy fails (recommended)"
+        displayName = "Fallback (Recommended)",
+        description = "Try community database first, use API key if database fails (recommended)"
     ),
 
     /**
@@ -39,7 +39,7 @@ enum class BackendMode(
      * Only shows cached data, no network requests.
      */
     OFFLINE(
-        displayName = "Offline",
+        displayName = "Offline Mode",
         description = "Use only cached data (no network requests)"
     );
 

@@ -18,6 +18,9 @@ import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.launch
 
 class DisplayManager(val file: File) {
+    private companion object {
+        private const val TEMP_DEBUG = true
+    }
 
     var config = MasterConfig()
     val aboveHead: MutableList<AboveHeadDisplay> = ArrayList()
@@ -131,6 +134,7 @@ class DisplayManager(val file: File) {
         }
         
         wasInGame = true
+        // requestAllDisplays() will automatically sync the game mode
         requestAllDisplays()
     }
 
@@ -171,9 +175,14 @@ class DisplayManager(val file: File) {
         }
     }
 
-    fun clearCachesWithoutRefetch() {
+    fun clearCachesWithoutRefetch(clearStats: Boolean = true) {
+        if (TEMP_DEBUG) {
+            Levelhead.logger.info("[TEMP_DEBUG] clearCachesWithoutRefetch(clearStats=$clearStats)")
+        }
         aboveHead.forEach { it.cache.clear() }
-        Levelhead.clearCachedStats()
+        if (clearStats) {
+            Levelhead.clearCachedStats()
+        }
     }
 
     fun clearCache() {
@@ -221,10 +230,32 @@ class DisplayManager(val file: File) {
         return true
     }
 
+    /**
+     * Automatically sync the display config's game mode with the currently detected game mode.
+     */
+    @OptIn(ExperimentalStdlibApi::class)
+    fun syncGameMode() {
+        val detectedMode = ModeManager.getActiveGameMode() ?: return
+
+        updatePrimaryDisplay { config ->
+            if (config.gameMode != detectedMode) {
+                config.gameMode = detectedMode
+                config.headerString = detectedMode.defaultHeader
+                true
+            } else {
+                false
+            }
+        }
+    }
+
     @OptIn(ExperimentalStdlibApi::class)
     fun requestAllDisplays() {
         if (!config.enabled) return
         if (!ModeManager.shouldRequestData()) return
+        
+        // Sync game mode before requesting displays
+        syncGameMode()
+        
         val displays = aboveHead.filter { it.config.enabled }
         if (displays.isEmpty()) return
         Minecraft.getMinecraft().theWorld?.playerEntities

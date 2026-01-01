@@ -27,16 +27,14 @@ class WhoisCommand {
             return
         }
 
-        sendMessage("${ChatColor.YELLOW}Looking up BedWars stats for ${ChatColor.GOLD}$trimmedIdentifier${ChatColor.YELLOW}...")
+        sendMessage("${ChatColor.YELLOW}Looking up stats for ${ChatColor.GOLD}$trimmedIdentifier${ChatColor.YELLOW}...")
         Levelhead.scope.launch {
             try {
                 val result = WhoisService.lookupWhois(trimmedIdentifier)
                 Minecraft.getMinecraft().addScheduledTask {
-                    val starText = result.star?.let { "${ChatColor.GOLD}$it✪" } ?: "${ChatColor.RED}?"
-                    val experienceText = result.experience?.let { "${ChatColor.GOLD}$it" } ?: "${ChatColor.GRAY}unknown"
                     val nickedText = if (result.nicked) " ${ChatColor.GRAY}(nicked)" else ""
                     sendMessage(
-                        "${ChatColor.YELLOW}${result.displayName}$nickedText ${ChatColor.YELLOW}is $starText ${ChatColor.YELLOW}(${ChatColor.AQUA}${result.source}${ChatColor.YELLOW}, XP: $experienceText)"
+                        "${ChatColor.YELLOW}${result.displayName}$nickedText ${ChatColor.YELLOW}is ${ChatColor.GOLD}${result.statValue} ${ChatColor.YELLOW}(${result.gameMode.displayName} ${result.statName})"
                     )
                 }
             } catch (ex: WhoisService.CommandException) {

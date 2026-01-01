@@ -34,33 +34,19 @@ export class AzureSqlAdapter implements DatabaseAdapter {
     // Try parsing as URL first (for mssql://user:pass@host:port/db format)
     if (connectionString.includes('://')) {
       try {
-        // Replace sqlserver:// with mssql:// for URL parsing if needed, or vice versa
-        // Node URL supports generic protocols.
-        const url = new URL(connectionString.replace(/^sqlserver:/i, 'mssql:'));
-        
-        if (url.hostname) {
-          config.server = url.hostname;
-          if (url.port) config.port = parseInt(url.port, 10);
-          if (url.username) config.user = url.username;
-          if (url.password) config.password = url.password;
-          if (url.pathname && url.pathname.length > 1) {
-            config.database = url.pathname.substring(1);
-          }
-          
-          // If we got a server from URL, we might be done, but let's check for query params
-          url.searchParams.forEach((value, key) => {
-             const lowerKey = key.toLowerCase();
-             if (lowerKey === 'encrypt') config.options.encrypt = value.toLowerCase() === 'true';
-             else if (lowerKey === 'trustservercertificate') config.options.trustServerCertificate = value.toLowerCase() === 'true';
-             else if (lowerKey === 'database') config.database = value;
-          });
+        // Safely parse URL-format connection strings by working around special characters
+        const parsed = this.parseUrlFormat(connectionString);
+        if (parsed) {
+          Object.assign(config, parsed);
 
+          // If we got a server from URL, return the config
           if (config.server) {
              return config as mssql.config;
           }
         }
       } catch (e) {
         // Ignore URL parse error and fall back to manual parsing
+        console.log('[database] URL parsing failed, falling back to manual parsing');
       }
     }
 
@@ -208,6 +194,61 @@ export class AzureSqlAdapter implements DatabaseAdapter {
     return config as mssql.config;
   }
 
+  /**
+   * Safely parses URL-format connection strings (e.g., sqlserver://user:password@host:port/database)
+   * by extracting components before URL encoding special characters.
+   */
+  private parseUrlFormat(connectionString: string): mssql.config | null {
+    try {
+      // Normalize protocol
+      const normalizedString = connectionString.replace(/^sqlserver:/i, 'mssql:');
+
+      // Parse the URL by manually extracting components before constructing the URL object
+      // This ensures we can properly escape special characters in the password
+      const match = normalizedString.match(/^mssql:\/\/([^:]+):([^@]+)@([^\/:]+)(?::(\d+))?\/([^?#]*)/);
+
+      if (match) {
+        const [, username, password, hostname, port, database] = match;
+
+        const parsedConfig: any = {
+          server: hostname,
+          user: username,
+          password: password,
+          options: {
+            encrypt: true,
+            trustServerCertificate: true
+          }
+        };
+
+        if (port) {
+          parsedConfig.port = parseInt(port, 10);
+        }
+
+        if (database) {
+          parsedConfig.database = database;
+        }
+
+        // Parse query parameters
+        const queryPart = normalizedString.includes('?') ? normalizedString.split('?')[1] : '';
+        if (queryPart) {
+          const params = new URLSearchParams(queryPart);
+          params.forEach((value, key) => {
+             const lowerKey = key.toLowerCase();
+             if (lowerKey === 'encrypt') parsedConfig.options.encrypt = value.toLowerCase() === 'true';
+             else if (lowerKey === 'trustservercertificate') parsedConfig.options.trustServerCertificate = value.toLowerCase() === 'true';
+             else if (lowerKey === 'database') parsedConfig.database = value;
+          });
+        }
+
+        return parsedConfig as mssql.config;
+      }
+
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+
   async connect(): Promise<void> {
     if (!this.pool.connected) {
       await this.pool.connect();
@@ -239,7 +280,7 @@ export class AzureSqlAdapter implements DatabaseAdapter {
       .replace(/INSERT INTO (\w+) (.+) ON CONFLICT \((.+)\) DO UPDATE SET (.+)/g, (match: string, table: string, cols: string, conflictCol: string, updateSet: string) => {
         // Simple UPSERT transformation for PG 'ON CONFLICT'
         // This is a very basic regex and might need refinement for complex cases
-        // For our specific use cases in player_cache, it's usually enough
+        // For our specific use cases in player_stats_cache, it's usually enough
         return `
           MERGE ${table} AS target
           USING (SELECT ${cols.replace(/\((.+)\) VALUES \((.+)\)/, (m: string, c: string, v: string) => {
@@ -278,4 +319,3 @@ export class AzureSqlAdapter implements DatabaseAdapter {
     return this.pool;
   }
 }
-

@@ -1,11 +1,10 @@
-import { HYPIXEL_API_CALL_WINDOW_MS, DATABASE_TYPE, REDIS_URL, CACHE_TTL_MS } from '../config';
+import { CACHE_DB_ALLOW_COLD_READS, CACHE_DB_WARM_WINDOW_MS, HYPIXEL_API_CALL_WINDOW_MS } from '../config';
 import { recordCacheHit, recordCacheMiss } from './metrics';
 import { database as pool } from './database/factory';
 import { DatabaseType } from './database/adapter';
 import {
     getPlayerCacheEntry,
     setPlayerCacheEntry,
-    clearPlayerCacheEntry,
     clearAllPlayerCacheEntries,
     deletePlayerCacheEntries,
     isRedisAvailable,
@@ -38,6 +37,27 @@ export interface CacheMetadata {
   etag?: string | null;
   lastModified?: number | null;
   source?: CacheSource | null;
+}
+
+let lastDbAccessAt = 0;
+
+export function markDbAccess(): void {
+  lastDbAccessAt = Date.now();
+}
+
+export function shouldReadFromDb(): boolean {
+  if (CACHE_DB_ALLOW_COLD_READS) {
+    return true;
+  }
+  if (CACHE_DB_WARM_WINDOW_MS <= 0) {
+    return false;
+  }
+  if (lastDbAccessAt === 0) {
+    // Allow the first L2 read after startup to seed the warm window.
+    lastDbAccessAt = Date.now();
+    return true;
+  }
+  return Date.now() - lastDbAccessAt < CACHE_DB_WARM_WINDOW_MS;
 }
 
 // Re-export pool for other services
@@ -83,12 +103,76 @@ async function ensureRateLimitTable(): Promise<void> {
   }
 }
 
+async function ensurePlayerStatsTables(): Promise<void> {
+  if (pool.type === DatabaseType.POSTGRESQL) {
+    await pool.query(
+      `CREATE TABLE IF NOT EXISTS player_stats_cache (
+        cache_key TEXT PRIMARY KEY,
+        payload JSONB NOT NULL,
+        expires_at BIGINT NOT NULL,
+        etag TEXT,
+        last_modified BIGINT,
+        source TEXT DEFAULT 'hypixel',
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_player_stats_expires ON player_stats_cache (expires_at)`,
+    );
+
+    await pool.query(
+      `CREATE TABLE IF NOT EXISTS ign_uuid_cache (
+        ign TEXT PRIMARY KEY,
+        uuid TEXT,
+        nicked BOOLEAN NOT NULL DEFAULT FALSE,
+        expires_at BIGINT NOT NULL,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )`,
+    );
+    await pool.query(
+      `CREATE INDEX IF NOT EXISTS idx_ign_uuid_expires ON ign_uuid_cache (expires_at)`,
+    );
+  } else {
+    await pool.query(
+      `IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[player_stats_cache]') AND type in (N'U'))
+       CREATE TABLE player_stats_cache (
+         cache_key NVARCHAR(450) PRIMARY KEY,
+         payload NVARCHAR(MAX) NOT NULL,
+         expires_at BIGINT NOT NULL,
+         etag NVARCHAR(255),
+         last_modified BIGINT,
+         source NVARCHAR(64),
+         created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+       )`,
+    );
+    await pool.query(
+      "IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_player_stats_expires') CREATE INDEX idx_player_stats_expires ON player_stats_cache (expires_at)",
+    );
+
+    await pool.query(
+      `IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[ign_uuid_cache]') AND type in (N'U'))
+       CREATE TABLE ign_uuid_cache (
+         ign NVARCHAR(32) PRIMARY KEY,
+         uuid NVARCHAR(32),
+         nicked BIT NOT NULL DEFAULT 0,
+         expires_at BIGINT NOT NULL,
+         updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+       )`,
+    );
+    await pool.query(
+      "IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_ign_uuid_expires') CREATE INDEX idx_ign_uuid_expires ON ign_uuid_cache (expires_at)",
+    );
+  }
+}
+
 const initialization = (async () => {
-  // Player cache moved to Redis - no PostgreSQL player_cache table needed
-  console.info('[cache] player cache: using Redis');
+  console.info('[cache] player cache: Redis L1 + SQL L2');
 
   await ensureRateLimitTable();
   console.info('[cache] rate_limits table is ready');
+
+  await ensurePlayerStatsTables();
+  console.info('[cache] player_stats_cache tables are ready');
 
   if (pool.type === DatabaseType.POSTGRESQL) {
     await pool.query(
@@ -123,7 +207,19 @@ export async function ensureInitialized(): Promise<void> {
 export async function purgeExpiredEntries(now: number = Date.now()): Promise<void> {
   await ensureInitialized();
 
-  // Redis player_cache handles TTL automatically - no manual purge needed
+  // Redis L1 handles TTL automatically - purge SQL L2 entries only
+  const statsResult = await pool.query('DELETE FROM player_stats_cache WHERE expires_at <= $1', [now]);
+  const purgedStats = statsResult.rowCount;
+  if (purgedStats > 0) {
+    console.info(`[cache] purged ${purgedStats} expired player_stats_cache entries`);
+  }
+
+  const ignResult = await pool.query('DELETE FROM ign_uuid_cache WHERE expires_at <= $1', [now]);
+  const purgedIgn = ignResult.rowCount;
+  if (purgedIgn > 0) {
+    console.info(`[cache] purged ${purgedIgn} expired ign_uuid_cache entries`);
+  }
+  markDbAccess();
 
   const historyQuery = pool.type === DatabaseType.POSTGRESQL
     ? "DELETE FROM player_query_history WHERE requested_at < NOW() - INTERVAL '30 days'"
@@ -193,15 +289,14 @@ export async function getCacheEntry<T>(key: string, includeExpired = false): Pro
       recordCacheHit();
       return entry;
     }
-    recordCacheMiss('absent');
-    return null;
   }
 
-  // Fallback to PostgreSQL
+  // Fallback to SQL
   const result = await pool.query<CacheRow>(
-    'SELECT payload, expires_at, etag, last_modified, source FROM player_cache WHERE cache_key = $1',
+    'SELECT payload, expires_at, etag, last_modified, source FROM player_stats_cache WHERE cache_key = $1',
     [key],
   );
+  markDbAccess();
   const row = result.rows[0];
   if (!row) {
     recordCacheMiss('absent');
@@ -213,7 +308,7 @@ export async function getCacheEntry<T>(key: string, includeExpired = false): Pro
     entry = mapRow<T>(row);
   } catch (error) {
     if (!includeExpired) {
-      await pool.query('DELETE FROM player_cache WHERE cache_key = $1', [key]);
+      await pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [key]);
     }
     recordCacheMiss('deserialization');
     return null;
@@ -221,7 +316,7 @@ export async function getCacheEntry<T>(key: string, includeExpired = false): Pro
   const now = Date.now();
   if (Number.isNaN(entry.expiresAt) || entry.expiresAt <= now) {
     if (!includeExpired) {
-      await pool.query('DELETE FROM player_cache WHERE cache_key = $1', [key]);
+      await pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [key]);
     }
     recordCacheMiss('expired');
     return includeExpired ? entry : null;
@@ -251,7 +346,7 @@ export async function setCachedPayload<T>(
 
   if (pool.type === DatabaseType.POSTGRESQL) {
     await pool.query(
-      `INSERT INTO player_cache (cache_key, payload, expires_at, etag, last_modified, source)
+      `INSERT INTO player_stats_cache (cache_key, payload, expires_at, etag, last_modified, source)
        VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (cache_key) DO UPDATE
        SET payload = EXCLUDED.payload,
@@ -263,7 +358,7 @@ export async function setCachedPayload<T>(
     );
   } else {
     await pool.query(
-      `MERGE player_cache AS target
+      `MERGE player_stats_cache AS target
        USING (SELECT $1 AS cache_key, $2 AS payload, $3 AS expires_at, $4 AS etag, $5 AS last_modified, $6 AS source) AS source
        ON (target.cache_key = source.cache_key)
        WHEN MATCHED THEN
@@ -278,19 +373,21 @@ export async function setCachedPayload<T>(
       [key, payload, expiresAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
     );
   }
+  markDbAccess();
 }
 
 export async function clearAllCacheEntries(): Promise<number> {
   await ensureInitialized();
 
-  // Use Redis if available
+  let deleted = 0;
   if (isRedisAvailable()) {
-    return await clearAllPlayerCacheEntries();
+    deleted += await clearAllPlayerCacheEntries();
   }
 
-  // Fallback to PostgreSQL
-  const result = await pool.query('DELETE FROM player_cache');
-  return result.rowCount;
+  const statsResult = await pool.query('DELETE FROM player_stats_cache');
+  const ignResult = await pool.query('DELETE FROM ign_uuid_cache');
+  markDbAccess();
+  return deleted + statsResult.rowCount + ignResult.rowCount;
 }
 
 export async function deleteCacheEntries(keys: string[]): Promise<number> {
@@ -300,23 +397,21 @@ export async function deleteCacheEntries(keys: string[]): Promise<number> {
 
   await ensureInitialized();
 
-  // Use Redis if available
+  let deleted = 0;
   if (isRedisAvailable()) {
-    return await deletePlayerCacheEntries(keys);
+    deleted += await deletePlayerCacheEntries(keys);
   }
 
-  // Fallback to PostgreSQL
   let result;
   if (pool.type === DatabaseType.POSTGRESQL) {
-    result = await pool.query('DELETE FROM player_cache WHERE cache_key = ANY($1)', [keys]);
+    result = await pool.query('DELETE FROM player_stats_cache WHERE cache_key = ANY($1)', [keys]);
   } else {
     // SQL Server doesn't support ANY($1) with an array directly.
-    // For simplicity, we'll use a series of ORs or an IN clause with multiple parameters
-    // If keys is large, this might be slow, but for normal usage it's fine.
     const placeholders = keys.map((_, i) => `@p${i + 1}`).join(',');
-    result = await pool.query(`DELETE FROM player_cache WHERE cache_key IN (${placeholders})`, keys);
+    result = await pool.query(`DELETE FROM player_stats_cache WHERE cache_key IN (${placeholders})`, keys);
   }
-  return result.rowCount;
+  markDbAccess();
+  return deleted + result.rowCount;
 }
 
 export async function closeCache(): Promise<void> {
@@ -346,6 +441,7 @@ export async function getActivePrivateUserCount(since: number): Promise<number> 
       [since],
     );
   }
+  markDbAccess();
   const raw = result.rows[0]?.count ?? '0';
   const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number(raw);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -373,6 +469,7 @@ export async function getPrivateRequestCount(since: number): Promise<number> {
       [since],
     );
   }
+  markDbAccess();
   const raw = result.rows[0]?.total ?? '0';
   const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number(raw);
   return Number.isFinite(parsed) ? parsed : 0;

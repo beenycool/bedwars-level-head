@@ -6,6 +6,7 @@ import club.sk1er.mods.levelhead.config.ConfigProfiles
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import club.sk1er.mods.levelhead.core.GameMode
+import club.sk1er.mods.levelhead.core.ModeManager
 import club.sk1er.mods.levelhead.commands.WhoisService.CommandException
 import cc.polyfrost.oneconfig.utils.commands.annotations.Command
 import cc.polyfrost.oneconfig.utils.commands.annotations.Greedy
@@ -357,16 +358,14 @@ class LevelheadCommand {
             return
         }
 
-        sendMessage("${ChatColor.YELLOW}Looking up BedWars stats for ${ChatColor.GOLD}$trimmedIdentifier${ChatColor.YELLOW}...")
+        sendMessage("${ChatColor.YELLOW}Looking up stats for ${ChatColor.GOLD}$trimmedIdentifier${ChatColor.YELLOW}...")
         Levelhead.scope.launch {
             try {
                 val result = WhoisService.lookupWhois(trimmedIdentifier)
                 Minecraft.getMinecraft().addScheduledTask {
-                    val starText = result.star?.let { "${ChatColor.GOLD}$it✪" } ?: "${ChatColor.RED}?"
-                    val experienceText = result.experience?.let { "${ChatColor.GOLD}$it" } ?: "${ChatColor.GRAY}unknown"
                     val nickedText = if (result.nicked) " ${ChatColor.GRAY}(nicked)" else ""
                     sendMessage(
-                        "${ChatColor.YELLOW}${result.displayName}$nickedText ${ChatColor.YELLOW}is $starText ${ChatColor.YELLOW}(${ChatColor.AQUA}${result.source}${ChatColor.YELLOW}, XP: $experienceText)"
+                        "${ChatColor.YELLOW}${result.displayName}$nickedText ${ChatColor.YELLOW}is ${ChatColor.GOLD}${result.statValue} ${ChatColor.YELLOW}(${result.gameMode.displayName} ${result.statName})"
                     )
                 }
             } catch (ex: WhoisService.CommandException) {
@@ -374,7 +373,7 @@ class LevelheadCommand {
                     sendMessage("${ChatColor.RED}${ex.message}")
                 }
             } catch (throwable: Throwable) {
-                Levelhead.logger.error("Failed to resolve BedWars stats for {}", identifier, throwable)
+                Levelhead.logger.error("Failed to resolve stats for {}", identifier, throwable)
                 Minecraft.getMinecraft().addScheduledTask {
                     sendMessage("${ChatColor.RED}Unexpected error while fetching stats. Check logs for details.")
                 }
@@ -384,13 +383,21 @@ class LevelheadCommand {
 
     @SubCommand
     fun debug() {
-        val context = BedwarsModeDetector.currentContext()
+        val gameMode = ModeManager.getActiveGameMode()
+        val context = gameMode?.let {
+            when (it) {
+                GameMode.BEDWARS -> club.sk1er.mods.levelhead.core.BedwarsModeDetector.currentContext()
+                GameMode.DUELS -> club.sk1er.mods.levelhead.duels.DuelsModeDetector.currentContext()
+                GameMode.SKYWARS -> club.sk1er.mods.levelhead.skywars.SkyWarsModeDetector.currentContext()
+            }
+        }
         val snapshot = Levelhead.statusSnapshot()
         val displayCache = Levelhead.displayManager.aboveHead.sumOf { it.cache.size }
         sendMessage("${ChatColor.GREEN}Debug info:")
-        sendMessage("${ChatColor.YELLOW}Context: ${ChatColor.GOLD}${context.name.lowercase(Locale.ROOT)}")
+        sendMessage("${ChatColor.YELLOW}Game Mode: ${ChatColor.GOLD}${gameMode?.displayName ?: "none"}")
+        sendMessage("${ChatColor.YELLOW}Context: ${ChatColor.GOLD}${context?.name?.lowercase(Locale.ROOT) ?: "unknown"}")
         sendMessage("${ChatColor.YELLOW}Mod enabled: ${formatToggle(Levelhead.displayManager.config.enabled)}${ChatColor.YELLOW}, show self: ${formatToggle(Levelhead.displayManager.primaryDisplay()?.config?.showSelf ?: true)}")
-        sendMessage("${ChatColor.YELLOW}Star cache entries: ${ChatColor.GOLD}${snapshot.cacheSize}${ChatColor.YELLOW}, display cache entries: ${ChatColor.GOLD}$displayCache")
+        sendMessage("${ChatColor.YELLOW}Cache size: ${ChatColor.GOLD}${snapshot.cacheSize}${ChatColor.YELLOW}, display cache entries: ${ChatColor.GOLD}$displayCache")
         sendMessage("${ChatColor.YELLOW}Rate limiter remaining: ${ChatColor.GOLD}${snapshot.rateLimitRemaining}${ChatColor.YELLOW}, proxy: ${if (snapshot.proxyEnabled) ChatColor.GREEN else ChatColor.GRAY}${if (snapshot.proxyEnabled) "enabled" else "disabled"}${ChatColor.YELLOW}")
     }
 

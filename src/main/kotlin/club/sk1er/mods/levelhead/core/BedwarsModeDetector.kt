@@ -17,7 +17,7 @@ object BedwarsModeDetector {
     @Deprecated("Use GameMode.BEDWARS.defaultHeader instead", ReplaceWith("GameMode.BEDWARS.defaultHeader"))
     const val DEFAULT_HEADER = "BedWars Star"
 
-    private val teamPattern = Regex("^(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY|GREY):", RegexOption.IGNORE_CASE)
+    private val teamPattern = Regex("(?:^|\\s)(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY|GREY)\\s*:", RegexOption.IGNORE_CASE)
     private val miniServerPattern = Regex("mini\\w+", RegexOption.IGNORE_CASE)
     private val WHITESPACE_PATTERN = Regex("\\s+")
 
@@ -25,8 +25,11 @@ object BedwarsModeDetector {
     private var lastDetectionTime: Long = 0L
     private var chatDetectedContext: Context = Context.NONE
     private var chatDetectionExpiry: Long = 0L
+    private var lastBedwarsDetectedAt: Long = 0L
 
+    private const val TEMP_DEBUG = true
     private const val CHAT_CONTEXT_DURATION = 20_000L
+    private const val BEDWARS_CONTEXT_GRACE_MS = 10_000L
 
     enum class Context {
         UNKNOWN,
@@ -43,6 +46,7 @@ object BedwarsModeDetector {
         lastDetectionTime = 0L
         chatDetectedContext = Context.NONE
         chatDetectionExpiry = 0L
+        lastBedwarsDetectedAt = 0L
     }
 
     fun currentContext(force: Boolean = false): Context {
@@ -69,40 +73,61 @@ object BedwarsModeDetector {
     fun isInBedwars(): Boolean = currentContext().isBedwars
 
     fun shouldRequestData(): Boolean {
-        return Levelhead.isOnHypixel() && isInBedwars()
+        return Levelhead.isOnHypixel() && isInBedwarsMatch()
     }
 
     fun shouldRenderTags(): Boolean {
         currentContext()
-        return shouldRequestData()
+        return Levelhead.isOnHypixel() && isInBedwars()
     }
 
     private fun handleContextChange(old: Context, new: Context) {
+        debug("context change: old=$old new=$new lastBedwarsDetectedAt=$lastBedwarsDetectedAt")
         when {
             !old.isBedwars && new.isBedwars -> Levelhead.displayManager.requestAllDisplays()
-            old.isBedwars && !new.isBedwars -> Levelhead.displayManager.clearCachesWithoutRefetch()
+            old.isBedwars && !new.isBedwars -> Levelhead.displayManager.clearCachesWithoutRefetch(false)
         }
     }
 
     private fun detectContext(): Context {
+        val now = System.currentTimeMillis()
         val scoreboardContext = detectScoreboardContext()
         if (scoreboardContext != null && scoreboardContext != Context.NONE) {
+            lastBedwarsDetectedAt = now
+            debug("detectContext scoreboard hit: $scoreboardContext lastBedwarsDetectedAt=$lastBedwarsDetectedAt")
             return scoreboardContext
         }
 
         val chatContext = currentChatContext()
         if (chatContext != Context.NONE) {
+            lastBedwarsDetectedAt = now
+            debug("detectContext chat hit: $chatContext lastBedwarsDetectedAt=$lastBedwarsDetectedAt")
             return chatContext
         }
 
+        if (cachedContext.isBedwars && now - lastBedwarsDetectedAt < BEDWARS_CONTEXT_GRACE_MS) {
+            debug("detectContext grace keep: cached=$cachedContext age=${now - lastBedwarsDetectedAt}ms")
+            return cachedContext
+        }
+
+        debug("detectContext fallback: cached=$cachedContext scoreboard=$scoreboardContext chat=$chatContext")
         return scoreboardContext ?: Context.NONE
     }
 
     private fun detectScoreboardContext(): Context? {
         val mc = Minecraft.getMinecraft()
-        val world = mc.theWorld ?: return null
-        val scoreboard = world.scoreboard ?: return null
-        val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: return null
+        val world = mc.theWorld ?: run {
+            debug("scoreboard missing: world=null")
+            return null
+        }
+        val scoreboard = world.scoreboard ?: run {
+            debug("scoreboard missing: scoreboard=null")
+            return null
+        }
+        val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: run {
+            debug("scoreboard missing: objective=null")
+            return null
+        }
 
         val displayComponent: Any? = objective.displayName
         val rawTitle = when (displayComponent) {
@@ -119,9 +144,6 @@ object BedwarsModeDetector {
         val title = StringUtils.stripControlCodes(rawTitle)
             .uppercase(Locale.ROOT)
         val normalizedTitle = title.replace(WHITESPACE_PATTERN, "")
-        if (!normalizedTitle.contains("BEDWARS")) {
-            return Context.NONE
-        }
 
         val lines = scoreboard.getSortedScores(objective)
             .asSequence()
@@ -132,11 +154,39 @@ object BedwarsModeDetector {
             .filter { it.isNotBlank() }
             .toList()
 
-        if (lines.any { teamPattern.containsMatchIn(it) }) {
+        val hasBedwarsTitle = normalizedTitle.contains("BEDWARS")
+        val hasTeamLines = lines.any { teamPattern.containsMatchIn(it) }
+        val hasBedwarsIndicators = lines.any { line ->
+            val normalizedLine = line.uppercase(Locale.ROOT)
+            normalizedLine.contains("BEDS BROKEN") ||
+                normalizedLine.contains("FINAL KILLS") ||
+                normalizedLine.contains("EMERALDS IN") ||
+                normalizedLine.contains("DIAMONDS IN") ||
+                normalizedLine.contains("BEDS:")
+        }
+
+        val sample = lines.take(8).joinToString(" | ")
+        debug(
+            "scoreboard title='$title' normalized='$normalizedTitle' lines=${lines.size} " +
+                "hasTitle=$hasBedwarsTitle hasTeamLines=$hasTeamLines hasIndicators=$hasBedwarsIndicators " +
+                "sample='$sample'"
+        )
+
+        if (!hasBedwarsTitle && !hasTeamLines && !hasBedwarsIndicators) {
+            return Context.NONE
+        }
+
+        if (hasTeamLines) {
             return Context.MATCH
         }
 
         return Context.LOBBY
+    }
+
+    private fun debug(message: String) {
+        if (TEMP_DEBUG) {
+            Levelhead.logger.info("[TEMP_DEBUG] $message")
+        }
     }
 
     private fun formatScoreLine(score: Score, scoreboard: net.minecraft.scoreboard.Scoreboard): String {
@@ -183,13 +233,13 @@ object BedwarsModeDetector {
         }
 
         val normalized = StringUtils.stripControlCodes(rawText).lowercase(Locale.ROOT)
+        val hasBedwarsKeyword = normalized.contains("bed wars") || normalized.contains("bedwars")
         val detectedContext = when {
             normalized.contains("protect your bed and destroy the enemy beds") -> Context.MATCH
-            normalized.contains("the game starts in") -> Context.MATCH
-            normalized.contains("game starts in") -> Context.MATCH
-            normalized.contains("sending you to mini") -> Context.LOBBY
-            normalized.contains("bed wars") -> Context.LOBBY
-            miniServerPattern.containsMatchIn(normalized) -> Context.LOBBY
+            (normalized.contains("the game starts in") || normalized.contains("game starts in")) && hasBedwarsKeyword -> Context.MATCH
+            hasBedwarsKeyword -> Context.LOBBY
+            normalized.contains("sending you to mini") && cachedContext.isBedwars -> Context.LOBBY
+            miniServerPattern.containsMatchIn(normalized) && cachedContext.isBedwars -> Context.LOBBY
             else -> Context.NONE
         }
 

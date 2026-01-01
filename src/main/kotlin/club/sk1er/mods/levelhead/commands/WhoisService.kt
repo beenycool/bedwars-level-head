@@ -1,11 +1,14 @@
 package club.sk1er.mods.levelhead.commands
 
 import club.sk1er.mods.levelhead.Levelhead
-import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import club.sk1er.mods.levelhead.bedwars.FetchResult
-import club.sk1er.mods.levelhead.config.LevelheadConfig
-import club.sk1er.mods.levelhead.core.BedwarsStar
+import club.sk1er.mods.levelhead.core.StatsFetcher
+import club.sk1er.mods.levelhead.core.GameMode
+import club.sk1er.mods.levelhead.core.GameStats
+import club.sk1er.mods.levelhead.core.ModeManager
 import club.sk1er.mods.levelhead.core.dashUUID
+import club.sk1er.mods.levelhead.duels.DuelsStats
+import club.sk1er.mods.levelhead.skywars.SkyWarsStats
 import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -21,57 +24,60 @@ import kotlin.coroutines.resume
 object WhoisService {
 
     suspend fun lookupWhois(identifier: String): WhoisResult {
-        return if (isProxyFullyConfigured()) {
-            fetchWhoisFromProxy(identifier)
-        } else {
-            val resolved = resolvePlayerIdentifier(identifier)
-                ?: throw CommandException("Could not resolve '$identifier' to a player UUID.")
-            fetchWhoisFromHypixel(resolved)
-        }
+        val resolved = resolvePlayerIdentifier(identifier)
+            ?: throw CommandException("Could not resolve '$identifier' to a player UUID.")
+        
+        val gameMode = ModeManager.getActiveGameMode() ?: GameMode.BEDWARS
+        
+        return fetchWhois(resolved, gameMode)
     }
 
-    private fun isProxyFullyConfigured(): Boolean {
-        return LevelheadConfig.proxyEnabled && LevelheadConfig.proxyBaseUrl.isNotBlank() && LevelheadConfig.proxyAuthToken.isNotBlank()
-    }
-
-    private suspend fun fetchWhoisFromProxy(identifier: String): WhoisResult = withContext(Dispatchers.IO) {
+    private suspend fun fetchWhois(resolved: ResolvedIdentifier, gameMode: GameMode): WhoisResult = withContext(Dispatchers.IO) {
         Levelhead.rateLimiter.consume()
-        when (val result = BedwarsFetcher.fetchProxyPlayer(identifier, null)) {
-            is FetchResult.Success -> parseWhoisResult(result.payload, identifier, source = "proxy")
-            FetchResult.NotModified -> throw CommandException("Proxy returned no updates for $identifier.")
-            is FetchResult.TemporaryError -> throw CommandException("Proxy temporarily unavailable (${result.reason ?: "unknown"}).")
-            is FetchResult.PermanentError -> throw CommandException(
-                when (result.reason) {
-                    "PROXY_DISABLED" -> "Proxy is disabled. Configure it or use a UUID."
-                    else -> "Proxy rejected the request (${result.reason ?: "unknown"})."
-                }
-            )
-        }
-    }
-
-    private suspend fun fetchWhoisFromHypixel(resolved: ResolvedIdentifier): WhoisResult = withContext(Dispatchers.IO) {
-        Levelhead.rateLimiter.consume()
-        when (val result = BedwarsFetcher.fetchPlayer(resolved.uuid, null)) {
-            is FetchResult.Success -> parseWhoisResult(result.payload, resolved.displayName ?: resolved.uuid.toString(), source = "hypixel")
+        
+        when (val result = StatsFetcher.fetchPlayer(resolved.uuid, gameMode)) {
+            is FetchResult.Success -> {
+                val stats = StatsFetcher.buildGameStats(result.payload, gameMode, result.etag)
+                parseWhoisResult(result.payload, stats, resolved.displayName ?: resolved.uuid.toString(), gameMode)
+            }
             FetchResult.NotModified -> throw CommandException("No fresh data available for ${resolved.displayName ?: resolved.uuid}.")
-            is FetchResult.TemporaryError -> throw CommandException("Hypixel temporarily unavailable (${result.reason ?: "unknown"}).")
+            is FetchResult.TemporaryError -> throw CommandException("${gameMode.displayName} stats temporarily unavailable (${result.reason ?: "unknown"}).")
             is FetchResult.PermanentError -> throw CommandException(
                 when (result.reason) {
                     "MISSING_KEY" -> "Set your Hypixel API key with /levelhead apikey <key> to query players."
-                    else -> "Hypixel request failed (${result.reason ?: "unknown"})."
+                    "OFFLINE_MODE" -> "Mod is in offline mode."
+                    else -> "${gameMode.displayName} request failed (${result.reason ?: "unknown"})."
                 }
             )
         }
     }
 
-    private fun parseWhoisResult(payload: JsonObject, fallbackName: String, source: String): WhoisResult {
-        val experience = BedwarsStar.extractExperience(payload)
-        val star = experience?.let { BedwarsStar.calculateStar(it) }
+    private fun parseWhoisResult(payload: JsonObject, stats: GameStats?, fallbackName: String, gameMode: GameMode): WhoisResult {
         val nicked = payload.get("nicked")?.asBoolean == true
         val displayName = payload.get("display")?.asString
             ?: payload.getAsJsonObject("player")?.get("displayname")?.asString
             ?: fallbackName
-        return WhoisResult(displayName = displayName, star = star, experience = experience, nicked = nicked, source = source)
+
+        val statValue = when (stats) {
+            is GameStats.Bedwars -> stats.star?.let { "$it✪" } ?: "?"
+            is GameStats.Duels -> stats.wins?.toString() ?: "?"
+            is GameStats.SkyWars -> stats.level?.let { "$it${SkyWarsStats.getDefaultEmblem(it)}" } ?: "?"
+            null -> "?"
+        }
+
+        val primaryStatName = when (gameMode) {
+            GameMode.BEDWARS -> "Star"
+            GameMode.DUELS -> "Wins"
+            GameMode.SKYWARS -> "Level"
+        }
+
+        return WhoisResult(
+            displayName = displayName,
+            statValue = statValue,
+            statName = primaryStatName,
+            nicked = nicked,
+            gameMode = gameMode
+        )
     }
 
     private suspend fun resolvePlayerIdentifier(input: String): ResolvedIdentifier? {
@@ -151,10 +157,10 @@ object WhoisService {
 
     data class WhoisResult(
         val displayName: String,
-        val star: Int?,
-        val experience: Long?,
+        val statValue: String,
+        val statName: String,
         val nicked: Boolean,
-        val source: String,
+        val gameMode: GameMode,
     )
 
     data class ResolvedIdentifier(val uuid: UUID, val displayName: String?)

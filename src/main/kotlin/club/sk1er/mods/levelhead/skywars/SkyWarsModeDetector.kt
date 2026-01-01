@@ -49,7 +49,9 @@ object SkyWarsModeDetector {
             if (detected != cachedContext) {
                 val oldContext = cachedContext.takeUnless { it == Context.UNKNOWN } ?: Context.NONE
                 cachedContext = detected
-                handleContextChange(oldContext, detected)
+                if (oldContext != detected) {
+                    handleContextChange(oldContext, detected)
+                }
             } else if (cachedContext == Context.UNKNOWN) {
                 cachedContext = detected
             }
@@ -75,8 +77,13 @@ object SkyWarsModeDetector {
 
     private fun handleContextChange(old: Context, new: Context) {
         when {
-            !old.isSkyWars && new.isSkyWars -> Levelhead.displayManager.requestAllDisplays()
-            old.isSkyWars && !new.isSkyWars -> Levelhead.displayManager.clearCachesWithoutRefetch()
+            !old.isSkyWars && new.isSkyWars -> {
+                Levelhead.displayManager.syncGameMode()
+                Levelhead.displayManager.requestAllDisplays()
+            }
+            old.isSkyWars && !new.isSkyWars -> {
+                Levelhead.displayManager.clearCachesWithoutRefetch(false)
+            }
         }
     }
 
@@ -86,12 +93,28 @@ object SkyWarsModeDetector {
             return scoreboardContext
         }
 
-        val chatContext = currentChatContext()
-        if (chatContext != Context.NONE) {
-            return chatContext
+        if (scoreboardContext == null || isScoreboardTitleGeneric()) {
+            val chatContext = currentChatContext()
+            if (chatContext != Context.NONE) {
+                return chatContext
+            }
         }
 
         return scoreboardContext ?: Context.NONE
+    }
+
+    private fun isScoreboardTitleGeneric(): Boolean {
+        val mc = Minecraft.getMinecraft()
+        val world = mc.theWorld ?: return true
+        val scoreboard = world.scoreboard ?: return true
+        val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: return true
+
+        val rawTitle = objective.displayName?.let {
+            StringUtils.stripControlCodes(it)
+        } ?: ""
+        val title = rawTitle.uppercase(Locale.ROOT).replace(WHITESPACE_PATTERN, "")
+        
+        return title == "HYPIXEL" || title == "PROTOTYPE" || title.isBlank()
     }
 
     private fun detectScoreboardContext(): Context? {
@@ -100,19 +123,10 @@ object SkyWarsModeDetector {
         val scoreboard = world.scoreboard ?: return null
         val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: return null
 
-        val displayComponent: Any? = objective.displayName
-        val rawTitle = when (displayComponent) {
-            null -> ""
-            is IChatComponent -> displayComponent.formattedText
-            else -> {
-                runCatching {
-                    displayComponent::class.java.getMethod("getFormattedText")
-                        .invoke(displayComponent) as? String
-                }.getOrNull() ?: displayComponent.toString()
-            }
-        }
-        val title = StringUtils.stripControlCodes(rawTitle)
-            .uppercase(Locale.ROOT)
+        val rawTitle = objective.displayName?.let {
+            StringUtils.stripControlCodes(it)
+        } ?: ""
+        val title = rawTitle.uppercase(Locale.ROOT)
         val normalizedTitle = title.replace(WHITESPACE_PATTERN, "")
         if (!normalizedTitle.contains("SKYWARS")) {
             return Context.NONE
@@ -127,16 +141,38 @@ object SkyWarsModeDetector {
             .filter { it.isNotBlank() }
             .toList()
 
-        // In SkyWars, look for indicators like "Players:" or "Kills:"
-        if (lines.any { 
-            it.contains("Players Left:", ignoreCase = true) || 
+        // In SkyWars, look for indicators like "Players Left:" or "Kills:"
+        // Lobbies usually have "Coins:" or "Tokens:"
+        val matchIndicators = lines.any {
+            it.contains("Players Left:", ignoreCase = true) ||
             it.contains("Kills:", ignoreCase = true) ||
-            it.contains("Next Event:", ignoreCase = true)
-        }) {
-            return Context.MATCH
+            it.contains("Next Event:", ignoreCase = true) ||
+            it.contains("Time Left:", ignoreCase = true) ||
+            it.contains("Cages Open in", ignoreCase = true)
+        }
+        
+        val preGameIndicators = lines.any {
+            it.contains("Starting in", ignoreCase = true) ||
+            it.contains("Players:", ignoreCase = true) ||
+            it.contains("Map:", ignoreCase = true) ||
+            it.contains("Mode:", ignoreCase = true)
         }
 
-        return Context.LOBBY
+        val mainLobbyIndicators = lines.any {
+            it.contains("Coins:", ignoreCase = true) ||
+            it.contains("Tokens:", ignoreCase = true) ||
+            it.contains("Soul Well", ignoreCase = true)
+        }
+
+        if (matchIndicators) {
+            return Context.MATCH
+        }
+        
+        if (preGameIndicators && !mainLobbyIndicators) {
+            return Context.LOBBY
+        }
+
+        return Context.NONE
     }
 
     private fun formatScoreLine(score: Score, scoreboard: net.minecraft.scoreboard.Scoreboard): String {
@@ -184,7 +220,7 @@ object SkyWarsModeDetector {
 
         val normalized = StringUtils.stripControlCodes(rawText).lowercase(Locale.ROOT)
         val detectedContext = when {
-            normalized.contains("the game starts in") && normalized.contains("second") -> Context.MATCH
+            normalized.contains("the game starts in") && normalized.contains("second") && normalized.contains("skywars") -> Context.MATCH
             normalized.contains("cages open in") -> Context.MATCH
             normalized.contains("you died!") && normalized.contains("skywars") -> Context.MATCH
             normalized.contains("skywars") && normalized.contains("click to play") -> Context.LOBBY

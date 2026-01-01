@@ -1,5 +1,6 @@
 package club.sk1er.mods.levelhead.core
 
+import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.duels.DuelsModeDetector
 import club.sk1er.mods.levelhead.skywars.SkyWarsModeDetector
 
@@ -8,6 +9,9 @@ import club.sk1er.mods.levelhead.skywars.SkyWarsModeDetector
  * Routes to the appropriate mode detector based on the current game state.
  */
 object ModeManager {
+    private const val TEMP_DEBUG = true
+    private var lastLoggedMode: ActiveMode = ActiveMode.NONE
+    private var lastLoggedAt: Long = 0L
     
     /**
      * Active game mode context.
@@ -27,12 +31,29 @@ object ModeManager {
      * Checks all mode detectors to determine which game is being played.
      */
     fun detectActiveMode(): ActiveMode {
-        return when {
-            BedwarsModeDetector.isInBedwarsMatch() -> ActiveMode.BEDWARS
-            DuelsModeDetector.isInDuelsMatch() -> ActiveMode.DUELS
-            SkyWarsModeDetector.isInSkyWarsMatch() -> ActiveMode.SKYWARS
+        val bedwars = BedwarsModeDetector.isInBedwars()
+        val duels = DuelsModeDetector.isInDuels()
+        val skywars = SkyWarsModeDetector.isInSkyWars()
+        
+        val detected = when {
+            bedwars -> ActiveMode.BEDWARS
+            duels -> ActiveMode.DUELS
+            skywars -> ActiveMode.SKYWARS
             else -> ActiveMode.NONE
         }
+        
+        if (TEMP_DEBUG) {
+            val now = System.currentTimeMillis()
+            if (detected != lastLoggedMode || now - lastLoggedAt > 5_000L) {
+                Levelhead.logger.info(
+                    "[TEMP_DEBUG] detectActiveMode: bedwars=$bedwars duels=$duels skywars=$skywars -> $detected"
+                )
+                lastLoggedMode = detected
+                lastLoggedAt = now
+            }
+        }
+
+        return detected
     }
     
     /**

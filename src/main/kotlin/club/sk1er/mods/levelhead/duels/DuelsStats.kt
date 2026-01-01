@@ -101,7 +101,7 @@ object DuelsStats {
      */
     fun parseWinstreak(json: JsonObject): Int? {
         val duels = findDuelsStats(json) ?: return null
-        return duels.get("current_winstreak")?.takeIf { !it.isJsonNull }
+        return (duels.get("current_winstreak") ?: duels.get("winstreak"))?.takeIf { !it.isJsonNull }
             ?.let { runCatching { it.asInt }.getOrNull() }
     }
 
@@ -118,24 +118,7 @@ object DuelsStats {
      * Find the Duels stats object from various JSON structures.
      */
     private fun findDuelsStats(json: JsonObject): JsonObject? {
-        // Check for proxy response format: { data: { duels: {...} } }
-        json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
-            ?.get("duels")?.takeIf { it.isJsonObject }?.asJsonObject
-            ?.let { return it }
-
-        // Check for direct duels key
-        json.get("duels")?.takeIf { it.isJsonObject }?.asJsonObject
-            ?.let { return it }
-
-        // Check for Hypixel API format: { player: { stats: { Duels: {...} } } }
-        val playerContainer = when {
-            json.get("player")?.isJsonObject == true -> json.getAsJsonObject("player")
-            json.get("stats")?.isJsonObject == true -> json
-            else -> null
-        } ?: return null
-
-        val stats = playerContainer.get("stats")?.takeIf { it.isJsonObject }?.asJsonObject ?: return null
-        return stats.get("Duels")?.takeIf { it.isJsonObject }?.asJsonObject
+        return club.sk1er.mods.levelhead.core.StatsFetcher.findStatsObject(json, club.sk1er.mods.levelhead.core.GameMode.DUELS)
     }
 
     /**

@@ -10,6 +10,7 @@ import {
   CACHE_DB_POOL_MAX,
   CACHE_DB_POOL_MIN,
   TRUST_PROXY,
+  CRON_API_KEYS,
 } from './config';
 import { purgeExpiredEntries, closeCache, pool as cachePool } from './services/cache';
 import { observeRequest, registry } from './services/metrics';
@@ -75,7 +76,9 @@ app.use('/api/public/player', playerPublicRouter);
 app.use('/api/player', playerRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/config', configRouter);
-app.use('/api/cron', cronRouter);
+if (CRON_API_KEYS.length > 0) {
+  app.use('/api/cron', cronRouter);
+}
 app.use('/stats', statsRouter);
 
 app.get('/healthz', async (_req, res) => {

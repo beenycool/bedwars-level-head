@@ -1,5 +1,6 @@
 package club.sk1er.mods.levelhead.core
 
+import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import club.sk1er.mods.levelhead.bedwars.FetchResult
 import club.sk1er.mods.levelhead.duels.DuelsFetcher
@@ -24,17 +25,22 @@ object StatsFetcher {
         lastFetchedAt: Long? = null,
         etag: String? = null
     ): FetchResult {
-        return when (gameMode) {
+        val result = when (gameMode) {
             GameMode.BEDWARS -> BedwarsFetcher.fetchPlayer(uuid, lastFetchedAt, etag)
             GameMode.DUELS -> DuelsFetcher.fetchPlayer(uuid, lastFetchedAt, etag)
             GameMode.SKYWARS -> SkyWarsFetcher.fetchPlayer(uuid, lastFetchedAt, etag)
         }
+        
+        return result
     }
     
     /**
      * Build GameStats from a fetch result payload based on game mode.
+     * Returns null if the payload does not contain stats for the specified game mode.
      */
-    fun buildGameStats(payload: JsonObject, gameMode: GameMode, etag: String? = null): GameStats {
+    fun buildGameStats(payload: JsonObject, gameMode: GameMode, etag: String? = null): GameStats? {
+        val statsObj = findStatsObject(payload, gameMode) ?: return null
+        
         return when (gameMode) {
             GameMode.BEDWARS -> {
                 val experience = BedwarsStar.extractExperience(payload)
@@ -87,6 +93,82 @@ object StatsFetcher {
                 )
             }
         }
+    }
+
+    /**
+     * Find a game mode stats object in a JSON payload.
+     * Handles both Hypixel API structure and Proxy structures (top-level or under 'data').
+     * Key is case-insensitive for proxy formats.
+     */
+    fun findStatsObject(json: JsonObject, gameMode: GameMode): JsonObject? {
+        val targetKeys = when (gameMode) {
+            GameMode.BEDWARS -> listOf("bedwars", "Bedwars")
+            GameMode.DUELS -> listOf("duels", "Duels")
+            GameMode.SKYWARS -> listOf("skywars", "SkyWars")
+        }
+
+        // 1. Check for 'data' wrapper (Proxy single-player response)
+        val data = json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
+        if (data != null) {
+            for (key in targetKeys) {
+                data.get(key)?.takeIf { it.isJsonObject }?.asJsonObject?.let { return it }
+            }
+        }
+
+        // 2. Check for top-level keys (Proxy batch response or flat proxy response)
+        for (key in targetKeys) {
+            json.get(key)?.takeIf { it.isJsonObject }?.asJsonObject?.let { return it }
+        }
+
+        // 3. Check for Hypixel API structure: player -> stats -> Mode
+        val playerContainer = when {
+            json.get("player")?.isJsonObject == true -> json.getAsJsonObject("player")
+            json.get("stats")?.isJsonObject == true -> json
+            else -> null
+        }
+        
+        if (playerContainer != null) {
+            val stats = playerContainer.get("stats")?.takeIf { it.isJsonObject }?.asJsonObject
+            if (stats != null) {
+                for (key in targetKeys) {
+                    stats.get(key)?.takeIf { it.isJsonObject }?.asJsonObject?.let { return it }
+                }
+            }
+        }
+
+        // 4. Minimal flat schema fallback from community backend
+        if (data != null) {
+            buildMinimalStatsObject(data, gameMode)?.let { return it }
+        }
+        buildMinimalStatsObject(json, gameMode)?.let { return it }
+
+        return null
+    }
+
+    private fun buildMinimalStatsObject(source: JsonObject, gameMode: GameMode): JsonObject? {
+        val minimal = JsonObject()
+        when (gameMode) {
+            GameMode.BEDWARS -> {
+                source.get("bedwars_experience")?.let { minimal.add("bedwars_experience", it) }
+                source.get("bedwars_final_kills")?.let { minimal.add("final_kills_bedwars", it) }
+                source.get("bedwars_final_deaths")?.let { minimal.add("final_deaths_bedwars", it) }
+            }
+            GameMode.DUELS -> {
+                source.get("duels_wins")?.let { minimal.add("wins", it) }
+                source.get("duels_losses")?.let { minimal.add("losses", it) }
+                source.get("duels_kills")?.let { minimal.add("kills", it) }
+                source.get("duels_deaths")?.let { minimal.add("deaths", it) }
+            }
+            GameMode.SKYWARS -> {
+                source.get("skywars_experience")?.let { minimal.add("skywars_experience", it) }
+                source.get("skywars_wins")?.let { minimal.add("wins", it) }
+                source.get("skywars_losses")?.let { minimal.add("losses", it) }
+                source.get("skywars_kills")?.let { minimal.add("kills", it) }
+                source.get("skywars_deaths")?.let { minimal.add("deaths", it) }
+            }
+        }
+
+        return if (minimal.entrySet().isNotEmpty()) minimal else null
     }
     
     /**

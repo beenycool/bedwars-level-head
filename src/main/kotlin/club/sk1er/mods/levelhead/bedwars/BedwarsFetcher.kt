@@ -3,6 +3,8 @@ package club.sk1er.mods.levelhead.bedwars
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.BackendMode
+import club.sk1er.mods.levelhead.core.GameMode
+import club.sk1er.mods.levelhead.core.StatsFetcher
 import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -23,12 +25,12 @@ object BedwarsFetcher {
                 // In offline mode, return a permanent error indicating no network
                 FetchResult.PermanentError("OFFLINE_MODE")
             }
-            BackendMode.PROXY_ONLY -> {
-                // Only use proxy, don't fall back to direct API
+            BackendMode.COMMUNITY_CACHE_ONLY -> {
+                // Only use community database, don't fall back to direct API
                 if (ProxyClient.isAvailable()) {
                     ProxyClient.fetchPlayer(uuid.toString(), lastFetchedAt, etag)
                 } else {
-                    FetchResult.PermanentError("PROXY_UNAVAILABLE")
+                    FetchResult.PermanentError("COMMUNITY_DATABASE_UNAVAILABLE")
                 }
             }
             BackendMode.DIRECT_API -> {
@@ -43,12 +45,17 @@ object BedwarsFetcher {
                 hypixelResult
             }
             BackendMode.FALLBACK -> {
-                // Try proxy first, fall back to direct API
+                // Try community database first, fall back to direct API
                 if (ProxyClient.isAvailable()) {
-                    val proxyResult = ProxyClient.fetchPlayer(uuid.toString(), lastFetchedAt, etag)
-                    // Return proxy result if successful or cached (not an error state)
-                    if (proxyResult is FetchResult.Success || proxyResult is FetchResult.NotModified) {
-                        return proxyResult
+                    val communityResult = ProxyClient.fetchPlayer(uuid.toString(), lastFetchedAt, etag)
+                    if (communityResult is FetchResult.Success) {
+                        // Check if the payload actually contains Bedwars data
+                        if (StatsFetcher.findStatsObject(communityResult.payload, GameMode.BEDWARS) != null) {
+                            return communityResult
+                        }
+                        // If not, fall back to Hypixel
+                    } else if (communityResult is FetchResult.NotModified) {
+                        return communityResult
                     }
                 }
 
@@ -69,14 +76,6 @@ object BedwarsFetcher {
             return FetchResult.PermanentError("PROXY_DISABLED")
         }
         return ProxyClient.fetchPlayer(identifier, lastFetchedAt, etag)
-    }
-
-    suspend fun fetchBatchFromProxy(uuids: List<UUID>): Map<UUID, FetchResult> {
-        // In offline mode, return empty results
-        if (LevelheadConfig.backendMode == BackendMode.OFFLINE) {
-            return uuids.associateWith { FetchResult.PermanentError("OFFLINE_MODE") }
-        }
-        return ProxyClient.fetchBatch(uuids)
     }
 
     fun resetWarnings() {
@@ -122,21 +121,7 @@ object BedwarsFetcher {
     }
 
     private fun findBedwarsStats(json: JsonObject): JsonObject? {
-        json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
-            ?.get("bedwars")?.takeIf { it.isJsonObject }?.asJsonObject
-            ?.let { return it }
-
-        json.get("bedwars")?.takeIf { it.isJsonObject }?.asJsonObject
-            ?.let { return it }
-
-        val playerContainer = when {
-            json.get("player")?.isJsonObject == true -> json.getAsJsonObject("player")
-            json.get("stats")?.isJsonObject == true -> json
-            else -> null
-        } ?: return null
-
-        val stats = playerContainer.get("stats")?.takeIf { it.isJsonObject }?.asJsonObject ?: return null
-        return stats.get("Bedwars")?.takeIf { it.isJsonObject }?.asJsonObject
+        return StatsFetcher.findStatsObject(json, GameMode.BEDWARS)
     }
 
     private fun JsonObject.numberValue(key: String): Double? {

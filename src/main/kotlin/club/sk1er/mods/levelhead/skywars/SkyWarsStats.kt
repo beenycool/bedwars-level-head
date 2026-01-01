@@ -119,6 +119,8 @@ object SkyWarsStats {
             ?.let { runCatching { it.asLong }.getOrNull() }
             ?: skywars.get("experience")?.takeIf { !it.isJsonNull }
                 ?.let { runCatching { it.asLong }.getOrNull() }
+            ?: skywars.get("Experience")?.takeIf { !it.isJsonNull }
+                ?.let { runCatching { it.asLong }.getOrNull() }
     }
 
     /**
@@ -179,24 +181,7 @@ object SkyWarsStats {
      * Find the SkyWars stats object from various JSON structures.
      */
     private fun findSkyWarsStats(json: JsonObject): JsonObject? {
-        // Check for proxy response format: { data: { skywars: {...} } }
-        json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
-            ?.get("skywars")?.takeIf { it.isJsonObject }?.asJsonObject
-            ?.let { return it }
-
-        // Check for direct skywars key
-        json.get("skywars")?.takeIf { it.isJsonObject }?.asJsonObject
-            ?.let { return it }
-
-        // Check for Hypixel API format: { player: { stats: { SkyWars: {...} } } }
-        val playerContainer = when {
-            json.get("player")?.isJsonObject == true -> json.getAsJsonObject("player")
-            json.get("stats")?.isJsonObject == true -> json
-            else -> null
-        } ?: return null
-
-        val stats = playerContainer.get("stats")?.takeIf { it.isJsonObject }?.asJsonObject ?: return null
-        return stats.get("SkyWars")?.takeIf { it.isJsonObject }?.asJsonObject
+        return club.sk1er.mods.levelhead.core.StatsFetcher.findStatsObject(json, club.sk1er.mods.levelhead.core.GameMode.SKYWARS)
     }
 
     /**

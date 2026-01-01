@@ -272,3 +272,57 @@ export async function checkHypixelReachability(): Promise<boolean> {
     return false;
   }
 }
+
+export interface MinimalPlayerStats {
+  displayname: string | null;
+
+  // Bedwars-specific (for stars calculation, FKDR)
+  bedwars_experience: number | null;
+  bedwars_final_kills: number;
+  bedwars_final_deaths: number;
+
+  // Duels-specific (for WLR, KDR)
+  duels_wins: number;
+  duels_losses: number;
+  duels_kills: number;
+  duels_deaths: number;
+
+  // SkyWars-specific (for level calculation, WLR, KDR)
+  skywars_experience: number | null;
+  skywars_wins: number;
+  skywars_losses: number;
+  skywars_kills: number;
+  skywars_deaths: number;
+}
+
+export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPlayerStats {
+  const bedwarsStats = response.player?.stats?.Bedwars ?? {};
+  const duelsStats = response.player?.stats?.Duels ?? {};
+  const skywarsStats = response.player?.stats?.SkyWars ?? {};
+
+  return {
+    displayname: response.player?.displayname ?? null,
+
+    // Bedwars
+    bedwars_experience: (bedwarsStats as any).bedwars_experience
+                       ?? (bedwarsStats as any).Experience ?? null,
+    bedwars_final_kills: Number(bedwarsStats.final_kills_bedwars ?? 0),
+    bedwars_final_deaths: Number(bedwarsStats.final_deaths_bedwars ?? 0),
+
+    // Duels
+    duels_wins: Number(duelsStats.wins ?? 0),
+    duels_losses: Number(duelsStats.losses ?? 0),
+    duels_kills: Number(duelsStats.kills ?? 0),
+    duels_deaths: Number(duelsStats.deaths ?? 0),
+
+    // SkyWars
+    skywars_experience: (skywarsStats as any).skywars_experience
+                       ?? (skywarsStats as any).SkyWars_experience
+                       ?? (skywarsStats as any).Experience
+                       ?? null,
+    skywars_wins: Number(skywarsStats.wins ?? 0),
+    skywars_losses: Number(skywarsStats.losses ?? 0),
+    skywars_kills: Number(skywarsStats.kills ?? 0),
+    skywars_deaths: Number(skywarsStats.deaths ?? 0),
+  };
+}

@@ -129,7 +129,7 @@ object ConfigProfiles {
                 backgroundOpacity = 0.0f,
                 textShadow = false,
                 fontSize = 0.9,
-                backendModeIndex = 0, // Proxy only (less API calls)
+                backendModeIndex = 0, // Community cache only (less API calls)
                 gameModeIndex = 0 // BedWars
             )
             Preset.CUSTOM -> {
@@ -152,7 +152,7 @@ object ConfigProfiles {
         primaryDisplay.config.footerString = profile.footerString
         primaryDisplay.config.footerColor = profile.footerColor
         primaryDisplay.config.showSelf = profile.showSelf
-        primaryDisplay.config.gameMode = GameMode.entries.getOrNull(profile.gameModeIndex) ?: GameMode.BEDWARS
+        // Game mode is now automatically detected - don't set it manually
 
         // Update master config
         displayManager.config.renderDistance = profile.renderDistance
@@ -163,7 +163,6 @@ object ConfigProfiles {
 
         // Update LevelheadConfig
         LevelheadConfig.backendModeIndex = profile.backendModeIndex
-        LevelheadConfig.gameModeIndex = profile.gameModeIndex
         LevelheadConfig.showSelf = profile.showSelf
 
         // Save and refresh
@@ -193,7 +192,7 @@ object ConfigProfiles {
             textShadow = displayManager.config.textShadow,
             fontSize = displayManager.config.fontSize,
             backendModeIndex = LevelheadConfig.backendModeIndex,
-            gameModeIndex = LevelheadConfig.gameModeIndex
+            gameModeIndex = 0 // Deprecated - kept for backward compatibility only
         )
     }
 

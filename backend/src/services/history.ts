@@ -117,7 +117,7 @@ const initialization = (async () => {
 
       // Detect whether pg_total_relation_size exists
       try {
-        await pool.query(`SELECT pg_total_relation_size('player_cache') as size_check`);
+        await pool.query(`SELECT pg_total_relation_size('player_stats_cache') as size_check`);
         supportsPgTotalRelationSize = true;
       } catch (err) {
         supportsPgTotalRelationSize = false;
@@ -500,7 +500,7 @@ export interface SystemStats {
 export async function getSystemStats(): Promise<SystemStats> {
   await ensureInitialized();
 
-  // Get Redis cache stats (moved from PostgreSQL player_cache)
+  // Get Redis cache stats (L1 cache lives in Redis)
   const redisCacheStats = await getRedisCacheStats();
 
   const apiStatsQuery = pool.type === DatabaseType.POSTGRESQL

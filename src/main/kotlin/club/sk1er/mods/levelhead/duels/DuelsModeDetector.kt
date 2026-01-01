@@ -49,7 +49,9 @@ object DuelsModeDetector {
             if (detected != cachedContext) {
                 val oldContext = cachedContext.takeUnless { it == Context.UNKNOWN } ?: Context.NONE
                 cachedContext = detected
-                handleContextChange(oldContext, detected)
+                if (oldContext != detected) {
+                    handleContextChange(oldContext, detected)
+                }
             } else if (cachedContext == Context.UNKNOWN) {
                 cachedContext = detected
             }
@@ -75,8 +77,13 @@ object DuelsModeDetector {
 
     private fun handleContextChange(old: Context, new: Context) {
         when {
-            !old.isDuels && new.isDuels -> Levelhead.displayManager.requestAllDisplays()
-            old.isDuels && !new.isDuels -> Levelhead.displayManager.clearCachesWithoutRefetch()
+            !old.isDuels && new.isDuels -> {
+                Levelhead.displayManager.syncGameMode()
+                Levelhead.displayManager.requestAllDisplays()
+            }
+            old.isDuels && !new.isDuels -> {
+                Levelhead.displayManager.clearCachesWithoutRefetch(false)
+            }
         }
     }
 
@@ -86,12 +93,28 @@ object DuelsModeDetector {
             return scoreboardContext
         }
 
-        val chatContext = currentChatContext()
-        if (chatContext != Context.NONE) {
-            return chatContext
+        if (scoreboardContext == null || isScoreboardTitleGeneric()) {
+            val chatContext = currentChatContext()
+            if (chatContext != Context.NONE) {
+                return chatContext
+            }
         }
 
         return scoreboardContext ?: Context.NONE
+    }
+
+    private fun isScoreboardTitleGeneric(): Boolean {
+        val mc = Minecraft.getMinecraft()
+        val world = mc.theWorld ?: return true
+        val scoreboard = world.scoreboard ?: return true
+        val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: return true
+
+        val rawTitle = objective.displayName?.let {
+            StringUtils.stripControlCodes(it)
+        } ?: ""
+        val title = rawTitle.uppercase(Locale.ROOT).replace(WHITESPACE_PATTERN, "")
+        
+        return title == "HYPIXEL" || title == "PROTOTYPE" || title.isBlank()
     }
 
     private fun detectScoreboardContext(): Context? {
@@ -100,24 +123,17 @@ object DuelsModeDetector {
         val scoreboard = world.scoreboard ?: return null
         val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: return null
 
-        val displayComponent: Any? = objective.displayName
-        val rawTitle = when (displayComponent) {
-            null -> ""
-            is IChatComponent -> displayComponent.formattedText
-            else -> {
-                runCatching {
-                    displayComponent::class.java.getMethod("getFormattedText")
-                        .invoke(displayComponent) as? String
-                }.getOrNull() ?: displayComponent.toString()
-            }
-        }
-        val title = StringUtils.stripControlCodes(rawTitle)
-            .uppercase(Locale.ROOT)
+        val rawTitle = objective.displayName?.let {
+            StringUtils.stripControlCodes(it)
+        } ?: ""
+        val title = rawTitle.uppercase(Locale.ROOT)
         val normalizedTitle = title.replace(WHITESPACE_PATTERN, "")
-        if (!normalizedTitle.contains("DUELS")) {
+        
+        // If the title explicitly says BEDWARS or SKYWARS, we let those detectors handle it
+        if (normalizedTitle.contains("BEDWARS") || normalizedTitle.contains("SKYWARS")) {
             return Context.NONE
         }
-
+        
         val lines = scoreboard.getSortedScores(objective)
             .asSequence()
             .filterNot { score ->
@@ -127,12 +143,40 @@ object DuelsModeDetector {
             .filter { it.isNotBlank() }
             .toList()
 
+        val isDuelScoreboard = normalizedTitle.contains("DUELS") || lines.any { it.contains("Duel", ignoreCase = true) }
+        
+        if (!isDuelScoreboard) {
+            return Context.NONE
+        }
+
         // In Duels, look for indicators like "Opponent:" or timer patterns
-        if (lines.any { it.contains("Opponent:", ignoreCase = true) || it.contains("Kills:", ignoreCase = true) }) {
+        val matchIndicators = lines.any { 
+            it.contains("Opponent:", ignoreCase = true) || 
+            it.contains("Kills:", ignoreCase = true) ||
+            it.contains("Time Left:", ignoreCase = true)
+        }
+        
+        val preGameIndicators = lines.any {
+            it.contains("Starting in", ignoreCase = true) ||
+            it.contains("Players:", ignoreCase = true) ||
+            it.contains("Mode:", ignoreCase = true)
+        }
+
+        val mainLobbyIndicators = lines.any {
+            it.contains("Wins:", ignoreCase = true) && !it.contains("Opponent:", ignoreCase = true) ||
+            it.contains("Coins:", ignoreCase = true) ||
+            it.contains("Tokens:", ignoreCase = true)
+        }
+
+        if (matchIndicators) {
             return Context.MATCH
         }
 
-        return Context.LOBBY
+        if (preGameIndicators && !mainLobbyIndicators) {
+            return Context.LOBBY
+        }
+
+        return Context.NONE
     }
 
     private fun formatScoreLine(score: Score, scoreboard: net.minecraft.scoreboard.Scoreboard): String {
@@ -181,6 +225,7 @@ object DuelsModeDetector {
         val normalized = StringUtils.stripControlCodes(rawText).lowercase(Locale.ROOT)
         val detectedContext = when {
             normalized.contains("duel starting in") -> Context.MATCH
+            normalized.contains("the game starts in") && (normalized.contains("duels") || normalized.contains("duel")) -> Context.MATCH
             normalized.contains("opponent:") -> Context.MATCH
             normalized.contains("you are now queued for") -> Context.LOBBY
             normalized.contains("duels") && normalized.contains("click to play") -> Context.LOBBY

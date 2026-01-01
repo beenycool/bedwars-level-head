@@ -61,6 +61,20 @@ export const cacheMissesByReasonTotal = new client.Counter({
   registers: [registry],
 });
 
+export const cacheTierHitsTotal = new client.Counter({
+  name: 'levelhead_cache_tier_hits_total',
+  help: 'Number of cache hits grouped by cache tier.',
+  labelNames: ['tier'],
+  registers: [registry],
+});
+
+export const cacheTierMissesTotal = new client.Counter({
+  name: 'levelhead_cache_tier_misses_total',
+  help: 'Number of cache misses grouped by cache tier.',
+  labelNames: ['tier', 'reason'],
+  registers: [registry],
+});
+
 const cacheHitRatioGauge = new client.Gauge({
   name: 'levelhead_cache_hit_ratio',
   help: 'Ratio of cache hits to total lookups.',
@@ -125,6 +139,14 @@ export function recordCacheMiss(reason: string = 'unknown'): void {
   cacheMissesByReasonTotal.inc({ reason });
   cacheMisses += 1;
   updateCacheRatio();
+}
+
+export function recordCacheTierHit(tier: 'l1' | 'l2'): void {
+  cacheTierHitsTotal.inc({ tier });
+}
+
+export function recordCacheTierMiss(tier: 'l1' | 'l2', reason: string = 'unknown'): void {
+  cacheTierMissesTotal.inc({ tier, reason });
 }
 
 export function observeRequest(

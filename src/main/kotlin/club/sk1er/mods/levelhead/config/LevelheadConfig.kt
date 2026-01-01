@@ -258,7 +258,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         description = "Developer option: route requests through the Levelhead backend. Do not change this unless you know what you are doing.",
         category = "Developer"
     )
-    var proxyEnabled: Boolean = false
+    var proxyEnabled: Boolean = true
 
     @Text(
         name = "Proxy Base URL",
@@ -445,7 +445,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         apiKey = ""
         communityDatabase = true
         showTabStats = true
-        proxyEnabled = false
+        proxyEnabled = true
         proxyBaseUrl = DEFAULT_PROXY_URL
         proxyAuthToken = ""
         communitySubmitSecret = ""

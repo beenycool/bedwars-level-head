@@ -4,7 +4,7 @@ This folder contains a minimal HTTP API that the Levelhead BedWars mod can tunne
 
 ## Quick start (Docker Compose)
 
-The easiest way to self-host the backend is with Docker Compose. The provided stack launches the Node.js API and a PostgreSQL cache database.
+The easiest way to self-host the backend is with Docker Compose. The provided stack launches the Node.js API and a SQL cache database (PostgreSQL or Azure SQL).
 
 1. Install [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/).
 2. Copy the example environment file and fill in the required values:
@@ -52,7 +52,7 @@ If you prefer running the services yourself:
 
    During development you can run `npm run dev` to use `ts-node-dev` with automatic restarts.
 
-Ensure the configured `CACHE_DB_URL` points at a reachable PostgreSQL instance. The backend automatically creates the `player_cache` table on startup.
+Ensure the configured `CACHE_DB_URL` points at a reachable SQL instance (PostgreSQL or Azure SQL). The backend automatically creates the `player_stats_cache` and `ign_uuid_cache` tables on startup.
 
 ## Configuration reference
 
@@ -74,7 +74,18 @@ The backend uses environment variables for all secrets and tunables. The `.env.e
 | `HOST` | ❌ | Host/IP to bind to (defaults to `0.0.0.0`). |
 | `HYPIXEL_API_BASE_URL` | ❌ | Override for Hypixel API base URL. |
 | `CLOUDFLARE_TUNNEL` | ❌ | Optional Cloudflare Tunnel URL printed on boot. |
-| `CACHE_TTL_MS` | ❌ | Cache lifetime in milliseconds (defaults to 24 hours, clamped between 1-24 hours). |
+| `CACHE_TTL_MS` | ❌ | Legacy cache TTL (unused by minimal stats cache). |
+| `PLAYER_L2_TTL_MS` | ❌ | SQL (L2) player stats TTL in milliseconds (defaults to 72 hours, clamped 1-72 hours). |
+| `IGN_L2_TTL_MS` | ❌ | SQL (L2) IGN mapping TTL in milliseconds (defaults to `PLAYER_L2_TTL_MS`). |
+| `PLAYER_L1_TTL_MIN_MS` | ❌ | Minimum Redis (L1) TTL in milliseconds for player stats (defaults to 15 minutes). |
+| `PLAYER_L1_TTL_MAX_MS` | ❌ | Maximum Redis (L1) TTL in milliseconds for player stats (defaults to 6 hours). |
+| `PLAYER_L1_TTL_FALLBACK_MS` | ❌ | Fallback Redis TTL when memory telemetry is missing (defaults to 2 hours). |
+| `PLAYER_L1_TARGET_UTILIZATION` | ❌ | Target Redis memory utilization for adaptive TTL (defaults to `0.7`). |
+| `PLAYER_L1_SAFETY_FACTOR` | ❌ | Safety factor applied to time-to-full estimate (defaults to `0.6`). |
+| `PLAYER_L1_INFO_REFRESH_MS` | ❌ | How often to sample Redis memory info for TTL adaptation (defaults to 5 minutes). |
+| `REDIS_CACHE_MAX_BYTES` | ❌ | Assumed Redis max memory when `maxmemory=0` (defaults to 30MB). |
+| `CACHE_DB_WARM_WINDOW_MS` | ❌ | Only read L2 if the DB was used recently (defaults to 15 minutes). |
+| `CACHE_DB_ALLOW_COLD_READS` | ❌ | Allow L2 reads that wake a paused serverless DB (defaults to `false`). |
 | `CACHE_DB_POOL_MIN` | ❌ | Minimum connections in the PostgreSQL pool (defaults to `0`). |
 | `CACHE_DB_POOL_MAX` | ❌ | Maximum connections in the PostgreSQL pool (defaults to `10`). |
 | `HYPIXEL_TIMEOUT_MS` | ❌ | Hypixel API request timeout (defaults to `5000`). |
@@ -105,7 +116,9 @@ Administrative endpoints require clients to present a valid API token via one of
 - `Authorization: Bearer <token>` header (recommended)
 - `X-Admin-Token: <token>` header
 
-QuerCron access
+Query string authentication is explicitly rejected to avoid leaking secrets via logs, proxies, or browser history. Multiple tokens can be configured by providing a comma-separated list in `ADMIN_API_KEYS`.
+
+### Cron access
 
 Cron endpoints require clients to present a valid API token via one of the following methods:
 
@@ -113,8 +126,6 @@ Cron endpoints require clients to present a valid API token via one of the follo
 - `X-Cron-Token: <token>` header
 
 Multiple tokens can be configured by providing a comma-separated list in `CRON_API_KEYS`.
-
-### y string authentication is explicitly rejected to avoid leaking secrets via logs, proxies, or browser history. Multiple tokens can be configured by providing a comma-separated list in `ADMIN_API_KEYS`.
 
 ### Proxy awareness
 
@@ -130,7 +141,7 @@ If you deploy behind Cloudflare Tunnel, Nginx, or another load balancer, documen
 
 ### Cache TTL and validators
 
-Cached player payloads honor validators (`ETag`, `Last-Modified`) returned by Hypixel. Clients should send `If-None-Match`/`If-Modified-Since` (and optionally `Cache-Control: max-age=0`) when reusing cached data so the proxy can respond with `304 Not Modified` instead of a full payload. The backend uses the same headers when calling upstream. The `CACHE_TTL_MS` setting defaults to 24 hours and is clamped between 1 hour (3,600,000 ms) and 24 hours (86,400,000 ms); shorter values are automatically rounded up to 1 hour.
+Cached player stats honor validators (`ETag`, `Last-Modified`) returned by Hypixel. Clients should send `If-None-Match`/`If-Modified-Since` (and optionally `Cache-Control: max-age=0`) when reusing cached data so the proxy can respond with `304 Not Modified` instead of a full payload. The backend uses the same headers when calling upstream. Redis (L1) TTLs are adaptive based on memory pressure and clamped by `PLAYER_L1_TTL_MIN_MS`/`PLAYER_L1_TTL_MAX_MS`; SQL (L2) TTLs use `PLAYER_L2_TTL_MS`.
 
 ### Rate limiting scope
 
@@ -148,8 +159,13 @@ Requests to Hypixel and Mojang include a `User-Agent` string of the form `Levelh
 
 ### Player Routes
 
-- `GET /api/player/:identifier` - Get player data by UUID or username. This route is rate-limited per client IP using the `RATE_LIMIT_*` configuration.
-- `GET /api/public/player/:identifier` - Get player data by UUID or username. This route is rate-limited per client IP using the more restrictive `PUBLIC_RATE_LIMIT_*` configuration.
+- `GET /api/player/:identifier` - Get minimal player stats by UUID or username. This route is rate-limited per client IP using the `RATE_LIMIT_*` configuration.
+- `GET /api/public/player/:identifier` - Get minimal player stats by UUID or username. This route is rate-limited per client IP using the more restrictive `PUBLIC_RATE_LIMIT_*` configuration.
+
+Minimal stats responses include:
+`displayname`, `bedwars_experience`, `bedwars_final_kills`, `bedwars_final_deaths`,
+`duels_wins`, `duels_losses`, `duels_kills`, `duels_deaths`,
+`skywars_experience`, `skywars_wins`, `skywars_losses`, `skywars_kills`, `skywars_deaths`.
 
 ### Admin Routes
 
@@ -161,4 +177,4 @@ Requests to Hypixel and Mojang include a `User-Agent` string of the form `Levelh
 - `GET /healthz` - Health check endpoint (public)
 - `GET /metrics` - Prometheus metrics endpoint (public)
 
-Successful responses mirror the shapes already supported by the mod so no client update is required.
+Successful responses return the minimal stats payload; ensure clients expect the reduced shape.

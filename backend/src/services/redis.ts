@@ -7,7 +7,6 @@ import {
     REDIS_STATS_BUCKET_SIZE_MS,
     REDIS_STATS_CACHE_TTL_MS,
     RATE_LIMIT_WINDOW_MS,
-    CACHE_TTL_MS,
 } from '../config';
 import { CacheEntry, CacheMetadata } from './cache';
 
@@ -17,7 +16,7 @@ import { CacheEntry, CacheMetadata } from './cache';
 
 let redis: Redis | null = null;
 
-function getRedisClient(): Redis | null {
+export function getRedisClient(): Redis | null {
     if (!REDIS_URL) {
         return null;
     }

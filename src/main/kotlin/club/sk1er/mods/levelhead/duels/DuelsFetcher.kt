@@ -10,6 +10,8 @@ import club.sk1er.mods.levelhead.bedwars.FetchResult
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.BackendMode
 import com.google.gson.JsonObject
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
 import okhttp3.Request
 import java.io.IOException
@@ -27,31 +29,57 @@ object DuelsFetcher {
     private val networkIssueWarned = AtomicBoolean(false)
     private val missingKeyWarned = AtomicBoolean(false)
 
+    private fun contributeToCommunityDatabase(uuid: UUID, payload: JsonObject) {
+        if (club.sk1er.mods.levelhead.bedwars.ProxyClient.canContribute()) {
+            Levelhead.scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                club.sk1er.mods.levelhead.bedwars.ProxyClient.submitPlayer(uuid, payload)
+            }
+        }
+    }
+
     /**
      * Fetch Duels stats for a player using the configured backend mode.
      */
     suspend fun fetchPlayer(uuid: UUID, lastFetchedAt: Long? = null, etag: String? = null): FetchResult {
-        return when (LevelheadConfig.backendMode) {
+        val result = when (LevelheadConfig.backendMode) {
             BackendMode.OFFLINE -> FetchResult.PermanentError("OFFLINE_MODE")
-            BackendMode.PROXY_ONLY -> {
+            BackendMode.COMMUNITY_CACHE_ONLY -> {
                 if (isProxyAvailable()) {
                     fetchFromProxy(uuid.toString(), lastFetchedAt, etag)
                 } else {
-                    FetchResult.PermanentError("PROXY_UNAVAILABLE")
+                    FetchResult.PermanentError("COMMUNITY_DATABASE_UNAVAILABLE")
                 }
             }
-            BackendMode.DIRECT_API -> fetchFromHypixel(uuid)
+            BackendMode.DIRECT_API -> {
+                val hypixelResult = fetchFromHypixel(uuid)
+                if (hypixelResult is FetchResult.Success) {
+                    contributeToCommunityDatabase(uuid, hypixelResult.payload)
+                }
+                hypixelResult
+            }
             BackendMode.FALLBACK -> {
                 if (isProxyAvailable()) {
-                    val proxyResult = fetchFromProxy(uuid.toString(), lastFetchedAt, etag)
-                    if (proxyResult is FetchResult.Success || proxyResult is FetchResult.NotModified) {
-                        return proxyResult
+                    val communityResult = fetchFromProxy(uuid.toString(), lastFetchedAt, etag)
+                    if (communityResult is FetchResult.Success) {
+                        // Check if the payload actually contains Duels data
+                        if (club.sk1er.mods.levelhead.core.StatsFetcher.findStatsObject(communityResult.payload, club.sk1er.mods.levelhead.core.GameMode.DUELS) != null) {
+                            return communityResult
+                        }
+                        // If not, fall back to Hypixel
+                    } else if (communityResult is FetchResult.NotModified) {
+                        return communityResult
                     }
                 }
 
-                fetchFromHypixel(uuid)
+                val hypixelResult = fetchFromHypixel(uuid)
+                if (hypixelResult is FetchResult.Success) {
+                    contributeToCommunityDatabase(uuid, hypixelResult.payload)
+                }
+                hypixelResult
             }
         }
+        
+        return result
     }
 
     /**
@@ -67,91 +95,7 @@ object DuelsFetcher {
      * Fetch from the proxy/community database.
      */
     private suspend fun fetchFromProxy(identifier: String, lastFetchedAt: Long?, etag: String?): FetchResult {
-        val baseUrl = LevelheadConfig.resolveDbUrl()
-        val sanitizedId = sanitizeIdentifier(identifier)
-        val isPublic = LevelheadConfig.proxyAuthToken.isBlank()
-        
-        val url = HttpUrl.parse(baseUrl)
-            ?.newBuilder()
-            ?.addPathSegment("api")
-            ?.apply { if (isPublic) addPathSegment("public") }
-            ?.addPathSegment("player")
-            ?.addPathSegment(sanitizedId)
-            ?.build()
-
-        if (url == null) {
-            Levelhead.logger.error(
-                "Failed to build proxy Duels endpoint URL from base '{}'",
-                LevelheadConfig.proxyBaseUrl.sanitizeForLogs()
-            )
-            return FetchResult.PermanentError("INVALID_PROXY_URL")
-        }
-
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
-            .header("Accept", "application/json")
-            .header("X-Levelhead-Install", LevelheadConfig.installId)
-            .apply {
-                LevelheadConfig.proxyAuthToken.takeIf { it.isNotBlank() }?.let { token ->
-                    header("Authorization", "Bearer $token")
-                }
-                etag?.takeIf { it.isNotBlank() }?.let { tag ->
-                    header("If-None-Match", tag)
-                } ?: lastFetchedAt?.let { since ->
-                    header("If-Modified-Since", since.toHttpDateString())
-                }
-            }
-            .get()
-            .build()
-
-        return try {
-            executeWithRetries(request, "proxy duels").use { response ->
-                if (response.code() == 304) {
-                    networkIssueWarned.set(false)
-                    return FetchResult.NotModified
-                }
-
-                val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
-                val body = response.body()?.string().orEmpty()
-
-                if (!response.isSuccessful) {
-                    return when (response.code()) {
-                        401, 403 -> FetchResult.PermanentError("PROXY_AUTH")
-                        429 -> {
-                            handleRetryAfterHint("proxy", retryAfterMillis)
-                            FetchResult.TemporaryError("PROXY_RATE_LIMIT")
-                        }
-                        else -> {
-                            handleRetryAfterHint("proxy", retryAfterMillis)
-                            FetchResult.TemporaryError("HTTP_${response.code()}")
-                        }
-                    }
-                }
-
-                val json = runCatching { Levelhead.jsonParser.parse(body).asJsonObject }.getOrElse {
-                    Levelhead.logger.error("Failed to parse proxy Duels response", it)
-                    return FetchResult.TemporaryError("PARSE_ERROR")
-                }
-
-                if (json.get("success")?.asBoolean == false) {
-                    return FetchResult.TemporaryError("PROXY_ERROR")
-                }
-
-                networkIssueWarned.set(false)
-                handleRetryAfterHint("proxy", retryAfterMillis)
-                val newEtag = response.header("ETag")
-                FetchResult.Success(json, newEtag)
-            }
-        } catch (ex: IOException) {
-            if (networkIssueWarned.compareAndSet(false, true)) {
-                Levelhead.sendChat("${ChatColor.RED}Duels stats offline. ${ChatColor.YELLOW}Retrying in 60s.")
-            }
-            FetchResult.TemporaryError(ex.message)
-        } catch (ex: Exception) {
-            Levelhead.logger.error("Failed to fetch proxy Duels data", ex)
-            FetchResult.TemporaryError(ex.message)
-        }
+        return club.sk1er.mods.levelhead.bedwars.ProxyClient.fetchPlayer(identifier, lastFetchedAt, etag)
     }
 
     /**

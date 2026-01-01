@@ -1,9 +1,7 @@
 import { Router } from 'express';
 import { enforcePublicRateLimit } from '../middleware/rateLimitPublic';
-import { resolvePlayer, ResolvedPlayer } from '../services/player';
-import { recordPlayerQuery } from '../services/history';
+import { resolvePlayer } from '../services/player';
 import { computeBedwarsStar } from '../util/bedwars';
-import { isValidBedwarsObject } from '../util/typeChecks';
 
 import { extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely } from '../util/requestUtils';
 

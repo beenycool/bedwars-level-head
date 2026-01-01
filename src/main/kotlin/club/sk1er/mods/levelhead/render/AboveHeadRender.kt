@@ -4,6 +4,7 @@ import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.Levelhead.displayManager
 import club.sk1er.mods.levelhead.config.MasterConfig
 import club.sk1er.mods.levelhead.display.LevelheadTag
+import club.sk1er.mods.levelhead.core.ModeManager
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import gg.essential.api.EssentialAPI
 import gg.essential.elementa.utils.withAlpha
@@ -28,7 +29,7 @@ object AboveHeadRender {
         if (!displayManager.config.enabled) return
         if (!EssentialAPI.getMinecraftUtil().isHypixel()) return
         if (getMinecraft().gameSettings.hideGUI) return
-        if (!BedwarsModeDetector.shouldRenderTags()) return
+        if (!ModeManager.shouldRenderTags()) return
 
         if (event.entity !is EntityPlayer) return
         val player = event.entity as EntityPlayer
