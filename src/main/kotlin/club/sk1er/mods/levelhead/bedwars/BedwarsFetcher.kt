@@ -1,28 +1,74 @@
 package club.sk1er.mods.levelhead.bedwars
 
 import club.sk1er.mods.levelhead.Levelhead
+import club.sk1er.mods.levelhead.config.LevelheadConfig
+import club.sk1er.mods.levelhead.core.BackendMode
+import club.sk1er.mods.levelhead.core.GameMode
+import club.sk1er.mods.levelhead.core.StatsFetcher
 import com.google.gson.JsonObject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import java.util.UUID
 
 object BedwarsFetcher {
-    suspend fun fetchPlayer(uuid: UUID, lastFetchedAt: Long?, etag: String? = null): FetchResult {
-        if (ProxyClient.isAvailable()) {
-            // Using ProxyClient's fetch logic which handles sanitization internally
-            return ProxyClient.fetchPlayer(uuid.toString(), lastFetchedAt, etag)
-        }
-
-        val hypixelResult = HypixelClient.fetchPlayer(uuid)
-        
-        // Contribute to community database if new data fetched from Hypixel
-        if (hypixelResult is FetchResult.Success && ProxyClient.canContribute()) {
+    private fun contributeToCommunityDatabase(uuid: UUID, payload: JsonObject) {
+        if (ProxyClient.canContribute()) {
             Levelhead.scope.launch(Dispatchers.IO) {
-                ProxyClient.submitPlayer(uuid, hypixelResult.payload)
+                ProxyClient.submitPlayer(uuid, payload)
             }
         }
+    }
 
-        return hypixelResult
+    suspend fun fetchPlayer(uuid: UUID, lastFetchedAt: Long?, etag: String? = null): FetchResult {
+        return when (LevelheadConfig.backendMode) {
+            BackendMode.OFFLINE -> {
+                // In offline mode, return a permanent error indicating no network
+                FetchResult.PermanentError("OFFLINE_MODE")
+            }
+            BackendMode.COMMUNITY_CACHE_ONLY -> {
+                // Only use community database, don't fall back to direct API
+                if (ProxyClient.isAvailable()) {
+                    ProxyClient.fetchPlayer(uuid.toString(), lastFetchedAt, etag)
+                } else {
+                    FetchResult.PermanentError("COMMUNITY_DATABASE_UNAVAILABLE")
+                }
+            }
+            BackendMode.DIRECT_API -> {
+                // Only use direct Hypixel API
+                val hypixelResult = HypixelClient.fetchPlayer(uuid)
+
+                // Contribute to community database if new data fetched from Hypixel
+                if (hypixelResult is FetchResult.Success) {
+                    contributeToCommunityDatabase(uuid, hypixelResult.payload)
+                }
+
+                hypixelResult
+            }
+            BackendMode.FALLBACK -> {
+                // Try community database first, fall back to direct API
+                if (ProxyClient.isAvailable()) {
+                    val communityResult = ProxyClient.fetchPlayer(uuid.toString(), lastFetchedAt, etag)
+                    if (communityResult is FetchResult.Success) {
+                        // Check if the payload actually contains Bedwars data
+                        if (StatsFetcher.findStatsObject(communityResult.payload, GameMode.BEDWARS) != null) {
+                            return communityResult
+                        }
+                        // If not, fall back to Hypixel
+                    } else if (communityResult is FetchResult.NotModified) {
+                        return communityResult
+                    }
+                }
+
+                val hypixelResult = HypixelClient.fetchPlayer(uuid)
+
+                // Contribute to community database if new data fetched from Hypixel
+                if (hypixelResult is FetchResult.Success) {
+                    contributeToCommunityDatabase(uuid, hypixelResult.payload)
+                }
+
+                hypixelResult
+            }
+        }
     }
 
     suspend fun fetchProxyPlayer(identifier: String, lastFetchedAt: Long? = null, etag: String? = null): FetchResult {
@@ -30,10 +76,6 @@ object BedwarsFetcher {
             return FetchResult.PermanentError("PROXY_DISABLED")
         }
         return ProxyClient.fetchPlayer(identifier, lastFetchedAt, etag)
-    }
-
-    suspend fun fetchBatchFromProxy(uuids: List<UUID>): Map<UUID, FetchResult> {
-        return ProxyClient.fetchBatch(uuids)
     }
 
     fun resetWarnings() {
@@ -79,21 +121,7 @@ object BedwarsFetcher {
     }
 
     private fun findBedwarsStats(json: JsonObject): JsonObject? {
-        json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
-            ?.get("bedwars")?.takeIf { it.isJsonObject }?.asJsonObject
-            ?.let { return it }
-
-        json.get("bedwars")?.takeIf { it.isJsonObject }?.asJsonObject
-            ?.let { return it }
-
-        val playerContainer = when {
-            json.get("player")?.isJsonObject == true -> json.getAsJsonObject("player")
-            json.get("stats")?.isJsonObject == true -> json
-            else -> null
-        } ?: return null
-
-        val stats = playerContainer.get("stats")?.takeIf { it.isJsonObject }?.asJsonObject ?: return null
-        return stats.get("Bedwars")?.takeIf { it.isJsonObject }?.asJsonObject
+        return StatsFetcher.findStatsObject(json, GameMode.BEDWARS)
     }
 
     private fun JsonObject.numberValue(key: String): Double? {
