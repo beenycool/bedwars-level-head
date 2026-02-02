@@ -62,8 +62,9 @@ The backend uses environment variables for all secrets and tunables. The `.env.e
 | --- | --- | --- |
 | `HYPIXEL_API_KEY` | ✅ | Hypixel API key owned by the proxy operator. |
 | `CACHE_DB_URL` | ✅ | Database connection string for the response cache. Supports PostgreSQL and Azure SQL. |
+| `AZURE_SQL_TRUST_SERVER_CERTIFICATE` | ❌ | Set to `true` to skip Azure SQL certificate validation (defaults to `false`). |
 | `ADMIN_API_KEYS` | ✅ | Comma-separated list of tokens required to access administrative endpoints. |
-| `CRON_API_KEYS` | ✅ | Comma-separated list of tokens required to access cron endpoints. |
+| `CRON_API_KEYS` | ❌ | Comma-separated list of tokens required to access cron endpoints. Cron routes are only mounted when configured. |
 | `RATE_LIMIT_MAX` | ❌ | Requests per IP allowed per window (defaults to `300`). |
 | `RATE_LIMIT_WINDOW_MS` | ❌ | Window length in milliseconds for the private route limit (defaults to `300000`, i.e. 5 minutes). |
 | `PUBLIC_RATE_LIMIT_MAX` | ❌ | Requests per IP allowed per window on public routes (defaults to `60`). |

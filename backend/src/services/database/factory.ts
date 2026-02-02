@@ -4,14 +4,18 @@ import { PostgresAdapter } from './postgresAdapter';
 import { AzureSqlAdapter } from './azureSqlAdapter';
 
 export function getDatabaseType(connectionString: string): DatabaseType {
-  if (connectionString.startsWith('postgresql://') || connectionString.startsWith('postgres://')) {
+  const normalized = connectionString.trim();
+  if (normalized.startsWith('postgresql://') || normalized.startsWith('postgres://')) {
     return DatabaseType.POSTGRESQL;
   }
-  if (connectionString.startsWith('sqlserver://') || connectionString.startsWith('mssql://')) {
+  if (normalized.startsWith('sqlserver://') || normalized.startsWith('mssql://')) {
+    return DatabaseType.AZURE_SQL;
+  }
+  if (/^(server|data source)\s*=/i.test(normalized) || /;\s*(initial catalog|user id)\s*=/i.test(normalized)) {
     return DatabaseType.AZURE_SQL;
   }
   // Default to PostgreSQL if unsure, but log a warning
-  console.warn(`[database] Unknown database type in connection string, defaulting to PostgreSQL: ${connectionString.split(':')[0]}...`);
+  console.warn(`[database] Unknown database type in connection string, defaulting to PostgreSQL: ${normalized.split(':')[0]}...`);
   return DatabaseType.POSTGRESQL;
 }
 
@@ -32,4 +36,3 @@ export function createAdapter(connectionString: string): DatabaseAdapter {
 
 // Singleton instance
 export const database = createAdapter(CACHE_DB_URL);
-

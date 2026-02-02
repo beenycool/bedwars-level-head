@@ -524,6 +524,12 @@ object Levelhead {
                         }
                     }
                 } catch (throwable: Throwable) {
+                    logger.debug(
+                        "Failed to fetch stats for {} ({})",
+                        cacheKey.uuid,
+                        cacheKey.gameMode,
+                        throwable
+                    )
                     handleStatsUpdate(cacheKey, null)
                     null
                 }

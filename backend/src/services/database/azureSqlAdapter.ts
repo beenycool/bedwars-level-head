@@ -14,9 +14,14 @@ export class AzureSqlAdapter implements DatabaseAdapter {
       database: config.database,
       user: config.user,
       hasPassword: !!config.password,
+      trustServerCertificate: config.options?.trustServerCertificate,
       serverType: typeof config.server
     });
     this.pool = new mssql.ConnectionPool(config);
+  }
+
+  private getTrustServerCertificateDefault(): boolean {
+    return (process.env.AZURE_SQL_TRUST_SERVER_CERTIFICATE ?? '').toLowerCase() === 'true';
   }
 
   private parseConnectionString(connectionString: string): mssql.config {
@@ -24,10 +29,11 @@ export class AzureSqlAdapter implements DatabaseAdapter {
       throw new Error('Connection string is required and must be a string');
     }
 
+    const trustServerCertificateDefault = this.getTrustServerCertificateDefault();
     const config: any = {
       options: {
         encrypt: true,
-        trustServerCertificate: true // Changed to true to avoid potential certificate validation issues
+        trustServerCertificate: trustServerCertificateDefault
       }
     };
 
@@ -176,12 +182,7 @@ export class AzureSqlAdapter implements DatabaseAdapter {
         config.server = config.server.substring(4);
     }
 
-    // Log password length for debugging
-    if (config.password) {
-        console.log(`[database] Password length: ${config.password.length}`);
-    } else {
-        console.log('[database] No password provided');
-    }
+    console.log(`[database] Password provided: ${!!config.password}`);
 
     // Azure SQL specific fix: Ensure username is in user@server format if not already
     // This is often required for Azure SQL Database
@@ -202,6 +203,7 @@ export class AzureSqlAdapter implements DatabaseAdapter {
     try {
       // Normalize protocol
       const normalizedString = connectionString.replace(/^sqlserver:/i, 'mssql:');
+      const trustServerCertificateDefault = this.getTrustServerCertificateDefault();
 
       // Parse the URL by manually extracting components before constructing the URL object
       // This ensures we can properly escape special characters in the password
@@ -216,7 +218,7 @@ export class AzureSqlAdapter implements DatabaseAdapter {
           password: password,
           options: {
             encrypt: true,
-            trustServerCertificate: true
+            trustServerCertificate: trustServerCertificateDefault
           }
         };
 

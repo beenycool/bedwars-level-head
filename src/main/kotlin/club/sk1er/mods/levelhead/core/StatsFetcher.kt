@@ -106,19 +106,16 @@ object StatsFetcher {
             GameMode.DUELS -> listOf("duels", "Duels")
             GameMode.SKYWARS -> listOf("skywars", "SkyWars")
         }
+        val targetKeySet = targetKeys.map { it.lowercase() }.toSet()
 
         // 1. Check for 'data' wrapper (Proxy single-player response)
         val data = json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
         if (data != null) {
-            for (key in targetKeys) {
-                data.get(key)?.takeIf { it.isJsonObject }?.asJsonObject?.let { return it }
-            }
+            findKeyIgnoreCase(data, targetKeySet)?.let { return it }
         }
 
         // 2. Check for top-level keys (Proxy batch response or flat proxy response)
-        for (key in targetKeys) {
-            json.get(key)?.takeIf { it.isJsonObject }?.asJsonObject?.let { return it }
-        }
+        findKeyIgnoreCase(json, targetKeySet)?.let { return it }
 
         // 3. Check for Hypixel API structure: player -> stats -> Mode
         val playerContainer = when {
@@ -130,9 +127,7 @@ object StatsFetcher {
         if (playerContainer != null) {
             val stats = playerContainer.get("stats")?.takeIf { it.isJsonObject }?.asJsonObject
             if (stats != null) {
-                for (key in targetKeys) {
-                    stats.get(key)?.takeIf { it.isJsonObject }?.asJsonObject?.let { return it }
-                }
+                findKeyIgnoreCase(stats, targetKeySet)?.let { return it }
             }
         }
 
@@ -142,6 +137,15 @@ object StatsFetcher {
         }
         buildMinimalStatsObject(json, gameMode)?.let { return it }
 
+        return null
+    }
+
+    private fun findKeyIgnoreCase(source: JsonObject, keys: Set<String>): JsonObject? {
+        for ((key, value) in source.entrySet()) {
+            if (key.lowercase() in keys && value.isJsonObject) {
+                return value.asJsonObject
+            }
+        }
         return null
     }
 

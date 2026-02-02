@@ -446,6 +446,7 @@ export async function getPlayerStatsFromCache(
 
   if (l1Attempted && !l1Hit) {
     recordCacheTierMiss('l1', 'absent');
+    recordCacheMiss('absent');
   }
 
   if (!shouldReadFromDb()) {

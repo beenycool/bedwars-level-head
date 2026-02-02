@@ -176,16 +176,6 @@ async function flushHistoryBuffer(): Promise<void> {
   await ensureInitialized();
 
   try {
-    // Adapter handles basic parameter conversion. For bulk insert, we'll build it manually or use simple loops if needed.
-    // For now, let's keep it simple and use a single query with many parameters.
-    
-    const rows: string[] = [];
-
-    const rowStrings = batch.map((record, i) => {
-      const base = i * 13;
-      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`;
-    }).join(', ');
-
     const params = batch.flatMap((record: PlayerQueryRecord) => [
       record.identifier, record.normalizedIdentifier, record.lookupType,
       record.resolvedUuid, record.resolvedUsername, record.stars,
@@ -193,18 +183,6 @@ async function flushHistoryBuffer(): Promise<void> {
       record.revalidated, record.installId, record.responseStatus,
       record.latencyMs != null ? Math.round(record.latencyMs) : null,
     ]);
-
-    const queryText = `
-      INSERT INTO player_query_history (
-        identifier, normalized_identifier, lookup_type, resolved_uuid,
-        resolved_username, stars, nicked, cache_source, cache_hit,
-        revalidated, install_id, response_status, latency_ms
-      ) VALUES ${rowStrings}
-    `;
-
-    // Note: AzureSqlAdapter.query currently does $ to @ replacement, but we built @ explicitly for MS SQL here.
-    // We should be careful about double replacement if we use $ here.
-    // Actually, our adapter replaces $1, $2 with @p1, @p2. So if we use $ consistently, it should work.
     
     const universalRows = batch.map((_, i) => {
       const base = i * 13;

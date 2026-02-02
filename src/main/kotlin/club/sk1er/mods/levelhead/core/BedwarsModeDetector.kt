@@ -27,7 +27,7 @@ object BedwarsModeDetector {
     private var chatDetectionExpiry: Long = 0L
     private var lastBedwarsDetectedAt: Long = 0L
 
-    private const val TEMP_DEBUG = true
+    private const val TEMP_DEBUG = false
     private const val CHAT_CONTEXT_DURATION = 20_000L
     private const val BEDWARS_CONTEXT_GRACE_MS = 10_000L
 
