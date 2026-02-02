@@ -361,22 +361,13 @@ class LevelheadCommand {
         sendMessage("${ChatColor.YELLOW}Looking up stats for ${ChatColor.GOLD}$trimmedIdentifier${ChatColor.YELLOW}...")
         Levelhead.scope.launch {
             try {
-                val result = WhoisService.lookupWhois(trimmedIdentifier)
-                Minecraft.getMinecraft().addScheduledTask {
-                    val nickedText = if (result.nicked) " ${ChatColor.GRAY}(nicked)" else ""
-                    sendMessage(
-                        "${ChatColor.YELLOW}${result.displayName}$nickedText ${ChatColor.YELLOW}is ${ChatColor.GOLD}${result.statValue} ${ChatColor.YELLOW}(${result.gameMode.displayName} ${result.statName})"
-                    )
-                }
+                val resultMessage = WhoisService.lookupWhoisMessage(trimmedIdentifier)
+                sendMessage(resultMessage)
             } catch (ex: WhoisService.CommandException) {
-                Minecraft.getMinecraft().addScheduledTask {
-                    sendMessage("${ChatColor.RED}${ex.message}")
-                }
+                sendMessage("${ChatColor.RED}${ex.message}")
             } catch (throwable: Throwable) {
                 Levelhead.logger.error("Failed to resolve stats for {}", identifier, throwable)
-                Minecraft.getMinecraft().addScheduledTask {
-                    sendMessage("${ChatColor.RED}Unexpected error while fetching stats. Check logs for details.")
-                }
+                sendMessage("${ChatColor.RED}Unexpected error while fetching stats. Check logs for details.")
             }
         }
     }
@@ -762,7 +753,7 @@ class LevelheadCommand {
         val url = HttpUrl.parse("https://api.hypixel.net/key") ?: return@withContext false
 
         val request = Request.Builder()
-            .url(url.toString())
+            .url(url)
             .header("API-Key", key)
             .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
             .header("Accept", "application/json")
@@ -796,7 +787,7 @@ class LevelheadCommand {
         }
         val requestBody = RequestBody.create(JSON_MEDIA_TYPE, payload.toString())
         val request = Request.Builder()
-            .url(url.toString())
+            .url(url)
             .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
             .header("Accept", "application/json")
             .header("X-Levelhead-Install", LevelheadConfig.installId)
@@ -821,4 +812,3 @@ class LevelheadCommand {
     }
 
 }
-

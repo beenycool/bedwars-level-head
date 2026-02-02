@@ -5,7 +5,6 @@ import club.sk1er.mods.levelhead.Levelhead.displayManager
 import club.sk1er.mods.levelhead.config.MasterConfig
 import club.sk1er.mods.levelhead.display.LevelheadTag
 import club.sk1er.mods.levelhead.core.ModeManager
-import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import gg.essential.api.EssentialAPI
 import gg.essential.elementa.utils.withAlpha
 import gg.essential.universal.UGraphics

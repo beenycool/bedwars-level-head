@@ -169,9 +169,15 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var displayPositionIndex: Int = 0
         set(value) {
-            field = value
+            val entries = MasterConfig.DisplayPosition.entries
+            val clamped = if (entries.isNotEmpty()) {
+                value.coerceIn(0, entries.lastIndex)
+            } else {
+                0
+            }
+            field = clamped
             Levelhead.displayManager.config.displayPosition =
-                MasterConfig.DisplayPosition.entries.getOrNull(value) ?: MasterConfig.DisplayPosition.ABOVE
+                entries.getOrNull(clamped) ?: MasterConfig.DisplayPosition.ABOVE
             Levelhead.displayManager.saveConfig()
         }
 

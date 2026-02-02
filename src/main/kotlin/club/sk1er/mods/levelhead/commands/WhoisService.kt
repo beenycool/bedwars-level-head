@@ -15,6 +15,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import net.minecraft.client.Minecraft
 import net.minecraft.entity.player.EntityPlayer
+import net.minecraft.util.EnumChatFormatting as ChatColor
 import okhttp3.HttpUrl
 import okhttp3.Request
 import java.util.Locale
@@ -30,6 +31,11 @@ object WhoisService {
         val gameMode = ModeManager.getActiveGameMode() ?: GameMode.BEDWARS
         
         return fetchWhois(resolved, gameMode)
+    }
+
+    suspend fun lookupWhoisMessage(identifier: String): String {
+        val result = lookupWhois(identifier)
+        return formatResultMessage(result)
     }
 
     private suspend fun fetchWhois(resolved: ResolvedIdentifier, gameMode: GameMode): WhoisResult = withContext(Dispatchers.IO) {
@@ -78,6 +84,12 @@ object WhoisService {
             nicked = nicked,
             gameMode = gameMode
         )
+    }
+
+    private fun formatResultMessage(result: WhoisResult): String {
+        val nickedText = if (result.nicked) " ${ChatColor.GRAY}(nicked)" else ""
+        return "${ChatColor.YELLOW}${result.displayName}$nickedText ${ChatColor.YELLOW}is ${ChatColor.GOLD}${result.statValue} " +
+            "${ChatColor.YELLOW}(${result.gameMode.displayName} ${result.statName})"
     }
 
     private suspend fun resolvePlayerIdentifier(input: String): ResolvedIdentifier? {

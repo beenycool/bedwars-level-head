@@ -19,7 +19,7 @@ import kotlinx.coroutines.launch
 
 class DisplayManager(val file: File) {
     private companion object {
-        private const val TEMP_DEBUG = true
+        private const val TEMP_DEBUG = false
     }
 
     var config = MasterConfig()
