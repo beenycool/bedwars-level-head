@@ -33,6 +33,7 @@ private const val _MAX_STAR_CACHE_TTL_MINUTES = 180
 private const val _DEFAULT_STAR_CACHE_TTL_MINUTES = 45
 private const val _MIN_STAR_CACHE_TTL_MINUTES_SLIDER = 5f
 private const val _MAX_STAR_CACHE_TTL_MINUTES_SLIDER = 180f
+private const val BACKEND_MODE_INDEX_MAX = 3
 private const val GITHUB_REPO_URL = "https://github.com/beenycool/bedwars-level-head"
 private const val UPSTREAM_LEVELHEAD_URL = "https://github.com/Sk1erLLC/Levelhead"
 private const val MODRINTH_URL = "https://modrinth.com/mod/bedwars-level-head"
@@ -222,7 +223,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var backendModeIndex: Int = 2 // Default to Fallback
         set(value) {
-            field = value
+            val clamped = value.coerceIn(0, BACKEND_MODE_INDEX_MAX)
+            field = clamped
             save()
             BedwarsFetcher.resetWarnings()
         }
@@ -449,6 +451,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     private fun resetToDefaults() {
         apiKey = ""
+        backendModeIndex = 2
         communityDatabase = true
         showTabStats = true
         proxyEnabled = true
