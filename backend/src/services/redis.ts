@@ -330,12 +330,29 @@ const statsCache: GlobalStatsCache = {
 // Cache heavy stats operations (SCAN) for 10 seconds
 const HEAVY_STATS_TTL_MS = 10000;
 
-interface CachedValue<T> {
+interface InMemoryCache<T> {
     value: T | null;
     expiresAt: number;
 }
-let redisStatsCache: CachedValue<RedisStats> = { value: null, expiresAt: 0 };
-let redisCacheStatsCache: CachedValue<RedisCacheStats> = { value: null, expiresAt: 0 };
+
+const redisStatsCache: InMemoryCache<RedisStats> = { value: null, expiresAt: 0 };
+const redisCacheStatsCache: InMemoryCache<RedisCacheStats> = { value: null, expiresAt: 0 };
+
+async function withMemoryCache<T>(
+    cache: InMemoryCache<T>,
+    ttlMs: number,
+    fetchFn: () => Promise<T>,
+): Promise<T> {
+    const now = Date.now();
+    if (cache.value !== null && now < cache.expiresAt) {
+        return cache.value;
+    }
+
+    const result = await fetchFn();
+    cache.value = result;
+    cache.expiresAt = Date.now() + ttlMs;
+    return result;
+}
 
 export async function getGlobalStats(windowMs: number): Promise<{ requestCount: number; activeUsers: number }> {
     const now = Date.now();
@@ -426,92 +443,82 @@ export interface RedisStats {
 }
 
 export async function getRedisStats(): Promise<RedisStats> {
-    const now = Date.now();
-    if (redisStatsCache.value !== null && now < redisStatsCache.expiresAt) {
-        return redisStatsCache.value;
-    }
-
-    const localCache = getLocalCacheStats();
-    const defaultStats: RedisStats = {
-        connected: false,
-        memoryUsed: 'N/A',
-        memoryUsedBytes: 0,
-        memoryMax: 'N/A',
-        memoryPercent: 0,
-        totalKeys: 0,
-        rateLimitKeys: 0,
-        statsKeys: 0,
-        localCacheSize: localCache.size,
-        localCacheMaxSize: localCache.maxSize,
-    };
-
-    const client = getRedisClient();
-    if (!client || client.status !== 'ready') {
-        return defaultStats;
-    }
-
-    try {
-        // Get memory info
-        const info = await client.info('memory');
-        const memoryMatch = info.match(/used_memory:(\d+)/);
-        const memoryHumanMatch = info.match(/used_memory_human:([^\r\n]+)/);
-        const maxMemoryMatch = info.match(/maxmemory:(\d+)/);
-        const maxMemoryHumanMatch = info.match(/maxmemory_human:([^\r\n]+)/);
-
-        const memoryUsedBytes = memoryMatch ? parseInt(memoryMatch[1], 10) : 0;
-        const memoryUsed = memoryHumanMatch ? memoryHumanMatch[1].trim() : `${(memoryUsedBytes / 1024 / 1024).toFixed(2)}M`;
-        const maxMemoryBytes = maxMemoryMatch ? parseInt(maxMemoryMatch[1], 10) : 0;
-        const memoryMax = maxMemoryHumanMatch ? maxMemoryHumanMatch[1].trim() : (maxMemoryBytes > 0 ? `${(maxMemoryBytes / 1024 / 1024).toFixed(2)}M` : 'Unlimited');
-
-        // Calculate memory percentage (assume 30MB if no max set)
-        const effectiveMax = maxMemoryBytes > 0 ? maxMemoryBytes : 30 * 1024 * 1024;
-        const memoryPercent = Math.min(100, (memoryUsedBytes / effectiveMax) * 100);
-
-        // Count keys by pattern
-        const totalKeys = await client.dbsize();
-
-        let rateLimitKeys = 0;
-        let statsKeys = 0;
-
-        // Use SCAN to count keys by pattern (more efficient than KEYS)
-        let cursor = '0';
-        do {
-            const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'rl:*', 'COUNT', 100);
-            cursor = newCursor;
-            rateLimitKeys += keys.length;
-        } while (cursor !== '0');
-
-        cursor = '0';
-        do {
-            const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'stats:*', 'COUNT', 100);
-            cursor = newCursor;
-            statsKeys += keys.length;
-        } while (cursor !== '0');
-
-        const result = {
-            connected: true,
-            memoryUsed,
-            memoryUsedBytes,
-            memoryMax,
-            memoryPercent,
-            totalKeys,
-            rateLimitKeys,
-            statsKeys,
+    return withMemoryCache(redisStatsCache, HEAVY_STATS_TTL_MS, async () => {
+        const localCache = getLocalCacheStats();
+        const defaultStats: RedisStats = {
+            connected: false,
+            memoryUsed: 'N/A',
+            memoryUsedBytes: 0,
+            memoryMax: 'N/A',
+            memoryPercent: 0,
+            totalKeys: 0,
+            rateLimitKeys: 0,
+            statsKeys: 0,
             localCacheSize: localCache.size,
             localCacheMaxSize: localCache.maxSize,
         };
 
-        redisStatsCache = {
-            value: result,
-            expiresAt: Date.now() + HEAVY_STATS_TTL_MS,
-        };
+        const client = getRedisClient();
+        if (!client || client.status !== 'ready') {
+            return defaultStats;
+        }
 
-        return result;
-    } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error('[redis] getRedisStats failed', message);
-        return defaultStats;
-    }
+        try {
+            // Get memory info
+            const info = await client.info('memory');
+            const memoryMatch = info.match(/used_memory:(\d+)/);
+            const memoryHumanMatch = info.match(/used_memory_human:([^\r\n]+)/);
+            const maxMemoryMatch = info.match(/maxmemory:(\d+)/);
+            const maxMemoryHumanMatch = info.match(/maxmemory_human:([^\r\n]+)/);
+
+            const memoryUsedBytes = memoryMatch ? parseInt(memoryMatch[1], 10) : 0;
+            const memoryUsed = memoryHumanMatch ? memoryHumanMatch[1].trim() : `${(memoryUsedBytes / 1024 / 1024).toFixed(2)}M`;
+            const maxMemoryBytes = maxMemoryMatch ? parseInt(maxMemoryMatch[1], 10) : 0;
+            const memoryMax = maxMemoryHumanMatch ? maxMemoryHumanMatch[1].trim() : (maxMemoryBytes > 0 ? `${(maxMemoryBytes / 1024 / 1024).toFixed(2)}M` : 'Unlimited');
+
+            // Calculate memory percentage (assume 30MB if no max set)
+            const effectiveMax = maxMemoryBytes > 0 ? maxMemoryBytes : 30 * 1024 * 1024;
+            const memoryPercent = Math.min(100, (memoryUsedBytes / effectiveMax) * 100);
+
+            // Count keys by pattern
+            const totalKeys = await client.dbsize();
+
+            let rateLimitKeys = 0;
+            let statsKeys = 0;
+
+            // Use SCAN to count keys by pattern (more efficient than KEYS)
+            let cursor = '0';
+            do {
+                const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'rl:*', 'COUNT', 100);
+                cursor = newCursor;
+                rateLimitKeys += keys.length;
+            } while (cursor !== '0');
+
+            cursor = '0';
+            do {
+                const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'stats:*', 'COUNT', 100);
+                cursor = newCursor;
+                statsKeys += keys.length;
+            } while (cursor !== '0');
+
+            return {
+                connected: true,
+                memoryUsed,
+                memoryUsedBytes,
+                memoryMax,
+                memoryPercent,
+                totalKeys,
+                rateLimitKeys,
+                statsKeys,
+                localCacheSize: localCache.size,
+                localCacheMaxSize: localCache.maxSize,
+            };
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error('[redis] getRedisStats failed', message);
+            return defaultStats;
+        }
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -708,76 +715,66 @@ export interface RedisCacheStats {
 }
 
 export async function getRedisCacheStats(): Promise<RedisCacheStats> {
-    const now = Date.now();
-    if (redisCacheStatsCache.value !== null && now < redisCacheStatsCache.expiresAt) {
-        return redisCacheStatsCache.value;
-    }
+    return withMemoryCache(redisCacheStatsCache, HEAVY_STATS_TTL_MS, async () => {
+        const client = getRedisClient();
+        if (!client || client.status !== 'ready') {
+            return {
+                totalKeys: 0,
+                cacheKeys: 0,
+                memoryUsedBytes: 0,
+                memoryUsed: 'N/A',
+                memoryMax: 'N/A',
+                memoryPercent: 0,
+            };
+        }
 
-    const client = getRedisClient();
-    if (!client || client.status !== 'ready') {
-        return {
-            totalKeys: 0,
-            cacheKeys: 0,
-            memoryUsedBytes: 0,
-            memoryUsed: 'N/A',
-            memoryMax: 'N/A',
-            memoryPercent: 0,
-        };
-    }
+        try {
+            // Get memory info
+            const info = await client.info('memory');
+            const memoryMatch = info.match(/used_memory:(\d+)/);
+            const memoryHumanMatch = info.match(/used_memory_human:([^\r\n]+)/);
+            const maxMemoryMatch = info.match(/maxmemory:(\d+)/);
+            const maxMemoryHumanMatch = info.match(/maxmemory_human:([^\r\n]+)/);
 
-    try {
-        // Get memory info
-        const info = await client.info('memory');
-        const memoryMatch = info.match(/used_memory:(\d+)/);
-        const memoryHumanMatch = info.match(/used_memory_human:([^\r\n]+)/);
-        const maxMemoryMatch = info.match(/maxmemory:(\d+)/);
-        const maxMemoryHumanMatch = info.match(/maxmemory_human:([^\r\n]+)/);
+            const memoryUsedBytes = memoryMatch ? parseInt(memoryMatch[1], 10) : 0;
+            const memoryUsed = memoryHumanMatch ? memoryHumanMatch[1].trim() : `${(memoryUsedBytes / 1024 / 1024).toFixed(2)}M`;
+            const maxMemoryBytes = maxMemoryMatch ? parseInt(maxMemoryMatch[1], 10) : 0;
+            const memoryMax = maxMemoryHumanMatch ? maxMemoryHumanMatch[1].trim() : (maxMemoryBytes > 0 ? `${(maxMemoryBytes / 1024 / 1024).toFixed(2)}M` : 'Unlimited');
 
-        const memoryUsedBytes = memoryMatch ? parseInt(memoryMatch[1], 10) : 0;
-        const memoryUsed = memoryHumanMatch ? memoryHumanMatch[1].trim() : `${(memoryUsedBytes / 1024 / 1024).toFixed(2)}M`;
-        const maxMemoryBytes = maxMemoryMatch ? parseInt(maxMemoryMatch[1], 10) : 0;
-        const memoryMax = maxMemoryHumanMatch ? maxMemoryHumanMatch[1].trim() : (maxMemoryBytes > 0 ? `${(maxMemoryBytes / 1024 / 1024).toFixed(2)}M` : 'Unlimited');
+            // Calculate memory percentage
+            const effectiveMax = maxMemoryBytes > 0 ? maxMemoryBytes : 30 * 1024 * 1024;
+            const memoryPercent = Math.min(100, (memoryUsedBytes / effectiveMax) * 100);
 
-        // Calculate memory percentage
-        const effectiveMax = maxMemoryBytes > 0 ? maxMemoryBytes : 30 * 1024 * 1024;
-        const memoryPercent = Math.min(100, (memoryUsedBytes / effectiveMax) * 100);
+            // Count total keys and cache keys
+            const totalKeys = await client.dbsize();
 
-        // Count total keys and cache keys
-        const totalKeys = await client.dbsize();
+            let cacheKeys = 0;
+            let cursor = '0';
+            do {
+                const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'cache:*', 'COUNT', 100);
+                cursor = newCursor;
+                cacheKeys += keys.length;
+            } while (cursor !== '0');
 
-        let cacheKeys = 0;
-        let cursor = '0';
-        do {
-            const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'cache:*', 'COUNT', 100);
-            cursor = newCursor;
-            cacheKeys += keys.length;
-        } while (cursor !== '0');
-
-        const result = {
-            totalKeys,
-            cacheKeys,
-            memoryUsedBytes,
-            memoryUsed,
-            memoryMax,
-            memoryPercent,
-        };
-
-        redisCacheStatsCache = {
-            value: result,
-            expiresAt: Date.now() + HEAVY_STATS_TTL_MS,
-        };
-
-        return result;
-    } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error('[redis] getRedisCacheStats failed', message);
-        return {
-            totalKeys: 0,
-            cacheKeys: 0,
-            memoryUsedBytes: 0,
-            memoryUsed: 'N/A',
-            memoryMax: 'N/A',
-            memoryPercent: 0,
-        };
-    }
+            return {
+                totalKeys,
+                cacheKeys,
+                memoryUsedBytes,
+                memoryUsed,
+                memoryMax,
+                memoryPercent,
+            };
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            console.error('[redis] getRedisCacheStats failed', message);
+            return {
+                totalKeys: 0,
+                cacheKeys: 0,
+                memoryUsedBytes: 0,
+                memoryUsed: 'N/A',
+                memoryMax: 'N/A',
+                memoryPercent: 0,
+            };
+        }
+    });
 }
