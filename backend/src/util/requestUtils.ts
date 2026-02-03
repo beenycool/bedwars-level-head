@@ -37,10 +37,29 @@ export async function recordQuerySafely(payload: Parameters<typeof recordPlayerQ
  * Returns null if the experience cannot be found or is invalid.
  */
 export function extractBedwarsExperience(payload: ResolvedPlayer['payload']): number | null {
+    if (payload && typeof payload === 'object' && 'bedwars_experience' in payload) {
+        const rawValue = (payload as { bedwars_experience?: unknown }).bedwars_experience;
+        if (rawValue === undefined || rawValue === null) {
+            return null;
+        }
+        const numeric = Number(rawValue);
+        if (!Number.isFinite(numeric) || numeric < 0) {
+            return null;
+        }
+        return numeric;
+    }
+
+    if (!payload) {
+        return null;
+    }
+
+    const payloadRecord = payload as Record<string, unknown>;
+    const dataCandidate = (payloadRecord as { data?: unknown }).data;
+    const bedwarsCandidate = (payloadRecord as { bedwars?: unknown }).bedwars;
     const bedwars =
-        payload.data?.bedwars ??
-        payload.bedwars ??
-        (isValidBedwarsObject(payload.data) ? payload.data : undefined);
+        (dataCandidate as { bedwars?: unknown } | undefined)?.bedwars ??
+        bedwarsCandidate ??
+        (isValidBedwarsObject(dataCandidate) ? dataCandidate : undefined);
     if (!isValidBedwarsObject(bedwars)) {
         return null;
     }

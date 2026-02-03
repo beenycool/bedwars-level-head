@@ -1,4 +1,5 @@
 import axios, { type AxiosResponseHeaders, type RawAxiosResponseHeaders } from 'axios';
+import https from 'node:https';
 import {
   HYPIXEL_API_BASE_URL,
   HYPIXEL_API_KEY,
@@ -10,9 +11,18 @@ import {
 import { HttpError } from '../util/httpError';
 import { recordHypixelApiCall } from './hypixelTracker';
 
+// Define a custom HTTPS agent to force IPv4 and enable Keep-Alive
+const agent = new https.Agent({
+  keepAlive: true,       // Reuse existing connections for batch requests
+  keepAliveMsecs: 1000,  // Keep sockets open for 1s
+  maxSockets: 50,        // Allow up to 50 parallel connections
+  family: 4,             // STRICTLY force IPv4 to bypass the 2s IPv6 timeout
+});
+
 const hypixelClient = axios.create({
   baseURL: HYPIXEL_API_BASE_URL,
   timeout: HYPIXEL_TIMEOUT_MS,
+  httpsAgent: agent,     // Attach the custom agent here
   headers: {
     'User-Agent': OUTBOUND_USER_AGENT,
   },
@@ -23,8 +33,11 @@ export interface HypixelPlayerResponse {
   cause?: string;
   player?: {
     uuid?: string;
+    displayname?: string;
     stats?: {
       Bedwars?: Record<string, unknown>;
+      Duels?: Record<string, unknown>;
+      SkyWars?: Record<string, unknown>;
     };
   } | null;
 }
@@ -38,8 +51,12 @@ export interface ProxyPlayerPayload {
   };
   bedwars?: Record<string, unknown>;
   player?: {
+    uuid?: string;
+    displayname?: string;
     stats?: {
       Bedwars?: Record<string, unknown>;
+      Duels?: Record<string, unknown>;
+      SkyWars?: Record<string, unknown>;
     };
   };
   nicked?: boolean;
@@ -110,6 +127,9 @@ function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
     ...(winstreak !== undefined ? { winstreak } : {}),
   };
 
+  const duelsStats = response.player?.stats?.Duels ?? {};
+  const skywarsStats = response.player?.stats?.SkyWars ?? {};
+
   return {
     success: true,
     data: {
@@ -117,8 +137,12 @@ function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
     },
     bedwars: shapedStats,
     player: {
+      uuid: response.player?.uuid,
+      displayname: response.player?.displayname,
       stats: {
         Bedwars: shapedStats,
+        Duels: duelsStats,
+        SkyWars: skywarsStats,
       },
     },
   };
@@ -261,4 +285,88 @@ export async function checkHypixelReachability(): Promise<boolean> {
     console.error('Hypixel reachability check failed', error);
     return false;
   }
+}
+
+export interface MinimalPlayerStats {
+  displayname: string | null;
+
+  // Bedwars-specific (for stars calculation, FKDR)
+  bedwars_experience: number | null;
+  bedwars_final_kills: number;
+  bedwars_final_deaths: number;
+
+  // Duels-specific (for WLR, KDR)
+  duels_wins: number;
+  duels_losses: number;
+  duels_kills: number;
+  duels_deaths: number;
+
+  // SkyWars-specific (for level calculation, WLR, KDR)
+  skywars_experience: number | null;
+  skywars_wins: number;
+  skywars_losses: number;
+  skywars_kills: number;
+  skywars_deaths: number;
+}
+
+export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPlayerStats {
+  const bedwarsStats = response.player?.stats?.Bedwars ?? {};
+  const duelsStats = response.player?.stats?.Duels ?? {};
+  const skywarsStats = response.player?.stats?.SkyWars ?? {};
+
+  function sumPrefixed(stats: Record<string, unknown>, prefix: string): number {
+    let total = 0;
+    for (const [key, value] of Object.entries(stats)) {
+      if (key.startsWith(prefix) && typeof value === 'number') {
+        total += value;
+      }
+    }
+    return total;
+  }
+
+  const duelsWins = Number(duelsStats.wins ?? 0);
+  const duelsLosses = Number(duelsStats.losses ?? 0);
+  const duelsKills = Number(duelsStats.kills ?? 0);
+  const duelsDeaths = Number(duelsStats.deaths ?? 0);
+
+  const duelsWinsTotal = duelsWins || sumPrefixed(duelsStats, 'wins_');
+  const duelsLossesTotal = duelsLosses || sumPrefixed(duelsStats, 'losses_');
+  const duelsKillsTotal = duelsKills || sumPrefixed(duelsStats, 'kills_');
+  const duelsDeathsTotal = duelsDeaths || sumPrefixed(duelsStats, 'deaths_');
+
+  const skywarsWins = Number(skywarsStats.wins ?? 0);
+  const skywarsLosses = Number(skywarsStats.losses ?? 0);
+  const skywarsKills = Number(skywarsStats.kills ?? 0);
+  const skywarsDeaths = Number(skywarsStats.deaths ?? 0);
+
+  const skywarsWinsTotal = skywarsWins || sumPrefixed(skywarsStats, 'wins_');
+  const skywarsLossesTotal = skywarsLosses || sumPrefixed(skywarsStats, 'losses_');
+  const skywarsKillsTotal = skywarsKills || sumPrefixed(skywarsStats, 'kills_');
+  const skywarsDeathsTotal = skywarsDeaths || sumPrefixed(skywarsStats, 'deaths_');
+
+  return {
+    displayname: response.player?.displayname ?? null,
+
+    // Bedwars
+    bedwars_experience: (bedwarsStats as any).bedwars_experience
+                       ?? (bedwarsStats as any).Experience ?? null,
+    bedwars_final_kills: Number(bedwarsStats.final_kills_bedwars ?? 0),
+    bedwars_final_deaths: Number(bedwarsStats.final_deaths_bedwars ?? 0),
+
+    // Duels
+    duels_wins: duelsWinsTotal,
+    duels_losses: duelsLossesTotal,
+    duels_kills: duelsKillsTotal,
+    duels_deaths: duelsDeathsTotal,
+
+    // SkyWars
+    skywars_experience: (skywarsStats as any).skywars_experience
+                       ?? (skywarsStats as any).SkyWars_experience
+                       ?? (skywarsStats as any).Experience
+                       ?? null,
+    skywars_wins: skywarsWinsTotal,
+    skywars_losses: skywarsLossesTotal,
+    skywars_kills: skywarsKillsTotal,
+    skywars_deaths: skywarsDeathsTotal,
+  };
 }

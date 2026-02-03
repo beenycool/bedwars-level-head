@@ -2,12 +2,15 @@ services:
   backend:
     build: .
     image: levelhead-backend:local
+    # To use Azure Database for PostgreSQL instead of local Postgres, set CACHE_DB_URL to:
+    # postgresql://<user>:<pass>@<server>.postgres.database.azure.com:5432/<db>?sslmode=require
     env_file: .env
     ports:
       - "3000:3000"
     depends_on:
       postgres:
         condition: service_healthy
+    # If using Azure SQL, you can remove the postgres service and the depends_on block.
     restart: unless-stopped
     healthcheck:
       test:

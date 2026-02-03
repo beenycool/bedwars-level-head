@@ -1,74 +1,44 @@
 import { Router } from 'express';
 import { enforceRateLimit } from '../middleware/rateLimit';
 import { enforceAdminAuth } from '../middleware/adminAuth';
-import { clearAllCacheEntries, deleteCacheEntries, getCacheEntry } from '../services/cache';
 import { clearInMemoryPlayerCache } from '../services/player';
 import { HttpError } from '../util/httpError';
-import { ProxyPlayerPayload } from '../services/hypixel';
+import {
+  buildPlayerCacheKey,
+  clearAllPlayerStatsCaches,
+  deleteIgnMappings,
+  deletePlayerStatsEntries,
+  getIgnMapping,
+  getPlayerStatsFromCache,
+} from '../services/statsCache';
 
 const router = Router();
 
 const uuidRegex = /^[0-9a-f]{32}$/i;
 const ignRegex = /^[a-z0-9_]{1,16}$/i;
 
-function extractUuidFromPayload(payload: ProxyPlayerPayload | null | undefined): string | null {
-  const payloadPlayer =
-    payload && typeof payload === 'object' && 'player' in payload
-      ? (payload as { player?: unknown }).player
-      : undefined;
-  const payloadUuidCandidate =
-    payloadPlayer && typeof payloadPlayer === 'object' && payloadPlayer !== null && 'uuid' in payloadPlayer
-      ? (payloadPlayer as { uuid?: unknown }).uuid
-      : undefined;
-  const payloadUuidRaw = typeof payloadUuidCandidate === 'string' ? payloadUuidCandidate : null;
-  return payloadUuidRaw ? payloadUuidRaw.replace(/-/g, '').toLowerCase() : null;
-}
-
-function extractIgnFromPayload(payload: ProxyPlayerPayload | null | undefined): string | null {
-  const display = payload?.display;
-  if (typeof display === 'string' && display.trim().length > 0) {
-    return display.trim();
-  }
-
-  const playerRecord =
-    payload && typeof payload === 'object' && 'player' in payload
-      ? (payload as { player?: unknown }).player
-      : undefined;
-  const playerDisplayName =
-    playerRecord && typeof playerRecord === 'object' && playerRecord !== null && 'displayname' in playerRecord
-      ? (playerRecord as { displayname?: unknown }).displayname
-      : undefined;
-  if (typeof playerDisplayName === 'string' && playerDisplayName.trim().length > 0) {
-    return playerDisplayName.trim();
-  }
-
-  return null;
-}
-
-async function cacheKeysForIdentifier(identifier: string): Promise<string[]> {
+async function cacheKeysForIdentifier(identifier: string): Promise<{ playerKeys: string[]; igns: string[] }> {
   const normalized = identifier.toLowerCase();
   if (uuidRegex.test(normalized)) {
-    const keys = [`player:${normalized}`];
-    const playerEntry = await getCacheEntry<ProxyPlayerPayload>(keys[0], true);
-    const ign = extractIgnFromPayload(playerEntry?.value);
-    if (ign) {
-      keys.push(`ign:${ign.toLowerCase()}`);
-    }
-    return keys;
+    const playerKey = buildPlayerCacheKey(normalized);
+    const playerEntry = await getPlayerStatsFromCache(playerKey, true);
+    const ign = playerEntry?.value?.displayname?.trim();
+    return {
+      playerKeys: [playerKey],
+      igns: ign ? [ign.toLowerCase()] : [],
+    };
   }
 
   if (ignRegex.test(normalized)) {
-    const ignKey = `ign:${normalized}`;
-    const keys = [ignKey];
-    const ignEntry = await getCacheEntry<ProxyPlayerPayload>(ignKey, true);
-    const uuid = extractUuidFromPayload(ignEntry?.value);
-    if (uuid) {
-      keys.push(`player:${uuid}`);
-    }
-    return keys;
+    const mapping = await getIgnMapping(normalized, true);
+    const playerKeys = mapping?.uuid ? [buildPlayerCacheKey(mapping.uuid)] : [];
+    return {
+      playerKeys,
+      igns: [normalized],
+    };
   }
 
-  return [];
+  return { playerKeys: [], igns: [] };
 }
 
 router.post('/cache/purge', enforceAdminAuth, enforceRateLimit, async (req, res, next) => {
@@ -79,12 +49,17 @@ router.post('/cache/purge', enforceAdminAuth, enforceRateLimit, async (req, res,
     let purged = 0;
     if (typeof identifier === 'string' && identifier.trim().length > 0) {
       const keys = await cacheKeysForIdentifier(identifier.trim());
-      if (keys.length === 0) {
+      if (keys.playerKeys.length === 0 && keys.igns.length === 0) {
         throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a UUID (without dashes) or an IGN.');
       }
-      purged = await deleteCacheEntries(keys);
+      if (keys.playerKeys.length > 0) {
+        purged += await deletePlayerStatsEntries(keys.playerKeys);
+      }
+      if (keys.igns.length > 0) {
+        purged += await deleteIgnMappings(keys.igns);
+      }
     } else {
-      purged = await clearAllCacheEntries();
+      purged = await clearAllPlayerStatsCaches();
     }
 
     clearInMemoryPlayerCache();

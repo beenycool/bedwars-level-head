@@ -4,19 +4,23 @@ import cc.polyfrost.oneconfig.utils.commands.CommandManager
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import club.sk1er.mods.levelhead.bedwars.FetchResult
 import club.sk1er.mods.levelhead.commands.LevelheadCommand
+import club.sk1er.mods.levelhead.commands.WhoisCommand
 import club.sk1er.mods.levelhead.config.LevelheadConfig
-import club.sk1er.mods.levelhead.core.BedwarsModeDetector
-import club.sk1er.mods.levelhead.core.BedwarsStar
 import club.sk1er.mods.levelhead.core.DisplayManager
+import club.sk1er.mods.levelhead.core.GameMode
+import club.sk1er.mods.levelhead.core.GameStats
+import club.sk1er.mods.levelhead.core.ModeManager
 import club.sk1er.mods.levelhead.core.RateLimiter
 import club.sk1er.mods.levelhead.core.RateLimiter.Metrics
+import club.sk1er.mods.levelhead.core.StatsFetcher
+import club.sk1er.mods.levelhead.core.StatsFormatter
 import club.sk1er.mods.levelhead.core.dashUUID
 import club.sk1er.mods.levelhead.core.trimmed
 import club.sk1er.mods.levelhead.display.LevelheadDisplay
-import club.sk1er.mods.levelhead.display.LevelheadTag
+import club.sk1er.mods.levelhead.duels.DuelsModeDetector
 import club.sk1er.mods.levelhead.render.AboveHeadRender
+import club.sk1er.mods.levelhead.skywars.SkyWarsModeDetector
 import com.google.gson.Gson
-import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
@@ -47,7 +51,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.apache.logging.log4j.LogManager
 import org.apache.logging.log4j.Logger
-import java.awt.Color
 import java.io.File
 import java.net.Inet4Address
 import java.net.UnknownHostException
@@ -61,6 +64,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
+import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 
 @Mod(
     modid = Levelhead.MODID,
@@ -110,9 +114,9 @@ object Levelhead {
     private var worldScope: CoroutineScope = CoroutineScope(worldJob + Dispatchers.IO)
     val rateLimiter: RateLimiter = RateLimiter(150, Duration.ofMinutes(5))
 
-    private val statsCache: ConcurrentHashMap<UUID, CachedBedwarsStats> = ConcurrentHashMap()
-    private val inFlightStatsRequests: ConcurrentHashMap<UUID, Deferred<CachedBedwarsStats?>> = ConcurrentHashMap()
-    private val pendingDisplayRefreshes: ConcurrentHashMap<UUID, MutableSet<LevelheadDisplay>> = ConcurrentHashMap()
+    private val statsCache: ConcurrentHashMap<StatsCacheKey, GameStats> = ConcurrentHashMap()
+    private val inFlightStatsRequests: ConcurrentHashMap<StatsCacheKey, Deferred<GameStats?>> = ConcurrentHashMap()
+    private val pendingDisplayRefreshes: ConcurrentHashMap<StatsCacheKey, MutableSet<LevelheadDisplay>> = ConcurrentHashMap()
     private val starFetchSemaphore: Semaphore = Semaphore(6)
     private val rateLimiterNotified = AtomicBoolean(false)
     private val statsCacheMetrics = StatsCacheMetrics()
@@ -220,15 +224,18 @@ object Levelhead {
     fun postInit(@Suppress("UNUSED_PARAMETER") event: FMLPostInitializationEvent) {
         MinecraftForge.EVENT_BUS.register(AboveHeadRender)
         MinecraftForge.EVENT_BUS.register(BedwarsModeDetector)
+        MinecraftForge.EVENT_BUS.register(DuelsModeDetector)
+        MinecraftForge.EVENT_BUS.register(SkyWarsModeDetector)
         MinecraftForge.EVENT_BUS.register(this)
         CommandManager.INSTANCE.registerCommand(LevelheadCommand())
+        CommandManager.INSTANCE.registerCommand(WhoisCommand())
         scheduleUpdateCheck()
         showWelcomeMessageIfNeeded()
     }
 
     @SubscribeEvent
     fun joinServer(@Suppress("UNUSED_PARAMETER") event: FMLNetworkEvent.ClientConnectedToServerEvent) {
-        BedwarsFetcher.resetWarnings()
+        StatsFetcher.resetWarnings()
         resetWorldScope()
         rateLimiter.resetState()
         displayManager.clearCachesWithoutRefetch()
@@ -243,6 +250,7 @@ object Levelhead {
             rateLimiter.resetState()
             clearCachedStats()
             resetFetchTimestamps()
+            ModeManager.onWorldJoin()
             displayManager.joinWorld(resetDetector = true)
         } else if (event.entity is EntityPlayer) {
             displayManager.playerJoin(event.entity as EntityPlayer)
@@ -251,7 +259,6 @@ object Levelhead {
 
     @SubscribeEvent
     fun onClientTick(event: TickEvent.ClientTickEvent) {
-        // Only process once per tick (at END phase) to avoid double processing
         if (event.phase != TickEvent.Phase.END) return
         displayManager.tick()
     }
@@ -268,129 +275,158 @@ object Levelhead {
                 .groupBy { it.uuid }
                 .forEach { (trimmedUuid, groupedRequests) ->
                     val uuid = trimmedUuid.dashUUID ?: return@forEach
-                    val displays = groupedRequests.map { it.display }.toSet()
-                    val cached = statsCache[uuid]
-                    when {
-                        cached == null -> {
-                            statsCacheMetrics.recordMiss(CacheMissReason.COLD)
-                            pending += PendingStatsRequest(trimmedUuid, uuid, groupedRequests, displays, cached, false)
+                    groupedRequests
+                        .groupBy { resolveGameMode(it.type) }
+                        .forEach { (gameMode, modeRequests) ->
+                            val displays = modeRequests.map { it.display }.toSet()
+                            val cacheKey = StatsCacheKey(uuid, gameMode)
+                            val cached = statsCache[cacheKey]
+                            when {
+                                cached == null -> {
+                                    statsCacheMetrics.recordMiss(CacheMissReason.COLD)
+                                    pending += PendingStatsRequest(
+                                        trimmedUuid,
+                                        uuid,
+                                        gameMode,
+                                        modeRequests,
+                                        displays,
+                                        cached,
+                                        false
+                                    )
+                                }
+                                cached.isExpired(LevelheadConfig.starCacheTtl, now) -> {
+                                    statsCacheMetrics.recordMiss(CacheMissReason.EXPIRED)
+                                    registerDisplaysForRefresh(cacheKey, displays)
+                                    applyStatsToRequests(uuid, modeRequests, cached)
+                                    pending += PendingStatsRequest(
+                                        trimmedUuid,
+                                        uuid,
+                                        gameMode,
+                                        modeRequests,
+                                        displays,
+                                        cached,
+                                        true
+                                    )
+                                }
+                                else -> applyStatsToRequests(uuid, modeRequests, cached)
+                            }
                         }
-                        cached.isExpired(LevelheadConfig.starCacheTtl, now) -> {
-                            statsCacheMetrics.recordMiss(CacheMissReason.EXPIRED)
-                            registerDisplaysForRefresh(uuid, displays)
-                            applyStatsToRequests(uuid, groupedRequests, cached)
-                            pending += PendingStatsRequest(trimmedUuid, uuid, groupedRequests, displays, cached, true)
-                        }
-                        else -> applyStatsToRequests(uuid, groupedRequests, cached)
-                    }
                 }
 
             if (pending.isEmpty()) return@launch
-            if (!BedwarsModeDetector.isInBedwarsMatch()) return@launch
+            if (!ModeManager.shouldRequestData()) return@launch
 
             val remaining = pending.toMutableList()
 
             if (LevelheadConfig.proxyEnabled) {
-                // 1. Identify requests that are not currently being fetched by another thread
-                val proxyCandidates = remaining.filter { inFlightStatsRequests.containsKey(it.uuid).not() }
+                val proxyCandidates = remaining
+                    .filter { inFlightStatsRequests.containsKey(it.cacheKey).not() }
+                if (proxyCandidates.isNotEmpty()) {
+                    val batchLocks = proxyCandidates.associate { entry ->
+                        val deferred = CompletableDeferred<GameStats?>()
+                        val existing = inFlightStatsRequests.putIfAbsent(entry.cacheKey, deferred)
 
-                // 2. Immediately "claim" these UUIDs by putting a placeholder into the map.
-                // This prevents the race condition where a second thread sees them as free and sends a duplicate request.
-                val batchLocks = proxyCandidates.associate { entry ->
-                    val deferred = CompletableDeferred<CachedBedwarsStats?>()
-                    // Use putIfAbsent to be thread-safe. If it returns null, we successfully claimed the lock.
-                    val existing = inFlightStatsRequests.putIfAbsent(entry.uuid, deferred)
-                    
-                    if (entry.registerForRefresh && entry.displays.isNotEmpty()) {
-                        registerDisplaysForRefresh(entry.uuid, entry.displays)
-                    }
+                        if (entry.registerForRefresh && entry.displays.isNotEmpty()) {
+                            registerDisplaysForRefresh(entry.cacheKey, entry.displays)
+                        }
 
-                    // If existing is null, we own the lock. If not, someone else beat us to it (ignore this one).
-                    entry.uuid to (if (existing == null) deferred else null)
-                }.filterValues { it != null }.mapValues { it.value!! }
+                        entry.cacheKey to (if (existing == null) deferred else null)
+                    }.filterValues { it != null }.mapValues { it.value!! }
 
-                // Only proceed with UUIDs we successfully locked
-                val lockedEligible = proxyCandidates.filter { batchLocks.containsKey(it.uuid) }
+                    val lockedEligible = proxyCandidates.filter { batchLocks.containsKey(it.cacheKey) }
+                    val entriesByUuid = lockedEligible.groupBy { it.uuid }
 
-                lockedEligible
-                    .map { it.uuid }
-                    .chunked(20)
-                    .forEach { chunk ->
-                        lastFetchAttemptAt = System.currentTimeMillis()
-                        
-                        // Perform the network request
-                        val results = BedwarsFetcher.fetchBatchFromProxy(chunk)
-                        
-                        chunk.forEach { uuid ->
-                            val result = results[uuid]
-                            val entry = remaining.find { it.uuid == uuid }
-                            val lock = batchLocks[uuid]
+                    lockedEligible
+                        .map { it.uuid }
+                        .distinct()
+                        .chunked(20)
+                        .forEach { chunk ->
+                            lastFetchAttemptAt = System.currentTimeMillis()
+                            
+                            val results = club.sk1er.mods.levelhead.bedwars.ProxyClient.fetchBatch(chunk)
+                            
+                            chunk.forEach { uuid ->
+                                val result = results[uuid]
+                                val entries = entriesByUuid[uuid].orEmpty()
 
-                            if (entry == null || result == null) {
-                                // Something went wrong, release lock with null so waiters stop waiting
-                                lock?.complete(null)
-                                inFlightStatsRequests.remove(uuid)
-                                return@forEach
-                            }
-
-                            when (result) {
-                                is FetchResult.Success -> {
-                                    lastFetchSuccessAt = System.currentTimeMillis()
-                                    val cachedEntry = buildCachedStats(result.payload, result.etag)
-                                    handleStatsUpdate(uuid, cachedEntry)
-                                    applyStatsToRequests(uuid, entry.requests, cachedEntry)
-                                    remaining.remove(entry)
-
-                                    // SUCCESS: Complete the lock with data and remove from inFlight map
-                                    lock?.complete(cachedEntry)
-                                    inFlightStatsRequests.remove(uuid)
+                                if (entries.isEmpty() || result == null) {
+                                    entries.forEach { entry ->
+                                        batchLocks[entry.cacheKey]?.complete(null)
+                                        inFlightStatsRequests.remove(entry.cacheKey)
+                                    }
+                                    return@forEach
                                 }
-                                else -> {
-                                    if (entry.registerForRefresh && entry.displays.isNotEmpty()) {
-                                        registerDisplaysForRefresh(entry.uuid, entry.displays)
-                                    }
 
-                                    // Check if we should remove from 'remaining' (to skip fallback)
-                                    val proxyErrorReason = when (result) {
-                                        is FetchResult.TemporaryError -> result.reason
-                                        is FetchResult.PermanentError -> result.reason
-                                        else -> null
+                                when (result) {
+                                    is FetchResult.Success -> {
+                                        lastFetchSuccessAt = System.currentTimeMillis()
+                                        entries.forEach { entry ->
+                                            val cachedEntry = StatsFetcher.buildGameStats(
+                                                result.payload,
+                                                entry.gameMode,
+                                                result.etag
+                                            )
+                                            
+                                            if (cachedEntry != null) {
+                                                handleStatsUpdate(entry.cacheKey, cachedEntry)
+                                                applyStatsToRequests(uuid, entry.requests, cachedEntry)
+                                                remaining.remove(entry)
+                                                batchLocks[entry.cacheKey]?.complete(cachedEntry)
+                                                inFlightStatsRequests.remove(entry.cacheKey)
+                                            } else {
+                                                // Data missing for this mode in the proxy response.
+                                                // Complete the lock with null so it can fall back to individual fetch (Hypixel)
+                                                batchLocks[entry.cacheKey]?.complete(null)
+                                                inFlightStatsRequests.remove(entry.cacheKey)
+                                            }
+                                        }
                                     }
+                                    else -> {
+                                        val proxyErrorReason = when (result) {
+                                            is FetchResult.TemporaryError -> result.reason
+                                            is FetchResult.PermanentError -> result.reason
+                                            else -> null
+                                        }
 
-                                    val shouldSkipFallback = LevelheadConfig.proxyEnabled &&
-                                            entry.cached != null &&
-                                            proxyErrorReason != null &&
-                                            (proxyErrorReason.startsWith("PROXY_") || proxyErrorReason.startsWith("HTTP_"))
+                                        entries.forEach { entry ->
+                                            if (entry.registerForRefresh && entry.displays.isNotEmpty()) {
+                                                registerDisplaysForRefresh(entry.cacheKey, entry.displays)
+                                            }
 
-                                    if (shouldSkipFallback) {
-                                        remaining.remove(entry)
-                                        // Completed, but failed.
-                                        lock?.complete(null)
-                                    } else {
-                                        // Fallback required. 
-                                        // We complete with null so any *other* threads waiting on this batch stop waiting.
-                                        // We remove from inFlightStatsRequests so the fallback logic (ensureStatsFetch) can create a NEW individual request.
-                                        lock?.complete(null)
+                                            val shouldSkipFallback = LevelheadConfig.proxyEnabled &&
+                                                    entry.cached != null &&
+                                                    proxyErrorReason != null &&
+                                                    (proxyErrorReason.startsWith("PROXY_") || proxyErrorReason.startsWith("HTTP_"))
+
+                                            if (shouldSkipFallback) {
+                                                remaining.remove(entry)
+                                            }
+                                            batchLocks[entry.cacheKey]?.complete(null)
+                                            inFlightStatsRequests.remove(entry.cacheKey)
+                                        }
                                     }
-                                    inFlightStatsRequests.remove(uuid)
                                 }
                             }
                         }
-                    }
+                }
             }
 
             remaining.forEach { entry ->
-                val fetched = ensureStatsFetch(entry.uuid, entry.cached, entry.displays, entry.registerForRefresh).await()
+                val fetched = ensureStatsFetch(
+                    entry.cacheKey,
+                    entry.cached,
+                    entry.displays,
+                    entry.registerForRefresh
+                ).await()
                 applyStatsToRequests(entry.uuid, entry.requests, fetched)
             }
         }
     }
 
-    /**
-     * Retrieves cached BedWars stats for a player by UUID.
-     * Used by mixins (e.g., Tab list) to display stats without modifying the cache.
-     */
-    fun getCachedStats(uuid: UUID): CachedBedwarsStats? = statsCache[uuid]
+    fun getCachedStats(uuid: UUID): GameStats? {
+        val gameMode = ModeManager.getActiveGameMode() ?: GameMode.BEDWARS
+        return statsCache[StatsCacheKey(uuid, gameMode)]
+    }
 
     fun clearCachedStats() {
         statsCache.clear()
@@ -404,7 +440,7 @@ object Levelhead {
         if (rateLimiterNotified.compareAndSet(false, true)) {
             val resetText = formatCooldownDuration(metrics.resetIn)
             sendChat(
-                "${ChatColor.YELLOW}BedWars stats cooling down. ${ChatColor.GOLD}${metrics.remaining} requests remaining${ChatColor.YELLOW}. Reset in $resetText."
+                "${ChatColor.YELLOW}Stats cooling down. ${ChatColor.GOLD}${metrics.remaining} requests remaining${ChatColor.YELLOW}. Reset in $resetText."
             )
         }
     }
@@ -423,7 +459,7 @@ object Levelhead {
             if (serverCooldownNotifiedUntil.compareAndSet(current, newDeadline)) {
                 val formatted = formatCooldownDuration(duration)
                 sendChat(
-                    "${ChatColor.YELLOW}Proxy asked us to pause BedWars stat requests for ${ChatColor.GOLD}$formatted${ChatColor.YELLOW}."
+                    "${ChatColor.YELLOW}Proxy asked us to pause stat requests for ${ChatColor.GOLD}$formatted${ChatColor.YELLOW}."
                 )
                 return
             }
@@ -434,19 +470,19 @@ object Levelhead {
     }
 
     private fun ensureStatsFetch(
-        uuid: UUID,
-        cached: CachedBedwarsStats?,
+        cacheKey: StatsCacheKey,
+        cached: GameStats?,
         displays: Collection<LevelheadDisplay>,
         registerForRefresh: Boolean
-    ): Deferred<CachedBedwarsStats?> {
+    ): Deferred<GameStats?> {
         if (registerForRefresh && displays.isNotEmpty()) {
-            registerDisplaysForRefresh(uuid, displays)
+            registerDisplaysForRefresh(cacheKey, displays)
         }
 
-        val existing = inFlightStatsRequests[uuid]
+        val existing = inFlightStatsRequests[cacheKey]
         if (existing != null) {
             if (registerForRefresh && displays.isNotEmpty()) {
-                registerDisplaysForRefresh(uuid, displays)
+                registerDisplaysForRefresh(cacheKey, displays)
             }
             return existing
         }
@@ -459,56 +495,58 @@ object Levelhead {
                 try {
                     lastFetchAttemptAt = System.currentTimeMillis()
                     rateLimiter.consume()
-                    when (val result = BedwarsFetcher.fetchPlayer(uuid, cached?.fetchedAt, cached?.etag)) {
+                    val gameMode = cacheKey.gameMode
+                    when (val result = StatsFetcher.fetchPlayer(cacheKey.uuid, gameMode, cached?.fetchedAt, cached?.etag)) {
                         is FetchResult.Success -> {
                             lastFetchSuccessAt = System.currentTimeMillis()
-                            val entry = buildCachedStats(result.payload, result.etag)
-                            handleStatsUpdate(uuid, entry)
+                            val entry = StatsFetcher.buildGameStats(result.payload, gameMode, result.etag)
+                            handleStatsUpdate(cacheKey, entry)
                             entry
                         }
                         FetchResult.NotModified -> {
                             lastFetchSuccessAt = System.currentTimeMillis()
-                            // Reuse existing cached stats with updated fetchedAt, preserving etag
-                            val refreshed = cached?.copy(fetchedAt = System.currentTimeMillis())
-                            refreshed?.let { handleStatsUpdate(uuid, it) }
+                            val refreshed = when (cached) {
+                                is GameStats.Bedwars -> cached.copy(fetchedAt = System.currentTimeMillis())
+                                is GameStats.Duels -> cached.copy(fetchedAt = System.currentTimeMillis())
+                                is GameStats.SkyWars -> cached.copy(fetchedAt = System.currentTimeMillis())
+                                null -> null
+                            }
+                            refreshed?.let { handleStatsUpdate(cacheKey, it) }
                             refreshed
                         }
                         is FetchResult.TemporaryError -> {
-                            handleStatsUpdate(uuid, cached)
+                            handleStatsUpdate(cacheKey, cached)
                             null
                         }
                         is FetchResult.PermanentError -> {
-                            handleStatsUpdate(uuid, cached)
+                            handleStatsUpdate(cacheKey, cached)
                             null
                         }
                     }
                 } catch (throwable: Throwable) {
-                    handleStatsUpdate(uuid, null)
+                    logger.debug(
+                        "Failed to fetch stats for {} ({})",
+                        cacheKey.uuid,
+                        cacheKey.gameMode,
+                        throwable
+                    )
+                    handleStatsUpdate(cacheKey, null)
                     null
                 }
             }
         }
 
-        val previous = inFlightStatsRequests.putIfAbsent(uuid, deferred)
+        val previous = inFlightStatsRequests.putIfAbsent(cacheKey, deferred)
         if (previous != null) {
             deferred.cancel()
             if (registerForRefresh && displays.isNotEmpty()) {
-                registerDisplaysForRefresh(uuid, displays)
+                registerDisplaysForRefresh(cacheKey, displays)
             }
             return previous
         }
 
-        deferred.invokeOnCompletion { inFlightStatsRequests.remove(uuid, deferred) }
+        deferred.invokeOnCompletion { inFlightStatsRequests.remove(cacheKey, deferred) }
         return deferred
-    }
-
-    private fun buildCachedStats(payload: JsonObject, etag: String? = null): CachedBedwarsStats {
-        val experience = BedwarsStar.extractExperience(payload)
-        val star = experience?.let { BedwarsStar.calculateStar(it) }
-        val fkdr = BedwarsFetcher.parseBedwarsFkdr(payload)
-        val winstreak = BedwarsFetcher.parseBedwarsWinstreak(payload)
-        val fetchedAt = System.currentTimeMillis()
-        return CachedBedwarsStats(star, experience, fkdr, winstreak, fetchedAt, etag)
     }
 
     private fun resetWorldScope() {
@@ -550,25 +588,25 @@ object Levelhead {
         )
     }
 
-    private fun registerDisplaysForRefresh(uuid: UUID, displays: Collection<LevelheadDisplay>) {
+    private fun registerDisplaysForRefresh(cacheKey: StatsCacheKey, displays: Collection<LevelheadDisplay>) {
         if (displays.isEmpty()) return
-        pendingDisplayRefreshes.compute(uuid) { _, existing ->
+        pendingDisplayRefreshes.compute(cacheKey) { _, existing ->
             val set = existing ?: ConcurrentHashMap.newKeySet<LevelheadDisplay>()
             set.addAll(displays)
             set
         }
     }
 
-    private fun handleStatsUpdate(uuid: UUID, entry: CachedBedwarsStats?) {
+    private fun handleStatsUpdate(cacheKey: StatsCacheKey, entry: GameStats?) {
         if (entry != null) {
-            statsCache[uuid] = entry
+            statsCache[cacheKey] = entry
             trimStatsCache()
         }
-        val listeners = pendingDisplayRefreshes.remove(uuid) ?: return
+        val listeners = pendingDisplayRefreshes.remove(cacheKey) ?: return
         if (entry != null) {
             listeners
-                .filter { it.config.enabled && it.cache.containsKey(uuid) }
-                .forEach { display -> updateDisplayCache(display, uuid, entry) }
+                .filter { it.config.enabled && it.cache.containsKey(cacheKey.uuid) }
+                .forEach { display -> updateDisplayCache(display, cacheKey.uuid, entry) }
         }
     }
 
@@ -578,7 +616,6 @@ object Levelhead {
             .keys
         expiredKeys.forEach { statsCache.remove(it) }
 
-        // Use configurable purge size from MasterConfig
         val maxCacheSize = displayManager.config.purgeSize
         if (statsCache.size <= maxCacheSize) return
 
@@ -586,8 +623,6 @@ object Levelhead {
         val overflow = entriesSnapshot.size - maxCacheSize
         if (overflow <= 0) return
 
-        // When we're over the limit, remove at least `overflow` entries so a single trim brings the cache back
-        // under the configured cap. Evict the oldest entries first based on fetch time.
         entriesSnapshot
             .sortedBy { it.value.fetchedAt }
             .take(overflow)
@@ -597,57 +632,32 @@ object Levelhead {
     private fun applyStatsToRequests(
         uuid: UUID,
         requests: List<LevelheadRequest>,
-        starData: CachedBedwarsStats?
+        stats: GameStats?
     ) {
-        requests
-            .filter { it.type == BedwarsModeDetector.BEDWARS_STAR_TYPE }
-            .forEach { req -> updateDisplayCache(req.display, uuid, starData) }
+        requests.forEach { req ->
+            val gameMode = resolveGameMode(req.type)
+            val matchingStats = statsForMode(stats, gameMode)
+            updateDisplayCache(req.display, uuid, matchingStats)
+        }
     }
 
-    private fun updateDisplayCache(display: LevelheadDisplay, uuid: UUID, starData: CachedBedwarsStats?) {
+    private fun updateDisplayCache(display: LevelheadDisplay, uuid: UUID, stats: GameStats?) {
         if (!display.config.enabled) return
-        val starValue = starData?.star
-        val starString = starValue?.let { "$it✪" } ?: "?"
-        val fkdrString = starData?.fkdr?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "?"
-        val winstreakString = starData?.winstreak?.toString() ?: "?"
-        val footerTemplate = display.config.footerString?.takeIf { it.isNotBlank() } ?: "%star%"
-        var footerValue = footerTemplate
-        if (footerValue.contains("%star%", ignoreCase = true)) {
-            footerValue = footerValue.replace("%star%", starString, true)
-        }
-        if (footerValue.contains("%fkdr%", ignoreCase = true)) {
-            footerValue = footerValue.replace("%fkdr%", fkdrString, true)
-        }
-        if (footerValue.contains("%ws%", ignoreCase = true)) {
-            footerValue = footerValue.replace("%ws%", winstreakString, true)
-        }
-        val baseStyle = starValue?.let { BedwarsStar.styleForStar(it) }
-            ?: BedwarsStar.PrestigeStyle(display.config.footerColor, false, "")
-        
-        // Check if data is stale (> 1 hour old)
-        val age = System.currentTimeMillis() - (starData?.fetchedAt ?: 0L)
-        val isStale = age > 3600 * 1000 // 1 hour
-        
-        // If stale, force a gray color or reduce opacity logic in the footer color
-        val finalColor = if (isStale && starData != null) {
-            Color.GRAY // Or blend baseStyle.color with gray
-        } else {
-            baseStyle.color
-        }
-        
-        val tag = LevelheadTag.build(uuid) {
-            header {
-                value = "${display.config.headerString}: "
-                color = display.config.headerColor
-                chroma = false
-            }
-            footer {
-                value = footerValue
-                color = finalColor
-                chroma = if (isStale) false else baseStyle.chroma // Disable chroma if stale
-            }
-        }
+        val gameMode = resolveGameMode(display.config.type)
+        val tag = StatsFormatter.formatTag(uuid, stats, display.config, gameMode)
         display.cache[uuid] = tag
+    }
+
+    private fun resolveGameMode(typeId: String): GameMode {
+        return GameMode.fromTypeId(typeId) ?: GameMode.BEDWARS
+    }
+
+    private fun statsForMode(stats: GameStats?, gameMode: GameMode): GameStats? {
+        return when (gameMode) {
+            GameMode.BEDWARS -> stats as? GameStats.Bedwars
+            GameMode.DUELS -> stats as? GameStats.Duels
+            GameMode.SKYWARS -> stats as? GameStats.SkyWars
+        }
     }
 
     private fun formatCooldownDuration(duration: Duration): String {
@@ -659,27 +669,18 @@ object Levelhead {
 
     data class LevelheadRequest(val uuid: String, val display: LevelheadDisplay, val allowOverride: Boolean, val type: String = display.config.type)
 
+    private data class StatsCacheKey(val uuid: UUID, val gameMode: GameMode)
+
     private data class PendingStatsRequest(
         val trimmedUuid: String,
         val uuid: UUID,
+        val gameMode: GameMode,
         val requests: List<LevelheadRequest>,
         val displays: Set<LevelheadDisplay>,
-        val cached: CachedBedwarsStats?,
-        val registerForRefresh: Boolean
+        val cached: GameStats?,
+        val registerForRefresh: Boolean,
+        val cacheKey: StatsCacheKey = StatsCacheKey(uuid, gameMode)
     )
-
-    data class CachedBedwarsStats(
-        val star: Int?,
-        val experience: Long?,
-        val fkdr: Double?,
-        val winstreak: Int?,
-        val fetchedAt: Long,
-        val etag: String? = null
-    ) {
-        fun isExpired(ttl: Duration, now: Long = System.currentTimeMillis()): Boolean {
-            return now - fetchedAt >= ttl.toMillis()
-        }
-    }
 
     data class StatusSnapshot(
         val proxyEnabled: Boolean,
@@ -696,7 +697,7 @@ object Levelhead {
     )
 
     private enum class CacheMissReason { COLD, EXPIRED }
-// trigger rebuild
+
     private class StatsCacheMetrics {
         private val coldMisses = AtomicLong(0L)
         private val expiredMisses = AtomicLong(0L)

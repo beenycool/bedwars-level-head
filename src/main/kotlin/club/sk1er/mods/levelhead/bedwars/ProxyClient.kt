@@ -161,11 +161,13 @@ object ProxyClient {
     }
 
     suspend fun fetchBatch(uuids: List<UUID>): Map<UUID, FetchResult> {
-        // config check inside here or caller?
-        // Caller BedwarsFetcher says if(!shouldUseProxy) return empty.
-        // But fetchBatch logic is complex so keeping here.
         if (uuids.isEmpty()) return emptyMap()
         
+        // In offline mode, return empty results
+        if (LevelheadConfig.backendMode == club.sk1er.mods.levelhead.core.BackendMode.OFFLINE) {
+            return uuids.associateWith { FetchResult.PermanentError("OFFLINE_MODE") }
+        }
+
         // We assume ensureConfigured() or similar was checked by caller or we check here.
         // Since isAvailable handles warnings, we should use it.
         if (!isAvailable()) return emptyMap()
