@@ -176,7 +176,8 @@ async function flushHistoryBuffer(): Promise<void> {
   await ensureInitialized();
 
   try {
-    const maxRecordsPerChunk = Math.floor(65000 / 13);
+    const maxParams = pool.type === DatabaseType.POSTGRESQL ? 65000 : 2000;
+    const maxRecordsPerChunk = Math.max(1, Math.floor(maxParams / 13));
     let flushed = 0;
 
     for (let offset = 0; offset < batch.length; offset += maxRecordsPerChunk) {

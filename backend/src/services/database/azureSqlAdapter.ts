@@ -37,6 +37,18 @@ export class AzureSqlAdapter implements DatabaseAdapter {
       }
     };
 
+    const normalizeAzureUsername = (configToNormalize: mssql.config): void => {
+      if (
+        configToNormalize.server?.includes('.database.windows.net') &&
+        configToNormalize.user &&
+        !configToNormalize.user.includes('@')
+      ) {
+        const serverName = configToNormalize.server.split('.')[0];
+        configToNormalize.user = `${configToNormalize.user}@${serverName}`;
+        console.log(`[database] Updated Azure SQL username to ${configToNormalize.user}`);
+      }
+    };
+
     // Try parsing as URL first (for mssql://user:pass@host:port/db format)
     if (connectionString.includes('://')) {
       try {
@@ -47,6 +59,7 @@ export class AzureSqlAdapter implements DatabaseAdapter {
 
           // If we got a server from URL, return the config
           if (config.server) {
+             normalizeAzureUsername(config);
              return config as mssql.config;
           }
         }
@@ -186,11 +199,7 @@ export class AzureSqlAdapter implements DatabaseAdapter {
 
     // Azure SQL specific fix: Ensure username is in user@server format if not already
     // This is often required for Azure SQL Database
-    if (config.server.includes('.database.windows.net') && config.user && !config.user.includes('@')) {
-        const serverName = config.server.split('.')[0];
-        config.user = `${config.user}@${serverName}`;
-        console.log(`[database] Updated Azure SQL username to ${config.user}`);
-    }
+    normalizeAzureUsername(config);
 
     return config as mssql.config;
   }

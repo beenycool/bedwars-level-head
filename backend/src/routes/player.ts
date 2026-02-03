@@ -231,13 +231,20 @@ function buildMinimalStatsFromSubmission(data: Record<string, unknown>): Minimal
   const bedwarsExperience = Number.isFinite(numericExperience) ? numericExperience : null;
 
   const rawDisplayname = data.displayname;
-  const displayname = typeof rawDisplayname === 'string' && rawDisplayname.trim().length > 0 ? rawDisplayname : null;
+  const displayname =
+    typeof rawDisplayname === 'string' && rawDisplayname.trim().length > 0
+      ? rawDisplayname.trim()
+      : null;
+  const rawFinalKills = Number(data.final_kills_bedwars ?? 0);
+  const rawFinalDeaths = Number(data.final_deaths_bedwars ?? 0);
+  const bedwarsFinalKills = Number.isFinite(rawFinalKills) ? rawFinalKills : 0;
+  const bedwarsFinalDeaths = Number.isFinite(rawFinalDeaths) ? rawFinalDeaths : 0;
 
   return {
     displayname,
     bedwars_experience: bedwarsExperience,
-    bedwars_final_kills: Number(data.final_kills_bedwars ?? 0),
-    bedwars_final_deaths: Number(data.final_deaths_bedwars ?? 0),
+    bedwars_final_kills: bedwarsFinalKills,
+    bedwars_final_deaths: bedwarsFinalDeaths,
     duels_wins: 0,
     duels_losses: 0,
     duels_kills: 0,
@@ -310,15 +317,29 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
   const cacheKey = `player:${normalizedUuid}`;
 
   try {
+    const submission = data as Record<string, unknown>;
     const existingEntry = await getPlayerStatsFromCache(cacheKey, true);
-    const minimalStats = buildMinimalStatsFromSubmission(data as Record<string, unknown>);
+    const minimalStats = buildMinimalStatsFromSubmission(submission);
+    const hasExperience =
+      Object.prototype.hasOwnProperty.call(submission, 'bedwars_experience') ||
+      Object.prototype.hasOwnProperty.call(submission, 'Experience') ||
+      Object.prototype.hasOwnProperty.call(submission, 'experience');
+    const hasFinalKills = Object.prototype.hasOwnProperty.call(submission, 'final_kills_bedwars');
+    const hasFinalDeaths = Object.prototype.hasOwnProperty.call(submission, 'final_deaths_bedwars');
     const mergedStats = existingEntry?.value
       ? {
           ...existingEntry.value,
           displayname: minimalStats.displayname ?? existingEntry.value.displayname,
-          bedwars_experience: minimalStats.bedwars_experience,
-          bedwars_final_kills: minimalStats.bedwars_final_kills,
-          bedwars_final_deaths: minimalStats.bedwars_final_deaths,
+          bedwars_experience:
+            hasExperience && minimalStats.bedwars_experience !== null
+              ? minimalStats.bedwars_experience
+              : existingEntry.value.bedwars_experience,
+          bedwars_final_kills: hasFinalKills
+            ? minimalStats.bedwars_final_kills
+            : existingEntry.value.bedwars_final_kills,
+          bedwars_final_deaths: hasFinalDeaths
+            ? minimalStats.bedwars_final_deaths
+            : existingEntry.value.bedwars_final_deaths,
         }
       : minimalStats;
     const etag = `contrib-${Date.now()}`;
