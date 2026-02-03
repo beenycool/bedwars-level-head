@@ -108,21 +108,22 @@ object StatsFormatter {
     
     /**
      * Format SkyWars stats.
+     * Uses levelInt for display (integer only) while preserving Double precision internally.
      */
     private fun formatSkyWarsStats(
         stats: GameStats.SkyWars,
         template: String,
         config: DisplayConfig
     ): Triple<String, Color, Boolean> {
-        val levelValue = stats.level
-        val starString = levelValue?.let { "$it${SkyWarsStats.getDefaultEmblem(it)}" } ?: "?"
+        val levelValue = stats.levelInt
+        val starString = levelValue.let { "$it${SkyWarsStats.getDefaultEmblem(it)}" } ?: "?"
         val winsString = stats.wins?.toString() ?: "?"
         val lossesString = stats.losses?.toString() ?: "?"
         val wlrString = SkyWarsStats.calculateWLR(stats.wins, stats.losses)
             ?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "?"
         val kdrString = SkyWarsStats.calculateKDR(stats.kills, stats.deaths)
             ?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "?"
-        
+
         var footerValue = template
         footerValue = footerValue.replace("%star%", starString, ignoreCase = true)
         footerValue = footerValue.replace("%level%", levelValue?.toString() ?: "?", ignoreCase = true)
@@ -130,10 +131,10 @@ object StatsFormatter {
         footerValue = footerValue.replace("%losses%", lossesString, ignoreCase = true)
         footerValue = footerValue.replace("%wlr%", wlrString, ignoreCase = true)
         footerValue = footerValue.replace("%kdr%", kdrString, ignoreCase = true)
-        
+
         val style = levelValue?.let { SkyWarsStats.getPrestigeStyle(it) }
         val color = style?.color ?: config.footerColor
-        
+
         return Triple(footerValue, color, false)
     }
 }

@@ -66,9 +66,10 @@ sealed class GameStats {
     
     /**
      * SkyWars statistics.
+     * Level is stored as Double for precision but displayed as integer.
      */
     data class SkyWars(
-        val level: Int?,
+        val level: Double?,
         val experience: Long?,
         val wins: Int?,
         val losses: Int?,
@@ -80,7 +81,12 @@ sealed class GameStats {
         override fun isExpired(ttl: Duration, now: Long): Boolean {
             return now - fetchedAt >= ttl.toMillis()
         }
-        
+
+        /**
+         * Integer version of level for display purposes.
+         */
+        val levelInt: Int get() = level?.toInt() ?: 0
+
         fun toCachedSkyWarsStats(): CachedSkyWarsStats {
             return CachedSkyWarsStats(
                 level = level,
