@@ -91,6 +91,28 @@ function parseBooleanEnv(name: string, defaultValue: boolean): boolean {
   return defaultValue;
 }
 
+function parseBytesEnv(name: string, defaultValue: number): number {
+  const raw = process.env[name];
+  if (!raw) return defaultValue;
+  const match = raw.trim().match(/^(\d+(?:\.\d+)?)\s*([KMGT]?B?)$/i);
+  if (!match) return defaultValue;
+  const value = parseFloat(match[1]);
+  const unit = match[2].toUpperCase();
+  const multipliers: Record<string, number> = {
+    '': 1,
+    'B': 1,
+    'K': 1024,
+    'KB': 1024,
+    'M': 1024 * 1024,
+    'MB': 1024 * 1024,
+    'G': 1024 * 1024 * 1024,
+    'GB': 1024 * 1024 * 1024,
+    'T': 1024 * 1024 * 1024 * 1024,
+    'TB': 1024 * 1024 * 1024 * 1024,
+  };
+  return Math.floor(value * (multipliers[unit] || 1));
+}
+
 export const RATE_LIMIT_WINDOW_MS = parseIntEnv('RATE_LIMIT_WINDOW_MS', 5 * 60 * 1000);
 export const RATE_LIMIT_MAX = parseIntEnv('RATE_LIMIT_MAX', 300);
 export const PUBLIC_RATE_LIMIT_WINDOW_MS = parseIntEnv('PUBLIC_RATE_LIMIT_WINDOW_MS', 60 * 1000);
@@ -124,6 +146,7 @@ export const CACHE_TTL_MS = Math.min(Math.max(rawCacheTtl, minimumCacheTtl), max
 
 export const CACHE_DB_POOL_MIN = parseIntEnv('CACHE_DB_POOL_MIN', 2);
 export const CACHE_DB_POOL_MAX = parseIntEnv('CACHE_DB_POOL_MAX', 20);
+export const CACHE_DB_SIZE_LIMIT_BYTES = parseBytesEnv('CACHE_DB_SIZE_LIMIT_BYTES', 0);
 
 export const HYPIXEL_TIMEOUT_MS = parseIntEnv('HYPIXEL_TIMEOUT_MS', 5 * 1000);
 export const HYPIXEL_RETRY_DELAY_MIN_MS = parseIntEnv('HYPIXEL_RETRY_DELAY_MIN_MS', 50);

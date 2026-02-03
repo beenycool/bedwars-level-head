@@ -1,5 +1,11 @@
 import { Pool } from 'pg';
-import { CACHE_DB_URL, CACHE_DB_POOL_MAX, CACHE_DB_POOL_MIN, HYPIXEL_API_CALL_WINDOW_MS } from '../config';
+import {
+  CACHE_DB_URL,
+  CACHE_DB_POOL_MAX,
+  CACHE_DB_POOL_MIN,
+  HYPIXEL_API_CALL_WINDOW_MS,
+  CACHE_DB_SIZE_LIMIT_BYTES,
+} from '../config';
 import { recordCacheHit, recordCacheMiss } from './metrics';
 
 interface DatabaseError extends Error {
@@ -130,6 +136,9 @@ const initialization = pool
       'CREATE INDEX IF NOT EXISTS idx_player_cache_expires ON player_cache (expires_at)',
     );
     await pool.query(
+      'CREATE INDEX IF NOT EXISTS idx_player_cache_last_modified ON player_cache (last_modified)',
+    );
+    await pool.query(
       'CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits (window_start)',
     );
     console.info('[cache] hypixel_api_calls table is ready');
@@ -150,6 +159,8 @@ export async function purgeExpiredEntries(now: number = Date.now()): Promise<voi
   if (purged > 0) {
     console.info(`[cache] purged ${purged} expired entries`);
   }
+
+  await enforceDbSizeLimit();
 
   const historyResult = await pool.query(
     "DELETE FROM player_query_history WHERE requested_at < NOW() - INTERVAL '30 days'",
@@ -273,7 +284,14 @@ export async function setCachedPayload<T>(
          etag = EXCLUDED.etag,
          last_modified = EXCLUDED.last_modified,
          source = EXCLUDED.source`,
-    [key, payload, expiresAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
+    [
+      key,
+      payload,
+      expiresAt,
+      metadata.etag ?? null,
+      metadata.lastModified ?? Date.now(),
+      metadata.source ?? null,
+    ],
   );
   const expiresIso = new Date(expiresAt).toISOString();
   const lastModifiedIso =
@@ -311,6 +329,77 @@ export async function closeCache(): Promise<void> {
   await ensureInitialized();
   await pool.end();
   console.info('[cache] PostgreSQL pool closed');
+}
+
+export async function enforceDbSizeLimit(): Promise<void> {
+  if (CACHE_DB_SIZE_LIMIT_BYTES <= 0) return;
+
+  await ensureInitialized();
+
+  try {
+    const EVICTION_BATCH_SIZE = 1000;
+    const MAX_EVICTION_ITERATIONS = 10;
+
+    let sizeResult = await pool.query("SELECT pg_total_relation_size('player_cache') as size");
+    let currentSize = parseInt(sizeResult.rows[0].size, 10);
+
+    if (currentSize <= CACHE_DB_SIZE_LIMIT_BYTES) {
+      return;
+    }
+
+    console.warn(
+      `[cache] DB size ${currentSize} exceeds limit ${CACHE_DB_SIZE_LIMIT_BYTES}. Evicting entries...`,
+    );
+
+    let totalDeleted = 0;
+    for (let iteration = 0; iteration < MAX_EVICTION_ITERATIONS; iteration++) {
+      if (currentSize <= CACHE_DB_SIZE_LIMIT_BYTES) {
+        console.info(`[cache] DB size is now ${currentSize}, which is under the limit.`);
+        return;
+      }
+
+      const deleteResult = await pool.query(
+        `
+        DELETE FROM player_cache
+        WHERE cache_key IN (
+            SELECT cache_key FROM player_cache
+            ORDER BY expires_at ASC NULLS FIRST
+            LIMIT $1
+        )
+        `,
+        [EVICTION_BATCH_SIZE],
+      );
+
+      const deleted = deleteResult.rowCount ?? 0;
+      totalDeleted += deleted;
+
+      if (deleted === 0) {
+        console.warn(
+          `[cache] Eviction process stopped as no more entries could be deleted. Current DB size is ${currentSize}.`,
+        );
+        break;
+      }
+
+      console.info(
+        `[cache] Evicted ${deleted} entries to free space (iteration ${iteration + 1}/${MAX_EVICTION_ITERATIONS}).`,
+      );
+
+      sizeResult = await pool.query("SELECT pg_total_relation_size('player_cache') as size");
+      currentSize = parseInt(sizeResult.rows[0].size, 10);
+    }
+
+    if (totalDeleted > 0) {
+      console.info(`[cache] Evicted a total of ${totalDeleted} entries while enforcing DB size limit.`);
+    }
+
+    if (currentSize > CACHE_DB_SIZE_LIMIT_BYTES) {
+      console.warn(
+        `[cache] After ${MAX_EVICTION_ITERATIONS} eviction iterations, DB size is still ${currentSize} (limit: ${CACHE_DB_SIZE_LIMIT_BYTES}).`,
+      );
+    }
+  } catch (err) {
+    console.error('[cache] Failed to enforce DB size limit', err);
+  }
 }
 
 export async function getActivePrivateUserCount(since: number): Promise<number> {
