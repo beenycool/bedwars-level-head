@@ -239,8 +239,11 @@ class DisplayManager(val file: File) {
 
         updatePrimaryDisplay { config ->
             if (config.gameMode != detectedMode) {
+                val previousMode = config.gameMode
                 config.gameMode = detectedMode
-                config.headerString = detectedMode.defaultHeader
+                if (config.headerString.isBlank() || config.headerString == previousMode.defaultHeader) {
+                    config.headerString = detectedMode.defaultHeader
+                }
                 true
             } else {
                 false

@@ -12,7 +12,7 @@ import { extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely } fro
 import { CacheSource } from '../services/cache';
 import { COMMUNITY_SUBMIT_SECRET } from '../config';
 import { MinimalPlayerStats } from '../services/hypixel';
-import { setIgnMapping, setPlayerStatsBoth } from '../services/statsCache';
+import { getPlayerStatsFromCache, setIgnMapping, setPlayerStatsBoth } from '../services/statsCache';
 
 const router = Router();
 
@@ -310,18 +310,28 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
   const cacheKey = `player:${normalizedUuid}`;
 
   try {
+    const existingEntry = await getPlayerStatsFromCache(cacheKey, true);
     const minimalStats = buildMinimalStatsFromSubmission(data as Record<string, unknown>);
+    const mergedStats = existingEntry?.value
+      ? {
+          ...existingEntry.value,
+          displayname: minimalStats.displayname ?? existingEntry.value.displayname,
+          bedwars_experience: minimalStats.bedwars_experience,
+          bedwars_final_kills: minimalStats.bedwars_final_kills,
+          bedwars_final_deaths: minimalStats.bedwars_final_deaths,
+        }
+      : minimalStats;
     const etag = `contrib-${Date.now()}`;
     const lastModified = Date.now();
 
-    await setPlayerStatsBoth(cacheKey, minimalStats, {
+    await setPlayerStatsBoth(cacheKey, mergedStats, {
       etag,
       lastModified,
       source: verificationResult.source,
     });
 
-    if (minimalStats.displayname) {
-      await setIgnMapping(minimalStats.displayname.toLowerCase(), normalizedUuid, false);
+    if (mergedStats.displayname) {
+      await setIgnMapping(mergedStats.displayname.toLowerCase(), normalizedUuid, false);
     }
 
     console.info(`[player/submit] Accepted contribution for uuid=${normalizedUuid} source=${verificationResult.source}`);

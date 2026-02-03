@@ -205,50 +205,81 @@ export class AzureSqlAdapter implements DatabaseAdapter {
       const normalizedString = connectionString.replace(/^sqlserver:/i, 'mssql:');
       const trustServerCertificateDefault = this.getTrustServerCertificateDefault();
 
-      // Parse the URL by manually extracting components before constructing the URL object
-      // This ensures we can properly escape special characters in the password
-      const match = normalizedString.match(/^mssql:\/\/([^:]+):([^@]+)@([^\/:]+)(?::(\d+))?\/([^?#]*)/);
-
-      if (match) {
-        const [, username, password, hostname, port, database] = match;
-
-        const parsedConfig: any = {
-          server: hostname,
-          user: username,
-          password: password,
-          options: {
-            encrypt: true,
-            trustServerCertificate: trustServerCertificateDefault
-          }
-        };
-
-        if (port) {
-          parsedConfig.port = parseInt(port, 10);
-        }
-
-        if (database) {
-          parsedConfig.database = database;
-        }
-
-        // Parse query parameters
-        const queryPart = normalizedString.includes('?') ? normalizedString.split('?')[1] : '';
-        if (queryPart) {
-          const params = new URLSearchParams(queryPart);
-          params.forEach((value, key) => {
-             const lowerKey = key.toLowerCase();
-             if (lowerKey === 'encrypt') parsedConfig.options.encrypt = value.toLowerCase() === 'true';
-             else if (lowerKey === 'trustservercertificate') parsedConfig.options.trustServerCertificate = value.toLowerCase() === 'true';
-             else if (lowerKey === 'database') parsedConfig.database = value;
-          });
-        }
-
-        return parsedConfig as mssql.config;
+      const url = new URL(normalizedString);
+      if (url.protocol !== 'mssql:') {
+        return null;
       }
 
-      return null;
+      const parsedConfig: any = {
+        server: url.hostname,
+        user: url.username,
+        password: url.password,
+        options: {
+          encrypt: true,
+          trustServerCertificate: trustServerCertificateDefault
+        }
+      };
+
+      if (url.port) {
+        parsedConfig.port = parseInt(url.port, 10);
+      }
+
+      const database = url.pathname ? url.pathname.replace(/^\//, '') : '';
+      if (database) {
+        parsedConfig.database = database;
+      }
+
+      url.searchParams.forEach((value, key) => {
+        const lowerKey = key.toLowerCase();
+        if (lowerKey === 'encrypt') parsedConfig.options.encrypt = value.toLowerCase() === 'true';
+        else if (lowerKey === 'trustservercertificate') parsedConfig.options.trustServerCertificate = value.toLowerCase() === 'true';
+        else if (lowerKey === 'database') parsedConfig.database = value;
+      });
+
+      if (!parsedConfig.server) {
+        return null;
+      }
+
+      return parsedConfig as mssql.config;
     } catch (error) {
       return null;
     }
+  }
+
+  private buildMergeStatement(
+    table: string,
+    insertClause: string,
+    conflictColumn: string,
+    updateSet: string,
+  ): string {
+    const insertMatch = insertClause.match(/\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)/i);
+    if (!insertMatch) {
+      return '';
+    }
+
+    const columns = insertMatch[1].split(',').map((col) => col.trim());
+    const values = insertMatch[2].split(',').map((value) => value.trim());
+    if (columns.length === 0 || columns.length !== values.length) {
+      return '';
+    }
+
+    const sourceSelect = columns
+      .map((column, index) => `${values[index]} AS ${column}`)
+      .join(', ');
+    const insertColumns = columns.join(', ');
+    const insertValues = columns.map((column) => `source.${column}`).join(', ');
+    const updateSetSql = updateSet.replace(/EXCLUDED\./g, 'source.');
+
+    return `
+          MERGE ${table} AS target
+          USING (SELECT ${sourceSelect}) AS source
+          ON (target.${conflictColumn.trim()} = source.${conflictColumn.trim()})
+          WHEN MATCHED THEN
+            UPDATE SET ${updateSetSql}
+          WHEN NOT MATCHED THEN
+            INSERT (${insertColumns})
+            VALUES (${insertValues});
+        `;
   }
 
   async connect(): Promise<void> {
@@ -283,20 +314,8 @@ export class AzureSqlAdapter implements DatabaseAdapter {
         // Simple UPSERT transformation for PG 'ON CONFLICT'
         // This is a very basic regex and might need refinement for complex cases
         // For our specific use cases in player_stats_cache, it's usually enough
-        return `
-          MERGE ${table} AS target
-          USING (SELECT ${cols.replace(/\((.+)\) VALUES \((.+)\)/, (m: string, c: string, v: string) => {
-            const cArray = c.split(',').map((s: string) => s.trim());
-            const vArray = v.split(',').map((s: string) => s.trim());
-            return cArray.map((col: string, i: number) => `${vArray[i]} AS ${col}`).join(', ');
-          })}) AS source
-          ON (target.${conflictCol} = source.${conflictCol})
-          WHEN MATCHED THEN
-            UPDATE SET ${updateSet.replace(/EXCLUDED\./g, 'source.')}
-          WHEN NOT MATCHED THEN
-            INSERT (${cols.replace(/\((.+)\) VALUES \((.+)\)/, '$1')})
-            VALUES (${cols.replace(/\((.+)\) VALUES \((.+)\)/, '$2').replace(/@p(\d+)/g, 'source.@p$1')});
-        `;
+        const mergeSql = this.buildMergeStatement(table, cols, conflictCol, updateSet);
+        return mergeSql || match;
       });
 
     try {

@@ -176,29 +176,37 @@ async function flushHistoryBuffer(): Promise<void> {
   await ensureInitialized();
 
   try {
-    const params = batch.flatMap((record: PlayerQueryRecord) => [
-      record.identifier, record.normalizedIdentifier, record.lookupType,
-      record.resolvedUuid, record.resolvedUsername, record.stars,
-      record.nicked, record.cacheSource, record.cacheHit,
-      record.revalidated, record.installId, record.responseStatus,
-      record.latencyMs != null ? Math.round(record.latencyMs) : null,
-    ]);
-    
-    const universalRows = batch.map((_, i) => {
-      const base = i * 13;
-      return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`;
-    });
-    
-    const universalQuery = `
-      INSERT INTO player_query_history (
-        identifier, normalized_identifier, lookup_type, resolved_uuid, 
-        resolved_username, stars, nicked, cache_source, cache_hit, 
-        revalidated, install_id, response_status, latency_ms
-      ) VALUES ${universalRows.join(', ')}
-    `;
+    const maxRecordsPerChunk = Math.floor(65000 / 13);
+    let flushed = 0;
 
-    await pool.query(universalQuery, params);
-    console.info(`[history] Flushed ${batch.length} records in batch`);
+    for (let offset = 0; offset < batch.length; offset += maxRecordsPerChunk) {
+      const chunk = batch.slice(offset, offset + maxRecordsPerChunk);
+      const params = chunk.flatMap((record: PlayerQueryRecord) => [
+        record.identifier, record.normalizedIdentifier, record.lookupType,
+        record.resolvedUuid, record.resolvedUsername, record.stars,
+        record.nicked, record.cacheSource, record.cacheHit,
+        record.revalidated, record.installId, record.responseStatus,
+        record.latencyMs != null ? Math.round(record.latencyMs) : null,
+      ]);
+      
+      const universalRows = chunk.map((_, i) => {
+        const base = i * 13;
+        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`;
+      });
+      
+      const universalQuery = `
+        INSERT INTO player_query_history (
+          identifier, normalized_identifier, lookup_type, resolved_uuid, 
+          resolved_username, stars, nicked, cache_source, cache_hit, 
+          revalidated, install_id, response_status, latency_ms
+        ) VALUES ${universalRows.join(', ')}
+      `;
+
+      await pool.query(universalQuery, params);
+      flushed += chunk.length;
+    }
+
+    console.info(`[history] Flushed ${flushed} records in batch`);
   } catch (err) {
     console.error('[history] Failed to flush batch', err);
     await bufferMutex.runExclusive(() => {
