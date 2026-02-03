@@ -680,6 +680,17 @@ router.get('/', async (req, res, next) => {
         background: rgba(59, 130, 246, 0.4);
         transform: scale(1.05);
       }
+      .expand-btn:focus-visible,
+      .refresh-btn:focus-visible,
+      .preset-btn:focus-visible,
+      .apply-btn:focus-visible,
+      .reset-btn:focus-visible,
+      .search-box button:focus-visible,
+      .pager button:focus-visible {
+        outline: 2px solid #38bdf8;
+        outline-offset: 2px;
+      }
+
       .fullscreen-overlay {
         position: fixed;
         top: 0;
@@ -794,7 +805,7 @@ router.get('/', async (req, res, next) => {
         <span id="refreshCountdown" class="muted" style="min-width: 120px; text-align: right;"></span>
         
         <button id="refreshNowBtn" class="refresh-btn">
-          <svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
           Refresh Now
         </button>
       </div>
@@ -904,21 +915,33 @@ router.get('/', async (req, res, next) => {
       <div class="card">
         <div class="card-header">
           <h2>Cache Performance</h2>
-          <button class="expand-btn" data-chart="cacheChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="cacheChart" title="Expand chart" aria-label="Expand Cache Performance chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="chart-shell"><canvas id="cacheChart"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
           <h2>Star Distribution</h2>
-          <button class="expand-btn" data-chart="starChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="starChart" title="Expand chart" aria-label="Expand Star Distribution chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="chart-shell"><canvas id="starChart"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
           <h2>Latency Pulse</h2>
-          <button class="expand-btn" data-chart="latencyChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="latencyChart" title="Expand chart" aria-label="Expand Latency Pulse chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="latency-chart-controls">
           <label>
@@ -931,42 +954,66 @@ router.get('/', async (req, res, next) => {
       <div class="card">
         <div class="card-header">
           <h2>Status Breakdown</h2>
-          <button class="expand-btn" data-chart="statusChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="statusChart" title="Expand chart" aria-label="Expand Status Breakdown chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="chart-shell"><canvas id="statusChart"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
           <h2>Lookup Type Distribution</h2>
-          <button class="expand-btn" data-chart="lookupTypeChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="lookupTypeChart" title="Expand chart" aria-label="Expand Lookup Type Distribution chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="chart-shell"><canvas id="lookupTypeChart"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
           <h2>Requests Over Time</h2>
-          <button class="expand-btn" data-chart="requestsOverTimeChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="requestsOverTimeChart" title="Expand chart" aria-label="Expand Requests Over Time chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="chart-shell"><canvas id="requestsOverTimeChart"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
           <h2>Cache Hit Rate Over Time</h2>
-          <button class="expand-btn" data-chart="cacheOverTimeChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="cacheOverTimeChart" title="Expand chart" aria-label="Expand Cache Hit Rate Over Time chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="chart-shell"><canvas id="cacheOverTimeChart"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
           <h2>Latency Distribution</h2>
-          <button class="expand-btn" data-chart="latencyDistributionChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="latencyDistributionChart" title="Expand chart" aria-label="Expand Latency Distribution chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="chart-shell"><canvas id="latencyDistributionChart"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
           <h2>Top Queried Players</h2>
-          <button class="expand-btn" data-chart="topPlayersChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="topPlayersChart" title="Expand chart" aria-label="Expand Top Queried Players chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="chart-shell"><canvas id="topPlayersChart"></canvas></div>
       </div>
