@@ -330,17 +330,12 @@ const statsCache: GlobalStatsCache = {
 // Cache heavy stats operations (SCAN) for 10 seconds
 const HEAVY_STATS_TTL_MS = 10000;
 
-interface CachedRedisStats {
-    value: RedisStats | null;
+interface CachedValue<T> {
+    value: T | null;
     expiresAt: number;
 }
-let redisStatsCache: CachedRedisStats = { value: null, expiresAt: 0 };
-
-interface CachedRedisCacheStats {
-    value: RedisCacheStats | null;
-    expiresAt: number;
-}
-let redisCacheStatsCache: CachedRedisCacheStats = { value: null, expiresAt: 0 };
+let redisStatsCache: CachedValue<RedisStats> = { value: null, expiresAt: 0 };
+let redisCacheStatsCache: CachedValue<RedisCacheStats> = { value: null, expiresAt: 0 };
 
 export async function getGlobalStats(windowMs: number): Promise<{ requestCount: number; activeUsers: number }> {
     const now = Date.now();
