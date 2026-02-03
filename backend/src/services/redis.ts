@@ -327,6 +327,21 @@ const statsCache: GlobalStatsCache = {
     expiresAt: 0,
 };
 
+// Cache heavy stats operations (SCAN) for 10 seconds
+const HEAVY_STATS_TTL_MS = 10000;
+
+interface CachedRedisStats {
+    value: RedisStats | null;
+    expiresAt: number;
+}
+let redisStatsCache: CachedRedisStats = { value: null, expiresAt: 0 };
+
+interface CachedRedisCacheStats {
+    value: RedisCacheStats | null;
+    expiresAt: number;
+}
+let redisCacheStatsCache: CachedRedisCacheStats = { value: null, expiresAt: 0 };
+
 export async function getGlobalStats(windowMs: number): Promise<{ requestCount: number; activeUsers: number }> {
     const now = Date.now();
 
@@ -416,6 +431,11 @@ export interface RedisStats {
 }
 
 export async function getRedisStats(): Promise<RedisStats> {
+    const now = Date.now();
+    if (redisStatsCache.value !== null && now < redisStatsCache.expiresAt) {
+        return redisStatsCache.value;
+    }
+
     const localCache = getLocalCacheStats();
     const defaultStats: RedisStats = {
         connected: false,
@@ -473,7 +493,7 @@ export async function getRedisStats(): Promise<RedisStats> {
             statsKeys += keys.length;
         } while (cursor !== '0');
 
-        return {
+        const result = {
             connected: true,
             memoryUsed,
             memoryUsedBytes,
@@ -485,6 +505,13 @@ export async function getRedisStats(): Promise<RedisStats> {
             localCacheSize: localCache.size,
             localCacheMaxSize: localCache.maxSize,
         };
+
+        redisStatsCache = {
+            value: result,
+            expiresAt: Date.now() + HEAVY_STATS_TTL_MS,
+        };
+
+        return result;
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error('[redis] getRedisStats failed', message);
@@ -686,6 +713,11 @@ export interface RedisCacheStats {
 }
 
 export async function getRedisCacheStats(): Promise<RedisCacheStats> {
+    const now = Date.now();
+    if (redisCacheStatsCache.value !== null && now < redisCacheStatsCache.expiresAt) {
+        return redisCacheStatsCache.value;
+    }
+
     const client = getRedisClient();
     if (!client || client.status !== 'ready') {
         return {
@@ -726,7 +758,7 @@ export async function getRedisCacheStats(): Promise<RedisCacheStats> {
             cacheKeys += keys.length;
         } while (cursor !== '0');
 
-        return {
+        const result = {
             totalKeys,
             cacheKeys,
             memoryUsedBytes,
@@ -734,6 +766,13 @@ export async function getRedisCacheStats(): Promise<RedisCacheStats> {
             memoryMax,
             memoryPercent,
         };
+
+        redisCacheStatsCache = {
+            value: result,
+            expiresAt: Date.now() + HEAVY_STATS_TTL_MS,
+        };
+
+        return result;
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error('[redis] getRedisCacheStats failed', message);
