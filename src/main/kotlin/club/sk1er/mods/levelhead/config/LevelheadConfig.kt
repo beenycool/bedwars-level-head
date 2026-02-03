@@ -32,8 +32,8 @@ private const val DEFAULT_PROXY_URL = "https://bedwars-level-head.onrender.com/"
 private const val _MIN_STAR_CACHE_TTL_MINUTES = 5
 private const val _MAX_STAR_CACHE_TTL_MINUTES = 180
 private const val _DEFAULT_STAR_CACHE_TTL_MINUTES = 45
-private const val _MIN_STAR_CACHE_TTL_MINUTES_SLIDER = 5
-private const val _MAX_STAR_CACHE_TTL_MINUTES_SLIDER = 180
+private const val _MIN_STAR_CACHE_TTL_MINUTES_SLIDER = 5f
+private const val _MAX_STAR_CACHE_TTL_MINUTES_SLIDER = 180f
 private const val BACKEND_MODE_INDEX_MAX = 3
 private const val GITHUB_REPO_URL = "https://github.com/beenycool/bedwars-level-head"
 private const val UPSTREAM_LEVELHEAD_URL = "https://github.com/Sk1erLLC/Levelhead"
@@ -296,7 +296,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         category = "Appearance",
         min = 0.5f,
         max = 2.0f,
-        step = 0.05f
+        step = 1
     )
     var fontSize: Float = 1.0f
         set(value) {
@@ -312,7 +312,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         category = "Appearance",
         min = -0.5f,
         max = 0.5f,
-        step = 0.05f
+        step = 1
     )
     var verticalOffset: Float = 0.0f
         set(value) {
@@ -341,7 +341,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         category = "Appearance",
         min = 0.0f,
         max = 1.0f,
-        step = 0.05f
+        step = 1
     )
     var backgroundOpacity: Float = 0.25f
         set(value) {
@@ -383,8 +383,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         name = "Render Distance",
         description = "Maximum distance (in blocks) to render levelheads. Lower = better performance.",
         category = "Performance",
-        min = 16,
-        max = 128,
+        min = 16f,
+        max = 128f,
         step = 8
     )
     var renderDistance: Int = 64
@@ -399,8 +399,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         name = "Frame Skip",
         description = "Render every N frames. 1 = every frame (smooth), 2+ = skip frames (better FPS).",
         category = "Performance",
-        min = 1,
-        max = 5,
+        min = 1f,
+        max = 5f,
         step = 1
     )
     var frameSkip: Int = 1
@@ -415,8 +415,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         name = "Render Throttle (ms)",
         description = "Minimum milliseconds between render updates. 0 = no throttling.",
         category = "Performance",
-        min = 0,
-        max = 100,
+        min = 0f,
+        max = 100f,
         step = 5
     )
     var renderThrottleMs: Int = 0
@@ -431,8 +431,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         name = "Cache Size Limit",
         description = "Maximum number of cached player stats before automatic cleanup.",
         category = "Performance",
-        min = 100,
-        max = 2000,
+        min = 100f,
+        max = 2000f,
         step = 100
     )
     var cacheSizeLimit: Int = 500
