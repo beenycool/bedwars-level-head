@@ -1,9 +1,7 @@
 import { Router } from 'express';
 import { enforcePublicRateLimit } from '../middleware/rateLimitPublic';
-import { resolvePlayer, ResolvedPlayer } from '../services/player';
-import { recordPlayerQuery } from '../services/history';
+import { resolvePlayer } from '../services/player';
 import { computeBedwarsStar } from '../util/bedwars';
-import { isValidBedwarsObject } from '../util/typeChecks';
 
 import { extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely } from '../util/requestUtils';
 
@@ -53,7 +51,7 @@ router.get('/:identifier', enforcePublicRateLimit, async (req, res, next) => {
       revalidated: resolved.revalidated,
       installId: null,
       responseStatus,
-      latencyMs: Number((process.hrtime.bigint() - startedAt) / BigInt(1_000_000)),
+      latencyMs: Number(process.hrtime.bigint() - startedAt) / 1_000_000,
     });
 
     if (notModified) {

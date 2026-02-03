@@ -18,7 +18,7 @@ export async function getHypixelCallCount(
 ): Promise<number> {
   await ensureInitialized();
   const cutoff = now - windowMs;
-  const result = await pool.query<{ count: string }>(
+  const result = await pool.query<{ count: string | number }>(
     `
     SELECT COUNT(*) AS count
     FROM hypixel_api_calls
@@ -27,6 +27,6 @@ export async function getHypixelCallCount(
     [cutoff],
   );
   const rawValue = result.rows[0]?.count ?? '0';
-  const parsed = Number.parseInt(rawValue, 10);
+  const parsed = typeof rawValue === 'string' ? Number.parseInt(rawValue, 10) : Number(rawValue);
   return Number.isFinite(parsed) ? parsed : 0;
 }

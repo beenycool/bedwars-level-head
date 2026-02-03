@@ -2,7 +2,6 @@ import { Router } from 'express';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { enforceRateLimit, enforceBatchRateLimit } from '../middleware/rateLimit';
 import { resolvePlayer, ResolvedPlayer } from '../services/player';
-import { recordPlayerQuery } from '../services/history';
 import { computeBedwarsStar } from '../util/bedwars';
 import { HttpError } from '../util/httpError';
 import { validatePlayerSubmission, matchesCriticalFields } from '../util/validation';
@@ -10,8 +9,10 @@ import { canonicalize } from '../util/signature';
 import { isValidBedwarsObject } from '../util/typeChecks';
 
 import { extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely } from '../util/requestUtils';
-import { getCacheEntry, CacheSource } from '../services/cache';
+import { CacheSource } from '../services/cache';
 import { COMMUNITY_SUBMIT_SECRET } from '../config';
+import { MinimalPlayerStats } from '../services/hypixel';
+import { getPlayerStatsFromCache, setIgnMapping, setPlayerStatsBoth } from '../services/statsCache';
 
 const router = Router();
 
@@ -59,7 +60,7 @@ router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
       revalidated: resolved.revalidated,
       installId: null,
       responseStatus,
-      latencyMs: Number((process.hrtime.bigint() - startedAt) / BigInt(1_000_000)),
+      latencyMs: Number(process.hrtime.bigint() - startedAt) / 1_000_000,
     });
 
     if (notModified) {
@@ -133,7 +134,7 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
             revalidated: resolved.revalidated,
             installId: null,
             responseStatus: 200,
-            latencyMs: Number((process.hrtime.bigint() - startedAt) / BigInt(1_000_000)),
+            latencyMs: Number(process.hrtime.bigint() - startedAt) / 1_000_000,
           });
 
           return { identifier, payload: resolved.payload };
@@ -194,16 +195,6 @@ function verifySignedSubmission(uuid: string, data: unknown, signature?: string)
 async function verifyHypixelOrigin(uuid: string, data: unknown, signature?: string): Promise<VerificationResult> {
   try {
     const submittedData = data as Record<string, unknown>;
-    const cacheKey = `player:${uuid}`;
-    const cached = await getCacheEntry<ResolvedPlayer['payload']>(cacheKey);
-    const cachedBedwars = cached?.value?.data?.bedwars ?? cached?.value?.bedwars;
-
-    // Only accept cache-based verification if the cache entry originated from Hypixel
-    // This prevents "self-reinforcing cache poisoning" where community submissions
-    // validate against other community submissions
-    if (cached?.source === 'hypixel' && cachedBedwars && isValidBedwarsObject(cachedBedwars) && matchesCriticalFields(cachedBedwars, submittedData)) {
-      return { valid: true, source: 'community_verified' };
-    }
 
     // Signed submissions are verified by HMAC, so they are trusted
     if (verifySignedSubmission(uuid, data, signature)) {
@@ -232,6 +223,38 @@ async function verifyHypixelOrigin(uuid: string, data: unknown, signature?: stri
     console.error('Failed to verify Hypixel origin:', error);
     return { valid: false, source: null };
   }
+}
+
+function buildMinimalStatsFromSubmission(data: Record<string, unknown>): MinimalPlayerStats {
+  const rawExperience = data.bedwars_experience ?? data.Experience ?? data.experience;
+  const numericExperience = Number(rawExperience);
+  const bedwarsExperience = Number.isFinite(numericExperience) ? numericExperience : null;
+
+  const rawDisplayname = data.displayname;
+  const displayname =
+    typeof rawDisplayname === 'string' && rawDisplayname.trim().length > 0
+      ? rawDisplayname.trim()
+      : null;
+  const rawFinalKills = Number(data.final_kills_bedwars ?? 0);
+  const rawFinalDeaths = Number(data.final_deaths_bedwars ?? 0);
+  const bedwarsFinalKills = Number.isFinite(rawFinalKills) ? rawFinalKills : 0;
+  const bedwarsFinalDeaths = Number.isFinite(rawFinalDeaths) ? rawFinalDeaths : 0;
+
+  return {
+    displayname,
+    bedwars_experience: bedwarsExperience,
+    bedwars_final_kills: bedwarsFinalKills,
+    bedwars_final_deaths: bedwarsFinalDeaths,
+    duels_wins: 0,
+    duels_losses: 0,
+    duels_kills: 0,
+    duels_deaths: 0,
+    skywars_experience: null,
+    skywars_wins: 0,
+    skywars_losses: 0,
+    skywars_kills: 0,
+    skywars_deaths: 0,
+  };
 }
 
 router.post('/submit', enforceRateLimit, async (req, res, next) => {
@@ -294,23 +317,43 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
   const cacheKey = `player:${normalizedUuid}`;
 
   try {
-    const { setCachedPayload } = await import('../services/cache');
-    const { CACHE_TTL_MS } = await import('../config');
+    const submission = data as Record<string, unknown>;
+    const existingEntry = await getPlayerStatsFromCache(cacheKey, true);
+    const minimalStats = buildMinimalStatsFromSubmission(submission);
+    const hasExperience =
+      Object.prototype.hasOwnProperty.call(submission, 'bedwars_experience') ||
+      Object.prototype.hasOwnProperty.call(submission, 'Experience') ||
+      Object.prototype.hasOwnProperty.call(submission, 'experience');
+    const hasFinalKills = Object.prototype.hasOwnProperty.call(submission, 'final_kills_bedwars');
+    const hasFinalDeaths = Object.prototype.hasOwnProperty.call(submission, 'final_deaths_bedwars');
+    const mergedStats = existingEntry?.value
+      ? {
+          ...existingEntry.value,
+          displayname: minimalStats.displayname ?? existingEntry.value.displayname,
+          bedwars_experience:
+            hasExperience && minimalStats.bedwars_experience !== null
+              ? minimalStats.bedwars_experience
+              : existingEntry.value.bedwars_experience,
+          bedwars_final_kills: hasFinalKills
+            ? minimalStats.bedwars_final_kills
+            : existingEntry.value.bedwars_final_kills,
+          bedwars_final_deaths: hasFinalDeaths
+            ? minimalStats.bedwars_final_deaths
+            : existingEntry.value.bedwars_final_deaths,
+        }
+      : minimalStats;
+    const etag = `contrib-${Date.now()}`;
+    const lastModified = Date.now();
 
-    // Build a proxy-compatible payload wrapper
-    const payload = {
-      success: true,
-      contributed: true,
-      data: { bedwars: data },
-      bedwars: data,
-    };
-
-    // Store with verified source to prevent self-reinforcing cache poisoning
-    await setCachedPayload(cacheKey, payload, CACHE_TTL_MS, {
-      etag: `contrib-${Date.now()}`,
-      lastModified: Date.now(),
+    await setPlayerStatsBoth(cacheKey, mergedStats, {
+      etag,
+      lastModified,
       source: verificationResult.source,
     });
+
+    if (mergedStats.displayname) {
+      await setIgnMapping(mergedStats.displayname.toLowerCase(), normalizedUuid, false);
+    }
 
     console.info(`[player/submit] Accepted contribution for uuid=${normalizedUuid} source=${verificationResult.source}`);
     res.status(202).json({ success: true, message: 'Contribution accepted.' });

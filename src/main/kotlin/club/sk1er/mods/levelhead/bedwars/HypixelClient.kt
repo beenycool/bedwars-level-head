@@ -31,6 +31,12 @@ object HypixelClient {
             ?.addQueryParameter("uuid", uuid.toString().replace("-", ""))
             ?.build()
 
+        // Temporary logging for debugging
+        Levelhead.logger.info(
+            "[BACKEND_REQUEST] Hypixel fetchPlayer - URL: {}, UUID: {}",
+            url?.toString()?.sanitizeForLogs(), uuid
+        )
+
         if (url == null) {
             Levelhead.logger.error("Failed to build Hypixel BedWars endpoint URL")
             return FetchResult.PermanentError("INVALID_URL")
@@ -46,6 +52,12 @@ object HypixelClient {
 
         return try {
             executeWithRetries(request, "Hypixel player").use { response ->
+                // Temporary logging for debugging
+                Levelhead.logger.info(
+                    "[BACKEND_REQUEST] Hypixel response - Status: {}, Retry-After: {}",
+                    response.code(),
+                    response.header("Retry-After") ?: "null"
+                )
                 val body = response.body()?.string().orEmpty()
                 val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
 

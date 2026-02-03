@@ -8,6 +8,7 @@ import {
     REDIS_STATS_CACHE_TTL_MS,
     RATE_LIMIT_WINDOW_MS,
 } from '../config';
+import { CacheEntry, CacheMetadata } from './cache';
 
 // ---------------------------------------------------------------------------
 // Client Initialization
@@ -15,7 +16,7 @@ import {
 
 let redis: Redis | null = null;
 
-function getRedisClient(): Redis | null {
+export function getRedisClient(): Redis | null {
     if (!REDIS_URL) {
         return null;
     }
@@ -488,5 +489,261 @@ export async function getRedisStats(): Promise<RedisStats> {
         const message = err instanceof Error ? err.message : String(err);
         console.error('[redis] getRedisStats failed', message);
         return defaultStats;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Player Cache (Moved from PostgreSQL to Redis)
+// ---------------------------------------------------------------------------
+
+interface RedisCacheRow {
+    payload: unknown;
+    expires_at: number;
+    etag: string | null;
+    last_modified: number | string | null;
+    source: string | null;
+}
+
+function mapRowToCacheEntry<T>(row: RedisCacheRow): CacheEntry<T> | null {
+    const expiresAtRaw = row.expires_at;
+    const expiresAt = typeof expiresAtRaw === 'string' ? Number.parseInt(expiresAtRaw, 10) : Number(expiresAtRaw);
+    const lastModifiedRaw = row.last_modified;
+    const lastModified =
+        lastModifiedRaw === null
+            ? null
+            : typeof lastModifiedRaw === 'string'
+                ? Number.parseInt(lastModifiedRaw, 10)
+                : Number(lastModifiedRaw);
+
+    let parsedPayload: unknown = row.payload;
+    if (typeof row.payload === 'string') {
+        try {
+            parsedPayload = JSON.parse(row.payload);
+        } catch {
+            return null;
+        }
+    }
+
+    const source = row.source;
+    const validSource = source === 'hypixel' || source === 'community_verified' || source === 'community_unverified'
+        ? source
+        : null;
+
+    return {
+        value: parsedPayload as T,
+        expiresAt,
+        etag: row.etag,
+        lastModified,
+        source: validSource,
+    };
+}
+
+export async function getPlayerCacheEntry<T>(key: string): Promise<CacheEntry<T> | null> {
+    const client = getRedisClient();
+    if (!client || client.status !== 'ready') {
+        return null;
+    }
+
+    try {
+        // Redis key pattern: cache:{key} storing JSON: { payload, expires_at, etag, last_modified, source }
+        const redisKey = `cache:${key}`;
+        const data = await client.get(redisKey);
+
+        if (!data) {
+            return null;
+        }
+
+        let row: RedisCacheRow;
+        try {
+            row = JSON.parse(data) as RedisCacheRow;
+        } catch {
+            // Invalid JSON, delete the entry
+            await client.del(redisKey);
+            return null;
+        }
+
+        const entry = mapRowToCacheEntry<T>(row);
+        if (!entry) {
+            return null;
+        }
+
+        const now = Date.now();
+        if (entry.expiresAt <= now) {
+            // Expired, clean up
+            await client.del(redisKey);
+            return null;
+        }
+
+        return entry;
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[redis] getPlayerCacheEntry failed', message);
+        return null;
+    }
+}
+
+export async function setPlayerCacheEntry<T>(
+    key: string,
+    value: T,
+    ttlMs: number,
+    metadata: CacheMetadata = {},
+): Promise<void> {
+    const client = getRedisClient();
+    if (!client || client.status !== 'ready') {
+        return;
+    }
+
+    try {
+        const expiresAt = Date.now() + ttlMs;
+
+        const data = JSON.stringify({
+            payload: value,
+            expires_at: expiresAt,
+            etag: metadata.etag ?? null,
+            last_modified: metadata.lastModified ?? null,
+            source: metadata.source ?? null,
+        });
+
+        const redisKey = `cache:${key}`;
+        await client.setex(redisKey, Math.ceil(ttlMs / 1000), data);
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[redis] setPlayerCacheEntry failed', message);
+    }
+}
+
+export async function clearPlayerCacheEntry(key: string): Promise<void> {
+    const client = getRedisClient();
+    if (!client || client.status !== 'ready') {
+        return;
+    }
+
+    try {
+        const redisKey = `cache:${key}`;
+        await client.del(redisKey);
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[redis] clearPlayerCacheEntry failed', message);
+    }
+}
+
+export async function clearAllPlayerCacheEntries(): Promise<number> {
+    const client = getRedisClient();
+    if (!client || client.status !== 'ready') {
+        return 0;
+    }
+
+    try {
+        let cursor = '0';
+        let deletedCount = 0;
+
+        do {
+            const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'cache:*', 'COUNT', 100);
+            cursor = newCursor;
+
+            if (keys.length > 0) {
+                await client.del(...keys);
+                deletedCount += keys.length;
+            }
+        } while (cursor !== '0');
+
+        return deletedCount;
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[redis] clearAllPlayerCacheEntries failed', message);
+        return 0;
+    }
+}
+
+export async function deletePlayerCacheEntries(keys: string[]): Promise<number> {
+    const client = getRedisClient();
+    if (!client || client.status !== 'ready') {
+        return 0;
+    }
+
+    if (keys.length === 0) {
+        return 0;
+    }
+
+    try {
+        const redisKeys = keys.map((key) => `cache:${key}`);
+        const result = await client.del(...redisKeys);
+        return result;
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[redis] deletePlayerCacheEntries failed', message);
+        return 0;
+    }
+}
+
+export interface RedisCacheStats {
+    totalKeys: number;
+    cacheKeys: number;
+    memoryUsedBytes: number;
+    memoryUsed: string;
+    memoryMax: string;
+    memoryPercent: number;
+}
+
+export async function getRedisCacheStats(): Promise<RedisCacheStats> {
+    const client = getRedisClient();
+    if (!client || client.status !== 'ready') {
+        return {
+            totalKeys: 0,
+            cacheKeys: 0,
+            memoryUsedBytes: 0,
+            memoryUsed: 'N/A',
+            memoryMax: 'N/A',
+            memoryPercent: 0,
+        };
+    }
+
+    try {
+        // Get memory info
+        const info = await client.info('memory');
+        const memoryMatch = info.match(/used_memory:(\d+)/);
+        const memoryHumanMatch = info.match(/used_memory_human:([^\r\n]+)/);
+        const maxMemoryMatch = info.match(/maxmemory:(\d+)/);
+        const maxMemoryHumanMatch = info.match(/maxmemory_human:([^\r\n]+)/);
+
+        const memoryUsedBytes = memoryMatch ? parseInt(memoryMatch[1], 10) : 0;
+        const memoryUsed = memoryHumanMatch ? memoryHumanMatch[1].trim() : `${(memoryUsedBytes / 1024 / 1024).toFixed(2)}M`;
+        const maxMemoryBytes = maxMemoryMatch ? parseInt(maxMemoryMatch[1], 10) : 0;
+        const memoryMax = maxMemoryHumanMatch ? maxMemoryHumanMatch[1].trim() : (maxMemoryBytes > 0 ? `${(maxMemoryBytes / 1024 / 1024).toFixed(2)}M` : 'Unlimited');
+
+        // Calculate memory percentage
+        const effectiveMax = maxMemoryBytes > 0 ? maxMemoryBytes : 30 * 1024 * 1024;
+        const memoryPercent = Math.min(100, (memoryUsedBytes / effectiveMax) * 100);
+
+        // Count total keys and cache keys
+        const totalKeys = await client.dbsize();
+
+        let cacheKeys = 0;
+        let cursor = '0';
+        do {
+            const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'cache:*', 'COUNT', 100);
+            cursor = newCursor;
+            cacheKeys += keys.length;
+        } while (cursor !== '0');
+
+        return {
+            totalKeys,
+            cacheKeys,
+            memoryUsedBytes,
+            memoryUsed,
+            memoryMax,
+            memoryPercent,
+        };
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[redis] getRedisCacheStats failed', message);
+        return {
+            totalKeys: 0,
+            cacheKeys: 0,
+            memoryUsedBytes: 0,
+            memoryUsed: 'N/A',
+            memoryMax: 'N/A',
+            memoryPercent: 0,
+        };
     }
 }
