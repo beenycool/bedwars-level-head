@@ -6,10 +6,9 @@ object ModeManager {
     }
 
     fun getActiveGameMode(): GameMode? {
-        return if (BedwarsModeDetector.currentContext().isBedwars) {
-            GameMode.BEDWARS
-        } else {
-            null
+        return when {
+            BedwarsModeDetector.currentContext().isBedwars -> GameMode.BEDWARS
+            else -> null
         }
     }
 
