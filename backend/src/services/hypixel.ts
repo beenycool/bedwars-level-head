@@ -51,8 +51,12 @@ export interface ProxyPlayerPayload {
   };
   bedwars?: Record<string, unknown>;
   player?: {
+    uuid?: string;
+    displayname?: string;
     stats?: {
       Bedwars?: Record<string, unknown>;
+      Duels?: Record<string, unknown>;
+      SkyWars?: Record<string, unknown>;
     };
   };
   nicked?: boolean;
@@ -133,6 +137,8 @@ function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
     },
     bedwars: shapedStats,
     player: {
+      uuid: response.player?.uuid,
+      displayname: response.player?.displayname,
       stats: {
         Bedwars: shapedStats,
         Duels: duelsStats,
@@ -308,6 +314,36 @@ export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPla
   const duelsStats = response.player?.stats?.Duels ?? {};
   const skywarsStats = response.player?.stats?.SkyWars ?? {};
 
+  function sumPrefixed(stats: Record<string, unknown>, prefix: string): number {
+    let total = 0;
+    for (const [key, value] of Object.entries(stats)) {
+      if (key.startsWith(prefix) && typeof value === 'number') {
+        total += value;
+      }
+    }
+    return total;
+  }
+
+  const duelsWins = Number(duelsStats.wins ?? 0);
+  const duelsLosses = Number(duelsStats.losses ?? 0);
+  const duelsKills = Number(duelsStats.kills ?? 0);
+  const duelsDeaths = Number(duelsStats.deaths ?? 0);
+
+  const duelsWinsTotal = duelsWins || sumPrefixed(duelsStats, 'wins_');
+  const duelsLossesTotal = duelsLosses || sumPrefixed(duelsStats, 'losses_');
+  const duelsKillsTotal = duelsKills || sumPrefixed(duelsStats, 'kills_');
+  const duelsDeathsTotal = duelsDeaths || sumPrefixed(duelsStats, 'deaths_');
+
+  const skywarsWins = Number(skywarsStats.wins ?? 0);
+  const skywarsLosses = Number(skywarsStats.losses ?? 0);
+  const skywarsKills = Number(skywarsStats.kills ?? 0);
+  const skywarsDeaths = Number(skywarsStats.deaths ?? 0);
+
+  const skywarsWinsTotal = skywarsWins || sumPrefixed(skywarsStats, 'wins_');
+  const skywarsLossesTotal = skywarsLosses || sumPrefixed(skywarsStats, 'losses_');
+  const skywarsKillsTotal = skywarsKills || sumPrefixed(skywarsStats, 'kills_');
+  const skywarsDeathsTotal = skywarsDeaths || sumPrefixed(skywarsStats, 'deaths_');
+
   return {
     displayname: response.player?.displayname ?? null,
 
@@ -318,19 +354,19 @@ export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPla
     bedwars_final_deaths: Number(bedwarsStats.final_deaths_bedwars ?? 0),
 
     // Duels
-    duels_wins: Number(duelsStats.wins ?? 0),
-    duels_losses: Number(duelsStats.losses ?? 0),
-    duels_kills: Number(duelsStats.kills ?? 0),
-    duels_deaths: Number(duelsStats.deaths ?? 0),
+    duels_wins: duelsWinsTotal,
+    duels_losses: duelsLossesTotal,
+    duels_kills: duelsKillsTotal,
+    duels_deaths: duelsDeathsTotal,
 
     // SkyWars
     skywars_experience: (skywarsStats as any).skywars_experience
                        ?? (skywarsStats as any).SkyWars_experience
                        ?? (skywarsStats as any).Experience
                        ?? null,
-    skywars_wins: Number(skywarsStats.wins ?? 0),
-    skywars_losses: Number(skywarsStats.losses ?? 0),
-    skywars_kills: Number(skywarsStats.kills ?? 0),
-    skywars_deaths: Number(skywarsStats.deaths ?? 0),
+    skywars_wins: skywarsWinsTotal,
+    skywars_losses: skywarsLossesTotal,
+    skywars_kills: skywarsKillsTotal,
+    skywars_deaths: skywarsDeathsTotal,
   };
 }
