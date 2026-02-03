@@ -72,7 +72,7 @@ object ConfigProfiles {
             Levelhead.gson.fromJson(serialized, Profile::class.java)
         } catch (ex: JsonSyntaxException) {
             Levelhead.logger.warn(
-                "Failed to import profile: ${ex.message}. Payload preview: ${serialized.take(200)}",
+                "Failed to import profile: ${ex.message}. Payload length: ${serialized.length}",
                 ex,
             )
             null
