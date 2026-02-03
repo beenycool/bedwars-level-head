@@ -123,6 +123,9 @@ function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
     ...(winstreak !== undefined ? { winstreak } : {}),
   };
 
+  const duelsStats = response.player?.stats?.Duels ?? {};
+  const skywarsStats = response.player?.stats?.SkyWars ?? {};
+
   return {
     success: true,
     data: {
@@ -132,6 +135,8 @@ function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
     player: {
       stats: {
         Bedwars: shapedStats,
+        Duels: duelsStats,
+        SkyWars: skywarsStats,
       },
     },
   };
