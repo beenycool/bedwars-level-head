@@ -136,7 +136,26 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         category = "Quick Setup"
     )
     fun showStatusButton() {
-        Levelhead.sendChat("§bUse §e/levelhead status§b to view detailed status.")
+        val snapshot = Levelhead.statusSnapshot()
+        val backendMode = backendMode.displayName
+
+        Levelhead.sendChat("§b§lBedWars Levelhead Status")
+        Levelhead.sendChat(" §7- §bBackend Mode: §e$backendMode")
+        Levelhead.sendChat(" §7- §bCache Size: §e${snapshot.cacheSize} players")
+
+        val rateLimitResetSeconds = snapshot.rateLimitResetMillis / 1000
+        Levelhead.sendChat(
+            " §7- §bAPI Rate Limit: §e${snapshot.rateLimitRemaining} remaining (resets in ${rateLimitResetSeconds}s)"
+        )
+
+        val lastSuccess = snapshot.lastSuccessAgeMillis?.let { "§a${it / 1000}s ago" } ?: "§cNever"
+        Levelhead.sendChat(" §7- §bLast Successful Fetch: $lastSuccess")
+
+        snapshot.serverCooldownMillis?.let {
+            if (it > 0) {
+                Levelhead.sendChat(" §7- §bServer Cooldown: §e${it / 1000}s remaining")
+            }
+        }
     }
 
     // ===============================
@@ -164,6 +183,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             Levelhead.displayManager.config.displayPosition =
                 entries.getOrNull(clamped) ?: MasterConfig.DisplayPosition.ABOVE
             Levelhead.displayManager.saveConfig()
+            save()
         }
 
     @Switch(
@@ -198,6 +218,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
                 config.headerString = value
                 true
             }
+            save()
         }
 
     @Text(
@@ -218,6 +239,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             } catch (e: NumberFormatException) {
                 // Invalid color, ignore
             }
+            save()
         }
 
     @Header(text = "Footer (Star) Text", category = "Display")
@@ -237,6 +259,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
                 config.footerString = value
                 true
             }
+            save()
         }
 
     @Text(
@@ -257,6 +280,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             } catch (e: NumberFormatException) {
                 // Invalid color, ignore
             }
+            save()
         }
 
     // ===============================
@@ -279,6 +303,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             field = value
             Levelhead.displayManager.config.fontSize = value.toDouble()
             Levelhead.displayManager.saveConfig()
+            save()
         }
 
     @Slider(
@@ -294,6 +319,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             field = value
             Levelhead.displayManager.config.offset = value.toDouble()
             Levelhead.displayManager.saveConfig()
+            save()
         }
 
     @Switch(
@@ -306,6 +332,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             field = value
             Levelhead.displayManager.config.showBackground = value
             Levelhead.displayManager.saveConfig()
+            save()
         }
 
     @Slider(
@@ -321,6 +348,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             field = value
             Levelhead.displayManager.config.backgroundOpacity = value
             Levelhead.displayManager.saveConfig()
+            save()
         }
 
     @Switch(
@@ -333,6 +361,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             field = value
             Levelhead.displayManager.config.textShadow = value
             Levelhead.displayManager.saveConfig()
+            save()
         }
 
     // ===============================
@@ -363,6 +392,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             field = value
             Levelhead.displayManager.config.renderDistance = value
             Levelhead.displayManager.saveConfig()
+            save()
         }
 
     @Slider(
@@ -378,6 +408,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             field = value
             Levelhead.displayManager.config.frameSkip = value
             Levelhead.displayManager.saveConfig()
+            save()
         }
 
     @Slider(
@@ -393,6 +424,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             field = value
             Levelhead.displayManager.config.renderThrottleMs = value.toLong()
             Levelhead.displayManager.saveConfig()
+            save()
         }
 
     @Slider(
@@ -408,6 +440,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             field = value
             Levelhead.displayManager.config.purgeSize = value
             Levelhead.displayManager.saveConfig()
+            save()
         }
 
     @Slider(
@@ -478,6 +511,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             clipboard?.setContents(StringSelection(profile), null)
             Levelhead.sendChat("§aProfile exported to clipboard!")
         } catch (e: Exception) {
+            Levelhead.logger.warn("Failed to copy profile to clipboard", e)
             Levelhead.sendChat("§cFailed to copy to clipboard. Use '/levelhead export' command instead.")
         }
     }
@@ -567,6 +601,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
                 Levelhead.sendChat("§eConfig folder: §b${configDir.absolutePath}")
             }
         } catch (e: Exception) {
+            Levelhead.logger.warn("Failed to open config folder", e)
             Levelhead.sendChat("§cFailed to open config folder.")
         }
     }
@@ -814,7 +849,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         hideIf("proxyAuthToken") { !showAdvancedOptions }
         hideIf("communitySubmitSecret") { !showAdvancedOptions }
         hideIf("customDatabaseUrl") { !showAdvancedOptions }
-        hideIf("proxyUrlWarning") { !showAdvancedOptions || (proxyEnabled && proxyBaseUrl.isBlank()) }
+        hideIf("proxyUrlWarning") { !showAdvancedOptions || !proxyEnabled || proxyBaseUrl.isNotBlank() }
         hideIf("proxyAuthInfo") { !showAdvancedOptions }
         
         // Show API key warning only when in "Own API Key" mode and key is blank
