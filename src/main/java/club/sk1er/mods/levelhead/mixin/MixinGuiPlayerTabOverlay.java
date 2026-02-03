@@ -2,6 +2,7 @@ package club.sk1er.mods.levelhead.mixin;
 
 import club.sk1er.mods.levelhead.Levelhead;
 import club.sk1er.mods.levelhead.config.LevelheadConfig;
+import club.sk1er.mods.levelhead.core.GameStats;
 import net.minecraft.client.gui.GuiPlayerTabOverlay;
 import net.minecraft.client.network.NetworkPlayerInfo;
 import org.spongepowered.asm.mixin.Mixin;
@@ -37,14 +38,16 @@ public class MixinGuiPlayerTabOverlay {
         }
 
         // Fetch cached stats
-        Levelhead.CachedBedwarsStats stats = Levelhead.INSTANCE.getCachedStats(uuid);
-        if (stats == null) {
+        GameStats stats = Levelhead.INSTANCE.getCachedStats(uuid);
+        if (!(stats instanceof GameStats.Bedwars)) {
             return;
         }
 
+        GameStats.Bedwars bedwarsStats = (GameStats.Bedwars) stats;
+
         // Get FKDR value
-        Double fkdr = stats.getFkdr();
-        Integer star = stats.getStar();
+        Double fkdr = bedwarsStats.getFkdr();
+        Integer star = bedwarsStats.getStar();
 
         // Determine color based on FKDR thresholds
         String fkdrColorCode;
