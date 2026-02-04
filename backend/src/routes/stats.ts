@@ -1081,7 +1081,7 @@ router.get('/', async (req, res, next) => {
       </tbody>
     </table>
 
-    <script>
+    <script nonce="${res.locals.nonce}">
       const pageData = ${jsonForFrontend};
       const data = pageData.chartData || [];
       const topPlayers = pageData.topPlayers || [];

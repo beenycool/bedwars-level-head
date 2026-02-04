@@ -1,4 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
+import crypto from 'crypto';
 
 export function securityHeaders(req: Request, res: Response, next: NextFunction): void {
   // Prevent MIME-sniffing
@@ -10,11 +11,15 @@ export function securityHeaders(req: Request, res: Response, next: NextFunction)
   // Control referrer information
   res.set('Referrer-Policy', 'strict-origin-when-cross-origin');
 
+  // Generate a random nonce for this request
+  const nonce = crypto.randomBytes(16).toString('base64');
+  res.locals.nonce = nonce;
+
   // Content Security Policy
   const cspDirectives = [
     "default-src 'self'",
-    "script-src 'self' https://cdn.jsdelivr.net",
-    "style-src 'self'",
+    `script-src 'self' https://cdn.jsdelivr.net 'nonce-${nonce}'`,
+    `style-src 'self' 'nonce-${nonce}'`,
     "img-src 'self' data:",
     "connect-src 'self'",
     "object-src 'none'",
