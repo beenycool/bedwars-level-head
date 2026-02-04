@@ -795,7 +795,7 @@ router.get('/', async (req, res, next) => {
           <input type="checkbox" id="autoRefreshToggle" />
           Auto-refresh every
         </label>
-        <select id="refreshInterval">
+        <select id="refreshInterval" aria-label="Refresh interval">
           <option value="10000">10s</option>
           <option value="30000" selected>30s</option>
           <option value="60000">1m</option>
@@ -1043,6 +1043,7 @@ router.get('/', async (req, res, next) => {
         <input
           type="text"
           name="q"
+          aria-label="Search players"
           placeholder="Search by username or UUID"
           value="${escapeHtml(search)}"
         />
@@ -1066,13 +1067,13 @@ router.get('/', async (req, res, next) => {
     <table>
       <thead>
         <tr>
-          <th>Queried At</th>
-          <th>Lookup</th>
-          <th>Resolved</th>
-          <th>Stars</th>
-          <th>Source</th>
-          <th>Status</th>
-          <th>Latency</th>
+          <th scope="col">Queried At</th>
+          <th scope="col">Lookup</th>
+          <th scope="col">Resolved</th>
+          <th scope="col">Stars</th>
+          <th scope="col">Source</th>
+          <th scope="col">Status</th>
+          <th scope="col">Latency</th>
         </tr>
       </thead>
       <tbody>
