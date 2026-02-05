@@ -1108,6 +1108,7 @@ router.get('/', async (req, res, next) => {
     </table>
 
     <script nonce="${res.locals.nonce}">
+      const nonce = "${res.locals.nonce}";
       const pageData = ${jsonForFrontend};
       const data = pageData.chartData || [];
       const topPlayers = pageData.topPlayers || [];
