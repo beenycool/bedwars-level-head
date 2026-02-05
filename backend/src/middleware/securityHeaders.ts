@@ -19,9 +19,9 @@ export function securityHeaders(req: Request, res: Response, next: NextFunction)
   const cspDirectives = [
     "default-src 'self'",
     `script-src 'self' https://cdn.jsdelivr.net 'nonce-${nonce}'`,
-    `style-src 'self' 'nonce-${nonce}'`,
+    `style-src 'self' https://cdn.jsdelivr.net 'nonce-${nonce}'`,
     "img-src 'self' data:",
-    "connect-src 'self'",
+    "connect-src 'self' https://cdn.jsdelivr.net",
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
