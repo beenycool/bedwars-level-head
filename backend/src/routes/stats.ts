@@ -263,6 +263,15 @@ router.get('/', async (req, res, next) => {
       })
       .join('\n');
 
+
+    const dynamicStyles = `
+      #quotaBar { width: ${quotaPct}%; }
+      #redisMemBar {
+        width: ${redisStats.memoryPercent.toFixed(1)}%;
+        background: ${redisStats.memoryPercent > 80 ? 'linear-gradient(90deg, #f87171, #ef4444)' : 'linear-gradient(90deg, #22d3ee, #3b82f6)'};
+      }
+      #localCacheBar { width: ${((redisStats.localCacheSize / redisStats.localCacheMaxSize) * 100).toFixed(1)}%; }
+    `;
     const html = `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -270,7 +279,7 @@ router.get('/', async (req, res, next) => {
     <title>Levelhead Player Stats</title>
     <link rel="icon" href="data:," />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.js" integrity="sha384-tgbB5AKnszdcfwcZtTfuhR3Ko1XZdlDfsLtkxiiAZiVkkXCkFmp+FQFh+V/UTo54" crossorigin="anonymous"></script>
-    <style>
+    <style nonce="${res.locals.nonce}">
       :root {
         color-scheme: dark;
         font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -755,6 +764,23 @@ router.get('/', async (req, res, next) => {
         width: 100% !important;
         height: 100% !important;
       }
+
+      .refresh-countdown { min-width: 120px; text-align: right; }
+      .status-connected { color: #22c55e; }
+      .status-disconnected { color: #ef4444; }
+      .flex-gap-05 { display: flex; gap: 0.5rem; }
+      .hidden { display: none !important; }
+      .overflow-hidden { overflow: hidden; }
+      .btn-download {
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(59, 130, 246, 0.2);
+        border-color: rgba(59, 130, 246, 0.4);
+        color: #93c5fd;
+      }
+      ${dynamicStyles}
     </style>
   </head>
   <body>
@@ -802,7 +828,7 @@ router.get('/', async (req, res, next) => {
           <option value="300000">5m</option>
         </select>
         
-        <span id="refreshCountdown" class="muted" style="min-width: 120px; text-align: right;"></span>
+        <span id="refreshCountdown" class="muted refresh-countdown"></span>
         
         <button id="refreshNowBtn" class="refresh-btn">
           <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
@@ -858,7 +884,7 @@ router.get('/', async (req, res, next) => {
         <p class="stat-label">Hypixel API (1h)</p>
         <p class="stat-value">${escapeHtml(sysStats.apiCallsLastHour.toLocaleString())}</p>
         <div class="progress">
-          <span style="width: ${quotaPct}%"></span>
+          <span id="quotaBar"></span>
         </div>
         <p class="stat-sub">Quota usage</p>
       </div>
@@ -873,14 +899,14 @@ router.get('/', async (req, res, next) => {
     <div class="stat-grid">
       <div class="card stat-card">
         <p class="stat-label">Status</p>
-        <p class="stat-value" style="color: ${redisStats.connected ? '#22c55e' : '#ef4444'}">${redisStats.connected ? '● Connected' : '○ Disconnected'}</p>
+        <p class="stat-value ${redisStats.connected ? 'status-connected' : 'status-disconnected'}">${redisStats.connected ? '● Connected' : '○ Disconnected'}</p>
         <p class="stat-sub">${redisStats.connected ? 'Rate limiting active' : 'Falling back to Postgres'}</p>
       </div>
       <div class="card stat-card">
         <p class="stat-label">Memory Usage</p>
         <p class="stat-value">${escapeHtml(redisStats.memoryUsed)}</p>
         <div class="progress">
-          <span style="width: ${redisStats.memoryPercent.toFixed(1)}%; background: ${redisStats.memoryPercent > 80 ? 'linear-gradient(90deg, #f87171, #ef4444)' : 'linear-gradient(90deg, #22d3ee, #3b82f6)'}"></span>
+          <span id="redisMemBar"></span>
         </div>
         <p class="stat-sub">Max: ${escapeHtml(redisStats.memoryMax)} (${redisStats.memoryPercent.toFixed(1)}%)</p>
       </div>
@@ -893,7 +919,7 @@ router.get('/', async (req, res, next) => {
         <p class="stat-label">Local Memory Cache</p>
         <p class="stat-value">${redisStats.localCacheSize.toLocaleString()}</p>
         <div class="progress">
-          <span style="width: ${((redisStats.localCacheSize / redisStats.localCacheMaxSize) * 100).toFixed(1)}%"></span>
+          <span id="localCacheBar"></span>
         </div>
         <p class="stat-sub">Max: ${redisStats.localCacheMaxSize.toLocaleString()} entries</p>
       </div>
@@ -1019,12 +1045,12 @@ router.get('/', async (req, res, next) => {
       </div>
     </div>
 
-    <div id="fullscreenOverlay" class="fullscreen-overlay" style="display: none;">
+    <div id="fullscreenOverlay" class="fullscreen-overlay hidden">
       <div class="fullscreen-modal">
         <div class="fullscreen-header">
           <h3 class="fullscreen-title" id="fullscreenTitle"></h3>
-          <div style="display: flex; gap: 0.5rem;">
-            <a id="fullscreenDownloadBtn" class="fullscreen-close-btn" style="text-decoration: none; display: flex; align-items: center; justify-content: center; background: rgba(59, 130, 246, 0.2); border-color: rgba(59, 130, 246, 0.4); color: #93c5fd;" href="#" target="_blank">Download CSV</a>
+          <div class="flex-gap-05">
+            <a id="fullscreenDownloadBtn" class="fullscreen-close-btn btn-download" href="#" target="_blank">Download CSV</a>
             <button class="fullscreen-close-btn" id="fullscreenCloseBtn">✕ Close</button>
           </div>
         </div>
@@ -1208,7 +1234,14 @@ router.get('/', async (req, res, next) => {
         const numeric = Number(px);
         const clamped = Number.isFinite(numeric) ? Math.min(500, Math.max(200, numeric)) : defaultChartHeight;
         currentChartHeight = clamped;
-        document.documentElement.style.setProperty('--chart-height', clamped + 'px');
+        let rootStyle = document.getElementById('root-style');
+        if (!rootStyle) {
+           rootStyle = document.createElement('style');
+           rootStyle.id = 'root-style';
+           rootStyle.setAttribute('nonce', nonce);
+           document.head.appendChild(rootStyle);
+        }
+        rootStyle.textContent = ':root { --chart-height: ' + clamped + 'px; }';
         if (chartHeightControl) chartHeightControl.value = clamped.toString();
         if (chartHeightValue) chartHeightValue.textContent = clamped + 'px';
         charts.forEach((chart) => chart.resize());
@@ -1321,8 +1354,15 @@ router.get('/', async (req, res, next) => {
       }
 
       function setProgress(id, percentage) {
-        const el = document.getElementById(id);
-        if (el) el.style.width = Math.max(0, Math.min(100, percentage)) + '%';
+        let styleId = 'style-' + id;
+        let styleEl = document.getElementById(styleId);
+        if (!styleEl) {
+          styleEl = document.createElement('style');
+          styleEl.id = styleId;
+          styleEl.setAttribute('nonce', nonce);
+          document.head.appendChild(styleEl);
+        }
+        styleEl.textContent = '#' + id + ' { width: ' + Math.max(0, Math.min(100, percentage)) + '% !important; };';
       }
 
       setMetric('totalLookupsValue', totalLookups.toLocaleString());
@@ -1889,8 +1929,8 @@ router.get('/', async (req, res, next) => {
         }
         
         titleEl.textContent = info.title;
-        overlay.style.display = 'flex';
-        document.body.style.overflow = 'hidden';
+        overlay.classList.remove('hidden');
+        document.body.classList.add('overflow-hidden');
 
         if (downloadBtn) {
             const url = new URL(window.location.origin + '/stats/csv');
@@ -1914,9 +1954,9 @@ router.get('/', async (req, res, next) => {
           fullscreenChartInstance = null;
         }
         if (overlay) {
-          overlay.style.display = 'none';
+          overlay.classList.add('hidden');
         }
-        document.body.style.overflow = '';
+        document.body.classList.remove('overflow-hidden');
       }
 
       // Attach event listeners to expand buttons
