@@ -24,6 +24,7 @@ import adminRouter from './routes/admin';
 import statsRouter from './routes/stats';
 import configRouter from './routes/config';
 import cronRouter from './routes/cron';
+import { securityHeaders } from './middleware/securityHeaders';
 
 const app = express();
 
@@ -38,6 +39,7 @@ function sanitizeUrlForLogs(target: string): string {
 }
 
 app.disable('x-powered-by');
+app.use(securityHeaders);
 app.set('trust proxy', TRUST_PROXY);
 // Enable gzip compression for all responses (clients should send Accept-Encoding: gzip)
 // Large Hypixel JSON payloads compress very well (often 80-90% reduction)
