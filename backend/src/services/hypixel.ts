@@ -309,40 +309,64 @@ export interface MinimalPlayerStats {
   skywars_deaths: number;
 }
 
+// Bolt: Optimized aggregation to scan stats object only once
+function computeAggregates(stats: Record<string, unknown>) {
+  let wins = 0;
+  let losses = 0;
+  let kills = 0;
+  let deaths = 0;
+
+  for (const key in stats) {
+    const value = stats[key];
+    if (typeof value !== 'number') continue;
+
+    if (key.startsWith('wins_')) {
+      wins += value;
+    } else if (key.startsWith('losses_')) {
+      losses += value;
+    } else if (key.startsWith('kills_')) {
+      kills += value;
+    } else if (key.startsWith('deaths_')) {
+      deaths += value;
+    }
+  }
+  return { wins, losses, kills, deaths };
+}
+
 export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPlayerStats {
   const bedwarsStats = response.player?.stats?.Bedwars ?? {};
   const duelsStats = response.player?.stats?.Duels ?? {};
   const skywarsStats = response.player?.stats?.SkyWars ?? {};
-
-  function sumPrefixed(stats: Record<string, unknown>, prefix: string): number {
-    let total = 0;
-    for (const [key, value] of Object.entries(stats)) {
-      if (key.startsWith(prefix) && typeof value === 'number') {
-        total += value;
-      }
-    }
-    return total;
-  }
 
   const duelsWins = Number(duelsStats.wins ?? 0);
   const duelsLosses = Number(duelsStats.losses ?? 0);
   const duelsKills = Number(duelsStats.kills ?? 0);
   const duelsDeaths = Number(duelsStats.deaths ?? 0);
 
-  const duelsWinsTotal = duelsWins || sumPrefixed(duelsStats, 'wins_');
-  const duelsLossesTotal = duelsLosses || sumPrefixed(duelsStats, 'losses_');
-  const duelsKillsTotal = duelsKills || sumPrefixed(duelsStats, 'kills_');
-  const duelsDeathsTotal = duelsDeaths || sumPrefixed(duelsStats, 'deaths_');
+  let duelsAggregates: { wins: number, losses: number, kills: number, deaths: number } | null = null;
+  if (!duelsWins || !duelsLosses || !duelsKills || !duelsDeaths) {
+    duelsAggregates = computeAggregates(duelsStats);
+  }
+
+  const duelsWinsTotal = duelsWins || duelsAggregates!.wins;
+  const duelsLossesTotal = duelsLosses || duelsAggregates!.losses;
+  const duelsKillsTotal = duelsKills || duelsAggregates!.kills;
+  const duelsDeathsTotal = duelsDeaths || duelsAggregates!.deaths;
 
   const skywarsWins = Number(skywarsStats.wins ?? 0);
   const skywarsLosses = Number(skywarsStats.losses ?? 0);
   const skywarsKills = Number(skywarsStats.kills ?? 0);
   const skywarsDeaths = Number(skywarsStats.deaths ?? 0);
 
-  const skywarsWinsTotal = skywarsWins || sumPrefixed(skywarsStats, 'wins_');
-  const skywarsLossesTotal = skywarsLosses || sumPrefixed(skywarsStats, 'losses_');
-  const skywarsKillsTotal = skywarsKills || sumPrefixed(skywarsStats, 'kills_');
-  const skywarsDeathsTotal = skywarsDeaths || sumPrefixed(skywarsStats, 'deaths_');
+  let skywarsAggregates: { wins: number, losses: number, kills: number, deaths: number } | null = null;
+  if (!skywarsWins || !skywarsLosses || !skywarsKills || !skywarsDeaths) {
+    skywarsAggregates = computeAggregates(skywarsStats);
+  }
+
+  const skywarsWinsTotal = skywarsWins || skywarsAggregates!.wins;
+  const skywarsLossesTotal = skywarsLosses || skywarsAggregates!.losses;
+  const skywarsKillsTotal = skywarsKills || skywarsAggregates!.kills;
+  const skywarsDeathsTotal = skywarsDeaths || skywarsAggregates!.deaths;
 
   return {
     displayname: response.player?.displayname ?? null,
