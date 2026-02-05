@@ -846,13 +846,13 @@ router.get('/', async (req, res, next) => {
       <div class="card stat-card">
         <p class="stat-label">Cache Hit Rate</p>
         <p class="stat-value" id="cacheHitRateValue">--</p>
-        <div class="progress"><span id="cacheHitProgress"></span></div>
+        <div class="progress" role="progressbar" aria-label="Cache Hit Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="cacheHitProgress"></span></div>
         <p class="stat-sub">Measured from recent lookups</p>
       </div>
       <div class="card stat-card">
         <p class="stat-label">Success Rate</p>
         <p class="stat-value" id="successRateValue">--</p>
-        <div class="progress"><span id="successRateProgress"></span></div>
+        <div class="progress" role="progressbar" aria-label="Success Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="successRateProgress"></span></div>
         <p class="stat-sub">Based on HTTP status codes</p>
       </div>
       <div class="card stat-card">
@@ -883,7 +883,7 @@ router.get('/', async (req, res, next) => {
       <div class="card stat-card">
         <p class="stat-label">Hypixel API (1h)</p>
         <p class="stat-value">${escapeHtml(sysStats.apiCallsLastHour.toLocaleString())}</p>
-        <div class="progress">
+        <div class="progress" role="progressbar" aria-label="Hypixel API Quota Usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(quotaPct)}">
           <span id="quotaBar"></span>
         </div>
         <p class="stat-sub">Quota usage</p>
@@ -905,7 +905,7 @@ router.get('/', async (req, res, next) => {
       <div class="card stat-card">
         <p class="stat-label">Memory Usage</p>
         <p class="stat-value">${escapeHtml(redisStats.memoryUsed)}</p>
-        <div class="progress">
+        <div class="progress" role="progressbar" aria-label="Redis Memory Usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(redisStats.memoryPercent)}">
           <span id="redisMemBar"></span>
         </div>
         <p class="stat-sub">Max: ${escapeHtml(redisStats.memoryMax)} (${redisStats.memoryPercent.toFixed(1)}%)</p>
@@ -918,7 +918,7 @@ router.get('/', async (req, res, next) => {
       <div class="card stat-card">
         <p class="stat-label">Local Memory Cache</p>
         <p class="stat-value">${redisStats.localCacheSize.toLocaleString()}</p>
-        <div class="progress">
+        <div class="progress" role="progressbar" aria-label="Local Memory Cache Usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round((redisStats.localCacheSize / redisStats.localCacheMaxSize) * 100)}">
           <span id="localCacheBar"></span>
         </div>
         <p class="stat-sub">Max: ${redisStats.localCacheMaxSize.toLocaleString()} entries</p>
@@ -1364,6 +1364,11 @@ router.get('/', async (req, res, next) => {
           document.head.appendChild(styleEl);
         }
         styleEl.textContent = '#' + id + ' { width: ' + Math.max(0, Math.min(100, percentage)) + '% !important; };';
+
+        const barSpan = document.getElementById(id);
+        if (barSpan && barSpan.parentElement && barSpan.parentElement.getAttribute('role') === 'progressbar') {
+          barSpan.parentElement.setAttribute('aria-valuenow', Math.round(percentage));
+        }
       }
 
       setMetric('totalLookupsValue', totalLookups.toLocaleString());
