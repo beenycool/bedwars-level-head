@@ -97,16 +97,17 @@ function clampTtl(value: number): number {
   return Math.min(Math.max(floored, PLAYER_L1_TTL_MIN_MS), PLAYER_L1_TTL_MAX_MS);
 }
 
-async function getAdaptiveL1TtlMs(): Promise<number> {
+function getAdaptiveL1TtlMs(): number {
+  return cachedAdaptiveTtlMs;
+}
+
+async function refreshAdaptiveTtl(): Promise<void> {
   const now = Date.now();
-  if (now - lastTtlRefreshAt < PLAYER_L1_INFO_REFRESH_MS) {
-    return cachedAdaptiveTtlMs;
-  }
 
   const client = getRedisClient();
   if (!client || client.status !== 'ready') {
     cachedAdaptiveTtlMs = PLAYER_L1_TTL_FALLBACK_MS;
-    return cachedAdaptiveTtlMs;
+    return;
   }
 
   let info: string;
@@ -116,13 +117,13 @@ async function getAdaptiveL1TtlMs(): Promise<number> {
     const message = error instanceof Error ? error.message : String(error);
     console.warn('[statsCache] redis memory info failed', message);
     cachedAdaptiveTtlMs = PLAYER_L1_TTL_FALLBACK_MS;
-    return cachedAdaptiveTtlMs;
+    return;
   }
 
   const sample = parseRedisMemoryInfo(info, now);
   if (!sample) {
     cachedAdaptiveTtlMs = PLAYER_L1_TTL_FALLBACK_MS;
-    return cachedAdaptiveTtlMs;
+    return;
   }
 
   let ttlMs = PLAYER_L1_TTL_FALLBACK_MS;
@@ -150,7 +151,26 @@ async function getAdaptiveL1TtlMs(): Promise<number> {
   lastMemorySample = sample;
   lastTtlRefreshAt = now;
   cachedAdaptiveTtlMs = ttlMs;
-  return cachedAdaptiveTtlMs;
+}
+
+let adaptiveTtlInterval: ReturnType<typeof setInterval> | null = null;
+
+export function startAdaptiveTtlRefresh(): void {
+  void refreshAdaptiveTtl().catch((e) =>
+    console.warn('[statsCache] initial adaptive TTL refresh failed', e),
+  );
+  adaptiveTtlInterval = setInterval(() => {
+    void refreshAdaptiveTtl().catch((e) =>
+      console.warn('[statsCache] adaptive TTL refresh failed', e),
+    );
+  }, PLAYER_L1_INFO_REFRESH_MS);
+}
+
+export function stopAdaptiveTtlRefresh(): void {
+  if (adaptiveTtlInterval) {
+    clearInterval(adaptiveTtlInterval);
+    adaptiveTtlInterval = null;
+  }
 }
 
 function mapRow<T>(row: CacheRow): CacheEntry<T> | null {
@@ -461,11 +481,11 @@ export async function getPlayerStatsFromCache(
     recordCacheTierHit('l2');
     const now = Date.now();
     if (l2Entry.expiresAt > now) {
-      await setPlayerStatsL1(key, l2Entry.value, {
+      void setPlayerStatsL1(key, l2Entry.value, {
         etag: l2Entry.etag ?? undefined,
         lastModified: l2Entry.lastModified ?? undefined,
         source: l2Entry.source ?? undefined,
-      });
+      }).catch((e) => console.warn('[statsCache] L1 backfill failed', e));
     }
     return l2Entry;
   }
@@ -486,7 +506,7 @@ export async function setPlayerStatsL1(
   }
 
   try {
-    const ttlMs = await getAdaptiveL1TtlMs();
+    const ttlMs = getAdaptiveL1TtlMs();
     const expiresAt = Date.now() + ttlMs;
     // Bolt: Optimized to avoid double serialization. 'stats' is embedded as an object.
     const data = JSON.stringify({
@@ -536,8 +556,10 @@ export async function getIgnMapping(
     recordCacheHit();
     const now = Date.now();
     if (l2Entry.expiresAt > now) {
-      const ttlMs = await getAdaptiveL1TtlMs();
-      await setIgnMappingInRedis(ign, l2Entry, ttlMs);
+      const ttlMs = getAdaptiveL1TtlMs();
+      void setIgnMappingInRedis(ign, l2Entry, ttlMs).catch((e) =>
+        console.warn('[statsCache] IGN L1 backfill failed', e),
+      );
     }
     return l2Entry;
   }
@@ -547,7 +569,7 @@ export async function getIgnMapping(
 }
 
 export async function setIgnMapping(ign: string, uuid: string | null, nicked: boolean): Promise<void> {
-  const ttlMs = await getAdaptiveL1TtlMs();
+  const ttlMs = getAdaptiveL1TtlMs();
   await Promise.all([
     setIgnMappingInRedis(ign, { uuid, nicked, expiresAt: Date.now() + ttlMs }, ttlMs),
     setIgnMappingInDb(ign, uuid, nicked, IGN_L2_TTL_MS),

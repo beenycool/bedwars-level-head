@@ -38,7 +38,7 @@ router.get('/:identifier', enforcePublicRateLimit, async (req, res, next) => {
     const notModified = req.fresh;
     const responseStatus = notModified ? 304 : 200;
 
-    await recordQuerySafely({
+    void recordQuerySafely({
       identifier,
       normalizedIdentifier: resolved.lookupValue,
       lookupType: resolved.lookupType,

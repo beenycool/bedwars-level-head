@@ -20,6 +20,8 @@ import {
   initializeDynamicRateLimitService,
   stopDynamicRateLimitService,
 } from './services/dynamicRateLimit';
+import { startAdaptiveTtlRefresh, stopAdaptiveTtlRefresh } from './services/statsCache';
+import { getRedisClient } from './services/redis';
 import adminRouter from './routes/admin';
 import statsRouter from './routes/stats';
 import configRouter from './routes/config';
@@ -160,6 +162,13 @@ const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
   const location = CLOUD_FLARE_TUNNEL || `http://${SERVER_HOST}:${SERVER_PORT}`;
   console.log(`Levelhead proxy listening at ${location}`);
   console.log(`Cache DB pool configured with min=${CACHE_DB_POOL_MIN} max=${CACHE_DB_POOL_MAX}.`);
+
+  startAdaptiveTtlRefresh();
+
+  void Promise.all([
+    getRedisClient()?.ping().catch(() => {}),
+    cachePool.query('SELECT 1').catch(() => {}),
+  ]).then(() => console.info('[startup] connections warmed'));
 });
 
 let shuttingDown = false;
@@ -185,6 +194,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   clearInterval(purgeInterval);
   stopHistoryFlushInterval();
   stopDynamicRateLimitService();
+  stopAdaptiveTtlRefresh();
 
   const forcedShutdown = setTimeout(() => {
     console.error('Forcing shutdown.');
