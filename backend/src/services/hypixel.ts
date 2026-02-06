@@ -343,15 +343,15 @@ export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPla
   const duelsKills = Number(duelsStats.kills ?? 0);
   const duelsDeaths = Number(duelsStats.deaths ?? 0);
 
-  let duelsAggregates: { wins: number, losses: number, kills: number, deaths: number } | null = null;
-  if (!duelsWins || !duelsLosses || !duelsKills || !duelsDeaths) {
-    duelsAggregates = computeAggregates(duelsStats);
-  }
+  const duelsAggregates =
+    !duelsWins || !duelsLosses || !duelsKills || !duelsDeaths
+      ? computeAggregates(duelsStats)
+      : { wins: 0, losses: 0, kills: 0, deaths: 0 };
 
-  const duelsWinsTotal = duelsWins || duelsAggregates!.wins;
-  const duelsLossesTotal = duelsLosses || duelsAggregates!.losses;
-  const duelsKillsTotal = duelsKills || duelsAggregates!.kills;
-  const duelsDeathsTotal = duelsDeaths || duelsAggregates!.deaths;
+  const duelsWinsTotal = duelsWins || duelsAggregates.wins;
+  const duelsLossesTotal = duelsLosses || duelsAggregates.losses;
+  const duelsKillsTotal = duelsKills || duelsAggregates.kills;
+  const duelsDeathsTotal = duelsDeaths || duelsAggregates.deaths;
 
   const skywarsWins = Number(skywarsStats.wins ?? 0);
   const skywarsLosses = Number(skywarsStats.losses ?? 0);
