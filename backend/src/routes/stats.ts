@@ -947,7 +947,7 @@ router.get('/', async (req, res, next) => {
             </svg>
           </button>
         </div>
-        <div class="chart-shell"><canvas id="cacheChart"></canvas></div>
+        <div class="chart-shell"><canvas id="cacheChart" role="img" aria-label="Doughnut chart showing cache hit versus network fetch ratio"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
@@ -958,7 +958,7 @@ router.get('/', async (req, res, next) => {
             </svg>
           </button>
         </div>
-        <div class="chart-shell"><canvas id="starChart"></canvas></div>
+        <div class="chart-shell"><canvas id="starChart" role="img" aria-label="Bar chart showing player distribution by BedWars star ranges"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
@@ -975,7 +975,7 @@ router.get('/', async (req, res, next) => {
             Include cache hits
           </label>
         </div>
-        <div class="chart-shell"><canvas id="latencyChart"></canvas></div>
+        <div class="chart-shell"><canvas id="latencyChart" role="img" aria-label="Line chart showing request latency trends over time"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
@@ -986,7 +986,7 @@ router.get('/', async (req, res, next) => {
             </svg>
           </button>
         </div>
-        <div class="chart-shell"><canvas id="statusChart"></canvas></div>
+        <div class="chart-shell"><canvas id="statusChart" role="img" aria-label="Doughnut chart showing breakdown of HTTP response status codes"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
@@ -997,7 +997,7 @@ router.get('/', async (req, res, next) => {
             </svg>
           </button>
         </div>
-        <div class="chart-shell"><canvas id="lookupTypeChart"></canvas></div>
+        <div class="chart-shell"><canvas id="lookupTypeChart" role="img" aria-label="Doughnut chart showing distribution of UUID versus username lookups"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
@@ -1008,7 +1008,7 @@ router.get('/', async (req, res, next) => {
             </svg>
           </button>
         </div>
-        <div class="chart-shell"><canvas id="requestsOverTimeChart"></canvas></div>
+        <div class="chart-shell"><canvas id="requestsOverTimeChart" role="img" aria-label="Line chart showing total requests over time"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
@@ -1019,7 +1019,7 @@ router.get('/', async (req, res, next) => {
             </svg>
           </button>
         </div>
-        <div class="chart-shell"><canvas id="cacheOverTimeChart"></canvas></div>
+        <div class="chart-shell"><canvas id="cacheOverTimeChart" role="img" aria-label="Line chart showing cache hit rate percentage over time"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
@@ -1030,7 +1030,7 @@ router.get('/', async (req, res, next) => {
             </svg>
           </button>
         </div>
-        <div class="chart-shell"><canvas id="latencyDistributionChart"></canvas></div>
+        <div class="chart-shell"><canvas id="latencyDistributionChart" role="img" aria-label="Bar chart showing distribution of request latency in milliseconds"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
@@ -1041,7 +1041,7 @@ router.get('/', async (req, res, next) => {
             </svg>
           </button>
         </div>
-        <div class="chart-shell"><canvas id="topPlayersChart"></canvas></div>
+        <div class="chart-shell"><canvas id="topPlayersChart" role="img" aria-label="Bar chart showing top 20 most queried players"></canvas></div>
       </div>
     </div>
 
@@ -1067,7 +1067,7 @@ router.get('/', async (req, res, next) => {
     <div class="controls">
       <form class="search-box" method="GET">
         <input
-          type="text"
+          type="search"
           name="q"
           aria-label="Search players"
           placeholder="Search by username or UUID"
