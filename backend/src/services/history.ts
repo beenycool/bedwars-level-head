@@ -258,6 +258,9 @@ export async function getRecentPlayerQueries(limit = 50): Promise<PlayerQuerySum
 }
 
 function mapRowToSummary(row: PlayerQueryHistoryRow): PlayerQuerySummary {
+  const parsedResponseStatus = Number(row.response_status);
+  const parsedLatency = row.latency_ms === null ? null : Number(row.latency_ms);
+
   return {
     identifier: row.identifier,
     normalizedIdentifier: row.normalized_identifier,
@@ -270,8 +273,8 @@ function mapRowToSummary(row: PlayerQueryHistoryRow): PlayerQuerySummary {
     cacheHit: row.cache_hit,
     revalidated: row.revalidated,
     installId: row.install_id,
-    responseStatus: row.response_status,
-    latencyMs: row.latency_ms ?? null,
+    responseStatus: Number.isFinite(parsedResponseStatus) ? parsedResponseStatus : 0,
+    latencyMs: Number.isFinite(parsedLatency) ? parsedLatency : null,
     requestedAt: new Date(row.requested_at),
   };
 }
