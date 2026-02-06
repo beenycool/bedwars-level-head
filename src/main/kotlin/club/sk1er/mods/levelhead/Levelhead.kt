@@ -260,6 +260,7 @@ object Levelhead {
     @SubscribeEvent
     fun onClientTick(event: TickEvent.ClientTickEvent) {
         if (event.phase != TickEvent.Phase.END) return
+        LevelheadConfig.syncUiAndRuntimeConfig()
         displayManager.tick()
     }
 

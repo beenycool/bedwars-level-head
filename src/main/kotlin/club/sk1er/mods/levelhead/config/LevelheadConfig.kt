@@ -125,11 +125,21 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var levelheadEnabled: Boolean = true
         set(value) {
+            if (field == value) {
+                return
+            }
             field = value
+            if (syncingFromRuntime) {
+                save()
+                return
+            }
             if (Levelhead.displayManager.config.enabled != value) {
                 Levelhead.displayManager.setEnabled(value)
             }
             save()
+            if (debugConfigSync) {
+                Levelhead.logger.info("[LevelheadConfigSync] UI->RT enabled={}", value)
+            }
         }
 
     @Button(
@@ -163,10 +173,20 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             } else {
                 0
             }
+            if (field == clamped) {
+                return
+            }
             field = clamped
+            if (syncingFromRuntime) {
+                save()
+                return
+            }
             Levelhead.displayManager.config.displayPosition =
                 entries.getOrNull(clamped) ?: MasterConfig.DisplayPosition.ABOVE
             Levelhead.displayManager.saveConfig()
+            if (debugConfigSync) {
+                Levelhead.logger.info("[LevelheadConfigSync] UI->RT displayPosition={}", Levelhead.displayManager.config.displayPosition)
+            }
         }
 
     @Switch(
@@ -176,12 +196,25 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var showSelf: Boolean = true
         set(value) {
+            if (field == value) {
+                return
+            }
             field = value
+            if (syncingFromRuntime) {
+                save()
+                return
+            }
             Levelhead.displayManager.updatePrimaryDisplay { config ->
+                if (config.showSelf == value) {
+                    return@updatePrimaryDisplay false
+                }
                 config.showSelf = value
                 true
             }
             save()
+            if (debugConfigSync) {
+                Levelhead.logger.info("[LevelheadConfigSync] UI->RT showSelf={}", value)
+            }
         }
 
     @Header(text = "Header Text", category = "Display")
@@ -294,9 +327,19 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var verticalOffset: Float = 0.0f
         set(value) {
+            if (field == value) {
+                return
+            }
             field = value
+            if (syncingFromRuntime) {
+                save()
+                return
+            }
             Levelhead.displayManager.config.offset = value.toDouble()
             Levelhead.displayManager.saveConfig()
+            if (debugConfigSync) {
+                Levelhead.logger.info("[LevelheadConfigSync] UI->RT offset={}", String.format(Locale.ROOT, "%.2f", value.toDouble()))
+            }
         }
 
     @Switch(
@@ -602,6 +645,17 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         }
 
     @Switch(
+        name = "Debug Config Sync",
+        description = "Log OneConfig/runtime sync decisions to latest.log for troubleshooting UI toggles.",
+        category = "Advanced"
+    )
+    var debugConfigSync: Boolean = false
+        set(value) {
+            field = value
+            save()
+        }
+
+    @Switch(
         name = "Use Proxy",
         description = "Route requests through the Levelhead backend. Required for Community API mode.",
         category = "Advanced"
@@ -801,16 +855,229 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     val backendMode: BackendMode
         get() = BackendMode.fromIndex(backendModeIndex)
 
+    @Transient
+    private var syncingFromRuntime: Boolean = false
+
+    @Transient
+    private var lastSyncSnapshot: ConfigSyncSnapshot? = null
+
+    @Transient
+    private var configSyncTickCounter: Int = 0
+
+    data class ConfigSyncSnapshot(
+        val uiEnabled: Boolean,
+        val rtEnabled: Boolean,
+        val uiShowSelf: Boolean,
+        val rtShowSelf: Boolean,
+        val uiDisplayPosition: MasterConfig.DisplayPosition,
+        val rtDisplayPosition: MasterConfig.DisplayPosition,
+        val uiOffset: Double,
+        val rtOffset: Double
+    )
+
     init {
         initialize()
         migrateLegacyConfig()
         ensureInstallId()
         setupConditionalVisibility()
-        syncEnabledStateFromDisplayManager()
+        syncUiStateFromRuntime(initialSync = true)
     }
 
-    private fun syncEnabledStateFromDisplayManager() {
-        levelheadEnabled = Levelhead.displayManager.config.enabled
+    fun syncUiAndRuntimeConfig() {
+        configSyncTickCounter = (configSyncTickCounter + 1) % 5
+        if (configSyncTickCounter != 0) {
+            return
+        }
+
+        val primaryDisplay = Levelhead.displayManager.primaryDisplay() ?: return
+        val runtimeEnabled = Levelhead.displayManager.config.enabled
+        val runtimeShowSelf = primaryDisplay.config.showSelf
+        val runtimeDisplayPosition = Levelhead.displayManager.config.displayPosition
+        val runtimeOffset = Levelhead.displayManager.config.offset
+
+        val entries = MasterConfig.DisplayPosition.entries
+        val uiDisplayPosition = entries.getOrNull(displayPositionIndex) ?: MasterConfig.DisplayPosition.ABOVE
+        val uiOffset = verticalOffset.toDouble()
+
+        val snapshot = lastSyncSnapshot
+
+        syncSingleSetting(
+            name = "enabled",
+            uiValue = levelheadEnabled,
+            runtimeValue = runtimeEnabled,
+            snapshotUi = snapshot?.uiEnabled,
+            snapshotRuntime = snapshot?.rtEnabled,
+            applyUiToRuntime = { value ->
+                if (Levelhead.displayManager.config.enabled != value) {
+                    Levelhead.displayManager.setEnabled(value)
+                }
+            },
+            applyRuntimeToUi = { value ->
+                syncingFromRuntime = true
+                try {
+                    levelheadEnabled = value
+                } finally {
+                    syncingFromRuntime = false
+                }
+            }
+        )
+
+        syncSingleSetting(
+            name = "showSelf",
+            uiValue = showSelf,
+            runtimeValue = runtimeShowSelf,
+            snapshotUi = snapshot?.uiShowSelf,
+            snapshotRuntime = snapshot?.rtShowSelf,
+            applyUiToRuntime = { value ->
+                Levelhead.displayManager.updatePrimaryDisplay { config ->
+                    if (config.showSelf == value) return@updatePrimaryDisplay false
+                    config.showSelf = value
+                    true
+                }
+            },
+            applyRuntimeToUi = { value ->
+                syncingFromRuntime = true
+                try {
+                    showSelf = value
+                } finally {
+                    syncingFromRuntime = false
+                }
+            }
+        )
+
+        syncSingleSetting(
+            name = "displayPosition",
+            uiValue = uiDisplayPosition,
+            runtimeValue = runtimeDisplayPosition,
+            snapshotUi = snapshot?.uiDisplayPosition,
+            snapshotRuntime = snapshot?.rtDisplayPosition,
+            applyUiToRuntime = { value ->
+                if (Levelhead.displayManager.config.displayPosition != value) {
+                    Levelhead.displayManager.config.displayPosition = value
+                    Levelhead.displayManager.saveConfig()
+                }
+            },
+            applyRuntimeToUi = { value ->
+                val idx = entries.indexOf(value).takeIf { it >= 0 } ?: 0
+                syncingFromRuntime = true
+                try {
+                    displayPositionIndex = idx
+                } finally {
+                    syncingFromRuntime = false
+                }
+            }
+        )
+
+        syncSingleSetting(
+            name = "offset",
+            uiValue = uiOffset,
+            runtimeValue = runtimeOffset,
+            snapshotUi = snapshot?.uiOffset,
+            snapshotRuntime = snapshot?.rtOffset,
+            equals = { left, right -> kotlin.math.abs(left - right) < 0.0001 },
+            applyUiToRuntime = { value ->
+                if (kotlin.math.abs(Levelhead.displayManager.config.offset - value) >= 0.0001) {
+                    Levelhead.displayManager.config.offset = value
+                    Levelhead.displayManager.saveConfig()
+                }
+            },
+            applyRuntimeToUi = { value ->
+                syncingFromRuntime = true
+                try {
+                    verticalOffset = value.toFloat()
+                } finally {
+                    syncingFromRuntime = false
+                }
+            }
+        )
+
+        val finalDisplayPosition = entries.getOrNull(displayPositionIndex) ?: MasterConfig.DisplayPosition.ABOVE
+        val finalPrimaryDisplay = Levelhead.displayManager.primaryDisplay() ?: return
+        lastSyncSnapshot = ConfigSyncSnapshot(
+            uiEnabled = levelheadEnabled,
+            rtEnabled = Levelhead.displayManager.config.enabled,
+            uiShowSelf = showSelf,
+            rtShowSelf = finalPrimaryDisplay.config.showSelf,
+            uiDisplayPosition = finalDisplayPosition,
+            rtDisplayPosition = Levelhead.displayManager.config.displayPosition,
+            uiOffset = verticalOffset.toDouble(),
+            rtOffset = Levelhead.displayManager.config.offset
+        )
+    }
+
+    private fun syncUiStateFromRuntime(initialSync: Boolean) {
+        val primaryDisplay = Levelhead.displayManager.primaryDisplay() ?: return
+        val entries = MasterConfig.DisplayPosition.entries
+        val runtimeDisplayPosition = Levelhead.displayManager.config.displayPosition
+        val displayIndex = entries.indexOf(runtimeDisplayPosition).takeIf { it >= 0 } ?: 0
+
+        syncingFromRuntime = true
+        try {
+            levelheadEnabled = Levelhead.displayManager.config.enabled
+            showSelf = primaryDisplay.config.showSelf
+            displayPositionIndex = displayIndex
+            verticalOffset = Levelhead.displayManager.config.offset.toFloat()
+        } finally {
+            syncingFromRuntime = false
+        }
+
+        lastSyncSnapshot = ConfigSyncSnapshot(
+            uiEnabled = levelheadEnabled,
+            rtEnabled = Levelhead.displayManager.config.enabled,
+            uiShowSelf = showSelf,
+            rtShowSelf = primaryDisplay.config.showSelf,
+            uiDisplayPosition = entries.getOrNull(displayPositionIndex) ?: MasterConfig.DisplayPosition.ABOVE,
+            rtDisplayPosition = runtimeDisplayPosition,
+            uiOffset = verticalOffset.toDouble(),
+            rtOffset = Levelhead.displayManager.config.offset
+        )
+
+        if (debugConfigSync) {
+            val source = if (initialSync) "initial" else "runtime"
+            Levelhead.logger.info(
+                "[LevelheadConfigSync] RT->UI {} sync enabled={}, showSelf={}, displayPosition={}, offset={}",
+                source,
+                levelheadEnabled,
+                showSelf,
+                runtimeDisplayPosition,
+                String.format(Locale.ROOT, "%.2f", Levelhead.displayManager.config.offset)
+            )
+        }
+    }
+
+    private fun <T> syncSingleSetting(
+        name: String,
+        uiValue: T,
+        runtimeValue: T,
+        snapshotUi: T?,
+        snapshotRuntime: T?,
+        equals: (T, T) -> Boolean = { left, right -> left == right },
+        applyUiToRuntime: (T) -> Unit,
+        applyRuntimeToUi: (T) -> Unit
+    ) {
+        if (equals(uiValue, runtimeValue)) {
+            return
+        }
+
+        val uiChanged = snapshotUi?.let { !equals(uiValue, it) } ?: false
+        val runtimeChanged = snapshotRuntime?.let { !equals(runtimeValue, it) } ?: false
+
+        val direction = when {
+            uiChanged && !runtimeChanged -> "UI->RT"
+            runtimeChanged && !uiChanged -> "RT->UI"
+            uiChanged && runtimeChanged -> "UI->RT (conflict)"
+            else -> "UI->RT (bootstrap)"
+        }
+
+        if (direction.startsWith("RT->UI")) {
+            applyRuntimeToUi(runtimeValue)
+        } else {
+            applyUiToRuntime(uiValue)
+        }
+
+        if (debugConfigSync) {
+            Levelhead.logger.info("[LevelheadConfigSync] {} {} ui={} runtime={}", direction, name, uiValue, runtimeValue)
+        }
     }
 
     private fun setupConditionalVisibility() {
@@ -969,6 +1236,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         footerFormat = "%star%"
         footerColorHex = "#FFFF55"
         showAdvancedOptions = false
+        debugConfigSync = false
         save()
         BedwarsFetcher.resetWarnings()
         Levelhead.displayManager.resetToDefaults()
