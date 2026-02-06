@@ -510,8 +510,10 @@ export async function setPlayerStatsBoth(
   stats: MinimalPlayerStats,
   metadata: CacheMetadata = {},
 ): Promise<void> {
-  await setPlayerStatsInDb(key, stats, PLAYER_L2_TTL_MS, metadata);
-  await setPlayerStatsL1(key, stats, metadata);
+  await Promise.all([
+    setPlayerStatsInDb(key, stats, PLAYER_L2_TTL_MS, metadata),
+    setPlayerStatsL1(key, stats, metadata),
+  ]);
 }
 
 export async function getIgnMapping(
@@ -546,8 +548,10 @@ export async function getIgnMapping(
 
 export async function setIgnMapping(ign: string, uuid: string | null, nicked: boolean): Promise<void> {
   const ttlMs = await getAdaptiveL1TtlMs();
-  await setIgnMappingInRedis(ign, { uuid, nicked, expiresAt: Date.now() + ttlMs }, ttlMs);
-  await setIgnMappingInDb(ign, uuid, nicked, IGN_L2_TTL_MS);
+  await Promise.all([
+    setIgnMappingInRedis(ign, { uuid, nicked, expiresAt: Date.now() + ttlMs }, ttlMs),
+    setIgnMappingInDb(ign, uuid, nicked, IGN_L2_TTL_MS),
+  ]);
 }
 
 export async function deletePlayerStatsEntries(keys: string[]): Promise<number> {
