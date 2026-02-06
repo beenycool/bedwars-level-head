@@ -1437,7 +1437,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     }
 
     private fun refreshDisplayStats() {
-        Levelhead.displayManager.clearCache()
+        Levelhead.displayManager.refreshVisibleDisplays()
     }
 
     private fun openUrl(url: String) {
