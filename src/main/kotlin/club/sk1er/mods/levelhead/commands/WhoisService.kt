@@ -59,10 +59,11 @@ object WhoisService {
     }
 
     private fun parseWhoisResult(payload: JsonObject, stats: GameStats?, fallbackName: String, gameMode: GameMode): WhoisResult {
-        val nicked = payload.get("nicked")?.asBoolean == true
         val displayName = payload.get("display")?.asString
+            ?: payload.get("displayname")?.asString
             ?: payload.getAsJsonObject("player")?.get("displayname")?.asString
             ?: fallbackName
+        val nicked = (stats?.nicked == true) || payload.get("nicked")?.asBoolean == true || displayName.equals("(nicked)", ignoreCase = true)
 
         val statValue = when (stats) {
             is GameStats.Bedwars -> stats.star?.let { "$it✪" } ?: "?"

@@ -626,7 +626,8 @@ class LevelheadCommand {
     }
 
     private fun updateEnabledState(enabled: Boolean) {
-        val changed = Levelhead.displayManager.setEnabled(enabled)
+        val changed = Levelhead.displayManager.config.enabled != enabled
+        LevelheadConfig.levelheadEnabled = enabled
         val stateText = if (enabled) "enabled" else "disabled"
         val color = if (enabled) ChatColor.GREEN else ChatColor.RED
         val message = if (changed) {
