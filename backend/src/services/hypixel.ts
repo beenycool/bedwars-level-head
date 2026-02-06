@@ -358,15 +358,15 @@ export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPla
   const skywarsKills = Number(skywarsStats.kills ?? 0);
   const skywarsDeaths = Number(skywarsStats.deaths ?? 0);
 
-  let skywarsAggregates: { wins: number, losses: number, kills: number, deaths: number } | null = null;
-  if (!skywarsWins || !skywarsLosses || !skywarsKills || !skywarsDeaths) {
-    skywarsAggregates = computeAggregates(skywarsStats);
-  }
+  const skywarsAggregates =
+    !skywarsWins || !skywarsLosses || !skywarsKills || !skywarsDeaths
+      ? computeAggregates(skywarsStats)
+      : { wins: 0, losses: 0, kills: 0, deaths: 0 };
 
-  const skywarsWinsTotal = skywarsWins || skywarsAggregates!.wins;
-  const skywarsLossesTotal = skywarsLosses || skywarsAggregates!.losses;
-  const skywarsKillsTotal = skywarsKills || skywarsAggregates!.kills;
-  const skywarsDeathsTotal = skywarsDeaths || skywarsAggregates!.deaths;
+  const skywarsWinsTotal = skywarsWins || skywarsAggregates.wins;
+  const skywarsLossesTotal = skywarsLosses || skywarsAggregates.losses;
+  const skywarsKillsTotal = skywarsKills || skywarsAggregates.kills;
+  const skywarsDeathsTotal = skywarsDeaths || skywarsAggregates.deaths;
 
   return {
     displayname: response.player?.displayname ?? null,
