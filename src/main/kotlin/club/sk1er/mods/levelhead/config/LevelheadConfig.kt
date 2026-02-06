@@ -126,7 +126,10 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var levelheadEnabled: Boolean = true
         set(value) {
             field = value
-            Levelhead.displayManager.setEnabled(value)
+            if (Levelhead.displayManager.config.enabled != value) {
+                Levelhead.displayManager.setEnabled(value)
+            }
+            save()
         }
 
     @Button(
@@ -838,6 +841,11 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         migrateLegacyConfig()
         ensureInstallId()
         setupConditionalVisibility()
+        syncEnabledStateFromDisplayManager()
+    }
+
+    private fun syncEnabledStateFromDisplayManager() {
+        levelheadEnabled = Levelhead.displayManager.config.enabled
     }
 
     private fun setupConditionalVisibility() {

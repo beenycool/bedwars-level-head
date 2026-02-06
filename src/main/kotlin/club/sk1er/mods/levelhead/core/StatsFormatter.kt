@@ -25,11 +25,15 @@ object StatsFormatter {
     ): LevelheadTag {
         val footerTemplate = config.footerString?.takeIf { it.isNotBlank() } ?: gameMode.statFormat
         
-        val (footerValue, footerColor, chroma) = when (stats) {
-            is GameStats.Bedwars -> formatBedwarsStats(stats, footerTemplate, config)
-            is GameStats.Duels -> formatDuelsStats(stats, footerTemplate, config)
-            is GameStats.SkyWars -> formatSkyWarsStats(stats, footerTemplate, config)
-            null -> Triple("?", config.footerColor, false)
+        val (footerValue, footerColor, chroma) = if (stats?.nicked == true) {
+            Triple("NICKED", Color.GRAY, false)
+        } else {
+            when (stats) {
+                is GameStats.Bedwars -> formatBedwarsStats(stats, footerTemplate, config)
+                is GameStats.Duels -> formatDuelsStats(stats, footerTemplate, config)
+                is GameStats.SkyWars -> formatSkyWarsStats(stats, footerTemplate, config)
+                null -> Triple("?", config.footerColor, false)
+            }
         }
         
         // Check if data is stale (> 1 hour old)

@@ -11,6 +11,7 @@ import java.time.Duration
 sealed class GameStats {
     abstract val fetchedAt: Long
     abstract val etag: String?
+    abstract val nicked: Boolean
     
     /**
      * Check if the cached stats have expired based on the provided TTL.
@@ -25,6 +26,7 @@ sealed class GameStats {
         val experience: Long?,
         val fkdr: Double?,
         val winstreak: Int?,
+        override val nicked: Boolean,
         override val fetchedAt: Long,
         override val etag: String? = null
     ) : GameStats() {
@@ -43,6 +45,7 @@ sealed class GameStats {
         val deaths: Int?,
         val winstreak: Int?,
         val bestWinstreak: Int?,
+        override val nicked: Boolean,
         override val fetchedAt: Long,
         override val etag: String? = null
     ) : GameStats() {
@@ -75,6 +78,7 @@ sealed class GameStats {
         val losses: Int?,
         val kills: Int?,
         val deaths: Int?,
+        override val nicked: Boolean,
         override val fetchedAt: Long,
         override val etag: String? = null
     ) : GameStats() {
@@ -113,6 +117,7 @@ sealed class GameStats {
                 deaths = cached.deaths,
                 winstreak = cached.winstreak,
                 bestWinstreak = cached.bestWinstreak,
+                nicked = false,
                 fetchedAt = cached.fetchedAt,
                 etag = cached.etag
             )
@@ -129,6 +134,7 @@ sealed class GameStats {
                 losses = cached.losses,
                 kills = cached.kills,
                 deaths = cached.deaths,
+                nicked = false,
                 fetchedAt = cached.fetchedAt,
                 etag = cached.etag
             )

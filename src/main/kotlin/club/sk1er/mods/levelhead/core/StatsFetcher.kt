@@ -39,7 +39,8 @@ object StatsFetcher {
      * Returns null if the payload does not contain stats for the specified game mode.
      */
     fun buildGameStats(payload: JsonObject, gameMode: GameMode, etag: String? = null): GameStats? {
-        val statsObj = findStatsObject(payload, gameMode) ?: return null
+        findStatsObject(payload, gameMode) ?: return null
+        val nicked = isNicked(payload)
         
         return when (gameMode) {
             GameMode.BEDWARS -> {
@@ -52,6 +53,7 @@ object StatsFetcher {
                     experience = experience,
                     fkdr = fkdr,
                     winstreak = winstreak,
+                    nicked = nicked,
                     fetchedAt = System.currentTimeMillis(),
                     etag = etag
                 )
@@ -70,6 +72,7 @@ object StatsFetcher {
                     deaths = deaths,
                     winstreak = winstreak,
                     bestWinstreak = bestWinstreak,
+                    nicked = nicked,
                     fetchedAt = System.currentTimeMillis(),
                     etag = etag
                 )
@@ -88,6 +91,7 @@ object StatsFetcher {
                     losses = losses,
                     kills = kills,
                     deaths = deaths,
+                    nicked = nicked,
                     fetchedAt = System.currentTimeMillis(),
                     etag = etag
                 )
@@ -147,6 +151,34 @@ object StatsFetcher {
             }
         }
         return null
+    }
+
+    private fun isNicked(payload: JsonObject): Boolean {
+        val data = payload.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
+        val player = payload.get("player")?.takeIf { it.isJsonObject }?.asJsonObject
+
+        return payload.booleanValue("nicked") == true ||
+            (payload.stringValue("display") ?: payload.stringValue("displayname")).isNickedDisplayName() ||
+            (data?.booleanValue("nicked") == true) ||
+            (data?.let { it.stringValue("display") ?: it.stringValue("displayname") }).isNickedDisplayName() ||
+            (player?.booleanValue("nicked") == true) ||
+            player?.stringValue("displayname").isNickedDisplayName()
+    }
+
+    private fun JsonObject.booleanValue(key: String): Boolean? {
+        val element = get(key) ?: return null
+        if (element.isJsonNull) return null
+        return kotlin.runCatching { element.asBoolean }.getOrNull()
+    }
+
+    private fun JsonObject.stringValue(key: String): String? {
+        val element = get(key) ?: return null
+        if (element.isJsonNull) return null
+        return kotlin.runCatching { element.asString }.getOrNull()
+    }
+
+    private fun String?.isNickedDisplayName(): Boolean {
+        return this?.trim()?.equals("(nicked)", ignoreCase = true) == true
     }
 
     private fun buildMinimalStatsObject(source: JsonObject, gameMode: GameMode): JsonObject? {
