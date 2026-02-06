@@ -57,13 +57,18 @@ object DuelsStats {
         DivisionRequirement(100000, 10000, 50, "ASCENDED", "ascended", Color(255, 85, 85), "c", true)
     )
 
+    private val overallDivisions = divisions.map {
+        it.copy(req = it.req * 2, step = it.step * 2)
+    }
+
     /**
      * Calculate the division for a given number of wins.
      */
     fun getDivision(wins: Int): Division {
         val overall = getOverallDivisionInfo(wins)
+        val divisionReq = divisions.find { it.id == overall.id }?.req ?: 0
         return Division(
-            minWins = 0,
+            minWins = divisionReq * 2,
             name = overall.displayName,
             color = overall.color,
             colorCode = overall.colorCode,
@@ -76,21 +81,6 @@ object DuelsStats {
      * (base requirements multiplied by 2).
      */
     fun getOverallDivisionInfo(wins: Int): OverallDivisionInfo {
-        if (wins <= 0) {
-            return OverallDivisionInfo(
-                displayName = "-",
-                romanLevel = "-",
-                color = Color(170, 170, 170),
-                colorCode = "7",
-                bold = false,
-                id = "none"
-            )
-        }
-
-        val overallDivisions = divisions.map {
-            it.copy(req = it.req * 2, step = it.step * 2)
-        }
-
         var active = overallDivisions.first()
         for (i in overallDivisions.indices.reversed()) {
             if (wins >= overallDivisions[i].req) {
@@ -218,20 +208,24 @@ object DuelsStats {
      */
     fun styleForDivision(wins: Int): DivisionStyle {
         val division = getOverallDivisionInfo(wins)
-        val symbol = when {
-            division.id == "ascended" -> "⚔"
-            division.id == "divine" -> "✺"
-            division.id == "celestial" -> "✵"
-            division.id == "godlike" -> "✯"
-            division.id == "grandmaster" -> "★"
-            division.id == "legend" -> "✫"
-            division.id == "master" -> "✦"
-            division.id == "diamond" -> "♦"
-            division.id == "gold" -> "✹"
-            division.id == "iron" -> "•"
+        val symbol = symbolForDivisionId(division.id)
+        return DivisionStyle(division.color, division.colorCode, division.bold, symbol)
+    }
+
+    fun symbolForDivisionId(id: String): String {
+        return when (id) {
+            "ascended" -> "⚔"
+            "divine" -> "✺"
+            "celestial" -> "✵"
+            "godlike" -> "✯"
+            "grandmaster" -> "★"
+            "legend" -> "✫"
+            "master" -> "✦"
+            "diamond" -> "♦"
+            "gold" -> "✹"
+            "iron" -> "•"
             else -> "·"
         }
-        return DivisionStyle(division.color, division.colorCode, division.bold, symbol)
     }
 
     /**
@@ -241,9 +235,9 @@ object DuelsStats {
      */
     fun formatDivisionTag(wins: Int): String {
         val division = getOverallDivisionInfo(wins)
-        val style = styleForDivision(wins)
+        val symbol = symbolForDivisionId(division.id)
         val boldFormat = if (division.bold) "§l" else ""
-        return "§${division.colorCode}$boldFormat[${division.displayName} ${style.symbol}]"
+        return "§${division.colorCode}$boldFormat[${division.displayName} $symbol]"
     }
 
     private fun romanize(value: Int): String {

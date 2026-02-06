@@ -37,9 +37,6 @@ private const val _MIN_STAR_CACHE_TTL_MINUTES_SLIDER = 5f
 private const val _MAX_STAR_CACHE_TTL_MINUTES_SLIDER = 180f
 private const val BACKEND_MODE_INDEX_MAX = 3
 private val BACKEND_MODE_DIRECT_API = BackendMode.DIRECT_API.ordinal
-private const val BEDWARS_STAT_MODE_INDEX_MAX = 3
-private const val DUELS_STAT_MODE_INDEX_MAX = 6
-private const val SKYWARS_STAT_MODE_INDEX_MAX = 4
 private const val GITHUB_REPO_URL = "https://github.com/beenycool/bedwars-level-head"
 private const val UPSTREAM_LEVELHEAD_URL = "https://github.com/Sk1erLLC/Levelhead"
 private const val MODRINTH_URL = "https://modrinth.com/mod/bedwars-level-head"
@@ -287,7 +284,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
                 config.footerString = template
                 true
             }
-            refreshDisplayStats()
+            refreshDisplayStats(clearStats = false)
             save()
         }
 
@@ -303,8 +300,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var bedwarsStatDisplayIndex: Int = BedwarsStatMode.STAR.ordinal
         set(value) {
-            field = value.coerceIn(0, BEDWARS_STAT_MODE_INDEX_MAX)
-            refreshDisplayStats()
+            field = value.coerceIn(0, BedwarsStatMode.entries.lastIndex)
+            refreshDisplayStats(clearStats = true)
             save()
         }
 
@@ -317,7 +314,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var bedwarsCustomFooterFormat: String = "%star%"
         set(value) {
             field = value.ifBlank { "%star%" }
-            refreshDisplayStats()
+            refreshDisplayStats(clearStats = false)
             save()
         }
 
@@ -329,8 +326,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var duelsStatDisplayIndex: Int = DuelsStatMode.DIVISION_TITLE.ordinal
         set(value) {
-            field = value.coerceIn(0, DUELS_STAT_MODE_INDEX_MAX)
-            refreshDisplayStats()
+            field = value.coerceIn(0, DuelsStatMode.entries.lastIndex)
+            refreshDisplayStats(clearStats = true)
             save()
         }
 
@@ -343,7 +340,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var duelsCustomFooterFormat: String = "%division%"
         set(value) {
             field = value.ifBlank { "%division%" }
-            refreshDisplayStats()
+            refreshDisplayStats(clearStats = false)
             save()
         }
 
@@ -355,8 +352,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var skywarsStatDisplayIndex: Int = SkyWarsStatMode.STAR.ordinal
         set(value) {
-            field = value.coerceIn(0, SKYWARS_STAT_MODE_INDEX_MAX)
-            refreshDisplayStats()
+            field = value.coerceIn(0, SkyWarsStatMode.entries.lastIndex)
+            refreshDisplayStats(clearStats = true)
             save()
         }
 
@@ -369,7 +366,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var skywarsCustomFooterFormat: String = "%star%"
         set(value) {
             field = value.ifBlank { "%star%" }
-            refreshDisplayStats()
+            refreshDisplayStats(clearStats = false)
             save()
         }
 
@@ -980,14 +977,18 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         val rtOffset: Double
     )
 
-    enum class BedwarsStatMode(val template: String) {
+    private interface StatMode {
+        val template: String
+    }
+
+    enum class BedwarsStatMode(override val template: String) : StatMode {
         STAR("%star%"),
         FKDR("%fkdr%"),
         WINSTREAK("%ws%"),
         CUSTOM("")
     }
 
-    enum class DuelsStatMode(val template: String) {
+    enum class DuelsStatMode(override val template: String) : StatMode {
         DIVISION_TITLE("%division%"),
         WINS("%wins%"),
         WLR("%wlr%"),
@@ -997,7 +998,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         CUSTOM("")
     }
 
-    enum class SkyWarsStatMode(val template: String) {
+    enum class SkyWarsStatMode(override val template: String) : StatMode {
         STAR("%star%"),
         WINS("%wins%"),
         WLR("%wlr%"),
@@ -1005,21 +1006,59 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         CUSTOM("")
     }
 
+    private val bedwarsStatMode: BedwarsStatMode
+        get() = BedwarsStatMode.entries.getOrNull(bedwarsStatDisplayIndex) ?: BedwarsStatMode.STAR
+
+    private val duelsStatMode: DuelsStatMode
+        get() = DuelsStatMode.entries.getOrNull(duelsStatDisplayIndex) ?: DuelsStatMode.DIVISION_TITLE
+
+    private val skywarsStatMode: SkyWarsStatMode
+        get() = SkyWarsStatMode.entries.getOrNull(skywarsStatDisplayIndex) ?: SkyWarsStatMode.STAR
+
+    private fun <T> resolveTemplateFor(
+        modeIndex: Int,
+        entries: List<T>,
+        defaultMode: T,
+        customFormat: String,
+        customMode: T,
+        defaultCustomTemplate: String
+    ): String where T : Enum<*>, T : StatMode {
+        val mode = entries.getOrNull(modeIndex) ?: defaultMode
+        return if (mode == customMode) {
+            customFormat.ifBlank { defaultCustomTemplate }
+        } else {
+            mode.template
+        }
+    }
+
     fun footerTemplateFor(gameMode: GameMode, config: DisplayConfig): String {
-        return when (gameMode) {
-            GameMode.BEDWARS -> {
-                val mode = BedwarsStatMode.entries.getOrNull(bedwarsStatDisplayIndex) ?: BedwarsStatMode.STAR
-                if (mode == BedwarsStatMode.CUSTOM) bedwarsCustomFooterFormat.ifBlank { "%star%" } else mode.template
-            }
-            GameMode.DUELS -> {
-                val mode = DuelsStatMode.entries.getOrNull(duelsStatDisplayIndex) ?: DuelsStatMode.DIVISION_TITLE
-                if (mode == DuelsStatMode.CUSTOM) duelsCustomFooterFormat.ifBlank { "%division%" } else mode.template
-            }
-            GameMode.SKYWARS -> {
-                val mode = SkyWarsStatMode.entries.getOrNull(skywarsStatDisplayIndex) ?: SkyWarsStatMode.STAR
-                if (mode == SkyWarsStatMode.CUSTOM) skywarsCustomFooterFormat.ifBlank { "%star%" } else mode.template
-            }
-        }.ifBlank {
+        val template = when (gameMode) {
+            GameMode.BEDWARS -> resolveTemplateFor(
+                bedwarsStatDisplayIndex,
+                BedwarsStatMode.entries,
+                BedwarsStatMode.STAR,
+                bedwarsCustomFooterFormat,
+                BedwarsStatMode.CUSTOM,
+                "%star%"
+            )
+            GameMode.DUELS -> resolveTemplateFor(
+                duelsStatDisplayIndex,
+                DuelsStatMode.entries,
+                DuelsStatMode.DIVISION_TITLE,
+                duelsCustomFooterFormat,
+                DuelsStatMode.CUSTOM,
+                "%division%"
+            )
+            GameMode.SKYWARS -> resolveTemplateFor(
+                skywarsStatDisplayIndex,
+                SkyWarsStatMode.entries,
+                SkyWarsStatMode.STAR,
+                skywarsCustomFooterFormat,
+                SkyWarsStatMode.CUSTOM,
+                "%star%"
+            )
+        }
+        return template.ifBlank {
             config.footerString?.takeIf { it.isNotBlank() } ?: gameMode.statFormat
         }
     }
@@ -1264,13 +1303,13 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         hideIf("proxyAuthInfo") { !showAdvancedOptions }
 
         hideIf("bedwarsCustomFooterFormat") {
-            (BedwarsStatMode.entries.getOrNull(bedwarsStatDisplayIndex) ?: BedwarsStatMode.STAR) != BedwarsStatMode.CUSTOM
+            bedwarsStatMode != BedwarsStatMode.CUSTOM
         }
         hideIf("duelsCustomFooterFormat") {
-            (DuelsStatMode.entries.getOrNull(duelsStatDisplayIndex) ?: DuelsStatMode.DIVISION_TITLE) != DuelsStatMode.CUSTOM
+            duelsStatMode != DuelsStatMode.CUSTOM
         }
         hideIf("skywarsCustomFooterFormat") {
-            (SkyWarsStatMode.entries.getOrNull(skywarsStatDisplayIndex) ?: SkyWarsStatMode.STAR) != SkyWarsStatMode.CUSTOM
+            skywarsStatMode != SkyWarsStatMode.CUSTOM
         }
         
         // Show API key warning only when in "Own API Key" mode and key is blank
@@ -1436,7 +1475,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         BedwarsFetcher.resetWarnings()
     }
 
-    private fun refreshDisplayStats() {
+    private fun refreshDisplayStats(clearStats: Boolean) {
+        Levelhead.displayManager.clearCachesWithoutRefetch(clearStats = clearStats)
         Levelhead.displayManager.refreshVisibleDisplays()
     }
 
