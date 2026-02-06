@@ -19,6 +19,7 @@ object BedwarsModeDetector {
 
     private val teamPattern = Regex("(?:^|\\s)(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY|GREY)\\s*:", RegexOption.IGNORE_CASE)
     private val miniServerPattern = Regex("mini\\w+", RegexOption.IGNORE_CASE)
+    private val bedwarsIntroPattern = Regex("protect\\s+your\\s+bed\\s+and\\s+destroy\\s+the\\s+enemy\\s+beds?", RegexOption.IGNORE_CASE)
     private val WHITESPACE_PATTERN = Regex("\\s+")
 
     private var cachedContext: Context = Context.UNKNOWN
@@ -235,7 +236,7 @@ object BedwarsModeDetector {
         val normalized = StringUtils.stripControlCodes(rawText).lowercase(Locale.ROOT)
         val hasBedwarsKeyword = normalized.contains("bed wars") || normalized.contains("bedwars")
         val detectedContext = when {
-            normalized.contains("protect your bed and destroy the enemy beds") -> Context.MATCH
+            bedwarsIntroPattern.containsMatchIn(normalized) -> Context.MATCH
             (normalized.contains("the game starts in") || normalized.contains("game starts in")) && hasBedwarsKeyword -> Context.MATCH
             hasBedwarsKeyword -> Context.LOBBY
             normalized.contains("sending you to mini") && cachedContext.isBedwars -> Context.LOBBY

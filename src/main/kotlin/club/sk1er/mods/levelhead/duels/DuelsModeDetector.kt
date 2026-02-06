@@ -143,6 +143,21 @@ object DuelsModeDetector {
             .filter { it.isNotBlank() }
             .toList()
 
+        val normalizedLines = lines.map { it.uppercase(Locale.ROOT) }
+        val isBedwarsDuels = normalizedTitle.contains("BEDWARS") ||
+            normalizedLines.any { line ->
+                line.contains("BED WARS") ||
+                    line.contains("BEDS:") ||
+                    line.contains("BEDS BROKEN") ||
+                    line.contains("FINAL KILLS") ||
+                    line.contains("EMERALDS IN") ||
+                    line.contains("DIAMONDS IN")
+            }
+
+        if (isBedwarsDuels) {
+            return Context.NONE
+        }
+
         val isDuelScoreboard = normalizedTitle.contains("DUELS") || lines.any { it.contains("Duel", ignoreCase = true) }
         
         if (!isDuelScoreboard) {
@@ -223,6 +238,11 @@ object DuelsModeDetector {
         }
 
         val normalized = StringUtils.stripControlCodes(rawText).lowercase(Locale.ROOT)
+
+        if (normalized.contains("bed wars duels") || normalized.contains("bedwars duels")) {
+            return
+        }
+
         val detectedContext = when {
             normalized.contains("duel starting in") -> Context.MATCH
             normalized.contains("the game starts in") && (normalized.contains("duels") || normalized.contains("duel")) -> Context.MATCH
