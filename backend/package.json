@@ -11,24 +11,25 @@
   "engines": {
     "node": ">=18"
   },
-  "dependencies": {},
+  "dependencies": {
+    "async-mutex": "^0.5.0",
+    "axios": "^1.8.0",
+    "compression": "^1.8.1",
+    "dotenv": "^16.5.0",
+    "express": "^4.21.0",
+    "ioredis": "^5.8.2",
+    "lru-cache": "^11.2.4",
+    "mssql": "^12.2.0",
+    "pg": "^8.13.1",
+    "prom-client": "^15.1.2"
+  },
   "devDependencies": {
     "@types/compression": "^1.8.1",
     "@types/express": "^4.17.21",
     "@types/mssql": "^9.1.8",
     "@types/node": "^20.11.30",
     "@types/pg": "^8.11.10",
-    "async-mutex": "^0.5.0",
-    "axios": "^1.8.0",
-    "compression": "^1.8.1",
-    "dotenv": "^16.5.0",
     "esbuild": "^0.27.3",
-    "express": "^4.21.0",
-    "ioredis": "^5.8.2",
-    "lru-cache": "^11.2.4",
-    "mssql": "^12.2.0",
-    "pg": "^8.13.1",
-    "prom-client": "^15.1.2",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.4.5"
   }

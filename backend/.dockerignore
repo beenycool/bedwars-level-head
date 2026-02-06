@@ -1,5 +1,52 @@
+# Dependencies
 node_modules
 npm-debug.log
-Dockerfile
+yarn-error.log
+package-lock.json
+
+# Build output
 dist
+build
+*.tsbuildinfo
+
+# Environment and config
 .env
+.env.local
+.env.*.local
+
+# Testing
+tests
+**/*.test.ts
+**/*.spec.ts
+coverage
+
+# Documentation
+*.md
+README*
+LICENSE*
+
+# Version control
+.git
+.gitignore
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+Dockerfile*
+docker-compose*
+.dockerignore
+
+# Logs
+logs
+*.log
+
+# Database migrations (only needed for local dev, Render uses managed DB)
+migrations
