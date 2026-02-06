@@ -488,9 +488,9 @@ export async function setPlayerStatsL1(
   try {
     const ttlMs = await getAdaptiveL1TtlMs();
     const expiresAt = Date.now() + ttlMs;
-    const payload = JSON.stringify(stats);
+    // Bolt: Optimized to avoid double serialization. 'stats' is embedded as an object.
     const data = JSON.stringify({
-      payload,
+      payload: stats,
       expires_at: expiresAt,
       etag: metadata.etag ?? null,
       last_modified: metadata.lastModified ?? null,

@@ -263,6 +263,15 @@ router.get('/', async (req, res, next) => {
       })
       .join('\n');
 
+
+    const dynamicStyles = `
+      #quotaBar { width: ${quotaPct}%; }
+      #redisMemBar {
+        width: ${redisStats.memoryPercent.toFixed(1)}%;
+        background: ${redisStats.memoryPercent > 80 ? 'linear-gradient(90deg, #f87171, #ef4444)' : 'linear-gradient(90deg, #22d3ee, #3b82f6)'};
+      }
+      #localCacheBar { width: ${((redisStats.localCacheSize / redisStats.localCacheMaxSize) * 100).toFixed(1)}%; }
+    `;
     const html = `<!DOCTYPE html>
 <html lang="en">
   <head>
@@ -270,7 +279,7 @@ router.get('/', async (req, res, next) => {
     <title>Levelhead Player Stats</title>
     <link rel="icon" href="data:," />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.js" integrity="sha384-tgbB5AKnszdcfwcZtTfuhR3Ko1XZdlDfsLtkxiiAZiVkkXCkFmp+FQFh+V/UTo54" crossorigin="anonymous"></script>
-    <style>
+    <style nonce="${res.locals.nonce}">
       :root {
         color-scheme: dark;
         font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -680,6 +689,17 @@ router.get('/', async (req, res, next) => {
         background: rgba(59, 130, 246, 0.4);
         transform: scale(1.05);
       }
+      .expand-btn:focus-visible,
+      .refresh-btn:focus-visible,
+      .preset-btn:focus-visible,
+      .apply-btn:focus-visible,
+      .reset-btn:focus-visible,
+      .search-box button:focus-visible,
+      .pager button:focus-visible {
+        outline: 2px solid #38bdf8;
+        outline-offset: 2px;
+      }
+
       .fullscreen-overlay {
         position: fixed;
         top: 0;
@@ -744,6 +764,23 @@ router.get('/', async (req, res, next) => {
         width: 100% !important;
         height: 100% !important;
       }
+
+      .refresh-countdown { min-width: 120px; text-align: right; }
+      .status-connected { color: #22c55e; }
+      .status-disconnected { color: #ef4444; }
+      .flex-gap-05 { display: flex; gap: 0.5rem; }
+      .hidden { display: none !important; }
+      .overflow-hidden { overflow: hidden; }
+      .btn-download {
+        text-decoration: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(59, 130, 246, 0.2);
+        border-color: rgba(59, 130, 246, 0.4);
+        color: #93c5fd;
+      }
+      ${dynamicStyles}
     </style>
   </head>
   <body>
@@ -784,17 +821,17 @@ router.get('/', async (req, res, next) => {
           <input type="checkbox" id="autoRefreshToggle" />
           Auto-refresh every
         </label>
-        <select id="refreshInterval">
+        <select id="refreshInterval" aria-label="Refresh interval">
           <option value="10000">10s</option>
           <option value="30000" selected>30s</option>
           <option value="60000">1m</option>
           <option value="300000">5m</option>
         </select>
         
-        <span id="refreshCountdown" class="muted" style="min-width: 120px; text-align: right;"></span>
+        <span id="refreshCountdown" class="muted refresh-countdown"></span>
         
         <button id="refreshNowBtn" class="refresh-btn">
-          <svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
+          <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
           Refresh Now
         </button>
       </div>
@@ -809,13 +846,13 @@ router.get('/', async (req, res, next) => {
       <div class="card stat-card">
         <p class="stat-label">Cache Hit Rate</p>
         <p class="stat-value" id="cacheHitRateValue">--</p>
-        <div class="progress"><span id="cacheHitProgress"></span></div>
+        <div class="progress" role="progressbar" aria-label="Cache Hit Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="cacheHitProgress"></span></div>
         <p class="stat-sub">Measured from recent lookups</p>
       </div>
       <div class="card stat-card">
         <p class="stat-label">Success Rate</p>
         <p class="stat-value" id="successRateValue">--</p>
-        <div class="progress"><span id="successRateProgress"></span></div>
+        <div class="progress" role="progressbar" aria-label="Success Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="successRateProgress"></span></div>
         <p class="stat-sub">Based on HTTP status codes</p>
       </div>
       <div class="card stat-card">
@@ -846,8 +883,8 @@ router.get('/', async (req, res, next) => {
       <div class="card stat-card">
         <p class="stat-label">Hypixel API (1h)</p>
         <p class="stat-value">${escapeHtml(sysStats.apiCallsLastHour.toLocaleString())}</p>
-        <div class="progress">
-          <span style="width: ${quotaPct}%"></span>
+        <div class="progress" role="progressbar" aria-label="Hypixel API Quota Usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(quotaPct)}">
+          <span id="quotaBar"></span>
         </div>
         <p class="stat-sub">Quota usage</p>
       </div>
@@ -862,14 +899,14 @@ router.get('/', async (req, res, next) => {
     <div class="stat-grid">
       <div class="card stat-card">
         <p class="stat-label">Status</p>
-        <p class="stat-value" style="color: ${redisStats.connected ? '#22c55e' : '#ef4444'}">${redisStats.connected ? '● Connected' : '○ Disconnected'}</p>
+        <p class="stat-value ${redisStats.connected ? 'status-connected' : 'status-disconnected'}">${redisStats.connected ? '● Connected' : '○ Disconnected'}</p>
         <p class="stat-sub">${redisStats.connected ? 'Rate limiting active' : 'Falling back to Postgres'}</p>
       </div>
       <div class="card stat-card">
         <p class="stat-label">Memory Usage</p>
         <p class="stat-value">${escapeHtml(redisStats.memoryUsed)}</p>
-        <div class="progress">
-          <span style="width: ${redisStats.memoryPercent.toFixed(1)}%; background: ${redisStats.memoryPercent > 80 ? 'linear-gradient(90deg, #f87171, #ef4444)' : 'linear-gradient(90deg, #22d3ee, #3b82f6)'}"></span>
+        <div class="progress" role="progressbar" aria-label="Redis Memory Usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(redisStats.memoryPercent)}">
+          <span id="redisMemBar"></span>
         </div>
         <p class="stat-sub">Max: ${escapeHtml(redisStats.memoryMax)} (${redisStats.memoryPercent.toFixed(1)}%)</p>
       </div>
@@ -881,8 +918,8 @@ router.get('/', async (req, res, next) => {
       <div class="card stat-card">
         <p class="stat-label">Local Memory Cache</p>
         <p class="stat-value">${redisStats.localCacheSize.toLocaleString()}</p>
-        <div class="progress">
-          <span style="width: ${((redisStats.localCacheSize / redisStats.localCacheMaxSize) * 100).toFixed(1)}%"></span>
+        <div class="progress" role="progressbar" aria-label="Local Memory Cache Usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round((redisStats.localCacheSize / redisStats.localCacheMaxSize) * 100)}">
+          <span id="localCacheBar"></span>
         </div>
         <p class="stat-sub">Max: ${redisStats.localCacheMaxSize.toLocaleString()} entries</p>
       </div>
@@ -904,21 +941,33 @@ router.get('/', async (req, res, next) => {
       <div class="card">
         <div class="card-header">
           <h2>Cache Performance</h2>
-          <button class="expand-btn" data-chart="cacheChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="cacheChart" title="Expand chart" aria-label="Expand Cache Performance chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="chart-shell"><canvas id="cacheChart"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
           <h2>Star Distribution</h2>
-          <button class="expand-btn" data-chart="starChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="starChart" title="Expand chart" aria-label="Expand Star Distribution chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="chart-shell"><canvas id="starChart"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
           <h2>Latency Pulse</h2>
-          <button class="expand-btn" data-chart="latencyChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="latencyChart" title="Expand chart" aria-label="Expand Latency Pulse chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="latency-chart-controls">
           <label>
@@ -931,53 +980,77 @@ router.get('/', async (req, res, next) => {
       <div class="card">
         <div class="card-header">
           <h2>Status Breakdown</h2>
-          <button class="expand-btn" data-chart="statusChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="statusChart" title="Expand chart" aria-label="Expand Status Breakdown chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="chart-shell"><canvas id="statusChart"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
           <h2>Lookup Type Distribution</h2>
-          <button class="expand-btn" data-chart="lookupTypeChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="lookupTypeChart" title="Expand chart" aria-label="Expand Lookup Type Distribution chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="chart-shell"><canvas id="lookupTypeChart"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
           <h2>Requests Over Time</h2>
-          <button class="expand-btn" data-chart="requestsOverTimeChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="requestsOverTimeChart" title="Expand chart" aria-label="Expand Requests Over Time chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="chart-shell"><canvas id="requestsOverTimeChart"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
           <h2>Cache Hit Rate Over Time</h2>
-          <button class="expand-btn" data-chart="cacheOverTimeChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="cacheOverTimeChart" title="Expand chart" aria-label="Expand Cache Hit Rate Over Time chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="chart-shell"><canvas id="cacheOverTimeChart"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
           <h2>Latency Distribution</h2>
-          <button class="expand-btn" data-chart="latencyDistributionChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="latencyDistributionChart" title="Expand chart" aria-label="Expand Latency Distribution chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="chart-shell"><canvas id="latencyDistributionChart"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
           <h2>Top Queried Players</h2>
-          <button class="expand-btn" data-chart="topPlayersChart" title="Expand chart">⛶</button>
+          <button class="expand-btn" data-chart="topPlayersChart" title="Expand chart" aria-label="Expand Top Queried Players chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
         </div>
         <div class="chart-shell"><canvas id="topPlayersChart"></canvas></div>
       </div>
     </div>
 
-    <div id="fullscreenOverlay" class="fullscreen-overlay" style="display: none;">
+    <div id="fullscreenOverlay" class="fullscreen-overlay hidden">
       <div class="fullscreen-modal">
         <div class="fullscreen-header">
           <h3 class="fullscreen-title" id="fullscreenTitle"></h3>
-          <div style="display: flex; gap: 0.5rem;">
-            <a id="fullscreenDownloadBtn" class="fullscreen-close-btn" style="text-decoration: none; display: flex; align-items: center; justify-content: center; background: rgba(59, 130, 246, 0.2); border-color: rgba(59, 130, 246, 0.4); color: #93c5fd;" href="#" target="_blank">Download CSV</a>
+          <div class="flex-gap-05">
+            <a id="fullscreenDownloadBtn" class="fullscreen-close-btn btn-download" href="#" target="_blank">Download CSV</a>
             <button class="fullscreen-close-btn" id="fullscreenCloseBtn">✕ Close</button>
           </div>
         </div>
@@ -996,6 +1069,7 @@ router.get('/', async (req, res, next) => {
         <input
           type="text"
           name="q"
+          aria-label="Search players"
           placeholder="Search by username or UUID"
           value="${escapeHtml(search)}"
         />
@@ -1019,13 +1093,13 @@ router.get('/', async (req, res, next) => {
     <table>
       <thead>
         <tr>
-          <th>Queried At</th>
-          <th>Lookup</th>
-          <th>Resolved</th>
-          <th>Stars</th>
-          <th>Source</th>
-          <th>Status</th>
-          <th>Latency</th>
+          <th scope="col">Queried At</th>
+          <th scope="col">Lookup</th>
+          <th scope="col">Resolved</th>
+          <th scope="col">Stars</th>
+          <th scope="col">Source</th>
+          <th scope="col">Status</th>
+          <th scope="col">Latency</th>
         </tr>
       </thead>
       <tbody>
@@ -1033,7 +1107,8 @@ router.get('/', async (req, res, next) => {
       </tbody>
     </table>
 
-    <script>
+    <script nonce="${res.locals.nonce}">
+      const nonce = "${res.locals.nonce}";
       const pageData = ${jsonForFrontend};
       const data = pageData.chartData || [];
       const topPlayers = pageData.topPlayers || [];
@@ -1160,7 +1235,14 @@ router.get('/', async (req, res, next) => {
         const numeric = Number(px);
         const clamped = Number.isFinite(numeric) ? Math.min(500, Math.max(200, numeric)) : defaultChartHeight;
         currentChartHeight = clamped;
-        document.documentElement.style.setProperty('--chart-height', clamped + 'px');
+        let rootStyle = document.getElementById('root-style');
+        if (!rootStyle) {
+           rootStyle = document.createElement('style');
+           rootStyle.id = 'root-style';
+           rootStyle.setAttribute('nonce', nonce);
+           document.head.appendChild(rootStyle);
+        }
+        rootStyle.textContent = ':root { --chart-height: ' + clamped + 'px; }';
         if (chartHeightControl) chartHeightControl.value = clamped.toString();
         if (chartHeightValue) chartHeightValue.textContent = clamped + 'px';
         charts.forEach((chart) => chart.resize());
@@ -1273,8 +1355,20 @@ router.get('/', async (req, res, next) => {
       }
 
       function setProgress(id, percentage) {
-        const el = document.getElementById(id);
-        if (el) el.style.width = Math.max(0, Math.min(100, percentage)) + '%';
+        let styleId = 'style-' + id;
+        let styleEl = document.getElementById(styleId);
+        if (!styleEl) {
+          styleEl = document.createElement('style');
+          styleEl.id = styleId;
+          styleEl.setAttribute('nonce', nonce);
+          document.head.appendChild(styleEl);
+        }
+        styleEl.textContent = '#' + id + ' { width: ' + Math.max(0, Math.min(100, percentage)) + '% !important; };';
+
+        const barSpan = document.getElementById(id);
+        if (barSpan && barSpan.parentElement && barSpan.parentElement.getAttribute('role') === 'progressbar') {
+          barSpan.parentElement.setAttribute('aria-valuenow', Math.round(percentage));
+        }
       }
 
       setMetric('totalLookupsValue', totalLookups.toLocaleString());
@@ -1841,8 +1935,8 @@ router.get('/', async (req, res, next) => {
         }
         
         titleEl.textContent = info.title;
-        overlay.style.display = 'flex';
-        document.body.style.overflow = 'hidden';
+        overlay.classList.remove('hidden');
+        document.body.classList.add('overflow-hidden');
 
         if (downloadBtn) {
             const url = new URL(window.location.origin + '/stats/csv');
@@ -1866,9 +1960,9 @@ router.get('/', async (req, res, next) => {
           fullscreenChartInstance = null;
         }
         if (overlay) {
-          overlay.style.display = 'none';
+          overlay.classList.add('hidden');
         }
-        document.body.style.overflow = '';
+        document.body.classList.remove('overflow-hidden');
       }
 
       // Attach event listeners to expand buttons
