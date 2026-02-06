@@ -14,6 +14,7 @@ import gg.essential.universal.UMinecraft
 import gg.essential.universal.UMinecraft.getFontRenderer
 import gg.essential.universal.UMinecraft.getMinecraft
 import gg.essential.universal.wrappers.UPlayer
+import net.minecraft.client.gui.inventory.GuiInventory
 import net.minecraft.client.gui.FontRenderer
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats
 import net.minecraft.entity.EntityLivingBase
@@ -37,9 +38,13 @@ object AboveHeadRender {
 
         val localPlayer = UMinecraft.getPlayer()
         val displayPosition = displayManager.config.displayPosition
+        val isInventoryScreen = getMinecraft().currentScreen is GuiInventory
 
         displayManager.aboveHead.forEachIndexed { index, display ->
             if (!display.config.enabled) return@forEachIndexed
+            if (isInventoryScreen && player.isSelf && !LevelheadConfig.showInInventory) {
+                return@forEachIndexed
+            }
             if (player.isSelf && !display.config.showSelf) {
                 maybeLogSelfHidden(displayPosition)
                 return@forEachIndexed
@@ -49,7 +54,7 @@ object AboveHeadRender {
                 // Calculate base offset based on display position
                 var offset = when (displayPosition) {
                     MasterConfig.DisplayPosition.ABOVE -> 0.3
-                    MasterConfig.DisplayPosition.BELOW -> -0.3
+                    MasterConfig.DisplayPosition.BELOW -> -0.1
                 }
                 
                 val hasScoreboardObjective = player.worldScoreboard?.getObjectiveInDisplaySlot(2) != null
@@ -60,7 +65,6 @@ object AboveHeadRender {
                     offset *= 2
                 }
                 
-                if (player.isSelf) offset = 0.0
                 offset += displayManager.config.offset
                 
                 // Adjust index offset direction based on position

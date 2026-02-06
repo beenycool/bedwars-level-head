@@ -1,5 +1,6 @@
 import axios, { type AxiosResponseHeaders, type RawAxiosResponseHeaders } from 'axios';
 import https from 'node:https';
+import CacheableLookup from 'cacheable-lookup';
 import {
   HYPIXEL_API_BASE_URL,
   HYPIXEL_API_KEY,
@@ -11,13 +12,16 @@ import {
 import { HttpError } from '../util/httpError';
 import { recordHypixelApiCall } from './hypixelTracker';
 
+const dnsCache = new CacheableLookup({ maxTtl: 300, fallbackDuration: 0 });
+
 // Define a custom HTTPS agent to force IPv4 and enable Keep-Alive
 const agent = new https.Agent({
   keepAlive: true,       // Reuse existing connections for batch requests
-  keepAliveMsecs: 1000,  // Keep sockets open for 1s
+  keepAliveMsecs: 15_000,
   maxSockets: 50,        // Allow up to 50 parallel connections
   family: 4,             // STRICTLY force IPv4 to bypass the 2s IPv6 timeout
 });
+dnsCache.install(agent as any);
 
 const hypixelClient = axios.create({
   baseURL: HYPIXEL_API_BASE_URL,
@@ -27,6 +31,50 @@ const hypixelClient = axios.create({
     'User-Agent': OUTBOUND_USER_AGENT,
   },
 });
+
+const CIRCUIT_BREAKER = {
+  failureThreshold: 5,
+  resetTimeoutMs: 30_000,
+  state: 'closed' as 'closed' | 'open' | 'half-open',
+  failures: 0,
+  lastFailureAt: 0,
+  halfOpenProbeInFlight: false,
+};
+
+function circuitBreakerCheck(): void {
+  if (CIRCUIT_BREAKER.state === 'closed') {
+    return;
+  }
+  if (CIRCUIT_BREAKER.state === 'open') {
+    if (Date.now() - CIRCUIT_BREAKER.lastFailureAt >= CIRCUIT_BREAKER.resetTimeoutMs) {
+      CIRCUIT_BREAKER.state = 'half-open';
+      CIRCUIT_BREAKER.halfOpenProbeInFlight = true;
+      return;
+    }
+    throw new HttpError(503, 'HYPIXEL_CIRCUIT_OPEN', 'Hypixel API circuit breaker is open; failing fast.');
+  }
+
+  if (CIRCUIT_BREAKER.halfOpenProbeInFlight) {
+    throw new HttpError(503, 'HYPIXEL_CIRCUIT_OPEN', 'Hypixel API circuit breaker is half-open; probe in flight.');
+  }
+
+  CIRCUIT_BREAKER.halfOpenProbeInFlight = true;
+}
+
+function circuitBreakerSuccess(): void {
+  CIRCUIT_BREAKER.failures = 0;
+  CIRCUIT_BREAKER.state = 'closed';
+  CIRCUIT_BREAKER.halfOpenProbeInFlight = false;
+}
+
+function circuitBreakerFailure(): void {
+  CIRCUIT_BREAKER.failures += 1;
+  CIRCUIT_BREAKER.lastFailureAt = Date.now();
+  CIRCUIT_BREAKER.halfOpenProbeInFlight = false;
+  if (CIRCUIT_BREAKER.state === 'half-open' || CIRCUIT_BREAKER.failures >= CIRCUIT_BREAKER.failureThreshold) {
+    CIRCUIT_BREAKER.state = 'open';
+  }
+}
 
 export interface HypixelPlayerResponse {
   success: boolean;
@@ -206,6 +254,7 @@ export async function fetchHypixelPlayer(
 ): Promise<HypixelFetchResult> {
   let attempt = 0;
   let lastError: unknown;
+  circuitBreakerCheck();
 
   while (attempt < 2) {
     try {
@@ -221,6 +270,8 @@ export async function fetchHypixelPlayer(
       void recordHypixelApiCall(uuid).catch((error) => {
         console.error('Failed to record Hypixel API call', error);
       });
+
+      circuitBreakerSuccess();
 
       if (response.status === 304) {
         return { payload: undefined, etag, lastModified, notModified: true };
@@ -241,6 +292,8 @@ export async function fetchHypixelPlayer(
         await wait(jitterDelay());
         continue;
       }
+
+      circuitBreakerFailure();
 
       if (axios.isAxiosError(error)) {
         if (error.response) {

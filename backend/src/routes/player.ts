@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import pLimit from 'p-limit';
 import { enforceRateLimit, enforceBatchRateLimit } from '../middleware/rateLimit';
 import { resolvePlayer, ResolvedPlayer } from '../services/player';
 import { computeBedwarsStar } from '../util/bedwars';
@@ -13,6 +14,8 @@ import { CacheSource } from '../services/cache';
 import { COMMUNITY_SUBMIT_SECRET } from '../config';
 import { MinimalPlayerStats } from '../services/hypixel';
 import { getPlayerStatsFromCache, setIgnMapping, setPlayerStatsBoth } from '../services/statsCache';
+
+const batchLimit = pLimit(6);
 
 const router = Router();
 
@@ -47,7 +50,7 @@ router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
     const notModified = req.fresh;
     const responseStatus = notModified ? 304 : 200;
 
-    await recordQuerySafely({
+    void recordQuerySafely({
       identifier,
       normalizedIdentifier: resolved.lookupValue,
       lookupType: resolved.lookupType,
@@ -114,14 +117,14 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
 
   try {
     const results = await Promise.all(
-      uniqueUuids.map(async (identifier) => {
+      uniqueUuids.map((identifier) => batchLimit(async () => {
         try {
           const startedAt = process.hrtime.bigint();
           const resolved = await resolvePlayer(identifier);
           const experience = extractBedwarsExperience(resolved.payload);
           const stars = experience === null ? null : computeBedwarsStar(experience);
 
-          await recordQuerySafely({
+          void recordQuerySafely({
             identifier,
             normalizedIdentifier: resolved.lookupValue,
             lookupType: resolved.lookupType,
@@ -147,7 +150,7 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
           }
           throw error;
         }
-      }),
+      })),
     );
 
     const payloadMap: Record<string, ResolvedPlayer['payload']> = {};

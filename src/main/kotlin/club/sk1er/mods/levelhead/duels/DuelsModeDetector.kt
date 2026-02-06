@@ -24,6 +24,19 @@ object DuelsModeDetector {
 
     private const val CHAT_CONTEXT_DURATION = 20_000L
 
+    private val bedwarsChatIndicators = listOf(
+        "protect your bed",
+        "bed destruction",
+        "your bed was",
+        "bed was destroyed"
+    )
+
+    private val skywarsChatIndicators = listOf(
+        "skywars",
+        "cages open in",
+        "players left:"
+    )
+
     enum class Context {
         UNKNOWN,
         NONE,
@@ -226,6 +239,16 @@ object DuelsModeDetector {
         currentContext(force = true)
     }
 
+    private fun clearCachedContext() {
+        chatDetectedContext = Context.NONE
+        chatDetectionExpiry = 0L
+        if (cachedContext.isDuels) {
+            cachedContext = Context.NONE
+            lastDetectionTime = 0L
+            currentContext(force = true)
+        }
+    }
+
     @SubscribeEvent
     fun onChat(event: ClientChatReceivedEvent) {
         if (!Levelhead.isOnHypixel()) {
@@ -238,6 +261,13 @@ object DuelsModeDetector {
         }
 
         val normalized = StringUtils.stripControlCodes(rawText).lowercase(Locale.ROOT)
+
+        val sawBedwarsSignal = bedwarsChatIndicators.any { normalized.contains(it) }
+        val sawSkyWarsSignal = skywarsChatIndicators.any { normalized.contains(it) }
+        if (sawBedwarsSignal || sawSkyWarsSignal) {
+            clearCachedContext()
+            return
+        }
 
         if (normalized.contains("bed wars duels") || normalized.contains("bedwars duels")) {
             return

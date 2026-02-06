@@ -31,14 +31,18 @@ object ModeManager {
      * Checks all mode detectors to determine which game is being played.
      */
     fun detectActiveMode(): ActiveMode {
-        val bedwars = BedwarsModeDetector.isInBedwars()
-        val duels = DuelsModeDetector.isInDuels()
-        val skywars = SkyWarsModeDetector.isInSkyWars()
+        val bedwarsMatch = BedwarsModeDetector.isInBedwarsMatch()
+        val duelsMatch = DuelsModeDetector.isInDuelsMatch()
+        val skywarsMatch = SkyWarsModeDetector.isInSkyWarsMatch()
+        val bedwars = bedwarsMatch || BedwarsModeDetector.isInBedwars()
+        val duels = duelsMatch || DuelsModeDetector.isInDuels()
+        val skywars = skywarsMatch || SkyWarsModeDetector.isInSkyWars()
         
         val detected = when {
-            bedwars -> ActiveMode.BEDWARS
-            duels -> ActiveMode.DUELS
-            skywars -> ActiveMode.SKYWARS
+            // Match contexts are stronger than lobby/chat context and should take priority.
+            bedwarsMatch || bedwars -> ActiveMode.BEDWARS
+            duelsMatch || duels -> ActiveMode.DUELS
+            skywarsMatch || skywars -> ActiveMode.SKYWARS
             else -> ActiveMode.NONE
         }
         
@@ -46,7 +50,7 @@ object ModeManager {
             val now = System.currentTimeMillis()
             if (detected != lastLoggedMode || now - lastLoggedAt > 5_000L) {
                 Levelhead.logger.info(
-                    "[TEMP_DEBUG] detectActiveMode: bedwars=$bedwars duels=$duels skywars=$skywars -> $detected"
+                    "[TEMP_DEBUG] detectActiveMode: bedwarsMatch=$bedwarsMatch duelsMatch=$duelsMatch skywarsMatch=$skywarsMatch bedwars=$bedwars duels=$duels skywars=$skywars -> $detected"
                 )
                 lastLoggedMode = detected
                 lastLoggedAt = now

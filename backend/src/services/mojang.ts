@@ -1,10 +1,23 @@
 import axios from 'axios';
+import https from 'node:https';
+import CacheableLookup from 'cacheable-lookup';
 import { HttpError } from '../util/httpError';
 import { OUTBOUND_USER_AGENT } from '../config';
+
+const dnsCache = new CacheableLookup({ maxTtl: 300, fallbackDuration: 0 });
+
+const agent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 15_000,
+  maxSockets: 20,
+  family: 4,
+});
+dnsCache.install(agent as any);
 
 const mojangClient = axios.create({
   baseURL: 'https://api.mojang.com',
   timeout: 5000,
+  httpsAgent: agent,
   headers: {
     'User-Agent': OUTBOUND_USER_AGENT,
   },
