@@ -108,6 +108,6 @@ public class MixinGuiPlayerTabOverlay {
         if (star < 1900) return "§9";       // Opal Prime
         if (star < 2000) return "§5";       // Amethyst Prime
         
-        return "§6"; // Default/Fallover
+        return "§6"; // Default/Fallback
     }
 }

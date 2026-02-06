@@ -427,7 +427,7 @@ object Levelhead {
 
     fun getCachedStats(uuid: UUID): GameStats? {
         val gameMode = ModeManager.getActiveGameMode() ?: GameMode.BEDWARS
-        return statsCache[StatsCacheKey(uuid, gameMode)]
+        return getCachedStats(uuid, gameMode)
     }
 
     fun getCachedStats(uuid: UUID, gameMode: GameMode): GameStats? {
@@ -462,7 +462,7 @@ object Levelhead {
         if (now - lastNotified < minNotifyIntervalMs) {
             return
         }
-        val newDeadline = System.currentTimeMillis() + duration.toMillis()
+        val newDeadline = now + duration.toMillis()
         while (true) {
             val current = serverCooldownNotifiedUntil.get()
             if (newDeadline <= current) {

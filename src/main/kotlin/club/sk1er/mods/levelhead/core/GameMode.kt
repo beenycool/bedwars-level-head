@@ -22,8 +22,8 @@ enum class GameMode(
         typeId = "DUELS_WINS",
         displayName = "Duels",
         defaultHeader = "Duels Division",
-        statFormat = "%wins%",
-        description = "Display Duels wins above players"
+        statFormat = "%division%",
+        description = "Display Duels division above players"
     ),
     SKYWARS(
         typeId = "SKYWARS_STAR",

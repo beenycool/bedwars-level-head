@@ -52,7 +52,6 @@ export interface IgnMappingEntry {
 }
 
 let lastMemorySample: MemorySample | null = null;
-let lastTtlRefreshAt = 0;
 let cachedAdaptiveTtlMs = PLAYER_L1_TTL_FALLBACK_MS;
 
 export function buildPlayerCacheKey(uuid: string): string {
@@ -149,13 +148,15 @@ async function refreshAdaptiveTtl(): Promise<void> {
   }
 
   lastMemorySample = sample;
-  lastTtlRefreshAt = now;
   cachedAdaptiveTtlMs = ttlMs;
 }
 
 let adaptiveTtlInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startAdaptiveTtlRefresh(): void {
+  if (adaptiveTtlInterval) {
+    return;
+  }
   void refreshAdaptiveTtl().catch((e) =>
     console.warn('[statsCache] initial adaptive TTL refresh failed', e),
   );
