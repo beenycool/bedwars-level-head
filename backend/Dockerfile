@@ -1,21 +1,17 @@
 # syntax=docker/dockerfile:1
 
-FROM node:20-alpine AS deps
+FROM node:20-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci
-
-FROM node:20-alpine AS build
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-RUN npm run build
+RUN npm run bundle
 
 FROM node:20-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
-COPY --from=build /app/dist ./dist
+# Only copy the bundle and package.json (needed for version reading)
+COPY --from=build /app/dist/index.js ./dist/index.js
+COPY --from=build /app/package.json ./package.json
 EXPOSE 3000
 CMD ["node", "dist/index.js"]
