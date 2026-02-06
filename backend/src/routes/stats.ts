@@ -8,6 +8,7 @@ import {
 } from '../services/history';
 import { getRedisStats } from '../services/redis';
 import { escapeHtml } from '../util/html';
+import { toCSV } from '../util/csv';
 
 const router = Router();
 const PAGE_SIZE = 25;
@@ -53,25 +54,6 @@ function formatLatency(latency: number | null): string {
   }
 
   return `${latency.toLocaleString()} ms`;
-}
-
-function toCSV(data: any[]): string {
-  if (data.length === 0) return '';
-  const headers = Object.keys(data[0]);
-  const headerRow = headers.join(',');
-  const rows = data.map(row => {
-    return headers.map(fieldName => {
-      const val = row[fieldName];
-      if (val === null || val === undefined) return '';
-      if (val instanceof Date) return val.toISOString();
-      const str = String(val);
-      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-        return `"${str.replace(/"/g, '""')}"`;
-      }
-      return str;
-    }).join(',');
-  });
-  return [headerRow, ...rows].join('\n');
 }
 
 router.get('/csv', async (req, res) => {
