@@ -1,0 +1,18 @@
+# Base image with all dependencies pre-installed
+# Build and push with:
+# docker build -f Dockerfile.base -t beenycool/levelhead-base:latest .
+# docker push beenycool/levelhead-base:latest
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install build dependencies
+RUN apk add --no-cache python3 make g++
+
+# Copy and install all dependencies (dev + prod)
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund && npm cache clean --force
+
+# Keep node_modules in the image
+# This image will be used as base for the app

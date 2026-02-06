@@ -1,30 +1,30 @@
 # syntax=docker/dockerfile:1
 
-FROM node:20-alpine AS base
+# Use pre-built base image with all dependencies
+# Auto-built by GitHub Actions when package.json changes
+FROM ghcr.io/beenycool/bedwars-level-head-base:latest AS build
+
 WORKDIR /app
 
-# Production dependencies stage - install only production deps
-FROM base AS deps
-COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --production --no-audit --no-fund
-
-# Build stage - install all deps and build
-FROM base AS build
-COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --no-audit --no-fund
+# Copy source code (node_modules already present from base)
 COPY . .
+
+# Build the application
 RUN npm run bundle
 
-# Production stage - minimal image
+# Production stage - minimal image with only runtime deps
 FROM node:20-alpine AS production
+
 WORKDIR /app
 ENV NODE_ENV=production
-# Copy only production node_modules
-COPY --from=deps /app/node_modules ./node_modules
-# Copy the bundle
+
+# Copy only production node_modules from base
+COPY --from=build /app/node_modules ./node_modules
+
+# Copy the built bundle
 COPY --from=build /app/dist/index.js ./dist/index.js
 COPY --from=build /app/package.json ./package.json
+
 EXPOSE 3000
+
 CMD ["node", "dist/index.js"]
