@@ -11,14 +11,18 @@ import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
+import java.util.Collections;
 import java.util.Locale;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Mixin to append BedWars FKDR stats to player names in the Tab list.
  */
 @Mixin(GuiPlayerTabOverlay.class)
 public class MixinGuiPlayerTabOverlay {
+    private static final long TAB_FETCH_RETRY_MS = 4000L;
+    private static final ConcurrentHashMap<UUID, Long> TAB_FETCH_ATTEMPTS = new ConcurrentHashMap<>();
 
     @Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)
     private void levelhead$appendFkdrToTabName(NetworkPlayerInfo networkPlayerInfo, CallbackInfoReturnable<String> cir) {
@@ -41,6 +45,7 @@ public class MixinGuiPlayerTabOverlay {
         // Fetch cached stats
         GameStats stats = Levelhead.INSTANCE.getCachedStats(uuid, GameMode.BEDWARS);
         if (!(stats instanceof GameStats.Bedwars)) {
+            requestTabStatsIfNeeded(uuid);
             return;
         }
 
@@ -83,6 +88,28 @@ public class MixinGuiPlayerTabOverlay {
         String modifiedName = starText + originalName + " §7: " + fkdrColorCode + fkdrText;
 
         cir.setReturnValue(modifiedName);
+    }
+
+    private void requestTabStatsIfNeeded(UUID uuid) {
+        long now = System.currentTimeMillis();
+        Long last = TAB_FETCH_ATTEMPTS.get(uuid);
+        if (last != null && now - last < TAB_FETCH_RETRY_MS) {
+            return;
+        }
+        TAB_FETCH_ATTEMPTS.put(uuid, now);
+
+        if (Levelhead.INSTANCE.getDisplayManager().primaryDisplay() == null) {
+            return;
+        }
+
+        String trimmedUuid = uuid.toString().replace("-", "");
+        Levelhead.LevelheadRequest request = new Levelhead.LevelheadRequest(
+            trimmedUuid,
+            Levelhead.INSTANCE.getDisplayManager().primaryDisplay(),
+            false,
+            GameMode.BEDWARS.getTypeId()
+        );
+        Levelhead.INSTANCE.fetchBatch(Collections.singletonList(request));
     }
 
     private String getStarColor(int star) {

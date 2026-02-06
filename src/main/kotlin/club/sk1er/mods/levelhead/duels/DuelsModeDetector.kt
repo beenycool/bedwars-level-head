@@ -270,6 +270,9 @@ object DuelsModeDetector {
         }
 
         if (normalized.contains("bed wars duels") || normalized.contains("bedwars duels")) {
+            // Hypixel "Bed Wars Duels" should stay on BedWars mode semantics.
+            // Clear any stale Duels chat context so mode arbitration cannot stick to DUELS.
+            clearCachedContext()
             return
         }
 

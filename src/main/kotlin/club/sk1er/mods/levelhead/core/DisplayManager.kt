@@ -143,6 +143,7 @@ class DisplayManager(val file: File) {
         if (!config.enabled) return
         if (player.isNPC) return
         if (!ModeManager.shouldRequestData()) return
+        syncGameMode()
         val displays = aboveHead.filter { it.config.enabled }
         val requests = displays.filter { !it.cache.containsKey(player.uniqueID) }
             .map { display ->
@@ -270,13 +271,25 @@ class DisplayManager(val file: File) {
                 if (config.type == previousMode.typeId) {
                     config.type = detectedMode.typeId
                 }
-                if (config.headerString.isBlank() || config.headerString == previousMode.defaultHeader) {
+                if (config.headerString.isBlank() || matchesModeDefaultHeader(config.headerString, previousMode)) {
                     config.headerString = detectedMode.defaultHeader
                 }
                 true
             } else {
                 false
             }
+        }
+    }
+
+    private fun matchesModeDefaultHeader(header: String, mode: GameMode): Boolean {
+        if (header.equals(mode.defaultHeader, ignoreCase = true)) {
+            return true
+        }
+
+        return when (mode) {
+            GameMode.BEDWARS -> header.equals("BedWars Level", ignoreCase = true)
+            GameMode.DUELS -> header.equals("Duels Wins", ignoreCase = true)
+            GameMode.SKYWARS -> false
         }
     }
 
