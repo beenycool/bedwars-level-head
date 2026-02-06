@@ -1375,16 +1375,16 @@ router.get('/', async (req, res, next) => {
       function buildFilterSummaryText(activeFilters) {
         if (!activeFilters) return '';
         const parts = [];
-        if (activeFilters.from) parts.push(`from ${new Date(activeFilters.from).toLocaleString()}`);
-        if (activeFilters.to) parts.push(`to ${new Date(activeFilters.to).toLocaleString()}`);
-        if (activeFilters.limit) parts.push(`limit ${activeFilters.limit}`);
-        return parts.length ? ` Filters ${parts.join(', ')}.` : '';
+        if (activeFilters.from) parts.push(\`from \${new Date(activeFilters.from).toLocaleString()}\`);
+        if (activeFilters.to) parts.push(\`to \${new Date(activeFilters.to).toLocaleString()}\`);
+        if (activeFilters.limit) parts.push(\`limit \${activeFilters.limit}\`);
+        return parts.length ? \` Filters \${parts.join(', ')}.\` : '';
       }
 
       function buildLatencyAriaLabel(summary) {
         const count = Number(summary.latencySeriesCount ?? 0).toLocaleString();
         const inclusion = summary.includeCacheHits ? 'including cache hits' : 'excluding cache hits';
-        return `${chartAriaBase.latencyChart}. ${count} data points, ${inclusion}.${buildFilterSummaryText(summary.filters)}`;
+        return \`\${chartAriaBase.latencyChart}. \${count} data points, \${inclusion}.\${buildFilterSummaryText(summary.filters)}\`;
       }
 
       let latestAriaSummary = null;
@@ -1398,13 +1398,13 @@ router.get('/', async (req, res, next) => {
 
         setChartAriaLabel(
           'cacheChart',
-          `${chartAriaBase.cacheChart}. Cache hits: ${cacheHits.toLocaleString()}, network fetches: ${cacheMisses.toLocaleString()}.${filterSummary}`,
+          \`\${chartAriaBase.cacheChart}. Cache hits: \${cacheHits.toLocaleString()}, network fetches: \${cacheMisses.toLocaleString()}.\${filterSummary}\`,
         );
 
         const starRanges = summary.starRanges ?? {};
         setChartAriaLabel(
           'starChart',
-          `${chartAriaBase.starChart}. Unknown: ${Number(starRanges.Unknown ?? 0).toLocaleString()}, 0-10: ${Number(starRanges['0-10'] ?? 0).toLocaleString()}, 11-50: ${Number(starRanges['11-50'] ?? 0).toLocaleString()}, 51-100: ${Number(starRanges['51-100'] ?? 0).toLocaleString()}, 100+: ${Number(starRanges['100+'] ?? 0).toLocaleString()}.${filterSummary}`,
+          \`\${chartAriaBase.starChart}. Unknown: \${Number(starRanges.Unknown ?? 0).toLocaleString()}, 0-10: \${Number(starRanges['0-10'] ?? 0).toLocaleString()}, 11-50: \${Number(starRanges['11-50'] ?? 0).toLocaleString()}, 51-100: \${Number(starRanges['51-100'] ?? 0).toLocaleString()}, 100+: \${Number(starRanges['100+'] ?? 0).toLocaleString()}.\${filterSummary}\`,
         );
 
         setChartAriaLabel('latencyChart', buildLatencyAriaLabel(summary));
@@ -1412,19 +1412,19 @@ router.get('/', async (req, res, next) => {
         const statusBuckets = summary.statusBuckets ?? {};
         setChartAriaLabel(
           'statusChart',
-          `${chartAriaBase.statusChart}. 2xx: ${Number(statusBuckets['2xx'] ?? 0).toLocaleString()}, 3xx: ${Number(statusBuckets['3xx'] ?? 0).toLocaleString()}, 4xx: ${Number(statusBuckets['4xx'] ?? 0).toLocaleString()}, 5xx: ${Number(statusBuckets['5xx'] ?? 0).toLocaleString()}, other: ${Number(statusBuckets.Other ?? 0).toLocaleString()}.${filterSummary}`,
+          \`\${chartAriaBase.statusChart}. 2xx: \${Number(statusBuckets['2xx'] ?? 0).toLocaleString()}, 3xx: \${Number(statusBuckets['3xx'] ?? 0).toLocaleString()}, 4xx: \${Number(statusBuckets['4xx'] ?? 0).toLocaleString()}, 5xx: \${Number(statusBuckets['5xx'] ?? 0).toLocaleString()}, other: \${Number(statusBuckets.Other ?? 0).toLocaleString()}.\${filterSummary}\`,
         );
 
         const lookupTypeCounts = summary.lookupTypeCounts ?? {};
         setChartAriaLabel(
           'lookupTypeChart',
-          `${chartAriaBase.lookupTypeChart}. UUID: ${Number(lookupTypeCounts.UUID ?? 0).toLocaleString()}, IGN: ${Number(lookupTypeCounts.IGN ?? 0).toLocaleString()}.${filterSummary}`,
+          \`\${chartAriaBase.lookupTypeChart}. UUID: \${Number(lookupTypeCounts.UUID ?? 0).toLocaleString()}, IGN: \${Number(lookupTypeCounts.IGN ?? 0).toLocaleString()}.\${filterSummary}\`,
         );
 
         const requestsTotal = (summary.requestsOverTimeData ?? []).reduce((acc, value) => acc + Number(value ?? 0), 0);
         setChartAriaLabel(
           'requestsOverTimeChart',
-          `${chartAriaBase.requestsOverTimeChart}. ${requestsTotal.toLocaleString()} total requests across ${(summary.requestsOverTimeData ?? []).length.toLocaleString()} time buckets.${filterSummary}`,
+          \`\${chartAriaBase.requestsOverTimeChart}. \${requestsTotal.toLocaleString()} total requests across \${(summary.requestsOverTimeData ?? []).length.toLocaleString()} time buckets.\${filterSummary}\`,
         );
 
         const cacheOverTimeData = summary.cacheOverTimeData ?? [];
@@ -1433,13 +1433,13 @@ router.get('/', async (req, res, next) => {
           : 0;
         setChartAriaLabel(
           'cacheOverTimeChart',
-          `${chartAriaBase.cacheOverTimeChart}. Average cache hit rate ${avgCacheRate.toFixed(1)}% across ${cacheOverTimeData.length.toLocaleString()} time buckets.${filterSummary}`,
+          \`\${chartAriaBase.cacheOverTimeChart}. Average cache hit rate \${avgCacheRate.toFixed(1)}% across \${cacheOverTimeData.length.toLocaleString()} time buckets.\${filterSummary}\`,
         );
 
         const latencyBins = summary.latencyBins ?? {};
         setChartAriaLabel(
           'latencyDistributionChart',
-          `${chartAriaBase.latencyDistributionChart}. 0-50ms: ${Number(latencyBins['0-50ms'] ?? 0).toLocaleString()}, 50-100ms: ${Number(latencyBins['50-100ms'] ?? 0).toLocaleString()}, 100-200ms: ${Number(latencyBins['100-200ms'] ?? 0).toLocaleString()}, 200-500ms: ${Number(latencyBins['200-500ms'] ?? 0).toLocaleString()}, 500-1000ms: ${Number(latencyBins['500-1000ms'] ?? 0).toLocaleString()}, 1000ms+: ${Number(latencyBins['1000ms+'] ?? 0).toLocaleString()}.${filterSummary}`,
+          \`\${chartAriaBase.latencyDistributionChart}. 0-50ms: \${Number(latencyBins['0-50ms'] ?? 0).toLocaleString()}, 50-100ms: \${Number(latencyBins['50-100ms'] ?? 0).toLocaleString()}, 100-200ms: \${Number(latencyBins['100-200ms'] ?? 0).toLocaleString()}, 200-500ms: \${Number(latencyBins['200-500ms'] ?? 0).toLocaleString()}, 500-1000ms: \${Number(latencyBins['500-1000ms'] ?? 0).toLocaleString()}, 1000ms+: \${Number(latencyBins['1000ms+'] ?? 0).toLocaleString()}.\${filterSummary}\`,
         );
 
         const topPlayersLabels = summary.topPlayersLabels ?? [];
@@ -1447,12 +1447,12 @@ router.get('/', async (req, res, next) => {
         if (topPlayersLabels.length > 0) {
           setChartAriaLabel(
             'topPlayersChart',
-            `${chartAriaBase.topPlayersChart}. Top player ${topPlayersLabels[0]} with ${Number(topPlayersData[0] ?? 0).toLocaleString()} queries.${filterSummary}`,
+            \`\${chartAriaBase.topPlayersChart}. Top player \${topPlayersLabels[0]} with \${Number(topPlayersData[0] ?? 0).toLocaleString()} queries.\${filterSummary}\`,
           );
         } else {
           setChartAriaLabel(
             'topPlayersChart',
-            `${chartAriaBase.topPlayersChart}. No player data available.${filterSummary}`,
+            \`\${chartAriaBase.topPlayersChart}. No player data available.\${filterSummary}\`,
           );
         }
       }
@@ -2061,7 +2061,7 @@ router.get('/', async (req, res, next) => {
         }
         
         titleEl.textContent = info.title;
-        canvas.setAttribute('aria-label', `${info.title} (expanded view)`);
+        canvas.setAttribute('aria-label', \`\${info.title} (expanded view)\`);
         overlay.classList.remove('hidden');
         document.body.classList.add('overflow-hidden');
 
