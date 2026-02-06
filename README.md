@@ -1,7 +1,7 @@
 ## BedWars Levelhead
 
 BedWars Levelhead is a lightweight reimagining of the classic **Levelhead** mod that focuses on showing BedWars stars above players on Hypixel.
-
+[![Better Stack Badge](https://uptime.betterstack.com/status-badges/v2/monitor/2eno7.svg)](https://uptime.betterstack.com/?utm_source=status_badge)
 ### Getting Started
 1. Install the mod just like any other Forge/LiteLoader mod compatible with your client.
 2. Join Hypixel (`mc.hypixel.net`).
