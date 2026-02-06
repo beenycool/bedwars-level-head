@@ -154,37 +154,15 @@ object StatsFetcher {
     }
 
     private fun isNicked(payload: JsonObject): Boolean {
-        if (payload.booleanValue("nicked") == true) {
-            return true
-        }
-
-        val topLevelDisplay = payload.stringValue("display") ?: payload.stringValue("displayname")
-        if (topLevelDisplay.isNickedDisplayName()) {
-            return true
-        }
-
         val data = payload.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
-        if (data != null) {
-            if (data.booleanValue("nicked") == true) {
-                return true
-            }
-            val wrappedDisplay = data.stringValue("display") ?: data.stringValue("displayname")
-            if (wrappedDisplay.isNickedDisplayName()) {
-                return true
-            }
-        }
-
         val player = payload.get("player")?.takeIf { it.isJsonObject }?.asJsonObject
-        if (player != null) {
-            if (player.booleanValue("nicked") == true) {
-                return true
-            }
-            if (player.stringValue("displayname").isNickedDisplayName()) {
-                return true
-            }
-        }
 
-        return false
+        return payload.booleanValue("nicked") == true ||
+            (payload.stringValue("display") ?: payload.stringValue("displayname")).isNickedDisplayName() ||
+            (data?.booleanValue("nicked") == true) ||
+            (data?.let { it.stringValue("display") ?: it.stringValue("displayname") }).isNickedDisplayName() ||
+            (player?.booleanValue("nicked") == true) ||
+            player?.stringValue("displayname").isNickedDisplayName()
     }
 
     private fun JsonObject.booleanValue(key: String): Boolean? {
