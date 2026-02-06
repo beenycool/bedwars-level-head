@@ -29,6 +29,7 @@ import java.util.Locale
 import java.util.UUID
 
 private const val DEFAULT_PROXY_URL = "https://bedwars-level-head.onrender.com/"
+private const val OFFSET_EPSILON = 0.0001
 private const val _MIN_STAR_CACHE_TTL_MINUTES = 5
 private const val _MAX_STAR_CACHE_TTL_MINUTES = 180
 private const val _DEFAULT_STAR_CACHE_TTL_MINUTES = 45
@@ -133,13 +134,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
                 save()
                 return
             }
-            if (Levelhead.displayManager.config.enabled != value) {
-                Levelhead.displayManager.setEnabled(value)
-            }
+            applyEnabledToRuntime(value)
             save()
-            if (debugConfigSync) {
-                Levelhead.logger.info("[LevelheadConfigSync] UI->RT enabled={}", value)
-            }
         }
 
     @Button(
@@ -181,12 +177,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
                 save()
                 return
             }
-            Levelhead.displayManager.config.displayPosition =
-                entries.getOrNull(clamped) ?: MasterConfig.DisplayPosition.ABOVE
-            Levelhead.displayManager.saveConfig()
-            if (debugConfigSync) {
-                Levelhead.logger.info("[LevelheadConfigSync] UI->RT displayPosition={}", Levelhead.displayManager.config.displayPosition)
-            }
+            val displayPosition = entries.getOrNull(clamped) ?: MasterConfig.DisplayPosition.ABOVE
+            applyDisplayPositionToRuntime(displayPosition)
         }
 
     @Switch(
@@ -204,17 +196,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
                 save()
                 return
             }
-            Levelhead.displayManager.updatePrimaryDisplay { config ->
-                if (config.showSelf == value) {
-                    return@updatePrimaryDisplay false
-                }
-                config.showSelf = value
-                true
-            }
+            applyShowSelfToRuntime(value)
             save()
-            if (debugConfigSync) {
-                Levelhead.logger.info("[LevelheadConfigSync] UI->RT showSelf={}", value)
-            }
         }
 
     @Header(text = "Header Text", category = "Display")
@@ -327,7 +310,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var verticalOffset: Float = 0.0f
         set(value) {
-            if (field == value) {
+            if (kotlin.math.abs(field - value) < OFFSET_EPSILON) {
                 return
             }
             field = value
@@ -335,11 +318,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
                 save()
                 return
             }
-            Levelhead.displayManager.config.offset = value.toDouble()
-            Levelhead.displayManager.saveConfig()
-            if (debugConfigSync) {
-                Levelhead.logger.info("[LevelheadConfigSync] UI->RT offset={}", String.format(Locale.ROOT, "%.2f", value.toDouble()))
-            }
+            applyOffsetToRuntime(value.toDouble())
         }
 
     @Switch(
@@ -907,11 +886,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             runtimeValue = runtimeEnabled,
             snapshotUi = snapshot?.uiEnabled,
             snapshotRuntime = snapshot?.rtEnabled,
-            applyUiToRuntime = { value ->
-                if (Levelhead.displayManager.config.enabled != value) {
-                    Levelhead.displayManager.setEnabled(value)
-                }
-            },
+            applyUiToRuntime = { value -> applyEnabledToRuntime(value) },
             applyRuntimeToUi = { value ->
                 syncingFromRuntime = true
                 try {
@@ -928,13 +903,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             runtimeValue = runtimeShowSelf,
             snapshotUi = snapshot?.uiShowSelf,
             snapshotRuntime = snapshot?.rtShowSelf,
-            applyUiToRuntime = { value ->
-                Levelhead.displayManager.updatePrimaryDisplay { config ->
-                    if (config.showSelf == value) return@updatePrimaryDisplay false
-                    config.showSelf = value
-                    true
-                }
-            },
+            applyUiToRuntime = { value -> applyShowSelfToRuntime(value) },
             applyRuntimeToUi = { value ->
                 syncingFromRuntime = true
                 try {
@@ -951,12 +920,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             runtimeValue = runtimeDisplayPosition,
             snapshotUi = snapshot?.uiDisplayPosition,
             snapshotRuntime = snapshot?.rtDisplayPosition,
-            applyUiToRuntime = { value ->
-                if (Levelhead.displayManager.config.displayPosition != value) {
-                    Levelhead.displayManager.config.displayPosition = value
-                    Levelhead.displayManager.saveConfig()
-                }
-            },
+            applyUiToRuntime = { value -> applyDisplayPositionToRuntime(value) },
             applyRuntimeToUi = { value ->
                 val idx = entries.indexOf(value).takeIf { it >= 0 } ?: 0
                 syncingFromRuntime = true
@@ -974,13 +938,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             runtimeValue = runtimeOffset,
             snapshotUi = snapshot?.uiOffset,
             snapshotRuntime = snapshot?.rtOffset,
-            equals = { left, right -> kotlin.math.abs(left - right) < 0.0001 },
-            applyUiToRuntime = { value ->
-                if (kotlin.math.abs(Levelhead.displayManager.config.offset - value) >= 0.0001) {
-                    Levelhead.displayManager.config.offset = value
-                    Levelhead.displayManager.saveConfig()
-                }
-            },
+            equals = { left, right -> kotlin.math.abs(left - right) < OFFSET_EPSILON },
+            applyUiToRuntime = { value -> applyOffsetToRuntime(value) },
             applyRuntimeToUi = { value ->
                 syncingFromRuntime = true
                 try {
@@ -1042,6 +1001,48 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
                 runtimeDisplayPosition,
                 String.format(Locale.ROOT, "%.2f", Levelhead.displayManager.config.offset)
             )
+        }
+    }
+
+    private fun applyEnabledToRuntime(value: Boolean) {
+        if (Levelhead.displayManager.config.enabled != value) {
+            Levelhead.displayManager.setEnabled(value)
+        }
+        if (debugConfigSync) {
+            Levelhead.logger.info("[LevelheadConfigSync] UI->RT enabled={}", value)
+        }
+    }
+
+    private fun applyShowSelfToRuntime(value: Boolean) {
+        Levelhead.displayManager.updatePrimaryDisplay { config ->
+            if (config.showSelf == value) {
+                return@updatePrimaryDisplay false
+            }
+            config.showSelf = value
+            true
+        }
+        if (debugConfigSync) {
+            Levelhead.logger.info("[LevelheadConfigSync] UI->RT showSelf={}", value)
+        }
+    }
+
+    private fun applyDisplayPositionToRuntime(value: MasterConfig.DisplayPosition) {
+        if (Levelhead.displayManager.config.displayPosition != value) {
+            Levelhead.displayManager.config.displayPosition = value
+            Levelhead.displayManager.saveConfig()
+        }
+        if (debugConfigSync) {
+            Levelhead.logger.info("[LevelheadConfigSync] UI->RT displayPosition={}", value)
+        }
+    }
+
+    private fun applyOffsetToRuntime(value: Double) {
+        if (kotlin.math.abs(Levelhead.displayManager.config.offset - value) >= OFFSET_EPSILON) {
+            Levelhead.displayManager.config.offset = value
+            Levelhead.displayManager.saveConfig()
+        }
+        if (debugConfigSync) {
+            Levelhead.logger.info("[LevelheadConfigSync] UI->RT offset={}", String.format(Locale.ROOT, "%.2f", value))
         }
     }
 
