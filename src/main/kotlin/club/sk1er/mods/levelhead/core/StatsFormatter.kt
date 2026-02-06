@@ -105,7 +105,7 @@ object StatsFormatter {
             else -> divisionTitle
         }
         val divisionLevel = divisionInfo?.romanLevel ?: "?"
-        val divisionSymbol = stats.wins?.let { DuelsStats.styleForDivision(it).symbol } ?: "?"
+        val divisionSymbol = divisionInfo?.let { DuelsStats.symbolForDivisionId(it.id) } ?: "?"
         
         var footerValue = template
         footerValue = footerValue.replace("%wins%", winsString, ignoreCase = true)
@@ -119,9 +119,12 @@ object StatsFormatter {
         
         val duelsMode = LevelheadConfig.DuelsStatMode.entries.getOrNull(LevelheadConfig.duelsStatDisplayIndex)
             ?: LevelheadConfig.DuelsStatMode.DIVISION_TITLE
-        val usesDivisionColor = duelsMode == LevelheadConfig.DuelsStatMode.DIVISION_TITLE ||
-            duelsMode == LevelheadConfig.DuelsStatMode.DIVISION_SYMBOL ||
-            (duelsMode == LevelheadConfig.DuelsStatMode.CUSTOM && template.contains("%division%", ignoreCase = true))
+        val usesDivisionColor = when (duelsMode) {
+            LevelheadConfig.DuelsStatMode.DIVISION_TITLE,
+            LevelheadConfig.DuelsStatMode.DIVISION_SYMBOL -> true
+            LevelheadConfig.DuelsStatMode.CUSTOM -> template.contains("%division%", ignoreCase = true)
+            else -> false
+        }
         val color = if (usesDivisionColor) (divisionInfo?.color ?: config.footerColor) else config.footerColor
         return Triple(footerValue, color, false)
     }
@@ -136,7 +139,7 @@ object StatsFormatter {
         config: DisplayConfig
     ): Triple<String, Color, Boolean> {
         val levelValue = stats.levelInt
-        val starString = levelValue.let { "$it${SkyWarsStats.getDefaultEmblem(it)}" } ?: "?"
+        val starString = levelValue?.let { "$it${SkyWarsStats.getDefaultEmblem(it)}" } ?: "?"
         val winsString = stats.wins?.toString() ?: "?"
         val lossesString = stats.losses?.toString() ?: "?"
         val wlrString = SkyWarsStats.calculateWLR(stats.wins, stats.losses)
