@@ -68,7 +68,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var quickSetupHeader: String = ""
 
     @Info(
-        text = "Configure how stats are fetched. Community API is fastest (uses shared database). Your own API key is most accurate. Fallback tries both (recommended).",
+        text = "Choose how stats are fetched. Fallback is recommended.",
         type = InfoType.INFO,
         category = "Quick Setup"
     )
@@ -77,7 +77,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     @Dropdown(
         name = "Backend Mode",
-        description = "Choose how stats are fetched. Community API uses shared database (fastest), Own API Key uses your key (most accurate), Fallback tries both (recommended), Offline uses only cached data.",
+        description = "Community API is fastest. Own API Key is most accurate. Fallback tries both.",
         category = "Quick Setup",
         options = ["Community API", "Own API Key", "Fallback (Recommended)", "Offline Mode"]
     )
@@ -90,7 +90,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         }
 
     @Info(
-        text = "You need a Hypixel API key when using 'Own API Key' mode. Get one at developer.hypixel.net",
+        text = "Own API Key mode requires a key from developer.hypixel.net",
         type = InfoType.WARNING,
         category = "Quick Setup"
     )
@@ -102,7 +102,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         name = "Hypixel API Key", 
         placeholder = "Paste your API key here (get one from developer.hypixel.net)", 
         secure = true,
-        description = "Your Hypixel API key. Required for Direct API mode and to contribute to the community database.",
+        description = "Required for Own API Key mode and community submissions.",
         category = "Quick Setup"
     )
     var apiKey: String = ""
@@ -219,6 +219,13 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             save()
         }
 
+    @Switch(
+        name = "Show In Inventory",
+        description = "Render your levelhead while your inventory screen is open.",
+        category = "Display"
+    )
+    var showInInventory: Boolean = true
+
     @Header(text = "Header Text", category = "Display")
     @Transient
     var headerTextHeader: String = ""
@@ -236,6 +243,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
                 config.headerString = value
                 true
             }
+            Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
+            Levelhead.displayManager.refreshVisibleDisplays()
             save()
         }
 
@@ -254,6 +263,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
                     config.headerColor = color
                     true
                 }
+                Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
+                Levelhead.displayManager.refreshVisibleDisplays()
             } catch (e: NumberFormatException) {
                 // Invalid color, ignore
             }
@@ -267,7 +278,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Text(
         name = "Footer Format",
         placeholder = "%star%",
-        description = "Legacy global footer format. Applying this switches all mode templates to custom using the value below.",
+        description = "Legacy global footer format. Sets all mode templates to custom.",
         category = "Display"
     )
     var footerFormat: String = "%star%"
@@ -320,7 +331,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     @Dropdown(
         name = "Duels Footer",
-        description = "Choose what Duels shows in the footer. Division Title uses 25Karma division naming and styling.",
+        description = "Choose what Duels shows in the footer.",
         category = "Display",
         options = ["Division Title", "Wins", "WLR", "KDR", "Winstreak", "Division Symbol", "Custom"]
     )
@@ -420,7 +431,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         category = "Appearance",
         min = -0.5f,
         max = 0.5f,
-        step = 1
+        step = 2
     )
     var verticalOffset: Float = 0.0f
         set(value) {
@@ -485,7 +496,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var performanceHeader: String = ""
 
     @Info(
-        text = "Lower values improve accuracy but may impact FPS. Adjust if you experience lag.",
+        text = "Lower values improve accuracy but may reduce FPS.",
         type = InfoType.INFO,
         category = "Performance"
     )
@@ -558,7 +569,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     @Slider(
         name = "Star Cache TTL (minutes)",
-        description = "How long to cache player stars before refreshing. Higher values reduce API calls but may show outdated data.",
+        description = "How long to cache stars before refresh.",
         category = "Performance",
         min = _MIN_STAR_CACHE_TTL_MINUTES_SLIDER,
         max = _MAX_STAR_CACHE_TTL_MINUTES_SLIDER,
@@ -579,7 +590,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var profilesHeader: String = ""
 
     @Info(
-        text = "Apply a preset configuration or export/import your custom setup.",
+        text = "Apply presets or export/import your setup.",
         type = InfoType.INFO,
         category = "Profiles"
     )
@@ -597,7 +608,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Button(
         name = "Apply Preset",
         text = "Load Preset",
-        description = "Apply the selected preset configuration. This will overwrite your current settings!",
+        description = "Apply selected preset (overwrites current settings).",
         category = "Profiles"
     )
     fun applyPresetButton() {
@@ -727,7 +738,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var advancedHeader: String = ""
 
     @Info(
-        text = "Warning: These settings are for advanced users. Incorrect configuration may cause issues.",
+        text = "Advanced options. Incorrect values can cause issues.",
         type = InfoType.WARNING,
         category = "Advanced"
     )
@@ -813,7 +824,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     @Switch(
         name = "Community Database",
-        description = "Fetch stats from the community cache to save API requests. When you have an API key, your lookups will also contribute to the shared cache.",
+        description = "Use shared community cache. API keys can also submit new data.",
         category = "Advanced"
     )
     var communityDatabase: Boolean = true
@@ -841,7 +852,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Text(
         name = "Custom Database URL",
         placeholder = "Leave blank to use default",
-        description = "Override community database URL. Only works when using API key or self-hosting.",
+        description = "Override database URL (API key or self-hosted setups).",
         category = "Advanced"
     )
     var customDatabaseUrl: String = ""
@@ -875,7 +886,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var aboutVersion: String = ""
 
     @Info(
-        text = "This mod is lovingly maintained and built on the shoulders of giants - huge thanks to the original Levelhead team at Sk1er LLC for creating the foundation that made all this possible.",
+        text = "Built on the original Levelhead by Sk1er LLC.",
         type = InfoType.INFO,
         category = "About"
     )
@@ -891,7 +902,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var aboutContributors: String = ""
 
     @Info(
-        text = "Licensed under the GNU GPL v3 - free as in freedom, just like the spirit of Minecraft modding should be!",
+        text = "Licensed under GNU GPL v3.",
         type = InfoType.INFO,
         category = "About"
     )
@@ -905,7 +916,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Button(
         name = "Modrinth",
         text = "Download Here",
-        description = "Grab the latest version from Modrinth - the best place to get mods!",
+        description = "Download the latest version from Modrinth.",
         category = "About"
     )
     fun openModrinth() = openUrl(MODRINTH_URL)
@@ -913,7 +924,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Button(
         name = "Source Code",
         text = "View on GitHub",
-        description = "Check out the code, contribute, or just see how the magic happens!",
+        description = "View source code and contribute on GitHub.",
         category = "About"
     )
     fun openSource() = openUrl(GITHUB_REPO_URL)
@@ -921,7 +932,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Button(
         name = "Original Levelhead",
         text = "Meet the Original",
-        description = "Pay respects to the legendary original Levelhead mod that started it all.",
+        description = "Visit the original Levelhead project.",
         category = "About"
     )
     fun openUpstream() = openUrl(UPSTREAM_LEVELHEAD_URL)
@@ -929,7 +940,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Button(
         name = "Changelog",
         text = "What's New?",
-        description = "See what's changed, what's fixed, and what's coming next!",
+        description = "View recent releases and changes.",
         category = "About"
     )
     fun openChangelog() = openUrl(CHANGELOG_URL)
@@ -937,7 +948,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Button(
         name = "Documentation",
         text = "How to Use",
-        description = "New to the mod? Check out the setup guide and tips!",
+        description = "Open setup docs and usage guide.",
         category = "About"
     )
     fun openWiki() = openUrl(WIKI_URL)
@@ -1442,6 +1453,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         levelheadEnabled = true
         displayPositionIndex = 0
         showSelf = true
+        showInInventory = true
         fontSize = 1.0f
         verticalOffset = 0.0f
         showBackground = true

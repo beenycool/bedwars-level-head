@@ -122,6 +122,7 @@ object Levelhead {
     private val statsCacheMetrics = StatsCacheMetrics()
     private val serverCooldownNotifiedUntil = AtomicLong(0L)
     private val updateCheckScheduled = AtomicBoolean(false)
+    private val lastServerCooldownNotificationAt = AtomicLong(0L)
     @Volatile
     private var lastFetchAttemptAt: Long = 0L
     @Volatile
@@ -429,6 +430,10 @@ object Levelhead {
         return statsCache[StatsCacheKey(uuid, gameMode)]
     }
 
+    fun getCachedStats(uuid: UUID, gameMode: GameMode): GameStats? {
+        return statsCache[StatsCacheKey(uuid, gameMode)]
+    }
+
     fun clearCachedStats() {
         statsCache.clear()
         pendingDisplayRefreshes.clear()
@@ -451,6 +456,12 @@ object Levelhead {
 
     internal fun onServerRetryAfter(duration: Duration) {
         if (duration.isZero || duration.isNegative) return
+        val now = System.currentTimeMillis()
+        val minNotifyIntervalMs = 20_000L
+        val lastNotified = lastServerCooldownNotificationAt.get()
+        if (now - lastNotified < minNotifyIntervalMs) {
+            return
+        }
         val newDeadline = System.currentTimeMillis() + duration.toMillis()
         while (true) {
             val current = serverCooldownNotifiedUntil.get()
@@ -458,6 +469,7 @@ object Levelhead {
                 return
             }
             if (serverCooldownNotifiedUntil.compareAndSet(current, newDeadline)) {
+                lastServerCooldownNotificationAt.set(now)
                 val formatted = formatCooldownDuration(duration)
                 sendChat(
                     "${ChatColor.YELLOW}Proxy asked us to pause stat requests for ${ChatColor.GOLD}$formatted${ChatColor.YELLOW}."
@@ -468,6 +480,7 @@ object Levelhead {
     }
     internal fun resetServerCooldownNotification() {
         serverCooldownNotifiedUntil.set(0L)
+        lastServerCooldownNotificationAt.set(0L)
     }
 
     private fun ensureStatsFetch(

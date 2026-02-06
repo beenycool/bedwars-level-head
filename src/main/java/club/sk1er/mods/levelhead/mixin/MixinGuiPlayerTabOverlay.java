@@ -2,6 +2,7 @@ package club.sk1er.mods.levelhead.mixin;
 
 import club.sk1er.mods.levelhead.Levelhead;
 import club.sk1er.mods.levelhead.config.LevelheadConfig;
+import club.sk1er.mods.levelhead.core.GameMode;
 import club.sk1er.mods.levelhead.core.GameStats;
 import net.minecraft.client.gui.GuiPlayerTabOverlay;
 import net.minecraft.client.network.NetworkPlayerInfo;
@@ -38,7 +39,7 @@ public class MixinGuiPlayerTabOverlay {
         }
 
         // Fetch cached stats
-        GameStats stats = Levelhead.INSTANCE.getCachedStats(uuid);
+        GameStats stats = Levelhead.INSTANCE.getCachedStats(uuid, GameMode.BEDWARS);
         if (!(stats instanceof GameStats.Bedwars)) {
             return;
         }
