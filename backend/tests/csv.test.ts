@@ -48,11 +48,16 @@ describe('toCSV', () => {
 
   it('should escape tab and carriage return to prevent DDE', () => {
     const data = [
-        { malicious: '\tcmd' },
-        { malicious: '\rcmd' }
+      { malicious: '\tcmd' },
+      { malicious: '\rcmd' },
     ];
-    const expected = 'malicious\n\'\tcmd\n\'\rcmd';
+    const expected = 'malicious\n"\'\tcmd"\n"\'\rcmd"';
     expect(toCSV(data)).toBe(expected);
+  });
+
+  it('should not corrupt negative numbers', () => {
+    const data = [{ score: -5 }];
+    expect(toCSV(data)).toBe('score\n-5');
   });
 
   it('should handle null and undefined', () => {
@@ -68,6 +73,14 @@ describe('toCSV', () => {
     const date = new Date('2023-01-01T00:00:00.000Z');
     const data = [{ val: date }];
     const expected = `val\n${date.toISOString()}`;
+    expect(toCSV(data)).toBe(expected);
+  });
+
+  it('should escape headers containing special characters', () => {
+    const data = [
+      { 'name, "username"': 'Alice', 'score\n(points)': 10 },
+    ];
+    const expected = '"name, ""username""","score\n(points)"\nAlice,10';
     expect(toCSV(data)).toBe(expected);
   });
 });
