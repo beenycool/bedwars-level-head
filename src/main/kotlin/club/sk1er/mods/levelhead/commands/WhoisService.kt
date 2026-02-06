@@ -59,10 +59,13 @@ object WhoisService {
     }
 
     private fun parseWhoisResult(payload: JsonObject, stats: GameStats?, fallbackName: String, gameMode: GameMode): WhoisResult {
-        val nicked = payload.get("nicked")?.asBoolean == true
-        val displayName = payload.get("display")?.asString
-            ?: payload.getAsJsonObject("player")?.get("displayname")?.asString
+        val displayName = payload.stringValue("display")
+            ?: payload.stringValue("displayname")
+            ?: payload.jsonObject("player")?.stringValue("displayname")
             ?: fallbackName
+        val nicked = (stats?.nicked == true) ||
+            payload.booleanValue("nicked") == true ||
+            displayName.equals("(nicked)", ignoreCase = true)
 
         val statValue = when (stats) {
             is GameStats.Bedwars -> stats.star?.let { "$it✪" } ?: "?"
@@ -178,4 +181,20 @@ object WhoisService {
     data class ResolvedIdentifier(val uuid: UUID, val displayName: String?)
 
     class CommandException(message: String) : Exception(message)
+
+    private fun JsonObject.booleanValue(key: String): Boolean? {
+        val element = get(key) ?: return null
+        if (element.isJsonNull) return null
+        return runCatching { element.asBoolean }.getOrNull()
+    }
+
+    private fun JsonObject.stringValue(key: String): String? {
+        val element = get(key) ?: return null
+        if (element.isJsonNull) return null
+        return runCatching { element.asString }.getOrNull()
+    }
+
+    private fun JsonObject.jsonObject(key: String): JsonObject? {
+        return get(key)?.takeIf { it.isJsonObject }?.asJsonObject
+    }
 }

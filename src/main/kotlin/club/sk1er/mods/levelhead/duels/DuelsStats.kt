@@ -9,6 +9,26 @@ import java.awt.Color
  * Based on official Hypixel Duels division system and 25Karma implementation.
  */
 object DuelsStats {
+    data class DivisionRequirement(
+        val req: Int,
+        val step: Int,
+        val max: Int,
+        val name: String,
+        val id: String,
+        val color: Color,
+        val colorCode: String,
+        val bold: Boolean
+    )
+
+    data class OverallDivisionInfo(
+        val displayName: String,
+        val romanLevel: String,
+        val color: Color,
+        val colorCode: String,
+        val bold: Boolean,
+        val id: String
+    )
+
     /**
      * Division thresholds for Duels based on overall wins.
      * Each division has a minimum wins requirement and a display name.
@@ -23,24 +43,81 @@ object DuelsStats {
     )
 
     private val divisions = listOf(
-        Division(100000, "ASCENDED", Color(255, 85, 85), "c", bold = true),
-        Division(50000, "DIVINE", Color(255, 85, 255), "d", bold = true),
-        Division(25000, "CELESTIAL", Color(85, 255, 255), "b", bold = true),
-        Division(10000, "Godlike", Color(170, 0, 170), "5", bold = true),
-        Division(5000, "Grandmaster", Color(255, 255, 85), "e", bold = true),
-        Division(2000, "Legend", Color(170, 0, 0), "4", bold = true),
-        Division(1000, "Master", Color(0, 170, 0), "2", bold = false),
-        Division(500, "Diamond", Color(0, 170, 170), "3", bold = false),
-        Division(250, "Gold", Color(255, 170, 0), "6", bold = false),
-        Division(100, "Iron", Color(255, 255, 255), "f", bold = false),
-        Division(50, "Rookie", Color(170, 170, 170), "7", bold = false),
-        Division(0, "None", Color(170, 170, 170), "7", bold = false)
+        DivisionRequirement(0, 0, 5, "None", "none", Color(170, 170, 170), "7", false),
+        DivisionRequirement(50, 10, 5, "Rookie", "rookie", Color(170, 170, 170), "7", false),
+        DivisionRequirement(100, 30, 5, "Iron", "iron", Color(255, 255, 255), "f", false),
+        DivisionRequirement(250, 50, 5, "Gold", "gold", Color(255, 170, 0), "6", false),
+        DivisionRequirement(500, 100, 5, "Diamond", "diamond", Color(0, 170, 170), "3", false),
+        DivisionRequirement(1000, 200, 5, "Master", "master", Color(0, 170, 0), "2", false),
+        DivisionRequirement(2000, 600, 5, "Legend", "legend", Color(170, 0, 0), "4", true),
+        DivisionRequirement(5000, 1000, 5, "Grandmaster", "grandmaster", Color(255, 255, 85), "e", true),
+        DivisionRequirement(10000, 3000, 5, "Godlike", "godlike", Color(170, 0, 170), "5", true),
+        DivisionRequirement(25000, 5000, 5, "CELESTIAL", "celestial", Color(85, 255, 255), "b", true),
+        DivisionRequirement(50000, 10000, 5, "DIVINE", "divine", Color(255, 85, 255), "d", true),
+        DivisionRequirement(100000, 10000, 50, "ASCENDED", "ascended", Color(255, 85, 85), "c", true)
     )
+
+    private val overallDivisions = divisions.map {
+        it.copy(req = it.req * 2, step = it.step * 2)
+    }
 
     /**
      * Calculate the division for a given number of wins.
      */
-    fun getDivision(wins: Int): Division = divisions.first { wins >= it.minWins }
+    fun getDivision(wins: Int): Division {
+        val overall = getOverallDivisionInfo(wins)
+        val divisionReq = divisions.find { it.id == overall.id }?.req ?: 0
+        return Division(
+            minWins = divisionReq * 2,
+            name = overall.displayName,
+            color = overall.color,
+            colorCode = overall.colorCode,
+            bold = overall.bold
+        )
+    }
+
+    /**
+     * Overall division display from total wins using 25Karma's "overall" requirements.
+     * (base requirements multiplied by 2).
+     */
+    fun getOverallDivisionInfo(wins: Int): OverallDivisionInfo {
+        var active = overallDivisions.first()
+        for (i in overallDivisions.indices.reversed()) {
+            if (wins >= overallDivisions[i].req) {
+                active = overallDivisions[i]
+                break
+            }
+        }
+
+        if (active.id == "none") {
+            return OverallDivisionInfo(
+                displayName = "-",
+                romanLevel = "-",
+                color = active.color,
+                colorCode = active.colorCode,
+                bold = active.bold,
+                id = active.id
+            )
+        }
+
+        val level = if (active.step <= 0) {
+            1
+        } else {
+            val remaining = wins - active.req
+            (remaining / active.step) + 1
+        }.coerceAtMost(active.max)
+
+        val roman = romanize(level)
+        val suffix = if (level > 1) " $roman" else ""
+        return OverallDivisionInfo(
+            displayName = "${active.name}$suffix",
+            romanLevel = roman,
+            color = active.color,
+            colorCode = active.colorCode,
+            bold = active.bold,
+            id = active.id
+        )
+    }
 
     /**
      * Parse Duels wins from a player JSON response.
@@ -130,21 +207,25 @@ object DuelsStats {
      * Get the display style for a given division based on wins.
      */
     fun styleForDivision(wins: Int): DivisionStyle {
-        val division = getDivision(wins)
-        val symbol = when {
-            wins >= 100000 -> "⚔"    // ⚔ ASCENDED
-            wins >= 50000 -> "✺"     // ✺ DIVINE
-            wins >= 25000 -> "✵"     // ✵ CELESTIAL
-            wins >= 10000 -> "✯"     // ✯ Godlike
-            wins >= 5000 -> "★"      // ★ Grandmaster
-            wins >= 2000 -> "✫"      // ✫ Legend
-            wins >= 1000 -> "✦"      // ✦ Master
-            wins >= 500 -> "♦"       // ♦ Diamond
-            wins >= 250 -> "✹"       // ✹ Gold
-            wins >= 100 -> "•"       // • Iron
-            else -> "·"               // · Rookie/None
-        }
+        val division = getOverallDivisionInfo(wins)
+        val symbol = symbolForDivisionId(division.id)
         return DivisionStyle(division.color, division.colorCode, division.bold, symbol)
+    }
+
+    fun symbolForDivisionId(id: String): String {
+        return when (id) {
+            "ascended" -> "⚔"
+            "divine" -> "✺"
+            "celestial" -> "✵"
+            "godlike" -> "✯"
+            "grandmaster" -> "★"
+            "legend" -> "✫"
+            "master" -> "✦"
+            "diamond" -> "♦"
+            "gold" -> "✹"
+            "iron" -> "•"
+            else -> "·"
+        }
     }
 
     /**
@@ -153,10 +234,38 @@ object DuelsStats {
      * Example: §4§l[Legend ✫] for Legend division
      */
     fun formatDivisionTag(wins: Int): String {
-        val division = getDivision(wins)
-        val style = styleForDivision(wins)
+        val division = getOverallDivisionInfo(wins)
+        val symbol = symbolForDivisionId(division.id)
         val boldFormat = if (division.bold) "§l" else ""
-        return "§${division.colorCode}$boldFormat[${division.name} ${style.symbol}]"
+        return "§${division.colorCode}$boldFormat[${division.displayName} $symbol]"
+    }
+
+    private fun romanize(value: Int): String {
+        if (value <= 0) return "-"
+        val numerals = arrayOf(
+            1000 to "M",
+            900 to "CM",
+            500 to "D",
+            400 to "CD",
+            100 to "C",
+            90 to "XC",
+            50 to "L",
+            40 to "XL",
+            10 to "X",
+            9 to "IX",
+            5 to "V",
+            4 to "IV",
+            1 to "I"
+        )
+        var remaining = value
+        val out = StringBuilder()
+        numerals.forEach { (arabic, roman) ->
+            while (remaining >= arabic) {
+                out.append(roman)
+                remaining -= arabic
+            }
+        }
+        return out.toString()
     }
 }
 

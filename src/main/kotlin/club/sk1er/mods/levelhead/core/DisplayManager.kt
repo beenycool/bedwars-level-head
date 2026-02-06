@@ -192,6 +192,32 @@ class DisplayManager(val file: File) {
         }
     }
 
+    /**
+     * Refresh visible player tags without requiring mode detection to be active.
+     * Used for config-only changes (for example, footer format switches) so updates
+     * apply immediately in the current world/session.
+     */
+    @OptIn(ExperimentalStdlibApi::class)
+    fun refreshVisibleDisplays() {
+        if (!config.enabled) return
+
+        val displays = aboveHead.filter { it.config.enabled }
+        if (displays.isEmpty()) return
+
+        Minecraft.getMinecraft().theWorld?.playerEntities
+            ?.map { playerInfo ->
+                displays.map { display ->
+                    Levelhead.LevelheadRequest(playerInfo.uniqueID.trimmed, display, display.bottomValue)
+                }
+            }
+            ?.flatten()
+            ?.let { requests ->
+                if (requests.isNotEmpty()) {
+                    Levelhead.fetchBatch(requests)
+                }
+            }
+    }
+
     fun primaryDisplay(): AboveHeadDisplay? = aboveHead.firstOrNull()
 
     fun updatePrimaryDisplay(mutator: (DisplayConfig) -> Boolean): Boolean {

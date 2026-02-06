@@ -2,6 +2,7 @@ package club.sk1er.mods.levelhead.render
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.Levelhead.displayManager
+import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.config.MasterConfig
 import club.sk1er.mods.levelhead.display.LevelheadTag
 import club.sk1er.mods.levelhead.core.ModeManager
@@ -22,6 +23,7 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import org.lwjgl.opengl.GL11
 
 object AboveHeadRender {
+    private var nextSelfSkipLogAt: Long = 0L
 
     @SubscribeEvent
     fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
@@ -37,7 +39,11 @@ object AboveHeadRender {
         val displayPosition = displayManager.config.displayPosition
 
         displayManager.aboveHead.forEachIndexed { index, display ->
-            if (!display.config.enabled || (player.isSelf && !display.config.showSelf)) return@forEachIndexed
+            if (!display.config.enabled) return@forEachIndexed
+            if (player.isSelf && !display.config.showSelf) {
+                maybeLogSelfHidden(displayPosition)
+                return@forEachIndexed
+            }
             val tag = display.cache[player.uniqueID]
             if (display.loadOrRender(player) && tag != null) {
                 // Calculate base offset based on display position
@@ -66,6 +72,22 @@ object AboveHeadRender {
                 renderName(tag, player, event.x, event.y + offset + indexOffset, event.z, displayPosition)
             }
         }
+    }
+
+    private fun maybeLogSelfHidden(displayPosition: MasterConfig.DisplayPosition) {
+        if (!LevelheadConfig.debugConfigSync) {
+            return
+        }
+        val now = System.currentTimeMillis()
+        if (now < nextSelfSkipLogAt) {
+            return
+        }
+        nextSelfSkipLogAt = now + 2000L
+        Levelhead.logger.info(
+            "[LevelheadRender] skipping self tag (showSelf=false, displayPosition={}, offset={})",
+            displayPosition,
+            String.format(java.util.Locale.ROOT, "%.2f", displayManager.config.offset)
+        )
     }
 
     private val EntityPlayer.isSelf: Boolean

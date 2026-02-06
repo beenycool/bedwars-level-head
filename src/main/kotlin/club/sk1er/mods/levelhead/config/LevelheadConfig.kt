@@ -29,6 +29,7 @@ import java.util.Locale
 import java.util.UUID
 
 private const val DEFAULT_PROXY_URL = "https://bedwars-level-head.onrender.com/"
+private const val OFFSET_EPSILON = 0.0001
 private const val _MIN_STAR_CACHE_TTL_MINUTES = 5
 private const val _MAX_STAR_CACHE_TTL_MINUTES = 180
 private const val _DEFAULT_STAR_CACHE_TTL_MINUTES = 45
@@ -125,8 +126,16 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var levelheadEnabled: Boolean = true
         set(value) {
+            if (field == value) {
+                return
+            }
             field = value
-            Levelhead.displayManager.setEnabled(value)
+            if (syncingFromRuntime) {
+                save()
+                return
+            }
+            applyEnabledToRuntime(value)
+            save()
         }
 
     @Button(
@@ -179,11 +188,16 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             } else {
                 0
             }
+            if (field == clamped) {
+                return
+            }
             field = clamped
-            Levelhead.displayManager.config.displayPosition =
-                entries.getOrNull(clamped) ?: MasterConfig.DisplayPosition.ABOVE
-            Levelhead.displayManager.saveConfig()
-            save()
+            if (syncingFromRuntime) {
+                save()
+                return
+            }
+            val displayPosition = entries.getOrNull(clamped) ?: MasterConfig.DisplayPosition.ABOVE
+            applyDisplayPositionToRuntime(displayPosition)
         }
 
     @Switch(
@@ -193,11 +207,15 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var showSelf: Boolean = true
         set(value) {
-            field = value
-            Levelhead.displayManager.updatePrimaryDisplay { config ->
-                config.showSelf = value
-                true
+            if (field == value) {
+                return
             }
+            field = value
+            if (syncingFromRuntime) {
+                save()
+                return
+            }
+            applyShowSelfToRuntime(value)
             save()
         }
 
@@ -249,16 +267,106 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Text(
         name = "Footer Format",
         placeholder = "%star%",
-        description = "Format for the footer. Use %star% for prestige stars, or enter custom text. Default: %star%",
+        description = "Legacy global footer format. Applying this switches all mode templates to custom using the value below.",
         category = "Display"
     )
     var footerFormat: String = "%star%"
         set(value) {
             field = value
+            val template = value.ifBlank { "%star%" }
+            bedwarsStatDisplayIndex = BedwarsStatMode.CUSTOM.ordinal
+            duelsStatDisplayIndex = DuelsStatMode.CUSTOM.ordinal
+            skywarsStatDisplayIndex = SkyWarsStatMode.CUSTOM.ordinal
+            bedwarsCustomFooterFormat = template
+            duelsCustomFooterFormat = template
+            skywarsCustomFooterFormat = template
             Levelhead.displayManager.updatePrimaryDisplay { config ->
-                config.footerString = value
+                config.footerString = template
                 true
             }
+            refreshDisplayStats(clearStats = false)
+            save()
+        }
+
+    @Header(text = "Mode Stat Display", category = "Display")
+    @Transient
+    var modeStatHeader: String = ""
+
+    @Dropdown(
+        name = "BedWars Footer",
+        description = "Choose what BedWars shows in the footer.",
+        category = "Display",
+        options = ["Star", "FKDR", "Winstreak", "Custom"]
+    )
+    var bedwarsStatDisplayIndex: Int = BedwarsStatMode.STAR.ordinal
+        set(value) {
+            field = value.coerceIn(0, BedwarsStatMode.entries.lastIndex)
+            refreshDisplayStats(clearStats = true)
+            save()
+        }
+
+    @Text(
+        name = "BedWars Custom Format",
+        placeholder = "%star%",
+        description = "Used when BedWars Footer is set to Custom. Tokens: %star%, %fkdr%, %ws%.",
+        category = "Display"
+    )
+    var bedwarsCustomFooterFormat: String = "%star%"
+        set(value) {
+            field = value.ifBlank { "%star%" }
+            refreshDisplayStats(clearStats = false)
+            save()
+        }
+
+    @Dropdown(
+        name = "Duels Footer",
+        description = "Choose what Duels shows in the footer. Division Title uses 25Karma division naming and styling.",
+        category = "Display",
+        options = ["Division Title", "Wins", "WLR", "KDR", "Winstreak", "Division Symbol", "Custom"]
+    )
+    var duelsStatDisplayIndex: Int = DuelsStatMode.DIVISION_TITLE.ordinal
+        set(value) {
+            field = value.coerceIn(0, DuelsStatMode.entries.lastIndex)
+            refreshDisplayStats(clearStats = true)
+            save()
+        }
+
+    @Text(
+        name = "Duels Custom Format",
+        placeholder = "%division%",
+        description = "Used when Duels Footer is set to Custom. Tokens: %division%, %divsymbol%, %divlevel%, %wins%, %losses%, %wlr%, %kdr%, %ws%.",
+        category = "Display"
+    )
+    var duelsCustomFooterFormat: String = "%division%"
+        set(value) {
+            field = value.ifBlank { "%division%" }
+            refreshDisplayStats(clearStats = false)
+            save()
+        }
+
+    @Dropdown(
+        name = "SkyWars Footer",
+        description = "Choose what SkyWars shows in the footer.",
+        category = "Display",
+        options = ["Star", "Wins", "WLR", "KDR", "Custom"]
+    )
+    var skywarsStatDisplayIndex: Int = SkyWarsStatMode.STAR.ordinal
+        set(value) {
+            field = value.coerceIn(0, SkyWarsStatMode.entries.lastIndex)
+            refreshDisplayStats(clearStats = true)
+            save()
+        }
+
+    @Text(
+        name = "SkyWars Custom Format",
+        placeholder = "%star%",
+        description = "Used when SkyWars Footer is set to Custom. Tokens: %star%, %level%, %wins%, %losses%, %wlr%, %kdr%.",
+        category = "Display"
+    )
+    var skywarsCustomFooterFormat: String = "%star%"
+        set(value) {
+            field = value.ifBlank { "%star%" }
+            refreshDisplayStats(clearStats = false)
             save()
         }
 
@@ -316,10 +424,15 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var verticalOffset: Float = 0.0f
         set(value) {
+            if (kotlin.math.abs(field - value) < OFFSET_EPSILON) {
+                return
+            }
             field = value
-            Levelhead.displayManager.config.offset = value.toDouble()
-            Levelhead.displayManager.saveConfig()
-            save()
+            if (syncingFromRuntime) {
+                save()
+                return
+            }
+            applyOffsetToRuntime(value.toDouble())
         }
 
     @Switch(
@@ -634,6 +747,17 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         }
 
     @Switch(
+        name = "Debug Config Sync",
+        description = "Log OneConfig/runtime sync decisions to latest.log for troubleshooting UI toggles.",
+        category = "Advanced"
+    )
+    var debugConfigSync: Boolean = false
+        set(value) {
+            field = value
+            save()
+        }
+
+    @Switch(
         name = "Use Proxy",
         description = "Route requests through the Levelhead backend. Required for Community API mode.",
         category = "Advanced"
@@ -833,11 +957,337 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     val backendMode: BackendMode
         get() = BackendMode.fromIndex(backendModeIndex)
 
+    @Transient
+    private var syncingFromRuntime: Boolean = false
+
+    @Transient
+    private var lastSyncSnapshot: ConfigSyncSnapshot? = null
+
+    @Transient
+    private var configSyncTickCounter: Int = 0
+
+    data class ConfigSyncSnapshot(
+        val uiEnabled: Boolean,
+        val rtEnabled: Boolean,
+        val uiShowSelf: Boolean,
+        val rtShowSelf: Boolean,
+        val uiDisplayPosition: MasterConfig.DisplayPosition,
+        val rtDisplayPosition: MasterConfig.DisplayPosition,
+        val uiOffset: Double,
+        val rtOffset: Double
+    )
+
+    private interface StatMode {
+        val template: String
+    }
+
+    enum class BedwarsStatMode(override val template: String) : StatMode {
+        STAR("%star%"),
+        FKDR("%fkdr%"),
+        WINSTREAK("%ws%"),
+        CUSTOM("")
+    }
+
+    enum class DuelsStatMode(override val template: String) : StatMode {
+        DIVISION_TITLE("%division%"),
+        WINS("%wins%"),
+        WLR("%wlr%"),
+        KDR("%kdr%"),
+        WINSTREAK("%ws%"),
+        DIVISION_SYMBOL("%divsymbol%"),
+        CUSTOM("")
+    }
+
+    enum class SkyWarsStatMode(override val template: String) : StatMode {
+        STAR("%star%"),
+        WINS("%wins%"),
+        WLR("%wlr%"),
+        KDR("%kdr%"),
+        CUSTOM("")
+    }
+
+    private val bedwarsStatMode: BedwarsStatMode
+        get() = BedwarsStatMode.entries.getOrNull(bedwarsStatDisplayIndex) ?: BedwarsStatMode.STAR
+
+    private val duelsStatMode: DuelsStatMode
+        get() = DuelsStatMode.entries.getOrNull(duelsStatDisplayIndex) ?: DuelsStatMode.DIVISION_TITLE
+
+    private val skywarsStatMode: SkyWarsStatMode
+        get() = SkyWarsStatMode.entries.getOrNull(skywarsStatDisplayIndex) ?: SkyWarsStatMode.STAR
+
+    private fun <T> resolveTemplateFor(
+        modeIndex: Int,
+        entries: List<T>,
+        defaultMode: T,
+        customFormat: String,
+        customMode: T,
+        defaultCustomTemplate: String
+    ): String where T : Enum<*>, T : StatMode {
+        val mode = entries.getOrNull(modeIndex) ?: defaultMode
+        return if (mode == customMode) {
+            customFormat.ifBlank { defaultCustomTemplate }
+        } else {
+            mode.template
+        }
+    }
+
+    fun footerTemplateFor(gameMode: GameMode, config: DisplayConfig): String {
+        val template = when (gameMode) {
+            GameMode.BEDWARS -> resolveTemplateFor(
+                bedwarsStatDisplayIndex,
+                BedwarsStatMode.entries,
+                BedwarsStatMode.STAR,
+                bedwarsCustomFooterFormat,
+                BedwarsStatMode.CUSTOM,
+                "%star%"
+            )
+            GameMode.DUELS -> resolveTemplateFor(
+                duelsStatDisplayIndex,
+                DuelsStatMode.entries,
+                DuelsStatMode.DIVISION_TITLE,
+                duelsCustomFooterFormat,
+                DuelsStatMode.CUSTOM,
+                "%division%"
+            )
+            GameMode.SKYWARS -> resolveTemplateFor(
+                skywarsStatDisplayIndex,
+                SkyWarsStatMode.entries,
+                SkyWarsStatMode.STAR,
+                skywarsCustomFooterFormat,
+                SkyWarsStatMode.CUSTOM,
+                "%star%"
+            )
+        }
+        return template.ifBlank {
+            config.footerString?.takeIf { it.isNotBlank() } ?: gameMode.statFormat
+        }
+    }
+
     init {
         initialize()
         migrateLegacyConfig()
         ensureInstallId()
         setupConditionalVisibility()
+        syncUiStateFromRuntime(initialSync = true)
+    }
+
+    fun syncUiAndRuntimeConfig() {
+        configSyncTickCounter = (configSyncTickCounter + 1) % 5
+        if (configSyncTickCounter != 0) {
+            return
+        }
+
+        val primaryDisplay = Levelhead.displayManager.primaryDisplay() ?: return
+        val runtimeEnabled = Levelhead.displayManager.config.enabled
+        val runtimeShowSelf = primaryDisplay.config.showSelf
+        val runtimeDisplayPosition = Levelhead.displayManager.config.displayPosition
+        val runtimeOffset = Levelhead.displayManager.config.offset
+
+        val entries = MasterConfig.DisplayPosition.entries
+        val uiDisplayPosition = entries.getOrNull(displayPositionIndex) ?: MasterConfig.DisplayPosition.ABOVE
+        val uiOffset = verticalOffset.toDouble()
+
+        val snapshot = lastSyncSnapshot
+
+        syncSingleSetting(
+            name = "enabled",
+            uiValue = levelheadEnabled,
+            runtimeValue = runtimeEnabled,
+            snapshotUi = snapshot?.uiEnabled,
+            snapshotRuntime = snapshot?.rtEnabled,
+            applyUiToRuntime = { value -> applyEnabledToRuntime(value) },
+            applyRuntimeToUi = { value ->
+                syncingFromRuntime = true
+                try {
+                    levelheadEnabled = value
+                } finally {
+                    syncingFromRuntime = false
+                }
+            }
+        )
+
+        syncSingleSetting(
+            name = "showSelf",
+            uiValue = showSelf,
+            runtimeValue = runtimeShowSelf,
+            snapshotUi = snapshot?.uiShowSelf,
+            snapshotRuntime = snapshot?.rtShowSelf,
+            applyUiToRuntime = { value -> applyShowSelfToRuntime(value) },
+            applyRuntimeToUi = { value ->
+                syncingFromRuntime = true
+                try {
+                    showSelf = value
+                } finally {
+                    syncingFromRuntime = false
+                }
+            }
+        )
+
+        syncSingleSetting(
+            name = "displayPosition",
+            uiValue = uiDisplayPosition,
+            runtimeValue = runtimeDisplayPosition,
+            snapshotUi = snapshot?.uiDisplayPosition,
+            snapshotRuntime = snapshot?.rtDisplayPosition,
+            applyUiToRuntime = { value -> applyDisplayPositionToRuntime(value) },
+            applyRuntimeToUi = { value ->
+                val idx = entries.indexOf(value).takeIf { it >= 0 } ?: 0
+                syncingFromRuntime = true
+                try {
+                    displayPositionIndex = idx
+                } finally {
+                    syncingFromRuntime = false
+                }
+            }
+        )
+
+        syncSingleSetting(
+            name = "offset",
+            uiValue = uiOffset,
+            runtimeValue = runtimeOffset,
+            snapshotUi = snapshot?.uiOffset,
+            snapshotRuntime = snapshot?.rtOffset,
+            equals = { left, right -> kotlin.math.abs(left - right) < OFFSET_EPSILON },
+            applyUiToRuntime = { value -> applyOffsetToRuntime(value) },
+            applyRuntimeToUi = { value ->
+                syncingFromRuntime = true
+                try {
+                    verticalOffset = value.toFloat()
+                } finally {
+                    syncingFromRuntime = false
+                }
+            }
+        )
+
+        val finalDisplayPosition = entries.getOrNull(displayPositionIndex) ?: MasterConfig.DisplayPosition.ABOVE
+        val finalPrimaryDisplay = Levelhead.displayManager.primaryDisplay() ?: return
+        lastSyncSnapshot = ConfigSyncSnapshot(
+            uiEnabled = levelheadEnabled,
+            rtEnabled = Levelhead.displayManager.config.enabled,
+            uiShowSelf = showSelf,
+            rtShowSelf = finalPrimaryDisplay.config.showSelf,
+            uiDisplayPosition = finalDisplayPosition,
+            rtDisplayPosition = Levelhead.displayManager.config.displayPosition,
+            uiOffset = verticalOffset.toDouble(),
+            rtOffset = Levelhead.displayManager.config.offset
+        )
+    }
+
+    private fun syncUiStateFromRuntime(initialSync: Boolean) {
+        val primaryDisplay = Levelhead.displayManager.primaryDisplay() ?: return
+        val entries = MasterConfig.DisplayPosition.entries
+        val runtimeDisplayPosition = Levelhead.displayManager.config.displayPosition
+        val displayIndex = entries.indexOf(runtimeDisplayPosition).takeIf { it >= 0 } ?: 0
+
+        syncingFromRuntime = true
+        try {
+            levelheadEnabled = Levelhead.displayManager.config.enabled
+            showSelf = primaryDisplay.config.showSelf
+            displayPositionIndex = displayIndex
+            verticalOffset = Levelhead.displayManager.config.offset.toFloat()
+        } finally {
+            syncingFromRuntime = false
+        }
+
+        lastSyncSnapshot = ConfigSyncSnapshot(
+            uiEnabled = levelheadEnabled,
+            rtEnabled = Levelhead.displayManager.config.enabled,
+            uiShowSelf = showSelf,
+            rtShowSelf = primaryDisplay.config.showSelf,
+            uiDisplayPosition = entries.getOrNull(displayPositionIndex) ?: MasterConfig.DisplayPosition.ABOVE,
+            rtDisplayPosition = runtimeDisplayPosition,
+            uiOffset = verticalOffset.toDouble(),
+            rtOffset = Levelhead.displayManager.config.offset
+        )
+
+        if (debugConfigSync) {
+            val source = if (initialSync) "initial" else "runtime"
+            Levelhead.logger.info(
+                "[LevelheadConfigSync] RT->UI {} sync enabled={}, showSelf={}, displayPosition={}, offset={}",
+                source,
+                levelheadEnabled,
+                showSelf,
+                runtimeDisplayPosition,
+                String.format(Locale.ROOT, "%.2f", Levelhead.displayManager.config.offset)
+            )
+        }
+    }
+
+    private fun applyEnabledToRuntime(value: Boolean) {
+        if (Levelhead.displayManager.config.enabled != value) {
+            Levelhead.displayManager.setEnabled(value)
+        }
+        if (debugConfigSync) {
+            Levelhead.logger.info("[LevelheadConfigSync] UI->RT enabled={}", value)
+        }
+    }
+
+    private fun applyShowSelfToRuntime(value: Boolean) {
+        Levelhead.displayManager.updatePrimaryDisplay { config ->
+            if (config.showSelf == value) {
+                return@updatePrimaryDisplay false
+            }
+            config.showSelf = value
+            true
+        }
+        if (debugConfigSync) {
+            Levelhead.logger.info("[LevelheadConfigSync] UI->RT showSelf={}", value)
+        }
+    }
+
+    private fun applyDisplayPositionToRuntime(value: MasterConfig.DisplayPosition) {
+        if (Levelhead.displayManager.config.displayPosition != value) {
+            Levelhead.displayManager.config.displayPosition = value
+            Levelhead.displayManager.saveConfig()
+        }
+        if (debugConfigSync) {
+            Levelhead.logger.info("[LevelheadConfigSync] UI->RT displayPosition={}", value)
+        }
+    }
+
+    private fun applyOffsetToRuntime(value: Double) {
+        if (kotlin.math.abs(Levelhead.displayManager.config.offset - value) >= OFFSET_EPSILON) {
+            Levelhead.displayManager.config.offset = value
+            Levelhead.displayManager.saveConfig()
+        }
+        if (debugConfigSync) {
+            Levelhead.logger.info("[LevelheadConfigSync] UI->RT offset={}", String.format(Locale.ROOT, "%.2f", value))
+        }
+    }
+
+    private fun <T> syncSingleSetting(
+        name: String,
+        uiValue: T,
+        runtimeValue: T,
+        snapshotUi: T?,
+        snapshotRuntime: T?,
+        equals: (T, T) -> Boolean = { left, right -> left == right },
+        applyUiToRuntime: (T) -> Unit,
+        applyRuntimeToUi: (T) -> Unit
+    ) {
+        if (equals(uiValue, runtimeValue)) {
+            return
+        }
+
+        val uiChanged = snapshotUi?.let { !equals(uiValue, it) } ?: false
+        val runtimeChanged = snapshotRuntime?.let { !equals(runtimeValue, it) } ?: false
+
+        val direction = when {
+            uiChanged && !runtimeChanged -> "UI->RT"
+            runtimeChanged && !uiChanged -> "RT->UI"
+            uiChanged && runtimeChanged -> "UI->RT (conflict)"
+            else -> "UI->RT (bootstrap)"
+        }
+
+        if (direction.startsWith("RT->UI")) {
+            applyRuntimeToUi(runtimeValue)
+        } else {
+            applyUiToRuntime(uiValue)
+        }
+
+        if (debugConfigSync) {
+            Levelhead.logger.info("[LevelheadConfigSync] {} {} ui={} runtime={}", direction, name, uiValue, runtimeValue)
+        }
     }
 
     private fun setupConditionalVisibility() {
@@ -851,6 +1301,16 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         hideIf("customDatabaseUrl") { !showAdvancedOptions }
         hideIf("proxyUrlWarning") { !showAdvancedOptions || !proxyEnabled || proxyBaseUrl.isNotBlank() }
         hideIf("proxyAuthInfo") { !showAdvancedOptions }
+
+        hideIf("bedwarsCustomFooterFormat") {
+            bedwarsStatMode != BedwarsStatMode.CUSTOM
+        }
+        hideIf("duelsCustomFooterFormat") {
+            duelsStatMode != DuelsStatMode.CUSTOM
+        }
+        hideIf("skywarsCustomFooterFormat") {
+            skywarsStatMode != SkyWarsStatMode.CUSTOM
+        }
         
         // Show API key warning only when in "Own API Key" mode and key is blank
         hideIf("apiKeyWarning") { 
@@ -994,8 +1454,15 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         headerText = GameMode.BEDWARS.defaultHeader
         headerColorHex = "#55FFFF"
         footerFormat = "%star%"
+        bedwarsStatDisplayIndex = BedwarsStatMode.STAR.ordinal
+        duelsStatDisplayIndex = DuelsStatMode.DIVISION_TITLE.ordinal
+        skywarsStatDisplayIndex = SkyWarsStatMode.STAR.ordinal
+        bedwarsCustomFooterFormat = "%star%"
+        duelsCustomFooterFormat = "%division%"
+        skywarsCustomFooterFormat = "%star%"
         footerColorHex = "#FFFF55"
         showAdvancedOptions = false
+        debugConfigSync = false
         save()
         BedwarsFetcher.resetWarnings()
         Levelhead.displayManager.resetToDefaults()
@@ -1006,6 +1473,11 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         starCacheTtlMinutes = clamped
         save()
         BedwarsFetcher.resetWarnings()
+    }
+
+    private fun refreshDisplayStats(clearStats: Boolean) {
+        Levelhead.displayManager.clearCachesWithoutRefetch(clearStats = clearStats)
+        Levelhead.displayManager.refreshVisibleDisplays()
     }
 
     private fun openUrl(url: String) {
