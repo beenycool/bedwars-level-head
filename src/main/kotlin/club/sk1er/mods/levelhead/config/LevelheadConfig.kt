@@ -433,7 +433,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         category = "Appearance",
         min = -0.5f,
         max = 0.5f,
-        step = 0.01f
     )
     var verticalOffset: Float = 0.0f
         set(value) {
