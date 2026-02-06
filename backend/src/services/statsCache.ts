@@ -659,8 +659,9 @@ export async function clearAllPlayerStatsCaches(): Promise<number> {
     if (client && client.status === 'ready') {
       try {
         let cursor = '0';
+        // Optimized: Increased COUNT to 1000 to reduce network round-trips.
         do {
-          const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'cache:*', 'COUNT', 100);
+          const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'cache:*', 'COUNT', 1000);
           cursor = newCursor;
           if (keys.length > 0) {
             await client.del(...keys);
