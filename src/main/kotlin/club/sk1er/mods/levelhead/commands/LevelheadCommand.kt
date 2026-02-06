@@ -4,6 +4,7 @@ import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.commands.WhoisService
 import club.sk1er.mods.levelhead.config.ConfigProfiles
 import club.sk1er.mods.levelhead.config.LevelheadConfig
+import club.sk1er.mods.levelhead.config.MasterConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import club.sk1er.mods.levelhead.core.GameMode
 import club.sk1er.mods.levelhead.core.ModeManager
@@ -384,10 +385,20 @@ class LevelheadCommand {
         }
         val snapshot = Levelhead.statusSnapshot()
         val displayCache = Levelhead.displayManager.aboveHead.sumOf { it.cache.size }
+        val runtimeEnabled = Levelhead.displayManager.config.enabled
+        val runtimeShowSelf = Levelhead.displayManager.primaryDisplay()?.config?.showSelf ?: true
+        val runtimePosition = Levelhead.displayManager.config.displayPosition
+        val runtimeOffset = Levelhead.displayManager.config.offset
+        val uiPosition = MasterConfig.DisplayPosition.entries
+            .getOrNull(LevelheadConfig.displayPositionIndex) ?: MasterConfig.DisplayPosition.ABOVE
         sendMessage("${ChatColor.GREEN}Debug info:")
         sendMessage("${ChatColor.YELLOW}Game Mode: ${ChatColor.GOLD}${gameMode?.displayName ?: "none"}")
         sendMessage("${ChatColor.YELLOW}Context: ${ChatColor.GOLD}${context?.name?.lowercase(Locale.ROOT) ?: "unknown"}")
-        sendMessage("${ChatColor.YELLOW}Mod enabled: ${formatToggle(Levelhead.displayManager.config.enabled)}${ChatColor.YELLOW}, show self: ${formatToggle(Levelhead.displayManager.primaryDisplay()?.config?.showSelf ?: true)}")
+        sendMessage("${ChatColor.YELLOW}Mod enabled: UI ${formatToggle(LevelheadConfig.levelheadEnabled)}${ChatColor.YELLOW}, runtime ${formatToggle(runtimeEnabled)}${ChatColor.YELLOW}")
+        sendMessage("${ChatColor.YELLOW}Show self: UI ${formatToggle(LevelheadConfig.showSelf)}${ChatColor.YELLOW}, runtime ${formatToggle(runtimeShowSelf)}${ChatColor.YELLOW}")
+        sendMessage("${ChatColor.YELLOW}Display position: UI ${ChatColor.GOLD}${uiPosition.name.lowercase(Locale.ROOT)}${ChatColor.YELLOW}, runtime ${ChatColor.GOLD}${runtimePosition.name.lowercase(Locale.ROOT)}${ChatColor.YELLOW}")
+        sendMessage("${ChatColor.YELLOW}Vertical offset: UI ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", LevelheadConfig.verticalOffset.toDouble())}${ChatColor.YELLOW}, runtime ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", runtimeOffset)}${ChatColor.YELLOW}")
+        sendMessage("${ChatColor.YELLOW}Config sync debug logging: ${formatToggle(LevelheadConfig.debugConfigSync)}${ChatColor.YELLOW}")
         sendMessage("${ChatColor.YELLOW}Cache size: ${ChatColor.GOLD}${snapshot.cacheSize}${ChatColor.YELLOW}, display cache entries: ${ChatColor.GOLD}$displayCache")
         sendMessage("${ChatColor.YELLOW}Rate limiter remaining: ${ChatColor.GOLD}${snapshot.rateLimitRemaining}${ChatColor.YELLOW}, proxy: ${if (snapshot.proxyEnabled) ChatColor.GREEN else ChatColor.GRAY}${if (snapshot.proxyEnabled) "enabled" else "disabled"}${ChatColor.YELLOW}")
     }
