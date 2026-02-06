@@ -8,4 +8,4 @@
 
 ## 2024-05-25 - Accessible Canvas Charts
 **Learning:** Chart.js canvases in raw HTML templates are invisible to screen readers by default. They need explicit `role="img"` and `aria-label` to provide context.
-**Action:** Always add descriptive ARIA labels to canvas elements when generating HTML server-side.
+**Action:** Always add descriptive ARIA labels to canvas elements when generating HTML server-side, and update those labels client-side whenever chart data changes to keep them accurate.

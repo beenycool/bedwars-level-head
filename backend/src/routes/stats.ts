@@ -1055,7 +1055,7 @@ router.get('/', async (req, res, next) => {
           </div>
         </div>
         <div class="fullscreen-chart-container">
-          <canvas id="fullscreenChart"></canvas>
+          <canvas id="fullscreenChart" role="img" aria-label=""></canvas>
         </div>
       </div>
     </div>
@@ -1371,6 +1371,110 @@ router.get('/', async (req, res, next) => {
         }
       }
 
+      const chartAriaBase = {
+        cacheChart: 'Doughnut chart showing cache hit versus network fetch ratio',
+        starChart: 'Bar chart showing player distribution by BedWars star ranges',
+        latencyChart: 'Line chart showing request latency trends over time',
+        statusChart: 'Doughnut chart showing breakdown of HTTP response status codes',
+        lookupTypeChart: 'Doughnut chart showing distribution of UUID versus username lookups',
+        requestsOverTimeChart: 'Line chart showing total requests over time',
+        cacheOverTimeChart: 'Line chart showing cache hit rate percentage over time',
+        latencyDistributionChart: 'Bar chart showing distribution of request latency in milliseconds',
+        topPlayersChart: 'Bar chart showing top 20 most queried players',
+      };
+
+      function setChartAriaLabel(chartId, label) {
+        const canvas = document.getElementById(chartId);
+        if (canvas) {
+          canvas.setAttribute('aria-label', label);
+        }
+      }
+
+      function buildFilterSummaryText(activeFilters) {
+        if (!activeFilters) return '';
+        const parts = [];
+        if (activeFilters.from) parts.push(`from ${new Date(activeFilters.from).toLocaleString()}`);
+        if (activeFilters.to) parts.push(`to ${new Date(activeFilters.to).toLocaleString()}`);
+        if (activeFilters.limit) parts.push(`limit ${activeFilters.limit}`);
+        return parts.length ? ` Filters ${parts.join(', ')}.` : '';
+      }
+
+      function buildLatencyAriaLabel(summary) {
+        const count = Number(summary.latencySeriesCount ?? 0).toLocaleString();
+        const inclusion = summary.includeCacheHits ? 'including cache hits' : 'excluding cache hits';
+        return `${chartAriaBase.latencyChart}. ${count} data points, ${inclusion}.${buildFilterSummaryText(summary.filters)}`;
+      }
+
+      let latestAriaSummary = null;
+
+      function updateChartAriaLabels(summary) {
+        if (!summary) return;
+        latestAriaSummary = summary;
+        const filterSummary = buildFilterSummaryText(summary.filters);
+        const cacheHits = Number(summary.cacheHits ?? 0);
+        const cacheMisses = Number(summary.cacheMisses ?? 0);
+
+        setChartAriaLabel(
+          'cacheChart',
+          `${chartAriaBase.cacheChart}. Cache hits: ${cacheHits.toLocaleString()}, network fetches: ${cacheMisses.toLocaleString()}.${filterSummary}`,
+        );
+
+        const starRanges = summary.starRanges ?? {};
+        setChartAriaLabel(
+          'starChart',
+          `${chartAriaBase.starChart}. Unknown: ${Number(starRanges.Unknown ?? 0).toLocaleString()}, 0-10: ${Number(starRanges['0-10'] ?? 0).toLocaleString()}, 11-50: ${Number(starRanges['11-50'] ?? 0).toLocaleString()}, 51-100: ${Number(starRanges['51-100'] ?? 0).toLocaleString()}, 100+: ${Number(starRanges['100+'] ?? 0).toLocaleString()}.${filterSummary}`,
+        );
+
+        setChartAriaLabel('latencyChart', buildLatencyAriaLabel(summary));
+
+        const statusBuckets = summary.statusBuckets ?? {};
+        setChartAriaLabel(
+          'statusChart',
+          `${chartAriaBase.statusChart}. 2xx: ${Number(statusBuckets['2xx'] ?? 0).toLocaleString()}, 3xx: ${Number(statusBuckets['3xx'] ?? 0).toLocaleString()}, 4xx: ${Number(statusBuckets['4xx'] ?? 0).toLocaleString()}, 5xx: ${Number(statusBuckets['5xx'] ?? 0).toLocaleString()}, other: ${Number(statusBuckets.Other ?? 0).toLocaleString()}.${filterSummary}`,
+        );
+
+        const lookupTypeCounts = summary.lookupTypeCounts ?? {};
+        setChartAriaLabel(
+          'lookupTypeChart',
+          `${chartAriaBase.lookupTypeChart}. UUID: ${Number(lookupTypeCounts.UUID ?? 0).toLocaleString()}, IGN: ${Number(lookupTypeCounts.IGN ?? 0).toLocaleString()}.${filterSummary}`,
+        );
+
+        const requestsTotal = (summary.requestsOverTimeData ?? []).reduce((acc, value) => acc + Number(value ?? 0), 0);
+        setChartAriaLabel(
+          'requestsOverTimeChart',
+          `${chartAriaBase.requestsOverTimeChart}. ${requestsTotal.toLocaleString()} total requests across ${(summary.requestsOverTimeData ?? []).length.toLocaleString()} time buckets.${filterSummary}`,
+        );
+
+        const cacheOverTimeData = summary.cacheOverTimeData ?? [];
+        const avgCacheRate = cacheOverTimeData.length
+          ? cacheOverTimeData.reduce((acc, value) => acc + Number(value ?? 0), 0) / cacheOverTimeData.length
+          : 0;
+        setChartAriaLabel(
+          'cacheOverTimeChart',
+          `${chartAriaBase.cacheOverTimeChart}. Average cache hit rate ${avgCacheRate.toFixed(1)}% across ${cacheOverTimeData.length.toLocaleString()} time buckets.${filterSummary}`,
+        );
+
+        const latencyBins = summary.latencyBins ?? {};
+        setChartAriaLabel(
+          'latencyDistributionChart',
+          `${chartAriaBase.latencyDistributionChart}. 0-50ms: ${Number(latencyBins['0-50ms'] ?? 0).toLocaleString()}, 50-100ms: ${Number(latencyBins['50-100ms'] ?? 0).toLocaleString()}, 100-200ms: ${Number(latencyBins['100-200ms'] ?? 0).toLocaleString()}, 200-500ms: ${Number(latencyBins['200-500ms'] ?? 0).toLocaleString()}, 500-1000ms: ${Number(latencyBins['500-1000ms'] ?? 0).toLocaleString()}, 1000ms+: ${Number(latencyBins['1000ms+'] ?? 0).toLocaleString()}.${filterSummary}`,
+        );
+
+        const topPlayersLabels = summary.topPlayersLabels ?? [];
+        const topPlayersData = summary.topPlayersData ?? [];
+        if (topPlayersLabels.length > 0) {
+          setChartAriaLabel(
+            'topPlayersChart',
+            `${chartAriaBase.topPlayersChart}. Top player ${topPlayersLabels[0]} with ${Number(topPlayersData[0] ?? 0).toLocaleString()} queries.${filterSummary}`,
+          );
+        } else {
+          setChartAriaLabel(
+            'topPlayersChart',
+            `${chartAriaBase.topPlayersChart}. No player data available.${filterSummary}`,
+          );
+        }
+      }
+
       setMetric('totalLookupsValue', totalLookups.toLocaleString());
       const totalLookupsSub = document.getElementById('totalLookupsSub');
       if (totalLookupsSub) {
@@ -1519,6 +1623,20 @@ router.get('/', async (req, res, next) => {
           chart.data.datasets[0].data = filteredSeries.map((point) => point.y);
           chart.update('none'); // Update without animation for better performance
         }
+
+        if (latestAriaSummary) {
+          updateChartAriaLabels({
+            ...latestAriaSummary,
+            latencySeriesCount: getLatencySeriesCount(),
+            includeCacheHits,
+          });
+        }
+      }
+
+      function getLatencySeriesCount() {
+        return includeCacheHits
+          ? allLatencySeries.length
+          : allLatencySeries.filter((point) => !point.cacheHit).length;
       }
       
       const latencyLabels = sortedByRequestTime.map((d, index) => {
@@ -1663,51 +1781,71 @@ router.get('/', async (req, res, next) => {
         }
       }
 
-      let timeStart, timeEnd;
-      if (filters.from && filters.to) {
-        timeStart = new Date(filters.from);
-        timeEnd = new Date(filters.to);
-      } else if (data.length > 0) {
-        const timestamps = data.map(d => new Date(d.requestedAt).getTime()).filter(t => !Number.isNaN(t));
-        if (timestamps.length > 0) {
-          timeStart = new Date(Math.min(...timestamps));
-          timeEnd = new Date(Math.max(...timestamps));
+      function buildTimeBucketData(dataSet, activeFilters) {
+        let timeStart, timeEnd;
+        if (activeFilters?.from && activeFilters?.to) {
+          timeStart = new Date(activeFilters.from);
+          timeEnd = new Date(activeFilters.to);
+        } else if (dataSet.length > 0) {
+          const timestamps = dataSet.map(d => new Date(d.requestedAt).getTime()).filter(t => !Number.isNaN(t));
+          if (timestamps.length > 0) {
+            timeStart = new Date(Math.min(...timestamps));
+            timeEnd = new Date(Math.max(...timestamps));
+          } else {
+            timeStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
+            timeEnd = new Date();
+          }
         } else {
           timeStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
           timeEnd = new Date();
         }
-      } else {
-        timeStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        timeEnd = new Date();
+        const bucketInterval = getTimeBucketInterval(timeStart, timeEnd);
+
+        const timeBuckets = new Map();
+        const cacheBuckets = new Map();
+        const sortedData = [...dataSet].sort((a, b) => new Date(a.requestedAt).getTime() - new Date(b.requestedAt).getTime());
+
+        sortedData.forEach((d) => {
+          const timestamp = new Date(d.requestedAt).getTime();
+          const bucketKey = Math.floor(timestamp / bucketInterval) * bucketInterval;
+          if (!timeBuckets.has(bucketKey)) {
+            timeBuckets.set(bucketKey, 0);
+          }
+          timeBuckets.set(bucketKey, timeBuckets.get(bucketKey) + 1);
+
+          if (!cacheBuckets.has(bucketKey)) {
+            cacheBuckets.set(bucketKey, { hits: 0, total: 0 });
+          }
+          const bucket = cacheBuckets.get(bucketKey);
+          bucket.total++;
+          if (d.cacheHit) bucket.hits++;
+        });
+
+        const timeBucketKeys = Array.from(timeBuckets.keys()).sort((a, b) => a - b);
+        const cacheBucketKeys = Array.from(cacheBuckets.keys()).sort((a, b) => a - b);
+
+        const requestsOverTimeLabels = timeBucketKeys.map((key) => formatTimeBucketLabel(key, bucketInterval));
+        const requestsOverTimeData = timeBucketKeys.map((key) => timeBuckets.get(key));
+        const cacheOverTimeLabels = cacheBucketKeys.map((key) => formatTimeBucketLabel(key, bucketInterval));
+        const cacheOverTimeData = cacheBucketKeys.map((key) => {
+          const bucket = cacheBuckets.get(key);
+          return bucket.total > 0 ? (bucket.hits / bucket.total) * 100 : 0;
+        });
+
+        return {
+          requestsOverTimeLabels,
+          requestsOverTimeData,
+          cacheOverTimeLabels,
+          cacheOverTimeData,
+        };
       }
-      const bucketInterval = getTimeBucketInterval(timeStart, timeEnd);
 
-      const timeBuckets = new Map();
-      const cacheBuckets = new Map();
-      const sortedData = [...data].sort((a, b) => new Date(a.requestedAt).getTime() - new Date(b.requestedAt).getTime());
-
-      sortedData.forEach((d) => {
-        const timestamp = new Date(d.requestedAt).getTime();
-        const bucketKey = Math.floor(timestamp / bucketInterval) * bucketInterval;
-        if (!timeBuckets.has(bucketKey)) {
-          timeBuckets.set(bucketKey, 0);
-        }
-        timeBuckets.set(bucketKey, timeBuckets.get(bucketKey) + 1);
-
-        if (!cacheBuckets.has(bucketKey)) {
-          cacheBuckets.set(bucketKey, { hits: 0, total: 0 });
-        }
-        const bucket = cacheBuckets.get(bucketKey);
-        bucket.total++;
-        if (d.cacheHit) bucket.hits++;
-      });
-
-      const requestsOverTimeLabels = Array.from(timeBuckets.keys())
-        .sort((a, b) => a - b)
-        .map((key) => formatTimeBucketLabel(key, bucketInterval));
-      const requestsOverTimeData = Array.from(timeBuckets.keys())
-        .sort((a, b) => a - b)
-        .map((key) => timeBuckets.get(key));
+      const {
+        requestsOverTimeLabels,
+        requestsOverTimeData,
+        cacheOverTimeLabels,
+        cacheOverTimeData,
+      } = buildTimeBucketData(data, filters);
 
       const requestsOverTimeChartConfig = {
         type: 'line',
@@ -1746,16 +1884,6 @@ router.get('/', async (req, res, next) => {
       charts.push(new Chart(requestsOverTimeChartEl, requestsOverTimeChartConfig));
 
       // 7. Cache Hit Rate Over Time
-      const cacheOverTimeLabels = Array.from(cacheBuckets.keys())
-        .sort((a, b) => a - b)
-        .map((key) => formatTimeBucketLabel(key, bucketInterval));
-      const cacheOverTimeData = Array.from(cacheBuckets.keys())
-        .sort((a, b) => a - b)
-        .map((key) => {
-          const bucket = cacheBuckets.get(key);
-          return bucket.total > 0 ? (bucket.hits / bucket.total) * 100 : 0;
-        });
-
       const cacheOverTimeChartConfig = {
         type: 'line',
         data: {
@@ -1883,6 +2011,22 @@ router.get('/', async (req, res, next) => {
 
       charts.push(new Chart(topPlayersChartEl, topPlayersChartConfig));
 
+      updateChartAriaLabels({
+        filters,
+        cacheHits,
+        cacheMisses,
+        starRanges,
+        statusBuckets,
+        lookupTypeCounts,
+        requestsOverTimeData,
+        cacheOverTimeData,
+        latencyBins,
+        topPlayersLabels,
+        topPlayersData: topPlayersData,
+        latencySeriesCount: getLatencySeriesCount(),
+        includeCacheHits,
+      });
+
       applyChartHeight(currentChartHeight);
 
       // Fullscreen chart handling
@@ -1935,6 +2079,7 @@ router.get('/', async (req, res, next) => {
         }
         
         titleEl.textContent = info.title;
+        canvas.setAttribute('aria-label', `${info.title} (expanded view)`);
         overlay.classList.remove('hidden');
         document.body.classList.add('overflow-hidden');
 
@@ -2154,6 +2299,7 @@ router.get('/', async (req, res, next) => {
 
       function updateDashboard(json) {
         const { chartData, topPlayers, sysStats, redisStats, pageData } = json;
+        const activeFilters = json.filters || filters;
         
         // Re-calculate derived metrics
         const cacheHitsCount = chartData.filter((d) => d.cacheHit).length;
@@ -2263,7 +2409,83 @@ router.get('/', async (req, res, next) => {
           }
         }
         
-        // 5. Top Players Chart
+        // 5. Lookup Type Chart
+        const newLookupTypeCounts = { UUID: 0, IGN: 0 };
+        chartData.forEach((d) => {
+          if (d.lookupType === 'uuid') {
+            newLookupTypeCounts.UUID++;
+          } else {
+            newLookupTypeCounts.IGN++;
+          }
+        });
+        const lookupTypeChart = charts.find(c => c.canvas && c.canvas.id === 'lookupTypeChart');
+        if (lookupTypeChart) {
+          lookupTypeChart.data.datasets[0].data = [newLookupTypeCounts.UUID, newLookupTypeCounts.IGN];
+          lookupTypeChart.update();
+          if (chartConfigs['lookupTypeChart']) {
+            chartConfigs['lookupTypeChart'].config.data.datasets[0].data = [newLookupTypeCounts.UUID, newLookupTypeCounts.IGN];
+          }
+        }
+
+        // 6. Requests Over Time + Cache Hit Rate Over Time
+        const {
+          requestsOverTimeLabels,
+          requestsOverTimeData,
+          cacheOverTimeLabels,
+          cacheOverTimeData,
+        } = buildTimeBucketData(chartData, activeFilters);
+
+        const requestsOverTimeChart = charts.find(c => c.canvas && c.canvas.id === 'requestsOverTimeChart');
+        if (requestsOverTimeChart) {
+          requestsOverTimeChart.data.labels = requestsOverTimeLabels;
+          requestsOverTimeChart.data.datasets[0].data = requestsOverTimeData;
+          requestsOverTimeChart.update();
+          if (chartConfigs['requestsOverTimeChart']) {
+            chartConfigs['requestsOverTimeChart'].config.data.labels = requestsOverTimeLabels;
+            chartConfigs['requestsOverTimeChart'].config.data.datasets[0].data = requestsOverTimeData;
+          }
+        }
+
+        const cacheOverTimeChart = charts.find(c => c.canvas && c.canvas.id === 'cacheOverTimeChart');
+        if (cacheOverTimeChart) {
+          cacheOverTimeChart.data.labels = cacheOverTimeLabels;
+          cacheOverTimeChart.data.datasets[0].data = cacheOverTimeData;
+          cacheOverTimeChart.update();
+          if (chartConfigs['cacheOverTimeChart']) {
+            chartConfigs['cacheOverTimeChart'].config.data.labels = cacheOverTimeLabels;
+            chartConfigs['cacheOverTimeChart'].config.data.datasets[0].data = cacheOverTimeData;
+          }
+        }
+
+        // 7. Latency Distribution
+        const newLatencyBins = {
+          '0-50ms': 0,
+          '50-100ms': 0,
+          '100-200ms': 0,
+          '200-500ms': 0,
+          '500-1000ms': 0,
+          '1000ms+': 0,
+        };
+
+        latVals.forEach((latency) => {
+          if (latency <= 50) newLatencyBins['0-50ms']++;
+          else if (latency <= 100) newLatencyBins['50-100ms']++;
+          else if (latency <= 200) newLatencyBins['100-200ms']++;
+          else if (latency <= 500) newLatencyBins['200-500ms']++;
+          else if (latency <= 1000) newLatencyBins['500-1000ms']++;
+          else newLatencyBins['1000ms+']++;
+        });
+
+        const latencyDistributionChart = charts.find(c => c.canvas && c.canvas.id === 'latencyDistributionChart');
+        if (latencyDistributionChart) {
+          latencyDistributionChart.data.datasets[0].data = Object.values(newLatencyBins);
+          latencyDistributionChart.update();
+          if (chartConfigs['latencyDistributionChart']) {
+            chartConfigs['latencyDistributionChart'].config.data.datasets[0].data = Object.values(newLatencyBins);
+          }
+        }
+
+        // 8. Top Players Chart
         const topPlayersLabels = topPlayers.slice(0, 20).map(p => p.resolvedUsername || p.identifier);
         const topPlayersDataArr = topPlayers.slice(0, 20).map(p => p.queryCount);
         
@@ -2277,6 +2499,22 @@ router.get('/', async (req, res, next) => {
             chartConfigs['topPlayersChart'].config.data.datasets[0].data = topPlayersDataArr;
           }
         }
+
+        updateChartAriaLabels({
+          filters: activeFilters,
+          cacheHits: cacheHitsCount,
+          cacheMisses: totalReqs - cacheHitsCount,
+          starRanges: newStarRanges,
+          statusBuckets: newStatusBuckets,
+          lookupTypeCounts: newLookupTypeCounts,
+          requestsOverTimeData,
+          cacheOverTimeData,
+          latencyBins: newLatencyBins,
+          topPlayersLabels,
+          topPlayersData: topPlayersDataArr,
+          latencySeriesCount: getLatencySeriesCount(),
+          includeCacheHits,
+        });
         
         // 6. Update Recent Player Lookups Table
         if (pageData && pageData.rows) {
