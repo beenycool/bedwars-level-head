@@ -17,7 +17,7 @@ export function securityHeaders(req: Request, res: Response, next: NextFunction)
 
   // Permissions Policy
   // Disable sensitive features that are not used
-  res.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=()');
+  res.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=(), interest-cohort=()');
 
   // Generate a random nonce for this request
   const nonce = crypto.randomBytes(16).toString('base64');
