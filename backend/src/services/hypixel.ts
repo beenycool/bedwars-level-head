@@ -316,7 +316,7 @@ function computeAggregates(stats: Record<string, unknown>) {
   let kills = 0;
   let deaths = 0;
 
-  for (const key in stats) {
+  for (const key of Object.keys(stats)) {
     const value = stats[key];
     if (typeof value !== 'number') continue;
 
