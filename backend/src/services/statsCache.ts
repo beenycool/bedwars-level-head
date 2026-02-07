@@ -612,6 +612,7 @@ export async function getPlayerStatsFromCacheWithSWR(
   }
 
   // Try L1 (Redis) first
+  let l1MissReason = 'absent';
   if (isRedisAvailable()) {
     try {
       const client = getRedisClient();
@@ -630,16 +631,7 @@ export async function getPlayerStatsFromCacheWithSWR(
             if (entry) {
               const now = Date.now();
               const isFresh = entry.expiresAt > now;
-              const cachedAtRaw = row.cached_at ?? null;
-              const cachedAtParsed =
-                cachedAtRaw === null || cachedAtRaw === undefined
-                  ? NaN
-                  : typeof cachedAtRaw === 'string'
-                    ? Number.parseInt(cachedAtRaw, 10)
-                    : Number(cachedAtRaw);
-              const cachedAt = Number.isFinite(cachedAtParsed)
-                ? cachedAtParsed
-                : entry.expiresAt - getAdaptiveL1TtlMs();
+              const cachedAt = entry.cachedAt ?? (entry.expiresAt - getAdaptiveL1TtlMs());
               const ageMs = now - cachedAt;
 
               if (isFresh) {
@@ -672,6 +664,7 @@ export async function getPlayerStatsFromCacheWithSWR(
 
               // Too old, delete from Redis
               await client.del(redisKey);
+              l1MissReason = 'expired';
             }
           }
         }
@@ -682,7 +675,7 @@ export async function getPlayerStatsFromCacheWithSWR(
     }
   }
 
-  recordCacheTierMiss('l1', 'absent');
+  recordCacheTierMiss('l1', l1MissReason);
 
   // Try L2 (Database) with SWR
   if (shouldReadFromDb()) {

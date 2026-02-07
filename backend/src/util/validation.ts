@@ -344,7 +344,7 @@ export async function validateTimestampAndNonce(
         const nonceKey = `nonce:${keyId}:${nonce}`;
         const ttlSeconds = Math.ceil((SUBMISSION_TTL_MS * 2) / 1000);
         
-        const result = await redis.set(nonceKey, '1', 'NX', 'EX', ttlSeconds);
+        const result = await redis.set(nonceKey, '1', 'EX', ttlSeconds, 'NX');
         
         if (result !== 'OK') {
             // Key already exists - replay attack detected

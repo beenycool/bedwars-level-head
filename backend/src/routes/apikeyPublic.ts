@@ -42,13 +42,13 @@ router.post('/status', enforcePublicRateLimit, async (req, res, next) => {
   }
 
   try {
+    if (!isRedisAvailable()) {
+      next(new HttpError(503, 'STATUS_UNKNOWN', 'API key status unavailable. Please retry.'));
+      return;
+    }
+
     const shouldRefresh = Boolean(forceRefresh);
     if (!shouldRefresh) {
-      if (!isRedisAvailable()) {
-        next(new HttpError(503, 'STATUS_UNKNOWN', 'API key status unavailable. Please retry.'));
-        return;
-      }
-
       const cached = await getApiKeyValidation(key.trim());
       if (cached) {
         res.json({

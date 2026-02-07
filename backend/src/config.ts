@@ -22,12 +22,8 @@ function checkRequiredEnv(name: string, description: string, format: string): st
   return value;
 }
 
-function requiredEnv(name: string, description: string, format: string): string {
-  const value = checkRequiredEnv(name, description, format);
-  if (value === undefined) {
-    throw new Error(buildMissingFieldsError());
-  }
-  return value;
+function requiredEnv(name: string, description: string, format: string): string | undefined {
+  return checkRequiredEnv(name, description, format);
 }
 
 function buildMissingFieldsError(): string {
@@ -61,6 +57,10 @@ const HYPIXEL_API_KEY_VALUE = checkRequiredEnv(
 
 function requiredStringListEnv(name: string, description: string, format: string): string[] {
   const raw = requiredEnv(name, description, format);
+  if (raw === undefined) {
+    return [];
+  }
+
   const values = raw
     .split(',')
     .map((value) => value.trim())
@@ -372,9 +372,9 @@ type FallbackMode = typeof validFallbackModes[number];
 function parseFallbackModeEnv(name: string, defaultValue: FallbackMode): FallbackMode {
   const raw = process.env[name];
   if (!raw) return defaultValue;
-  const normalized = raw.toLowerCase().trim() as FallbackMode;
-  if (validFallbackModes.includes(normalized)) {
-    return normalized;
+  const normalized = raw.toLowerCase().trim();
+  if (validFallbackModes.includes(normalized as FallbackMode)) {
+    return normalized as FallbackMode;
   }
   console.warn(`[config] Invalid ${name}: "${raw}". Using default: ${defaultValue}`);
   return defaultValue;

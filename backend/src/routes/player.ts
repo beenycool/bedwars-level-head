@@ -208,8 +208,8 @@ interface VerificationResult {
 }
 
 interface SignedData {
-  timestamp?: number;
-  nonce?: string;
+  timestamp: number;
+  nonce: string;
   [key: string]: unknown;
 }
 
