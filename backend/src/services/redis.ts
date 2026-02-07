@@ -7,6 +7,8 @@ import {
     REDIS_STATS_BUCKET_SIZE_MS,
     REDIS_STATS_CACHE_TTL_MS,
     RATE_LIMIT_WINDOW_MS,
+    RATE_LIMIT_REQUIRE_REDIS,
+    RATE_LIMIT_FALLBACK_MODE,
 } from '../config';
 import { CacheEntry, CacheMetadata } from './cache';
 
@@ -111,10 +113,71 @@ return 1
 // Rate Limiting (Hybrid: In-Memory + Redis)
 // ---------------------------------------------------------------------------
 
-export interface RateLimitResult {
+// Track whether we're currently using fallback mode
+let isInFallbackMode = false;
+let fallbackModeActivatedAt: number | null = null;
+
+export interface RateLimitFallbackState {
+  isInFallbackMode: boolean;
+  fallbackMode: 'deny' | 'allow' | 'memory' | null;
+  activatedAt: string | null;
+  requireRedis: boolean;
+}
+
+export function getRateLimitFallbackState(): RateLimitFallbackState {
+  return {
+    isInFallbackMode,
+    fallbackMode: isInFallbackMode ? RATE_LIMIT_FALLBACK_MODE : null,
+    activatedAt: fallbackModeActivatedAt ? new Date(fallbackModeActivatedAt).toISOString() : null,
+    requireRedis: RATE_LIMIT_REQUIRE_REDIS,
+  };
+}
+
+function activateFallbackMode(): void {
+  if (!isInFallbackMode) {
+    isInFallbackMode = true;
+    fallbackModeActivatedAt = Date.now();
+    console.warn(`[rate-limit] FALLBACK MODE ACTIVATED: Using ${RATE_LIMIT_FALLBACK_MODE} mode (Redis unavailable). ` +
+      `RATE_LIMIT_REQUIRE_REDIS=${RATE_LIMIT_REQUIRE_REDIS}. ` +
+      `This means rate limits are ${RATE_LIMIT_FALLBACK_MODE === 'memory' ? 'per-instance (attackers can bypass by hitting different instances)' : RATE_LIMIT_FALLBACK_MODE === 'allow' ? 'DISABLED (all requests allowed)' : 'enforcing denial (503 errors)'}.`);
+  }
+}
+
+function clearFallbackMode(): void {
+  if (isInFallbackMode) {
+    isInFallbackMode = false;
+    const duration = fallbackModeActivatedAt ? Date.now() - fallbackModeActivatedAt : 0;
+    fallbackModeActivatedAt = null;
+    console.info(`[rate-limit] Redis recovered, exiting fallback mode. Fallback was active for ${duration}ms`);
+  }
+}
+
+function getFallbackRateLimitResult(
+    cacheKey: string,
+    windowMs: number,
+    cost: number,
+    now: number,
+): RateLimitResult {
+    switch (RATE_LIMIT_FALLBACK_MODE) {
+        case 'deny':
+            return RATE_LIMIT_DENY_ALL;
+        case 'allow':
+            return RATE_LIMIT_ALLOW_ALL;
+        case 'memory':
+        default:
+            return getLocalRateLimitCount(cacheKey, windowMs, cost, now);
+    }
+}
+
+// Special result indicating that the request should be allowed (fallback=allow mode)
+export const RATE_LIMIT_ALLOW_ALL = Symbol('RATE_LIMIT_ALLOW_ALL');
+// Special result indicating that the request should be denied (fallback=deny mode)
+export const RATE_LIMIT_DENY_ALL = Symbol('RATE_LIMIT_DENY_ALL');
+
+export type RateLimitResult = {
     count: number;
     ttl: number;
-}
+} | typeof RATE_LIMIT_ALLOW_ALL | typeof RATE_LIMIT_DENY_ALL | null;
 
 // In-memory rate limit cache
 interface LocalRateLimitEntry {
@@ -140,7 +203,35 @@ setInterval(() => {
     }
 }, 60000).unref(); // Every minute
 
-export async function incrementRateLimit(ip: string, windowMs: number, cost: number = 1): Promise<RateLimitResult | null> {
+function getLocalRateLimitCount(cacheKey: string, windowMs: number, cost: number, now: number): { count: number; ttl: number } {
+    let local = localRateLimits.get(cacheKey);
+    const isNewEntry = !local || (now - local.windowStart) >= windowMs;
+
+    if (isNewEntry) {
+        local = {
+            count: cost,
+            windowStart: now,
+            lastSyncedCount: 0,
+            lastSyncTime: now,
+        };
+    } else {
+        local!.count += cost;
+    }
+
+    // Enforce max cache size (FIFO: delete oldest-inserted entry)
+    if (isNewEntry && localRateLimits.size >= LOCAL_CACHE_MAX_SIZE) {
+        const firstKey = localRateLimits.keys().next().value;
+        if (firstKey) localRateLimits.delete(firstKey);
+    }
+
+    localRateLimits.set(cacheKey, local!);
+    return {
+        count: local!.count,
+        ttl: Math.max(0, windowMs - (now - local!.windowStart)),
+    };
+}
+
+export async function incrementRateLimit(ip: string, windowMs: number, cost: number = 1): Promise<RateLimitResult> {
     const ipHash = hashIp(ip);
     const cacheKey = `rl:${ipHash}`;
     const now = Date.now();
@@ -150,7 +241,7 @@ export async function incrementRateLimit(ip: string, windowMs: number, cost: num
 
     // If we have a valid local entry in the current window
     if (local && (now - local.windowStart) < windowMs) {
-        local.count += cost;
+        local!.count += cost;
 
         // Decide if we need to sync to Redis
         const countDelta = local.count - local.lastSyncedCount;
@@ -165,37 +256,29 @@ export async function incrementRateLimit(ip: string, windowMs: number, cost: num
         }
 
         return {
-            count: local.count,
-            ttl: Math.max(0, windowMs - (now - local.windowStart)),
+            count: local!.count,
+            ttl: Math.max(0, windowMs - (now - local!.windowStart)),
         };
     }
 
     // No valid local entry - try Redis
     const client = getRedisClient();
-    if (!client) {
-        // No Redis, use pure in-memory
-        if (!local || (now - local.windowStart) >= windowMs) {
-            local = {
-                count: cost,
-                windowStart: now,
-                lastSyncedCount: 0,
-                lastSyncTime: now,
-            };
+
+    // Handle Redis unavailable scenarios
+    if (!client || client.status !== 'ready') {
+        // Redis is not available - handle according to configuration
+        if (RATE_LIMIT_REQUIRE_REDIS) {
+            activateFallbackMode();
+            return getFallbackRateLimitResult(cacheKey, windowMs, cost, now);
         } else {
-            local.count += cost;
+            // RATE_LIMIT_REQUIRE_REDIS=false: use in-memory silently (legacy behavior)
+            return getLocalRateLimitCount(cacheKey, windowMs, cost, now);
         }
+    }
 
-        // Enforce max cache size (LRU-style: delete oldest)
-        if (localRateLimits.size >= LOCAL_CACHE_MAX_SIZE) {
-            const firstKey = localRateLimits.keys().next().value;
-            if (firstKey) localRateLimits.delete(firstKey);
-        }
-
-        localRateLimits.set(cacheKey, local);
-        return {
-            count: local.count,
-            ttl: Math.max(0, windowMs - (now - local.windowStart)),
-        };
+    // Redis is available - clear fallback mode if we were in it
+    if (isInFallbackMode) {
+        clearFallbackMode();
     }
 
     try {
@@ -214,7 +297,7 @@ export async function incrementRateLimit(ip: string, windowMs: number, cost: num
             if (firstKey) localRateLimits.delete(firstKey);
         }
 
-        localRateLimits.set(cacheKey, local);
+        localRateLimits.set(cacheKey, local!);
 
         return {
             count: result[0],
@@ -224,18 +307,14 @@ export async function incrementRateLimit(ip: string, windowMs: number, cost: num
         const message = err instanceof Error ? err.message : String(err);
         console.error('[redis] incrementRateLimit failed', message);
 
-        // Fallback to local-only
-        if (!local || (now - local.windowStart) >= windowMs) {
-            local = { count: cost, windowStart: now, lastSyncedCount: 0, lastSyncTime: now };
+        // Redis operation failed - handle according to configuration
+        if (RATE_LIMIT_REQUIRE_REDIS) {
+            activateFallbackMode();
+            return getFallbackRateLimitResult(cacheKey, windowMs, cost, now);
         } else {
-            local.count += cost;
+            // Legacy behavior: fallback to in-memory silently
+            return getLocalRateLimitCount(cacheKey, windowMs, cost, now);
         }
-        localRateLimits.set(cacheKey, local);
-
-        return {
-            count: local.count,
-            ttl: Math.max(0, windowMs - (now - local.windowStart)),
-        };
     }
 }
 

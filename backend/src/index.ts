@@ -1,7 +1,9 @@
 import express from 'express';
 import compression from 'compression';
+import ipaddr from 'ipaddr.js';
 import playerRouter from './routes/player';
 import playerPublicRouter from './routes/playerPublic';
+import apikeyPublicRouter from './routes/apikeyPublic';
 import { HttpError } from './util/httpError';
 import {
   SERVER_HOST,
@@ -9,20 +11,21 @@ import {
   CLOUD_FLARE_TUNNEL,
   CACHE_DB_POOL_MAX,
   CACHE_DB_POOL_MIN,
-  TRUST_PROXY,
+  TRUST_PROXY_CIDRS,
   CRON_API_KEYS,
 } from './config';
 import { purgeExpiredEntries, closeCache, pool as cachePool } from './services/cache';
 import { observeRequest, registry } from './services/metrics';
-import { checkHypixelReachability } from './services/hypixel';
+import { checkHypixelReachability, getCircuitBreakerState } from './services/hypixel';
 import { flushHistoryBuffer, startHistoryFlushInterval, stopHistoryFlushInterval } from './services/history';
 import {
   initializeDynamicRateLimitService,
   stopDynamicRateLimitService,
 } from './services/dynamicRateLimit';
 import { startAdaptiveTtlRefresh, stopAdaptiveTtlRefresh } from './services/statsCache';
-import { getRedisClient } from './services/redis';
+import { getRedisClient, getRateLimitFallbackState } from './services/redis';
 import adminRouter from './routes/admin';
+import apikeyRouter from './routes/apikey';
 import statsRouter from './routes/stats';
 import configRouter from './routes/config';
 import cronRouter from './routes/cron';
@@ -42,7 +45,29 @@ function sanitizeUrlForLogs(target: string): string {
 
 app.disable('x-powered-by');
 app.use(securityHeaders);
-app.set('trust proxy', TRUST_PROXY);
+
+function isIPInCIDR(ip: string, cidr: string): boolean {
+  try {
+    const [network, prefix] = ipaddr.parseCIDR(cidr);
+    let parsedIp = ipaddr.parse(ip);
+    if (parsedIp.kind() === 'ipv6' && parsedIp.isIPv4MappedAddress()) {
+      parsedIp = parsedIp.toIPv4Address();
+    }
+
+    if (parsedIp.kind() !== network.kind()) {
+      return false;
+    }
+
+    return parsedIp.match([network, prefix]);
+  } catch {
+    return false;
+  }
+}
+
+// Configure trust proxy with CIDR allowlist
+app.set('trust proxy', (ip: string) => {
+  return TRUST_PROXY_CIDRS.some((cidr) => isIPInCIDR(ip, cidr));
+});
 // Enable gzip compression for all responses (clients should send Accept-Encoding: gzip)
 // Large Hypixel JSON payloads compress very well (often 80-90% reduction)
 app.use(compression());
@@ -77,8 +102,10 @@ app.use((req, res, next) => {
 });
 
 app.use('/api/public/player', playerPublicRouter);
+app.use('/api/public/apikey', apikeyPublicRouter);
 app.use('/api/player', playerRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/admin/apikey', apikeyRouter);
 app.use('/api/config', configRouter);
 if (CRON_API_KEYS.length > 0) {
   app.use('/api/cron', cronRouter);
@@ -98,10 +125,39 @@ app.get('/healthz', async (_req, res) => {
     checkHypixelReachability(),
   ]);
 
+  const circuitBreaker = getCircuitBreakerState();
+  const fallbackState = getRateLimitFallbackState();
   const healthy = dbHealthy;
-  const status = healthy ? (hypixelHealthy ? 'ok' : 'degraded') : 'unhealthy';
+  let status: 'ok' | 'degraded' | 'unhealthy' = healthy
+    ? (hypixelHealthy ? 'ok' : 'degraded')
+    : 'unhealthy';
+
+  if (status === 'ok') {
+    // If circuit breaker is open, consider it degraded
+    if (circuitBreaker.state === 'open') {
+      status = 'degraded';
+    }
+
+    // If rate limiting is in fallback mode and requireRedis is true, mark as degraded
+    if (fallbackState.isInFallbackMode && fallbackState.requireRedis) {
+      status = 'degraded';
+    }
+  }
+
   res.status(healthy ? 200 : 503).json({
     status,
+    circuitBreaker: {
+      state: circuitBreaker.state,
+      failureCount: circuitBreaker.failureCount,
+      ...(circuitBreaker.lastFailureAt ? { lastFailureAt: new Date(circuitBreaker.lastFailureAt).toISOString() } : {}),
+      ...(circuitBreaker.nextRetryAt ? { nextRetryAt: new Date(circuitBreaker.nextRetryAt).toISOString() } : {}),
+    },
+    rateLimit: {
+      requireRedis: fallbackState.requireRedis,
+      fallbackMode: fallbackState.fallbackMode,
+      isInFallbackMode: fallbackState.isInFallbackMode,
+      ...(fallbackState.activatedAt ? { activatedAt: fallbackState.activatedAt } : {}),
+    },
     checks: {
       database: dbHealthy,
       hypixel: hypixelHealthy,
@@ -143,7 +199,17 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
         }
       });
     }
-    res.status(err.status).json({ success: false, cause: err.causeCode, message: err.message });
+    // Build response body with retry info for rate limit errors
+    const responseBody: Record<string, unknown> = { success: false, cause: err.causeCode, message: err.message };
+    if (err.status === 429 && err.headers?.['Retry-After']) {
+      const retryAfterSeconds = parseInt(err.headers['Retry-After'], 10);
+      if (!isNaN(retryAfterSeconds)) {
+        responseBody.retryAfter = retryAfterSeconds;
+        responseBody.retryAt = new Date(Date.now() + retryAfterSeconds * 1000).toISOString();
+      }
+    }
+    
+    res.status(err.status).json(responseBody);
     return;
   }
 

@@ -38,12 +38,15 @@ export class AzureSqlAdapter implements DatabaseAdapter {
     };
 
     const normalizeAzureUsername = (configToNormalize: mssql.config): void => {
+      // Check if server ends with '.database.windows.net' to avoid substring bypass attacks
+      const server = configToNormalize.server;
       if (
-        configToNormalize.server?.includes('.database.windows.net') &&
+        server &&
+        server.endsWith('.database.windows.net') &&
         configToNormalize.user &&
         !configToNormalize.user.includes('@')
       ) {
-        const serverName = configToNormalize.server.split('.')[0];
+        const serverName = server.split('.')[0];
         configToNormalize.user = `${configToNormalize.user}@${serverName}`;
         console.log(`[database] Updated Azure SQL username to ${configToNormalize.user}`);
       }

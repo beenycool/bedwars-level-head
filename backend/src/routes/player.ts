@@ -5,7 +5,7 @@ import { enforceRateLimit, enforceBatchRateLimit } from '../middleware/rateLimit
 import { resolvePlayer, ResolvedPlayer } from '../services/player';
 import { computeBedwarsStar } from '../util/bedwars';
 import { HttpError } from '../util/httpError';
-import { validatePlayerSubmission, matchesCriticalFields } from '../util/validation';
+import { validatePlayerSubmission, matchesCriticalFields, validateTimestampAndNonce } from '../util/validation';
 import { canonicalize } from '../util/signature';
 import { isValidBedwarsObject } from '../util/typeChecks';
 
@@ -14,11 +14,17 @@ import { CacheSource } from '../services/cache';
 import { COMMUNITY_SUBMIT_SECRET } from '../config';
 import { MinimalPlayerStats } from '../services/hypixel';
 import { getPlayerStatsFromCache, setIgnMapping, setPlayerStatsBoth } from '../services/statsCache';
+import { getCircuitBreakerState } from '../services/hypixel';
 
 const batchLimit = pLimit(6);
 
 const router = Router();
 
+function buildSubmitterKeyId(ipAddress: string | undefined): string {
+  const fallback = ipAddress && ipAddress.length > 0 ? ipAddress : 'unknown';
+  const salt = COMMUNITY_SUBMIT_SECRET || 'levelhead-submit';
+  return createHmac('sha256', salt).update(fallback).digest('hex');
+}
 
 
 
@@ -46,6 +52,13 @@ router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
       res.set('Last-Modified', new Date(resolved.lastModified).toUTCString());
     }
 
+    // Add SWR stale headers if data is stale
+    if (resolved.isStale) {
+      res.set('X-Cache-Stale', '1');
+      const ageSeconds = Math.floor((resolved.staleAgeMs ?? 0) / 1000);
+      res.set('Age', ageSeconds.toString());
+    }
+
     res.statusCode = 200;
     const notModified = req.fresh;
     const responseStatus = notModified ? 304 : 200;
@@ -71,7 +84,14 @@ router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
       return;
     }
 
-    res.json(resolved.payload);
+    // Include stale flag in response if data is stale
+    const circuitBreaker = getCircuitBreakerState();
+    const isCircuitOpen = circuitBreaker.state === 'open';
+    res.json({
+      ...resolved.payload,
+      ...(resolved.isStale ? { stale: true } : {}),
+      ...(isCircuitOpen ? { degradedMode: true } : {}),
+    });
   } catch (error) {
     next(error);
   }
@@ -140,7 +160,13 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
             latencyMs: Number(process.hrtime.bigint() - startedAt) / 1_000_000,
           });
 
-          return { identifier, payload: resolved.payload };
+          return {
+            identifier,
+            payload: {
+              ...resolved.payload,
+              ...(resolved.isStale ? { stale: true } : {}),
+            },
+          };
         } catch (error) {
           if (error instanceof HttpError) {
             if (error.status >= 500) {
@@ -160,7 +186,10 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
       }
     });
 
-    res.json({ success: true, data: payloadMap });
+    const circuitBreaker = getCircuitBreakerState();
+    const isCircuitOpen = circuitBreaker.state === 'open';
+
+    res.json({ success: true, data: payloadMap, ...(isCircuitOpen ? { degradedMode: true } : {}) });
   } catch (error) {
     next(error);
   }
@@ -174,9 +203,17 @@ const uuidOnlyPattern = /^[0-9a-f]{32}$/i;
 interface VerificationResult {
   valid: boolean;
   source: CacheSource | null;
+  error?: string;
+  statusCode?: number;
 }
 
-function verifySignedSubmission(uuid: string, data: unknown, signature?: string): boolean {
+interface SignedData {
+  timestamp: number;
+  nonce: string;
+  [key: string]: unknown;
+}
+
+function verifySignedSubmission(uuid: string, data: SignedData, signature?: string): boolean {
   if (!COMMUNITY_SUBMIT_SECRET || !signature) {
     return false;
   }
@@ -195,12 +232,40 @@ function verifySignedSubmission(uuid: string, data: unknown, signature?: string)
   }
 }
 
-async function verifyHypixelOrigin(uuid: string, data: unknown, signature?: string): Promise<VerificationResult> {
+async function verifyHypixelOrigin(
+  uuid: string,
+  data: unknown,
+  signature?: string,
+  keyId?: string,
+): Promise<VerificationResult> {
   try {
-    const submittedData = data as Record<string, unknown>;
+    const submittedData = data as SignedData;
 
     // Signed submissions are verified by HMAC, so they are trusted
-    if (verifySignedSubmission(uuid, data, signature)) {
+    if (verifySignedSubmission(uuid, submittedData, signature)) {
+      // Validate timestamp and nonce for replay protection
+      const timestamp = submittedData.timestamp;
+      const nonce = submittedData.nonce;
+
+      if (typeof timestamp !== 'number' || typeof nonce !== 'string') {
+        return {
+          valid: false,
+          source: null,
+          error: 'Missing timestamp or nonce in signed payload. Both are required for replay protection.',
+          statusCode: 400,
+        };
+      }
+
+      const nonceValidation = await validateTimestampAndNonce(timestamp, nonce, keyId || 'default');
+      if (!nonceValidation.valid) {
+        return {
+          valid: false,
+          source: null,
+          error: nonceValidation.error,
+          statusCode: nonceValidation.statusCode,
+        };
+      }
+
       return { valid: true, source: 'community_verified' };
     }
 
@@ -304,16 +369,16 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
 
   const normalizedUuid = uuid.trim().toLowerCase();
 
+  // Use a stable submitter identifier for nonce tracking
+  const keyId = buildSubmitterKeyId(req.ip);
+
   // Verify origin to prevent cache poisoning
-  const verificationResult = await verifyHypixelOrigin(normalizedUuid, data, signature);
+  const verificationResult = await verifyHypixelOrigin(normalizedUuid, data, signature, keyId);
   if (!verificationResult.valid) {
-    next(
-      new HttpError(
-        403,
-        'INVALID_ORIGIN',
-        'Player data could not be verified as originating from Hypixel API. This may indicate fabricated data.',
-      ),
-    );
+    const statusCode = verificationResult.statusCode || 403;
+    const errorCode = statusCode === 409 ? 'REPLAY_DETECTED' : 'INVALID_ORIGIN';
+    const message = verificationResult.error || 'Player data could not be verified as originating from Hypixel API. This may indicate fabricated data.';
+    next(new HttpError(statusCode, errorCode, message));
     return;
   }
 
