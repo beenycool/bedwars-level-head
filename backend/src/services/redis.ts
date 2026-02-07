@@ -134,6 +134,8 @@ end
 return {next_cursor, rl, stats, cache}
 `;
 
+const REDIS_SCAN_BATCH_SIZE = 1000;
+
 // ---------------------------------------------------------------------------
 // Rate Limiting (Hybrid: In-Memory + Redis)
 // ---------------------------------------------------------------------------
@@ -479,19 +481,33 @@ async function getKeyCounts(): Promise<KeyCounts> {
     let cacheKeys = 0;
 
     try {
+      let tempRateLimitKeys = 0;
+      let tempStatsKeys = 0;
+      let tempCacheKeys = 0;
+
       do {
         // Use Lua script to scan and count in one pass
-        const result = await client.eval(COUNT_KEYS_SCRIPT, 0, cursor, '1000') as [string, number, number, number];
+        const result = await client.eval(
+          COUNT_KEYS_SCRIPT,
+          0,
+          cursor,
+          String(REDIS_SCAN_BATCH_SIZE),
+        ) as [string, number, number, number];
         const [nextCursor, rl, stats, cache] = result;
 
         cursor = nextCursor;
-        rateLimitKeys += rl;
-        statsKeys += stats;
-        cacheKeys += cache;
+        tempRateLimitKeys += rl;
+        tempStatsKeys += stats;
+        tempCacheKeys += cache;
       } while (cursor !== '0');
+
+      rateLimitKeys = tempRateLimitKeys;
+      statsKeys = tempStatsKeys;
+      cacheKeys = tempCacheKeys;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       console.error('[redis] getKeyCounts failed', message);
+      throw err;
     }
 
     return { rateLimitKeys, statsKeys, cacheKeys };
