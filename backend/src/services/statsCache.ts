@@ -117,6 +117,10 @@ export interface IgnMappingEntry {
   expiresAt: number;
 }
 
+interface CacheEntryWithCachedAt<T> extends CacheEntry<T> {
+  cachedAt: number | null;
+}
+
 // Stale-While-Revalidate (SWR) cache result with staleness information
 export interface SWRCacheEntry<T> extends CacheEntry<T> {
   isStale: boolean;
@@ -245,7 +249,7 @@ export function stopAdaptiveTtlRefresh(): void {
   }
 }
 
-function mapRow<T>(row: CacheRow): CacheEntry<T> | null {
+function mapRow<T>(row: CacheRow): CacheEntryWithCachedAt<T> | null {
   const expiresAtRaw = row.expires_at;
   const expiresAt = typeof expiresAtRaw === 'string' ? Number.parseInt(expiresAtRaw, 10) : Number(expiresAtRaw);
   const lastModifiedRaw = row.last_modified;
@@ -253,8 +257,16 @@ function mapRow<T>(row: CacheRow): CacheEntry<T> | null {
     lastModifiedRaw === null
       ? null
       : typeof lastModifiedRaw === 'string'
-        ? Number.parseInt(lastModifiedRaw, 10)
-        : Number(lastModifiedRaw);
+      ? Number.parseInt(lastModifiedRaw, 10)
+      : Number(lastModifiedRaw);
+  const cachedAtRaw = row.cached_at;
+  const cachedAtParsed =
+    cachedAtRaw === null || cachedAtRaw === undefined
+      ? NaN
+      : typeof cachedAtRaw === 'string'
+        ? Number.parseInt(cachedAtRaw, 10)
+        : Number(cachedAtRaw);
+  const cachedAt = Number.isFinite(cachedAtParsed) ? cachedAtParsed : null;
 
   let parsedPayload: unknown = row.payload;
   if (typeof row.payload === 'string') {
@@ -272,6 +284,7 @@ function mapRow<T>(row: CacheRow): CacheEntry<T> | null {
   return {
     value: parsedPayload as T,
     expiresAt,
+    cachedAt,
     etag: row.etag,
     lastModified,
     source: validSource,
@@ -281,12 +294,12 @@ function mapRow<T>(row: CacheRow): CacheEntry<T> | null {
 async function getPlayerStatsFromDb(
   key: string,
   includeExpired: boolean,
-): Promise<CacheEntry<MinimalPlayerStats> | null> {
+): Promise<CacheEntryWithCachedAt<MinimalPlayerStats> | null> {
   await ensureInitialized();
 
   try {
     const result = await pool.query<CacheRow>(
-      'SELECT payload, expires_at, etag, last_modified, source FROM player_stats_cache WHERE cache_key = $1',
+      'SELECT payload, expires_at, cached_at, etag, last_modified, source FROM player_stats_cache WHERE cache_key = $1',
       [key],
     );
     markDbAccess();
@@ -308,7 +321,7 @@ async function getPlayerStatsFromDb(
       if (!includeExpired) {
         await pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [key]);
       }
-      return includeExpired ? entry : null;
+    return includeExpired ? entry : null;
     }
 
     return entry;
@@ -326,37 +339,40 @@ async function setPlayerStatsInDb(
 ): Promise<void> {
   await ensureInitialized();
 
-  const expiresAt = Date.now() + ttlMs;
+  const cachedAt = Date.now();
+  const expiresAt = cachedAt + ttlMs;
   const payload = JSON.stringify(stats);
 
   try {
     if (pool.type === DatabaseType.POSTGRESQL) {
       await pool.query(
-        `INSERT INTO player_stats_cache (cache_key, payload, expires_at, etag, last_modified, source)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO player_stats_cache (cache_key, payload, expires_at, cached_at, etag, last_modified, source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (cache_key) DO UPDATE
          SET payload = EXCLUDED.payload,
              expires_at = EXCLUDED.expires_at,
+             cached_at = EXCLUDED.cached_at,
              etag = EXCLUDED.etag,
              last_modified = EXCLUDED.last_modified,
              source = EXCLUDED.source`,
-        [key, payload, expiresAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
+        [key, payload, expiresAt, cachedAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
       );
     } else {
       await pool.query(
         `MERGE player_stats_cache AS target
-         USING (SELECT $1 AS cache_key, $2 AS payload, $3 AS expires_at, $4 AS etag, $5 AS last_modified, $6 AS source) AS source
+         USING (SELECT $1 AS cache_key, $2 AS payload, $3 AS expires_at, $4 AS cached_at, $5 AS etag, $6 AS last_modified, $7 AS source) AS source
          ON (target.cache_key = source.cache_key)
          WHEN MATCHED THEN
            UPDATE SET payload = source.payload,
                       expires_at = source.expires_at,
+                      cached_at = source.cached_at,
                       etag = source.etag,
                       last_modified = source.last_modified,
                       source = source.source
          WHEN NOT MATCHED THEN
-           INSERT (cache_key, payload, expires_at, etag, last_modified, source)
-           VALUES (source.cache_key, source.payload, source.expires_at, source.etag, source.last_modified, source.source);`,
-        [key, payload, expiresAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
+           INSERT (cache_key, payload, expires_at, cached_at, etag, last_modified, source)
+           VALUES (source.cache_key, source.payload, source.expires_at, source.cached_at, source.etag, source.last_modified, source.source);`,
+        [key, payload, expiresAt, cachedAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
       );
     }
     markDbAccess();
@@ -673,7 +689,7 @@ export async function getPlayerStatsFromCacheWithSWR(
     if (l2Entry) {
       const now = Date.now();
       const normalTtl = PLAYER_L2_TTL_MS;
-      const cachedAt = l2Entry.expiresAt - normalTtl;
+      const cachedAt = l2Entry.cachedAt ?? l2Entry.expiresAt - normalTtl;
       const ageMs = now - cachedAt;
       const isFresh = l2Entry.expiresAt > now;
       const isWithinSWRWindow = now <= l2Entry.expiresAt + SWR_STALE_TTL_MS;
@@ -715,6 +731,8 @@ export async function getPlayerStatsFromCacheWithSWR(
       // Data is too old, delete it
       await pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [key]);
       markDbAccess();
+      recordCacheMiss('expired');
+      return null;
     }
   } else {
     recordCacheTierMiss('l2', 'db_cold');

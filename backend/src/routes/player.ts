@@ -20,6 +20,11 @@ const batchLimit = pLimit(6);
 
 const router = Router();
 
+function buildSubmitterKeyId(ipAddress: string | undefined): string {
+  const fallback = ipAddress && ipAddress.length > 0 ? ipAddress : 'unknown';
+  const salt = COMMUNITY_SUBMIT_SECRET || 'levelhead-submit';
+  return createHmac('sha256', salt).update(fallback).digest('hex');
+}
 
 
 
@@ -155,7 +160,13 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
             latencyMs: Number(process.hrtime.bigint() - startedAt) / 1_000_000,
           });
 
-          return { identifier, payload: resolved.payload };
+          return {
+            identifier,
+            payload: {
+              ...resolved.payload,
+              ...(resolved.isStale ? { stale: true } : {}),
+            },
+          };
         } catch (error) {
           if (error instanceof HttpError) {
             if (error.status >= 500) {
@@ -358,8 +369,8 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
 
   const normalizedUuid = uuid.trim().toLowerCase();
 
-  // Use signature as keyId for nonce tracking (or 'unsigned' for unsigned submissions)
-  const keyId = signature ? signature.slice(0, 16) : 'unsigned';
+  // Use a stable submitter identifier for nonce tracking
+  const keyId = buildSubmitterKeyId(req.ip);
 
   // Verify origin to prevent cache poisoning
   const verificationResult = await verifyHypixelOrigin(normalizedUuid, data, signature, keyId);

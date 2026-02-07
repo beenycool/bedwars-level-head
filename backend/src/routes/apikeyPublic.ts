@@ -29,7 +29,7 @@ function formatValidationResponse(validation: Awaited<ReturnType<typeof validate
  */
 router.post('/status', enforcePublicRateLimit, async (req, res, next) => {
   res.locals.metricsRoute = '/api/public/apikey/status';
-  const { key } = req.body ?? {};
+  const { key, forceRefresh } = req.body ?? {};
 
   if (typeof key !== 'string' || key.trim().length === 0) {
     next(new HttpError(400, 'MISSING_KEY', 'API key is required in request body.'));
@@ -42,6 +42,23 @@ router.post('/status', enforcePublicRateLimit, async (req, res, next) => {
   }
 
   try {
+    const shouldRefresh = Boolean(forceRefresh);
+    if (!shouldRefresh) {
+      if (!isRedisAvailable()) {
+        next(new HttpError(503, 'STATUS_UNKNOWN', 'API key status unavailable. Please retry.'));
+        return;
+      }
+
+      const cached = await getApiKeyValidation(key.trim());
+      if (cached) {
+        res.json({
+          success: true,
+          data: formatValidationResponse(cached),
+        });
+        return;
+      }
+    }
+
     // Validate the key and store/update its status
     const validation = await validateApiKey(key.trim());
     

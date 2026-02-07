@@ -1,6 +1,7 @@
 import { config as loadEnv } from 'dotenv';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import ipaddr from 'ipaddr.js';
 
 loadEnv();
 
@@ -105,16 +106,13 @@ function isValidIPv4CIDR(cidr: string): boolean {
 
 function isValidIPv6CIDR(cidr: string): boolean {
   if (IPV6_CIDR_REGEX.test(cidr)) return true;
-  // Handle ::1/128 shorthand
-  if (cidr === '::1/128') return true;
-  // Handle compressed IPv6 notation
-  const parts = cidr.split('/');
-  if (parts.length !== 2) return false;
-  const [addr, prefix] = parts;
-  const prefixNum = Number(prefix);
-  if (Number.isNaN(prefixNum) || prefixNum < 0 || prefixNum > 128) return false;
-  // Basic IPv6 validation
-  return /^[0-9a-fA-F:]*$/.test(addr) && addr.includes(':');
+
+  try {
+    const [addr, prefix] = ipaddr.parseCIDR(cidr);
+    return addr.kind() === 'ipv6' && prefix >= 0 && prefix <= 128;
+  } catch {
+    return false;
+  }
 }
 
 function isValidCIDR(cidr: string): boolean {
@@ -162,6 +160,12 @@ const CACHE_DB_URL_VALUE = checkRequiredEnv(
   '    Azure SQL: sqlserver://user:pass@host:port/database'
 );
 
+const ADMIN_API_KEYS_VALUE = checkRequiredEnv(
+  'ADMIN_API_KEYS',
+  'Comma-separated list of admin API tokens for administrative endpoints',
+  'Comma-separated list of secure random tokens (e.g., tok1,tok2,tok3)'
+);
+
 // Validate all required fields together and throw comprehensive error if any are missing
 if (missingFields.length > 0) {
   throw new Error(buildMissingFieldsError());
@@ -169,11 +173,16 @@ if (missingFields.length > 0) {
 
 // Now we can safely export these since we've validated they exist
 export const HYPIXEL_API_KEY = HYPIXEL_API_KEY_VALUE!;
-export const ADMIN_API_KEYS = requiredStringListEnv(
-  'ADMIN_API_KEYS',
-  'Comma-separated list of admin API tokens for administrative endpoints',
-  'Comma-separated list of secure random tokens (e.g., tok1,tok2,tok3)'
-);
+export const ADMIN_API_KEYS = ADMIN_API_KEYS_VALUE!
+  .split(',')
+  .map((value) => value.trim())
+  .filter((value) => value.length > 0);
+if (ADMIN_API_KEYS.length === 0) {
+  throw new Error(
+    'ADMIN_API_KEYS must contain at least one value\n\n' +
+    'Expected format: Comma-separated list of secure random tokens (e.g., tok1,tok2,tok3)',
+  );
+}
 export const CACHE_DB_URL = CACHE_DB_URL_VALUE!;
 
 export const CRON_API_KEYS = optionalStringListEnv('CRON_API_KEYS');

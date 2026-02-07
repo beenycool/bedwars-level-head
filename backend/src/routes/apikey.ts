@@ -164,10 +164,10 @@ router.delete('/:keyHash', enforceAdminAuth, enforceRateLimit, async (req, res, 
 });
 
 /**
- * POST /api/admin/apikey/summary
+ * GET /api/admin/apikey/summary
  * Summarize validation status for all stored API keys
  */
-router.post('/summary', enforceAdminAuth, enforceRateLimit, async (req, res, next) => {
+router.get('/summary', enforceAdminAuth, enforceRateLimit, async (req, res, next) => {
   res.locals.metricsRoute = '/api/admin/apikey/summary';
 
   try {

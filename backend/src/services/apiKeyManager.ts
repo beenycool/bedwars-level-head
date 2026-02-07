@@ -79,6 +79,7 @@ export async function validateApiKey(key: string): Promise<ApiKeyValidation> {
   const redis = getRedisClient();
   
   let storedData: StoredApiKeyData | null = null;
+  let validationResult: ValidationCheckResult | null = null;
   
   // Try to get existing data
   if (redis && redis.status === 'ready') {
@@ -92,15 +93,19 @@ export async function validateApiKey(key: string): Promise<ApiKeyValidation> {
     }
   }
 
+  if (!isValidApiKeyFormat(key)) {
+    validationResult = { valid: false, error: 'invalid_format' };
+  }
+
   // Perform validation check against Hypixel
-  const validationResult = await performValidationCheck(key);
+  const resolvedValidationResult = validationResult ?? await performValidationCheck(key);
   
   const now = Date.now();
   const updatedData: StoredApiKeyData = {
     lastValidatedAt: now,
-    validationStatus: validationResult.valid ? 'valid' : 'invalid',
+    validationStatus: resolvedValidationResult.valid ? 'valid' : 'invalid',
     validatedCount: (storedData?.validatedCount ?? 0) + 1,
-    errorMessage: validationResult.error ?? null,
+    errorMessage: resolvedValidationResult.error ?? null,
     createdAt: storedData?.createdAt ?? now,
   };
 
@@ -111,6 +116,8 @@ export async function validateApiKey(key: string): Promise<ApiKeyValidation> {
       30 * 24 * 60 * 60, // 30 days TTL
       JSON.stringify(updatedData)
     );
+  } else {
+    console.warn(`[apikey] redis not ready, skipped setex for ${getRedisKey(keyHash)}`);
   }
 
   return {
@@ -130,16 +137,15 @@ interface ValidationCheckResult {
 
 async function performValidationCheck(key: string): Promise<ValidationCheckResult> {
   try {
-    const response = await axios.get(`${HYPIXEL_API_BASE_URL}/status`, {
+    const response = await axios.get(`${HYPIXEL_API_BASE_URL}/key?key=${encodeURIComponent(key)}`, {
       headers: {
-        'API-Key': key,
         'User-Agent': OUTBOUND_USER_AGENT,
       },
       timeout: 5000,
       validateStatus: () => true,
     });
 
-    if (response.status === 200) {
+    if (response.status === 200 && response.data?.success === true) {
       return { valid: true };
     }
 
@@ -149,6 +155,10 @@ async function performValidationCheck(key: string): Promise<ValidationCheckResul
 
     if (response.status === 429) {
       return { valid: true, error: 'Rate limited but key appears valid' };
+    }
+
+    if (response.status === 200 && response.data?.success === false) {
+      return { valid: false, error: response.data?.cause ?? 'API key validation failed' };
     }
 
     return { valid: false, error: `Hypixel returned status ${response.status}` };
@@ -238,11 +248,13 @@ export async function listApiKeys(): Promise<ApiKeyValidation[]> {
     );
     cursor = newCursor;
 
-    for (const redisKey of foundKeys) {
-      const data = await redis.get(redisKey);
-      if (data) {
+    if (foundKeys.length > 0) {
+      const values = await redis.mget(...foundKeys);
+      values.forEach((data, index) => {
+        if (!data) return;
         try {
           const stored = JSON.parse(data) as StoredApiKeyData;
+          const redisKey = foundKeys[index];
           const keyHash = redisKey.replace(REDIS_KEY_PREFIX, '');
           keys.push({
             key: '***',
@@ -255,7 +267,7 @@ export async function listApiKeys(): Promise<ApiKeyValidation[]> {
         } catch {
           // Skip invalid entries
         }
-      }
+      });
     }
   } while (cursor !== '0');
 
@@ -269,8 +281,13 @@ export async function deleteApiKey(keyHash: string): Promise<boolean> {
     return false;
   }
 
-  const result = await redis.del(getRedisKey(keyHash));
-  return result > 0;
+  try {
+    const result = await redis.del(getRedisKey(keyHash));
+    return result > 0;
+  } catch (error) {
+    console.error('[apikey] delete failed', error);
+    return false;
+  }
 }
 
 export function formatTimeAgo(timestamp: number | null): string {
@@ -279,12 +296,13 @@ export function formatTimeAgo(timestamp: number | null): string {
   }
 
   const now = Date.now();
-  const diff = now - timestamp;
+  const diff = Math.max(0, now - timestamp);
   const seconds = Math.floor(diff / 1000);
   const minutes = Math.floor(seconds / 60);
   const hours = Math.floor(minutes / 60);
   const days = Math.floor(hours / 24);
 
+  if (diff === 0) return 'just now';
   if (seconds < 60) return `${seconds}s ago`;
   if (minutes < 60) return `${minutes}m ago`;
   if (hours < 24) return `${hours}h ago`;
