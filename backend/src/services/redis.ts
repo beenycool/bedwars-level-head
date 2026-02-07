@@ -109,6 +109,31 @@ end
 return 1
 `;
 
+// Scan keyspace and count prefixes in one pass
+// ARGV[1] = cursor, ARGV[2] = count
+const COUNT_KEYS_SCRIPT = `
+local cursor = ARGV[1]
+local count = ARGV[2]
+local result = redis.call("SCAN", cursor, "COUNT", count)
+local next_cursor = result[1]
+local keys = result[2]
+local rl = 0
+local stats = 0
+local cache = 0
+
+for i, key in ipairs(keys) do
+  if string.sub(key, 1, 3) == "rl:" then
+    rl = rl + 1
+  elseif string.sub(key, 1, 6) == "stats:" then
+    stats = stats + 1
+  elseif string.sub(key, 1, 6) == "cache:" then
+    cache = cache + 1
+  end
+end
+
+return {next_cursor, rl, stats, cache}
+`;
+
 // ---------------------------------------------------------------------------
 // Rate Limiting (Hybrid: In-Memory + Redis)
 // ---------------------------------------------------------------------------
@@ -417,6 +442,14 @@ interface InMemoryCache<T> {
 const redisStatsCache: InMemoryCache<RedisStats> = { value: null, expiresAt: 0 };
 const redisCacheStatsCache: InMemoryCache<RedisCacheStats> = { value: null, expiresAt: 0 };
 
+interface KeyCounts {
+  rateLimitKeys: number;
+  statsKeys: number;
+  cacheKeys: number;
+}
+
+const keyCountsCache: InMemoryCache<KeyCounts> = { value: null, expiresAt: 0 };
+
 async function withMemoryCache<T>(
     cache: InMemoryCache<T>,
     ttlMs: number,
@@ -431,6 +464,38 @@ async function withMemoryCache<T>(
     cache.value = result;
     cache.expiresAt = Date.now() + ttlMs;
     return result;
+}
+
+async function getKeyCounts(): Promise<KeyCounts> {
+  return withMemoryCache(keyCountsCache, HEAVY_STATS_TTL_MS, async () => {
+    const client = getRedisClient();
+    if (!client || client.status !== 'ready') {
+      return { rateLimitKeys: 0, statsKeys: 0, cacheKeys: 0 };
+    }
+
+    let cursor = '0';
+    let rateLimitKeys = 0;
+    let statsKeys = 0;
+    let cacheKeys = 0;
+
+    try {
+      do {
+        // Use Lua script to scan and count in one pass
+        const result = await client.eval(COUNT_KEYS_SCRIPT, 0, cursor, '1000') as [string, number, number, number];
+        const [nextCursor, rl, stats, cache] = result;
+
+        cursor = nextCursor;
+        rateLimitKeys += rl;
+        statsKeys += stats;
+        cacheKeys += cache;
+      } while (cursor !== '0');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error('[redis] getKeyCounts failed', message);
+    }
+
+    return { rateLimitKeys, statsKeys, cacheKeys };
+  });
 }
 
 export async function getGlobalStats(windowMs: number): Promise<{ requestCount: number; activeUsers: number }> {
@@ -562,24 +627,8 @@ export async function getRedisStats(): Promise<RedisStats> {
             // Count keys by pattern
             const totalKeys = await client.dbsize();
 
-            let rateLimitKeys = 0;
-            let statsKeys = 0;
-
-            // Use SCAN to count keys by pattern (more efficient than KEYS).
-            // Optimized: Increased COUNT to 1000 to reduce network round-trips.
-            let cursor = '0';
-            do {
-                const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'rl:*', 'COUNT', 1000);
-                cursor = newCursor;
-                rateLimitKeys += keys.length;
-            } while (cursor !== '0');
-
-            cursor = '0';
-            do {
-                const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'stats:*', 'COUNT', 1000);
-                cursor = newCursor;
-                statsKeys += keys.length;
-            } while (cursor !== '0');
+            // Bolt: Optimized to count all prefixes in one pass
+            const { rateLimitKeys, statsKeys } = await getKeyCounts();
 
             return {
                 connected: true,
@@ -829,14 +878,8 @@ export async function getRedisCacheStats(): Promise<RedisCacheStats> {
             // Count total keys and cache keys
             const totalKeys = await client.dbsize();
 
-            let cacheKeys = 0;
-            let cursor = '0';
-            // Optimized: Increased COUNT to 1000 to reduce network round-trips.
-            do {
-                const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'cache:*', 'COUNT', 1000);
-                cursor = newCursor;
-                cacheKeys += keys.length;
-            } while (cursor !== '0');
+            // Bolt: Optimized to count all prefixes in one pass
+            const { cacheKeys } = await getKeyCounts();
 
             return {
                 totalKeys,
