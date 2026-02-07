@@ -10,11 +10,23 @@ import {
   listApiKeys,
   deleteApiKey,
   formatTimeAgo,
-  revalidateAllKeys,
+  summarizeApiKeyStatuses,
+  isValidApiKeyFormat,
   type ApiKeyValidation,
 } from '../services/apiKeyManager';
 
 const router = Router();
+
+function toApiKeyResponse(validation: ApiKeyValidation, includeTimeAgo: boolean = true) {
+  return {
+    keyHash: validation.keyHash,
+    lastValidatedAt: validation.lastValidatedAt,
+    validationStatus: validation.validationStatus,
+    validatedCount: validation.validatedCount,
+    errorMessage: validation.errorMessage,
+    ...(includeTimeAgo ? { timeAgo: formatTimeAgo(validation.lastValidatedAt) } : {}),
+  };
+}
 
 /**
  * POST /api/admin/apikey/validate
@@ -29,18 +41,16 @@ router.post('/validate', enforceAdminAuth, enforceRateLimit, async (req, res, ne
     return;
   }
 
+  if (!isValidApiKeyFormat(key)) {
+    next(new HttpError(400, 'INVALID_KEY', 'API key must be a valid UUID.'));
+    return;
+  }
+
   try {
     const validation = await validateApiKey(key.trim());
     res.json({
       success: true,
-      data: {
-        keyHash: validation.keyHash,
-        lastValidatedAt: validation.lastValidatedAt,
-        validationStatus: validation.validationStatus,
-        validatedCount: validation.validatedCount,
-        errorMessage: validation.errorMessage,
-        timeAgo: formatTimeAgo(validation.lastValidatedAt),
-      },
+      data: toApiKeyResponse(validation),
     });
   } catch (error) {
     next(error);
@@ -60,17 +70,16 @@ router.post('/store', enforceAdminAuth, enforceRateLimit, async (req, res, next)
     return;
   }
 
+  if (!isValidApiKeyFormat(key)) {
+    next(new HttpError(400, 'INVALID_KEY', 'API key must be a valid UUID.'));
+    return;
+  }
+
   try {
     const stored = await storeApiKey(key.trim());
     res.json({
       success: true,
-      data: {
-        keyHash: stored.keyHash,
-        lastValidatedAt: stored.lastValidatedAt,
-        validationStatus: stored.validationStatus,
-        validatedCount: stored.validatedCount,
-        errorMessage: stored.errorMessage,
-      },
+      data: toApiKeyResponse(stored, false),
     });
   } catch (error) {
     next(error);
@@ -99,14 +108,7 @@ router.get('/status/:keyHash', enforceAdminAuth, enforceRateLimit, async (req, r
 
     res.json({
       success: true,
-      data: {
-        keyHash: validation.keyHash,
-        lastValidatedAt: validation.lastValidatedAt,
-        validationStatus: validation.validationStatus,
-        validatedCount: validation.validatedCount,
-        errorMessage: validation.errorMessage,
-        timeAgo: formatTimeAgo(validation.lastValidatedAt),
-      },
+      data: toApiKeyResponse(validation),
     });
   } catch (error) {
     next(error);
@@ -125,14 +127,7 @@ router.get('/list', enforceAdminAuth, enforceRateLimit, async (req, res, next) =
     res.json({
       success: true,
       count: keys.length,
-      data: keys.map((key) => ({
-        keyHash: key.keyHash,
-        lastValidatedAt: key.lastValidatedAt,
-        validationStatus: key.validationStatus,
-        validatedCount: key.validatedCount,
-        errorMessage: key.errorMessage,
-        timeAgo: formatTimeAgo(key.lastValidatedAt),
-      })),
+      data: keys.map((key) => toApiKeyResponse(key)),
     });
   } catch (error) {
     next(error);
@@ -169,14 +164,14 @@ router.delete('/:keyHash', enforceAdminAuth, enforceRateLimit, async (req, res, 
 });
 
 /**
- * POST /api/admin/apikey/revalidate-all
- * Trigger revalidation of all stored API keys
+ * POST /api/admin/apikey/summary
+ * Summarize validation status for all stored API keys
  */
-router.post('/revalidate-all', enforceAdminAuth, enforceRateLimit, async (req, res, next) => {
-  res.locals.metricsRoute = '/api/admin/apikey/revalidate-all';
+router.post('/summary', enforceAdminAuth, enforceRateLimit, async (req, res, next) => {
+  res.locals.metricsRoute = '/api/admin/apikey/summary';
 
   try {
-    const results = await revalidateAllKeys();
+    const results = await summarizeApiKeyStatuses();
     res.json({
       success: true,
       data: results,

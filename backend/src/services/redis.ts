@@ -7,6 +7,8 @@ import {
     REDIS_STATS_BUCKET_SIZE_MS,
     REDIS_STATS_CACHE_TTL_MS,
     RATE_LIMIT_WINDOW_MS,
+    RATE_LIMIT_REQUIRE_REDIS,
+    RATE_LIMIT_FALLBACK_MODE,
 } from '../config';
 import { CacheEntry, CacheMetadata } from './cache';
 
@@ -111,8 +113,6 @@ return 1
 // Rate Limiting (Hybrid: In-Memory + Redis)
 // ---------------------------------------------------------------------------
 
-import { RATE_LIMIT_REQUIRE_REDIS, RATE_LIMIT_FALLBACK_MODE } from '../config';
-
 // Track whether we're currently using fallback mode
 let isInFallbackMode = false;
 let fallbackModeActivatedAt: number | null = null;
@@ -200,7 +200,7 @@ function getLocalRateLimitCount(cacheKey: string, windowMs: number, cost: number
         local.count += cost;
     }
 
-    // Enforce max cache size (LRU-style: delete oldest)
+    // Enforce max cache size (FIFO: delete oldest-inserted entry)
     if (localRateLimits.size >= LOCAL_CACHE_MAX_SIZE) {
         const firstKey = localRateLimits.keys().next().value;
         if (firstKey) localRateLimits.delete(firstKey);

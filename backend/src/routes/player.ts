@@ -82,16 +82,11 @@ router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
     // Include stale flag in response if data is stale
     const circuitBreaker = getCircuitBreakerState();
     const isCircuitOpen = circuitBreaker.state === 'open';
-    const responsePayload = resolved.isStale
-      ? { ...resolved.payload, stale: true }
-      : resolved.payload;
-
-    // Add degradedMode flag if circuit breaker is open
-    if (isCircuitOpen) {
-      responsePayload.degradedMode = true;
-    }
-
-    res.json(responsePayload);
+    res.json({
+      ...resolved.payload,
+      ...(resolved.isStale ? { stale: true } : {}),
+      ...(isCircuitOpen ? { degradedMode: true } : {}),
+    });
   } catch (error) {
     next(error);
   }

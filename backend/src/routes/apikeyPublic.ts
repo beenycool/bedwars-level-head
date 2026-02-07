@@ -5,9 +5,22 @@ import {
   validateApiKey,
   getApiKeyValidation,
   formatTimeAgo,
+  isValidApiKeyFormat,
 } from '../services/apiKeyManager';
+import { isRedisAvailable } from '../services/redis';
 
 const router = Router();
+
+function formatValidationResponse(validation: Awaited<ReturnType<typeof validateApiKey>>) {
+  return {
+    keyHash: validation.keyHash,
+    validationStatus: validation.validationStatus,
+    lastValidatedAt: validation.lastValidatedAt,
+    timeAgo: formatTimeAgo(validation.lastValidatedAt),
+    validatedCount: validation.validatedCount,
+    ...(validation.errorMessage && { error: validation.errorMessage }),
+  };
+}
 
 /**
  * POST /api/public/apikey/status
@@ -23,20 +36,18 @@ router.post('/status', enforcePublicRateLimit, async (req, res, next) => {
     return;
   }
 
+  if (!isValidApiKeyFormat(key)) {
+    next(new HttpError(400, 'INVALID_KEY', 'API key must be a valid UUID.'));
+    return;
+  }
+
   try {
     // Validate the key and store/update its status
     const validation = await validateApiKey(key.trim());
     
     res.json({
       success: true,
-      data: {
-        keyHash: validation.keyHash,
-        validationStatus: validation.validationStatus,
-        lastValidatedAt: validation.lastValidatedAt,
-        timeAgo: formatTimeAgo(validation.lastValidatedAt),
-        validatedCount: validation.validatedCount,
-        ...(validation.errorMessage && { error: validation.errorMessage }),
-      },
+      data: formatValidationResponse(validation),
     });
   } catch (error) {
     next(error);
@@ -56,7 +67,17 @@ router.get('/status', enforcePublicRateLimit, async (req, res, next) => {
     return;
   }
 
+  if (!isValidApiKeyFormat(apiKey)) {
+    next(new HttpError(400, 'INVALID_KEY', 'API key must be a valid UUID.'));
+    return;
+  }
+
   try {
+    if (!isRedisAvailable()) {
+      next(new HttpError(503, 'STATUS_UNKNOWN', 'API key status unavailable. Please retry.'));
+      return;
+    }
+
     // Check existing validation without re-validating
     const validation = await getApiKeyValidation(apiKey.trim());
     
@@ -65,28 +86,14 @@ router.get('/status', enforcePublicRateLimit, async (req, res, next) => {
       const newValidation = await validateApiKey(apiKey.trim());
       res.json({
         success: true,
-        data: {
-          keyHash: newValidation.keyHash,
-          validationStatus: newValidation.validationStatus,
-          lastValidatedAt: newValidation.lastValidatedAt,
-          timeAgo: formatTimeAgo(newValidation.lastValidatedAt),
-          validatedCount: newValidation.validatedCount,
-          ...(newValidation.errorMessage && { error: newValidation.errorMessage }),
-        },
+        data: formatValidationResponse(newValidation),
       });
       return;
     }
 
     res.json({
       success: true,
-      data: {
-        keyHash: validation.keyHash,
-        validationStatus: validation.validationStatus,
-        lastValidatedAt: validation.lastValidatedAt,
-        timeAgo: formatTimeAgo(validation.lastValidatedAt),
-        validatedCount: validation.validatedCount,
-        ...(validation.errorMessage && { error: validation.errorMessage }),
-      },
+      data: formatValidationResponse(validation),
     });
   } catch (error) {
     next(error);

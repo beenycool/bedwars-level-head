@@ -51,9 +51,17 @@ function ipToLong(ip: string): number {
   return (parts[0] << 24) + (parts[1] << 16) + (parts[2] << 8) + parts[3];
 }
 
+function normalizeIPv4Mapped(ip: string): string {
+  if (ip.startsWith('::ffff:') && ip.includes('.')) {
+    return ip.slice(7);
+  }
+  return ip;
+}
+
 function isIPv4InCIDR(ip: string, cidr: string): boolean {
   const [network, prefixStr] = cidr.split('/');
   const prefix = parseInt(prefixStr, 10);
+  if (prefix === 0) return true;
   const ipLong = ipToLong(ip);
   const networkLong = ipToLong(network);
   const mask = ~((1 << (32 - prefix)) - 1);
@@ -68,6 +76,16 @@ function isIPv6InCIDR(ip: string, cidr: string): boolean {
   // Expand IPv6 addresses to full form
   function expandIPv6(addr: string): string[] {
     let expanded = addr;
+    if (expanded.includes('.')) {
+      const lastColon = expanded.lastIndexOf(':');
+      const ipv4Part = expanded.slice(lastColon + 1);
+      const ipv4Segments = ipv4Part.split('.').map(Number);
+      if (ipv4Segments.length === 4 && ipv4Segments.every((seg) => Number.isFinite(seg))) {
+        const high = ((ipv4Segments[0] << 8) | ipv4Segments[1]).toString(16);
+        const low = ((ipv4Segments[2] << 8) | ipv4Segments[3]).toString(16);
+        expanded = `${expanded.slice(0, lastColon)}:${high}:${low}`;
+      }
+    }
     if (expanded.includes('::')) {
       const parts = expanded.split('::');
       const left = parts[0] ? parts[0].split(':') : [];
@@ -101,7 +119,8 @@ function isIPv6InCIDR(ip: string, cidr: string): boolean {
 
 function isIPInCIDR(ip: string, cidr: string): boolean {
   if (cidr.includes('.')) {
-    return isIPv4InCIDR(ip, cidr);
+    const normalizedIp = normalizeIPv4Mapped(ip);
+    return isIPv4InCIDR(normalizedIp, cidr);
   }
   return isIPv6InCIDR(ip, cidr);
 }
@@ -170,16 +189,20 @@ app.get('/healthz', async (_req, res) => {
   const circuitBreaker = getCircuitBreakerState();
   const fallbackState = getRateLimitFallbackState();
   const healthy = dbHealthy;
-  let status = healthy ? (hypixelHealthy ? 'ok' : 'degraded') : 'unhealthy';
+  let status: 'ok' | 'degraded' | 'unhealthy' = healthy
+    ? (hypixelHealthy ? 'ok' : 'degraded')
+    : 'unhealthy';
 
-  // If circuit breaker is open, consider it degraded
-  if (circuitBreaker.state === 'open') {
-    status = 'degraded';
-  }
+  if (status === 'ok') {
+    // If circuit breaker is open, consider it degraded
+    if (circuitBreaker.state === 'open') {
+      status = 'degraded';
+    }
 
-  // If rate limiting is in fallback mode and requireRedis is true, mark as degraded
-  if (fallbackState.isInFallbackMode && fallbackState.requireRedis) {
-    status = 'degraded';
+    // If rate limiting is in fallback mode and requireRedis is true, mark as degraded
+    if (fallbackState.isInFallbackMode && fallbackState.requireRedis) {
+      status = 'degraded';
+    }
   }
 
   res.status(healthy ? 200 : 503).json({

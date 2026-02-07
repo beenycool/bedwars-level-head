@@ -136,28 +136,24 @@ function parseCIDRListEnv(value: string | undefined): string[] {
     .map((c) => c.trim())
     .filter((c) => c.length > 0);
 
-  // Validate each CIDR
-  for (const cidr of cidrs) {
+  // Validate each CIDR and filter out invalid ones
+  const validCidrs = cidrs.filter((cidr) => {
     if (!isValidCIDR(cidr)) {
-      console.warn(`[config] Invalid CIDR in TRUST_PROXY_CIDRS: ${cidr}`);
+      console.warn(`[config] Invalid CIDR in TRUST_PROXY_CIDRS: "${cidr}" — skipping`);
+      return false;
     }
-  }
+    return true;
+  });
 
   // Warn about too permissive CIDRs
-  for (const cidr of cidrs) {
+  for (const cidr of validCidrs) {
     if (isTooPermissiveCIDR(cidr)) {
       console.warn(`[config] WARNING: TRUST_PROXY_CIDRS includes ${cidr} which is too permissive and may allow IP spoofing`);
     }
   }
 
-  return cidrs;
+  return validCidrs;
 }
-
-const ADMIN_API_KEYS_VALUE = checkRequiredEnv(
-  'ADMIN_API_KEYS',
-  'Comma-separated list of admin API tokens for administrative endpoints',
-  'Comma-separated list of secure random tokens (e.g., tok1,tok2,tok3)'
-);
 
 const CACHE_DB_URL_VALUE = checkRequiredEnv(
   'CACHE_DB_URL',

@@ -19,7 +19,8 @@ import { getRedisClient, isRedisAvailable } from './redis';
 
 // Single-flight pattern: dedupe concurrent upstream fetches for the same UUID
 // Prevents cache stampede (thundering herd) when multiple requests hit a cache miss
-const fetchingLocks: Map<string, Promise<MinimalPlayerStats>> = new Map();
+const fetchingLocks: Map<string, Promise<FetchResult>> = new Map();
+const backgroundRefreshLocks: Map<string, Promise<void>> = new Map();
 
 const PLAYER_KEY_PREFIX = 'player:';
 const IGN_MAPPING_PREFIX = 'ignmap:';
@@ -48,12 +49,11 @@ export async function fetchWithDedupe(
   const existing = fetchingLocks.get(normalizedUuid);
   if (existing) {
     // Return the existing promise - all waiters get the same result
-    const stats = await existing;
-    return { stats, etag: null, lastModified: null };
+    return await existing;
   }
 
   // Create new fetch promise that includes the full result with metadata
-  const fetchPromise: Promise<MinimalPlayerStats> = (async (): Promise<MinimalPlayerStats> => {
+  const fetchPromise: Promise<FetchResult> = (async (): Promise<FetchResult> => {
     const result = await fetchHypixelPlayer(normalizedUuid, options);
 
     if (result.notModified) {
@@ -65,25 +65,18 @@ export async function fetchWithDedupe(
       throw new Error('Empty payload from Hypixel');
     }
 
-    return extractMinimalStats(result.payload);
+    return {
+      stats: extractMinimalStats(result.payload),
+      etag: result.etag,
+      lastModified: result.lastModified,
+    };
   })();
 
   // Store the promise so concurrent callers can wait for it
   fetchingLocks.set(normalizedUuid, fetchPromise);
 
   try {
-    // Wait for the stats, then fetch again to get metadata
-    // We need to do this because the promise only stores the stats
-    const stats = await fetchPromise;
-    
-    // Fetch metadata separately (this will be cached by the single-flight pattern)
-    const result = await fetchHypixelPlayer(normalizedUuid, options);
-    
-    return {
-      stats,
-      etag: result.etag,
-      lastModified: result.lastModified,
-    };
+    return await fetchPromise;
   } finally {
     // Clean up lock regardless of success or failure
     fetchingLocks.delete(normalizedUuid);
@@ -93,6 +86,7 @@ export async function fetchWithDedupe(
 interface CacheRow {
   payload: unknown;
   expires_at: number | string;
+  cached_at?: number | string | null;
   etag: string | null;
   last_modified: number | string | null;
   source: string | null;
@@ -619,7 +613,17 @@ export async function getPlayerStatsFromCacheWithSWR(
             if (entry) {
               const now = Date.now();
               const isFresh = entry.expiresAt > now;
-              const ageMs = now - (entry.expiresAt - getAdaptiveL1TtlMs());
+              const cachedAtRaw = row.cached_at ?? null;
+              const cachedAtParsed =
+                cachedAtRaw === null || cachedAtRaw === undefined
+                  ? NaN
+                  : typeof cachedAtRaw === 'string'
+                    ? Number.parseInt(cachedAtRaw, 10)
+                    : Number(cachedAtRaw);
+              const cachedAt = Number.isFinite(cachedAtParsed)
+                ? cachedAtParsed
+                : entry.expiresAt - getAdaptiveL1TtlMs();
+              const ageMs = now - cachedAt;
 
               if (isFresh) {
                 recordCacheHit();
@@ -730,7 +734,7 @@ function triggerBackgroundRefresh(
   entry: CacheEntry<MinimalPlayerStats>,
 ): void {
   // Use single-flight pattern to prevent duplicate fetches
-  if (fetchingLocks.has(key)) {
+  if (backgroundRefreshLocks.has(key)) {
     return;
   }
 
@@ -750,6 +754,7 @@ function triggerBackgroundRefresh(
           lastModified: entry.lastModified ?? undefined,
           source: entry.source ?? undefined,
         });
+        recordCacheRefresh('success');
         return;
       }
 
@@ -760,15 +765,17 @@ function triggerBackgroundRefresh(
           lastModified: result.lastModified ?? undefined,
           source: 'hypixel',
         });
+        recordCacheRefresh('success');
       }
     } catch (error) {
       console.warn(`[statsCache] background refresh failed for ${uuid}`, error);
+      recordCacheRefresh('fail');
     } finally {
-      fetchingLocks.delete(key);
+      backgroundRefreshLocks.delete(key);
     }
   })();
 
-  fetchingLocks.set(key, fetchPromise);
+  backgroundRefreshLocks.set(key, fetchPromise);
   
   // Don't await - let it run in background
   void fetchPromise.catch(() => {
@@ -788,11 +795,13 @@ export async function setPlayerStatsL1(
 
   try {
     const ttlMs = getAdaptiveL1TtlMs();
-    const expiresAt = Date.now() + ttlMs;
+    const cachedAt = Date.now();
+    const expiresAt = cachedAt + ttlMs;
     // Bolt: Optimized to avoid double serialization. 'stats' is embedded as an object.
     const data = JSON.stringify({
       payload: stats,
       expires_at: expiresAt,
+      cached_at: cachedAt,
       etag: metadata.etag ?? null,
       last_modified: metadata.lastModified ?? null,
       source: metadata.source ?? null,

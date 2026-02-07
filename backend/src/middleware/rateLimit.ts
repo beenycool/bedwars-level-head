@@ -149,11 +149,22 @@ export function createRateLimitMiddleware({
       }
 
       if (result === null) {
-        // Unexpected null result - fail open for safety
-        console.warn('[rate-limit] Unexpected null result from incrementRateLimit, failing open');
+        // Unexpected null result - respect RATE_LIMIT_REQUIRE_REDIS
+        console.warn('[rate-limit] Unexpected null result from incrementRateLimit');
         void trackGlobalStats(clientIp).catch((err) => {
           console.error('[rate-limit] trackGlobalStats failed', err);
         });
+        if (RATE_LIMIT_REQUIRE_REDIS) {
+          next(
+            new HttpError(
+              503,
+              'SERVICE_UNAVAILABLE',
+              'Rate limiting service unavailable. Please try again later.',
+              { 'Retry-After': '60' },
+            ),
+          );
+          return;
+        }
         next();
         return;
       }

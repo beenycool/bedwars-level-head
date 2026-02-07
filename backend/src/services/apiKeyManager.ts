@@ -1,5 +1,6 @@
 import { getRedisClient } from './redis';
 import axios from 'axios';
+import { createHash } from 'node:crypto';
 import { HYPIXEL_API_BASE_URL, OUTBOUND_USER_AGENT } from '../config';
 
 export type ApiKeyStatus = 'valid' | 'invalid' | 'unknown' | 'pending';
@@ -22,16 +23,14 @@ interface StoredApiKeyData {
 }
 
 const REDIS_KEY_PREFIX = 'apikey:';
+const API_KEY_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function hashKey(key: string): string {
-  // Simple hash for Redis key - not for security, just to create a consistent key
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    const char = key.charCodeAt(i);
-    hash = ((hash << 5) - hash) + char;
-    hash = hash & hash;
-  }
-  return Math.abs(hash).toString(16).padStart(8, '0');
+  return createHash('sha256').update(key).digest('hex').slice(0, 16);
+}
+
+export function isValidApiKeyFormat(key: string): boolean {
+  return API_KEY_REGEX.test(key.trim());
 }
 
 function getRedisKey(keyHash: string): string {
@@ -55,13 +54,15 @@ export async function storeApiKey(key: string): Promise<ApiKeyValidation> {
     createdAt: Date.now(),
   };
 
-  if (redis && redis.status === 'ready') {
-    await redis.setex(
-      getRedisKey(keyHash),
-      30 * 24 * 60 * 60, // 30 days TTL
-      JSON.stringify(data)
-    );
+  if (!redis || redis.status !== 'ready') {
+    throw new Error('Redis is unavailable — cannot store API key');
   }
+
+  await redis.setex(
+    getRedisKey(keyHash),
+    30 * 24 * 60 * 60, // 30 days TTL
+    JSON.stringify(data)
+  );
 
   return {
     key: maskKey(key),
@@ -290,7 +291,7 @@ export function formatTimeAgo(timestamp: number | null): string {
   return `${days}d ago`;
 }
 
-export async function revalidateAllKeys(): Promise<{ checked: number; valid: number; invalid: number }> {
+export async function summarizeApiKeyStatuses(): Promise<{ checked: number; valid: number; invalid: number }> {
   const keys = await listApiKeys();
   const results = { checked: 0, valid: 0, invalid: 0 };
 

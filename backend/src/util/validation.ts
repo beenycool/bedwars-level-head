@@ -319,10 +319,10 @@ export async function validateTimestampAndNonce(
     }
 
     // Validate nonce format (alphanumeric, reasonable length)
-    if (!nonce || typeof nonce !== 'string' || nonce.length < 8 || nonce.length > 128) {
+    if (!nonce || typeof nonce !== 'string' || nonce.length < 8 || nonce.length > 128 || !/^[a-zA-Z0-9_-]+$/.test(nonce)) {
         return {
             valid: false,
-            error: 'Invalid nonce format. Must be 8-128 characters.',
+            error: 'Invalid nonce format. Must be 8-128 characters and alphanumeric.',
             statusCode: 400,
         };
     }
@@ -342,7 +342,7 @@ export async function validateTimestampAndNonce(
         // Use SET with NX (only if not exists) and EX (expire) for atomic nonce check
         // Key format: nonce:{keyId}:{nonce}
         const nonceKey = `nonce:${keyId}:${nonce}`;
-        const ttlSeconds = Math.ceil(SUBMISSION_TTL_MS / 1000);
+        const ttlSeconds = Math.ceil((SUBMISSION_TTL_MS * 2) / 1000);
         
         const result = await redis.set(nonceKey, '1', 'NX', 'EX', ttlSeconds);
         
