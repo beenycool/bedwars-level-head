@@ -311,7 +311,19 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var bedwarsStatDisplayIndex: Int = BedwarsStatMode.STAR.ordinal
         set(value) {
+            val oldMode = BedwarsStatMode.entries[field]
+            val newMode = BedwarsStatMode.entries[value.coerceIn(0, BedwarsStatMode.entries.lastIndex)]
             field = value.coerceIn(0, BedwarsStatMode.entries.lastIndex)
+
+            // Update header text if it's using the default for the old mode
+            if (newMode != BedwarsStatMode.CUSTOM) {
+                val oldDefaultHeader = getBedwarsHeaderForMode(oldMode)
+                val newDefaultHeader = getBedwarsHeaderForMode(newMode)
+                if (headerText.equals(oldDefaultHeader, ignoreCase = true)) {
+                    headerText = newDefaultHeader
+                }
+            }
+
             refreshDisplayStats(clearStats = true)
             save()
         }
@@ -1025,6 +1037,15 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     private val skywarsStatMode: SkyWarsStatMode
         get() = SkyWarsStatMode.entries.getOrNull(skywarsStatDisplayIndex) ?: SkyWarsStatMode.STAR
+
+    private fun getBedwarsHeaderForMode(mode: BedwarsStatMode): String {
+        return when (mode) {
+            BedwarsStatMode.STAR -> "BedWars Star"
+            BedwarsStatMode.FKDR -> "BedWars FKDR"
+            BedwarsStatMode.WINSTREAK -> "BedWars Winstreak"
+            BedwarsStatMode.CUSTOM -> headerText
+        }
+    }
 
     private fun <T> resolveTemplateFor(
         modeIndex: Int,
