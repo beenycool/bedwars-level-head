@@ -260,7 +260,7 @@ router.get('/', async (req, res, next) => {
     <meta charset="utf-8" />
     <title>Levelhead Player Stats</title>
     <link rel="icon" href="data:," />
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.js" integrity="sha384-tgbB5AKnszdcfwcZtTfuhR3Ko1XZdlDfsLtkxiiAZiVkkXCkFmp+FQFh+V/UTo54" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.js" integrity="sha384-tgbB5AKnszdcfwcZtTfuhR3Ko1XZdlDfsLtkxiiAZiVkkXCkFmp+FQFh+V/UTo54" crossorigin="anonymous" nonce="${res.locals.nonce}"></script>
     <style nonce="${res.locals.nonce}">
       :root {
         color-scheme: dark;
