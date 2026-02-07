@@ -1375,10 +1375,10 @@ router.get('/', async (req, res, next) => {
       function buildFilterSummaryText(activeFilters) {
         if (!activeFilters) return '';
         const parts = [];
-        if (activeFilters.from) parts.push(\`from \${new Date(activeFilters.from).toLocaleString()}\`);
-        if (activeFilters.to) parts.push(\`to \${new Date(activeFilters.to).toLocaleString()}\`);
-        if (activeFilters.limit) parts.push(\`limit \${activeFilters.limit}\`);
-        return parts.length ? \` Filters \${parts.join(', ')}.\` : '';
+        if (activeFilters.from) parts.push('from ' + new Date(activeFilters.from).toLocaleString());
+        if (activeFilters.to) parts.push('to ' + new Date(activeFilters.to).toLocaleString());
+        if (activeFilters.limit) parts.push('limit ' + activeFilters.limit);
+        return parts.length ? ' Filters ' + parts.join(', ') + '.' : '';
       }
 
       function buildLatencyAriaLabel(summary) {
@@ -2061,7 +2061,7 @@ router.get('/', async (req, res, next) => {
         }
         
         titleEl.textContent = info.title;
-        canvas.setAttribute('aria-label', \`\${info.title} (expanded view)\`);
+        canvas.setAttribute('aria-label', info.title + ' (expanded view)');
         overlay.classList.remove('hidden');
         document.body.classList.add('overflow-hidden');
 
@@ -2522,7 +2522,7 @@ router.get('/', async (req, res, next) => {
                 <td>\${escapeHtmlClient(resolved)}</td>
                 <td class="stars">\${escapeHtmlClient(formatStarsClient(entry.stars))}</td>
                 <td>\${escapeHtmlClient(cacheSource)}\${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
-                <td>\${entry.responseStatus}</td>
+                <td>\${escapeHtmlClient(String(entry.responseStatus))}</td>
                 <td class="latency">\${escapeHtmlClient(formatLatencyClient(entry.latencyMs))}</td>
               </tr>\`;
             }).join('\\n');
