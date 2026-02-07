@@ -1098,7 +1098,7 @@ router.get('/', async (req, res, next) => {
 
       // Keyboard shortcut for search
       document.addEventListener('keydown', (e) => {
-        if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {
+        if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName) && document.activeElement?.isContentEditable !== true) {
           e.preventDefault();
           const searchInput = document.querySelector('input[name="q"]');
           if (searchInput) {
