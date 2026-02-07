@@ -1,6 +1,6 @@
 import { getRedisClient } from './redis';
 import axios from 'axios';
-import { createHash } from 'node:crypto';
+import { createHash, pbkdf2Sync } from 'node:crypto';
 import { HYPIXEL_API_BASE_URL, OUTBOUND_USER_AGENT } from '../config';
 
 export type ApiKeyStatus = 'valid' | 'invalid' | 'unknown' | 'pending';
@@ -26,7 +26,13 @@ const REDIS_KEY_PREFIX = 'apikey:';
 const API_KEY_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function hashKey(key: string): string {
-  return createHash('sha256').update(key).digest('hex').slice(0, 16);
+  const salt = 'hypixel-apikey-hash-v1';
+  const iterations = 100_000;
+  const keylen = 32;
+  const digest = 'sha256';
+
+  const derived = pbkdf2Sync(key, salt, iterations, keylen, digest);
+  return derived.toString('hex').slice(0, 16);
 }
 
 export function isValidApiKeyFormat(key: string): boolean {
