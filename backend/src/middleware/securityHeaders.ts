@@ -29,7 +29,7 @@ export function securityHeaders(req: Request, res: Response, next: NextFunction)
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'`,
     `style-src 'self' 'nonce-${nonce}'`,
     "img-src 'self' data:",
-    "connect-src 'self' https://cdn.jsdelivr.net",
+    "connect-src 'self'",
     "object-src 'none'",
     "base-uri 'none'",
     "form-action 'self'",
