@@ -23,7 +23,7 @@ const router = Router();
 function buildSubmitterKeyId(ipAddress: string | undefined): string {
   const fallback = ipAddress && ipAddress.length > 0 ? ipAddress : 'unknown';
   const salt = COMMUNITY_SUBMIT_SECRET ?? 'levelhead-submit';
-  return createHmac('sha256', salt).update(fallback).digest('hex').slice(0, 16);
+  return createHmac('sha256', salt).update(fallback).digest('hex');
 }
 
 
