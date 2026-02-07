@@ -1102,6 +1102,7 @@ router.get('/', async (req, res, next) => {
         const activeElement = document.activeElement;
         if (
           e.key === '/'
+          && !e.metaKey && !e.ctrlKey && !e.altKey
           && !['INPUT', 'TEXTAREA', 'SELECT'].includes(activeElement?.tagName)
           && activeElement?.isContentEditable !== true
         ) {
