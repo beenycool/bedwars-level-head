@@ -565,17 +565,18 @@ export async function getRedisStats(): Promise<RedisStats> {
             let rateLimitKeys = 0;
             let statsKeys = 0;
 
-            // Use SCAN to count keys by pattern (more efficient than KEYS)
+            // Use SCAN to count keys by pattern (more efficient than KEYS).
+            // Optimized: Increased COUNT to 1000 to reduce network round-trips.
             let cursor = '0';
             do {
-                const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'rl:*', 'COUNT', 100);
+                const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'rl:*', 'COUNT', 1000);
                 cursor = newCursor;
                 rateLimitKeys += keys.length;
             } while (cursor !== '0');
 
             cursor = '0';
             do {
-                const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'stats:*', 'COUNT', 100);
+                const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'stats:*', 'COUNT', 1000);
                 cursor = newCursor;
                 statsKeys += keys.length;
             } while (cursor !== '0');
@@ -745,8 +746,9 @@ export async function clearAllPlayerCacheEntries(): Promise<number> {
         let cursor = '0';
         let deletedCount = 0;
 
+        // Optimized: Increased COUNT to 1000 to reduce network round-trips.
         do {
-            const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'cache:*', 'COUNT', 100);
+            const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'cache:*', 'COUNT', 1000);
             cursor = newCursor;
 
             if (keys.length > 0) {
@@ -829,8 +831,9 @@ export async function getRedisCacheStats(): Promise<RedisCacheStats> {
 
             let cacheKeys = 0;
             let cursor = '0';
+            // Optimized: Increased COUNT to 1000 to reduce network round-trips.
             do {
-                const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'cache:*', 'COUNT', 100);
+                const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'cache:*', 'COUNT', 1000);
                 cursor = newCursor;
                 cacheKeys += keys.length;
             } while (cursor !== '0');

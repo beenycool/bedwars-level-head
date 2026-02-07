@@ -15,6 +15,7 @@ import java.util.Collections;
 import java.util.Locale;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Mixin to append BedWars FKDR stats to player names in the Tab list.
@@ -22,7 +23,10 @@ import java.util.concurrent.ConcurrentHashMap;
 @Mixin(GuiPlayerTabOverlay.class)
 public class MixinGuiPlayerTabOverlay {
     private static final long TAB_FETCH_RETRY_MS = 4000L;
+    private static final long TAB_FETCH_ENTRY_TTL_MS = 5 * 60 * 1000L;
+    private static final long TAB_FETCH_CLEANUP_INTERVAL_MS = 60 * 1000L;
     private static final ConcurrentHashMap<UUID, Long> TAB_FETCH_ATTEMPTS = new ConcurrentHashMap<>();
+    private static final AtomicLong TAB_FETCH_LAST_CLEANUP = new AtomicLong();
 
     @Inject(method = "getPlayerName", at = @At("RETURN"), cancellable = true)
     private void levelhead$appendFkdrToTabName(NetworkPlayerInfo networkPlayerInfo, CallbackInfoReturnable<String> cir) {
@@ -92,6 +96,7 @@ public class MixinGuiPlayerTabOverlay {
 
     private void requestTabStatsIfNeeded(UUID uuid) {
         long now = System.currentTimeMillis();
+        cleanupTabFetchAttempts(now);
         Long last = TAB_FETCH_ATTEMPTS.get(uuid);
         if (last != null && now - last < TAB_FETCH_RETRY_MS) {
             return;
@@ -110,6 +115,17 @@ public class MixinGuiPlayerTabOverlay {
             GameMode.BEDWARS.getTypeId()
         );
         Levelhead.INSTANCE.fetchBatch(Collections.singletonList(request));
+    }
+
+    private void cleanupTabFetchAttempts(long now) {
+        long lastCleanup = TAB_FETCH_LAST_CLEANUP.get();
+        if (now - lastCleanup < TAB_FETCH_CLEANUP_INTERVAL_MS) {
+            return;
+        }
+        if (!TAB_FETCH_LAST_CLEANUP.compareAndSet(lastCleanup, now)) {
+            return;
+        }
+        TAB_FETCH_ATTEMPTS.entrySet().removeIf(entry -> now - entry.getValue() > TAB_FETCH_ENTRY_TTL_MS);
     }
 
     private String getStarColor(int star) {
@@ -135,6 +151,6 @@ public class MixinGuiPlayerTabOverlay {
         if (star < 1900) return "§9";       // Opal Prime
         if (star < 2000) return "§5";       // Amethyst Prime
         
-        return "§6"; // Default/Fallover
+        return "§6"; // Default/Fallback
     }
 }

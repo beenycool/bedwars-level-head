@@ -40,6 +40,7 @@ const CIRCUIT_BREAKER = {
   state: 'closed' as 'closed' | 'open' | 'half-open',
   failures: 0,
   lastFailureAt: 0,
+  halfOpenProbeInFlight: false,
 };
 
 function circuitBreakerCheck(): void {
@@ -49,21 +50,30 @@ function circuitBreakerCheck(): void {
   if (CIRCUIT_BREAKER.state === 'open') {
     if (Date.now() - CIRCUIT_BREAKER.lastFailureAt >= CIRCUIT_BREAKER.resetTimeoutMs) {
       CIRCUIT_BREAKER.state = 'half-open';
+      CIRCUIT_BREAKER.halfOpenProbeInFlight = true;
       return;
     }
     throw new HttpError(503, 'HYPIXEL_CIRCUIT_OPEN', 'Hypixel API circuit breaker is open; failing fast.');
   }
+
+  if (CIRCUIT_BREAKER.halfOpenProbeInFlight) {
+    throw new HttpError(503, 'HYPIXEL_CIRCUIT_OPEN', 'Hypixel API circuit breaker is half-open; probe in flight.');
+  }
+
+  CIRCUIT_BREAKER.halfOpenProbeInFlight = true;
 }
 
 function circuitBreakerSuccess(): void {
   CIRCUIT_BREAKER.failures = 0;
   CIRCUIT_BREAKER.state = 'closed';
+  CIRCUIT_BREAKER.halfOpenProbeInFlight = false;
 }
 
 function circuitBreakerFailure(): void {
   CIRCUIT_BREAKER.failures += 1;
   CIRCUIT_BREAKER.lastFailureAt = Date.now();
-  if (CIRCUIT_BREAKER.failures >= CIRCUIT_BREAKER.failureThreshold) {
+  CIRCUIT_BREAKER.halfOpenProbeInFlight = false;
+  if (CIRCUIT_BREAKER.state === 'half-open' || CIRCUIT_BREAKER.failures >= CIRCUIT_BREAKER.failureThreshold) {
     CIRCUIT_BREAKER.state = 'open';
   }
 }

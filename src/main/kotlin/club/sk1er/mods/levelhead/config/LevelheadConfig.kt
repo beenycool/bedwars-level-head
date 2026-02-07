@@ -408,6 +408,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
                     config.footerColor = color
                     true
                 }
+                Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
+                Levelhead.displayManager.refreshVisibleDisplays()
             } catch (e: NumberFormatException) {
                 // Invalid color, ignore
             }
@@ -443,7 +445,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         category = "Appearance",
         min = -0.5f,
         max = 0.5f,
-        step = 2
     )
     var verticalOffset: Float = 0.0f
         set(value) {

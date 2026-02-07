@@ -40,12 +40,9 @@ object ModeManager {
         
         val detected = when {
             // Match contexts are stronger than lobby/chat context and should take priority.
-            bedwarsMatch -> ActiveMode.BEDWARS
-            duelsMatch && !bedwars -> ActiveMode.DUELS
-            skywarsMatch && !bedwars && !duels -> ActiveMode.SKYWARS
-            bedwars -> ActiveMode.BEDWARS
-            duels && !bedwars -> ActiveMode.DUELS
-            skywars && !bedwars && !duels -> ActiveMode.SKYWARS
+            bedwarsMatch || bedwars -> ActiveMode.BEDWARS
+            duelsMatch || duels -> ActiveMode.DUELS
+            skywarsMatch || skywars -> ActiveMode.SKYWARS
             else -> ActiveMode.NONE
         }
         
@@ -53,7 +50,7 @@ object ModeManager {
             val now = System.currentTimeMillis()
             if (detected != lastLoggedMode || now - lastLoggedAt > 5_000L) {
                 Levelhead.logger.info(
-                    "[TEMP_DEBUG] detectActiveMode: bedwars=$bedwars duels=$duels skywars=$skywars -> $detected"
+                    "[TEMP_DEBUG] detectActiveMode: bedwarsMatch=$bedwarsMatch duelsMatch=$duelsMatch skywarsMatch=$skywarsMatch bedwars=$bedwars duels=$duels skywars=$skywars -> $detected"
                 )
                 lastLoggedMode = detected
                 lastLoggedAt = now
