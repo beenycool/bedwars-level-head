@@ -1,18 +1,17 @@
 services:
   - type: web
     name: bedwars-level-head
-    runtime: docker
+    runtime: image
     plan: free
     region: oregon
-    rootDir: backend
-    dockerfilePath: ./Dockerfile
-    dockerContext: .
-    buildFilter:
-      paths:
-        - backend/**
+    image:
+      url: ghcr.io/beenycool/bedwars-level-head:latest
+      creds:
+        fromRegistryCreds:
+          name: ghcr.io
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
-    autoDeploy: true
+    autoDeploy: false
