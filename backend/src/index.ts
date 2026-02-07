@@ -1,5 +1,6 @@
 import express from 'express';
 import compression from 'compression';
+import ipaddr from 'ipaddr.js';
 import playerRouter from './routes/player';
 import playerPublicRouter from './routes/playerPublic';
 import apikeyPublicRouter from './routes/apikeyPublic';
@@ -45,84 +46,22 @@ function sanitizeUrlForLogs(target: string): string {
 app.disable('x-powered-by');
 app.use(securityHeaders);
 
-// CIDR matching function for trust proxy
-function ipToLong(ip: string): number {
-  const parts = ip.split('.').map(Number);
-  return (parts[0] << 24) + (parts[1] << 16) + (parts[2] << 8) + parts[3];
-}
-
-function normalizeIPv4Mapped(ip: string): string {
-  if (ip.startsWith('::ffff:') && ip.includes('.')) {
-    return ip.slice(7);
-  }
-  return ip;
-}
-
-function isIPv4InCIDR(ip: string, cidr: string): boolean {
-  const [network, prefixStr] = cidr.split('/');
-  const prefix = parseInt(prefixStr, 10);
-  if (prefix === 0) return true;
-  const ipLong = ipToLong(ip);
-  const networkLong = ipToLong(network);
-  const mask = ~((1 << (32 - prefix)) - 1);
-  return (ipLong & mask) === (networkLong & mask);
-}
-
-function isIPv6InCIDR(ip: string, cidr: string): boolean {
-  // Basic IPv6 CIDR check - normalize and compare
-  const [network, prefixStr] = cidr.split('/');
-  const prefix = parseInt(prefixStr, 10);
-  
-  // Expand IPv6 addresses to full form
-  function expandIPv6(addr: string): string[] {
-    let expanded = addr;
-    if (expanded.includes('.')) {
-      const lastColon = expanded.lastIndexOf(':');
-      const ipv4Part = expanded.slice(lastColon + 1);
-      const ipv4Segments = ipv4Part.split('.').map(Number);
-      if (ipv4Segments.length === 4 && ipv4Segments.every((seg) => Number.isFinite(seg))) {
-        const high = ((ipv4Segments[0] << 8) | ipv4Segments[1]).toString(16);
-        const low = ((ipv4Segments[2] << 8) | ipv4Segments[3]).toString(16);
-        expanded = `${expanded.slice(0, lastColon)}:${high}:${low}`;
-      }
-    }
-    if (expanded.includes('::')) {
-      const parts = expanded.split('::');
-      const left = parts[0] ? parts[0].split(':') : [];
-      const right = parts[1] ? parts[1].split(':') : [];
-      const missing = 8 - left.length - right.length;
-      expanded = left.concat(Array(missing).fill('0'), right).join(':');
-    }
-    return expanded.split(':').map((p) => p.padStart(4, '0'));
-  }
-  
-  const ipParts = expandIPv6(ip);
-  const networkParts = expandIPv6(network);
-  
-  // Compare prefix bits
-  const fullParts = Math.floor(prefix / 16);
-  const remainingBits = prefix % 16;
-  
-  for (let i = 0; i < fullParts; i++) {
-    if (ipParts[i] !== networkParts[i]) return false;
-  }
-  
-  if (remainingBits > 0) {
-    const ipVal = parseInt(ipParts[fullParts], 16);
-    const netVal = parseInt(networkParts[fullParts], 16);
-    const mask = 0xffff << (16 - remainingBits);
-    return (ipVal & mask) === (netVal & mask);
-  }
-  
-  return true;
-}
-
 function isIPInCIDR(ip: string, cidr: string): boolean {
-  if (cidr.includes('.')) {
-    const normalizedIp = normalizeIPv4Mapped(ip);
-    return isIPv4InCIDR(normalizedIp, cidr);
+  try {
+    const [network, prefix] = ipaddr.parseCIDR(cidr);
+    let parsedIp = ipaddr.parse(ip);
+    if (parsedIp.kind() === 'ipv6' && parsedIp.isIPv4MappedAddress()) {
+      parsedIp = parsedIp.toIPv4Address();
+    }
+
+    if (parsedIp.kind() !== network.kind()) {
+      return false;
+    }
+
+    return parsedIp.match([network, prefix]);
+  } catch {
+    return false;
   }
-  return isIPv6InCIDR(ip, cidr);
 }
 
 // Configure trust proxy with CIDR allowlist

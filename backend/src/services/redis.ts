@@ -152,6 +152,23 @@ function clearFallbackMode(): void {
   }
 }
 
+function getFallbackRateLimitResult(
+    cacheKey: string,
+    windowMs: number,
+    cost: number,
+    now: number,
+): RateLimitResult {
+    switch (RATE_LIMIT_FALLBACK_MODE) {
+        case 'deny':
+            return RATE_LIMIT_DENY_ALL;
+        case 'allow':
+            return RATE_LIMIT_ALLOW_ALL;
+        case 'memory':
+        default:
+            return getLocalRateLimitCount(cacheKey, windowMs, cost, now);
+    }
+}
+
 // Special result indicating that the request should be allowed (fallback=allow mode)
 export const RATE_LIMIT_ALLOW_ALL = Symbol('RATE_LIMIT_ALLOW_ALL');
 // Special result indicating that the request should be denied (fallback=deny mode)
@@ -188,8 +205,9 @@ setInterval(() => {
 
 function getLocalRateLimitCount(cacheKey: string, windowMs: number, cost: number, now: number): { count: number; ttl: number } {
     let local = localRateLimits.get(cacheKey);
+    const isNewEntry = !local || (now - local.windowStart) >= windowMs;
 
-    if (!local || (now - local.windowStart) >= windowMs) {
+    if (isNewEntry) {
         local = {
             count: cost,
             windowStart: now,
@@ -201,7 +219,7 @@ function getLocalRateLimitCount(cacheKey: string, windowMs: number, cost: number
     }
 
     // Enforce max cache size (FIFO: delete oldest-inserted entry)
-    if (localRateLimits.size >= LOCAL_CACHE_MAX_SIZE) {
+    if (isNewEntry && localRateLimits.size >= LOCAL_CACHE_MAX_SIZE) {
         const firstKey = localRateLimits.keys().next().value;
         if (firstKey) localRateLimits.delete(firstKey);
     }
@@ -251,19 +269,7 @@ export async function incrementRateLimit(ip: string, windowMs: number, cost: num
         // Redis is not available - handle according to configuration
         if (RATE_LIMIT_REQUIRE_REDIS) {
             activateFallbackMode();
-
-            switch (RATE_LIMIT_FALLBACK_MODE) {
-                case 'deny':
-                    // Fail closed - reject all requests
-                    return RATE_LIMIT_DENY_ALL;
-                case 'allow':
-                    // Fail open - allow all requests (dangerous!)
-                    return RATE_LIMIT_ALLOW_ALL;
-                case 'memory':
-                default:
-                    // Use in-memory rate limiting with warning
-                    return getLocalRateLimitCount(cacheKey, windowMs, cost, now);
-            }
+            return getFallbackRateLimitResult(cacheKey, windowMs, cost, now);
         } else {
             // RATE_LIMIT_REQUIRE_REDIS=false: use in-memory silently (legacy behavior)
             return getLocalRateLimitCount(cacheKey, windowMs, cost, now);
@@ -304,16 +310,7 @@ export async function incrementRateLimit(ip: string, windowMs: number, cost: num
         // Redis operation failed - handle according to configuration
         if (RATE_LIMIT_REQUIRE_REDIS) {
             activateFallbackMode();
-
-            switch (RATE_LIMIT_FALLBACK_MODE) {
-                case 'deny':
-                    return RATE_LIMIT_DENY_ALL;
-                case 'allow':
-                    return RATE_LIMIT_ALLOW_ALL;
-                case 'memory':
-                default:
-                    return getLocalRateLimitCount(cacheKey, windowMs, cost, now);
-            }
+            return getFallbackRateLimitResult(cacheKey, windowMs, cost, now);
         } else {
             // Legacy behavior: fallback to in-memory silently
             return getLocalRateLimitCount(cacheKey, windowMs, cost, now);

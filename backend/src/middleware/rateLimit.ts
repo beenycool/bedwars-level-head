@@ -173,7 +173,8 @@ export function createRateLimitMiddleware({
       const { count, ttl } = result;
 
       const fallbackState = getRateLimitFallbackState();
-      console.info('[rate-limit] check', {
+      const nearLimit = count >= Math.ceil(effectiveMax * 0.8);
+      const logPayload = {
         ip: bucketKey.substring(0, 8) + '...', // Log partial bucket key for privacy
         count,
         cost,
@@ -182,7 +183,13 @@ export function createRateLimitMiddleware({
         redisRequired: RATE_LIMIT_REQUIRE_REDIS,
         fallbackActive: fallbackState.isInFallbackMode,
         fallbackMode: fallbackState.fallbackMode,
-      });
+      };
+
+      if (fallbackState.isInFallbackMode || nearLimit) {
+        console.info('[rate-limit] check', logPayload);
+      } else {
+        console.debug('[rate-limit] check', logPayload);
+      }
 
       // Fire-and-forget stats tracking with raw client IP (not prefixed bucket key)
       void trackGlobalStats(clientIp).catch((err) => {
@@ -207,8 +214,18 @@ export function createRateLimitMiddleware({
 
       next();
     } catch (error) {
-      // On any error, fail open
-      console.error('[rate-limit] unexpected error, failing open', error);
+      console.error('[rate-limit] unexpected error', error);
+      if (RATE_LIMIT_REQUIRE_REDIS) {
+        next(
+          new HttpError(
+            503,
+            'SERVICE_UNAVAILABLE',
+            'Rate limiting service unavailable. Please try again later.',
+            { 'Retry-After': '60' },
+          ),
+        );
+        return;
+      }
       next();
     }
   };
