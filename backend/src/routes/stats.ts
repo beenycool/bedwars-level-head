@@ -235,7 +235,7 @@ router.get('/', async (req, res, next) => {
 
         return `<tr>
           <td title="${escapeHtml(formatDate(entry.requestedAt))}">${escapeHtml(timeAgo(entry.requestedAt))}</td>
-          <td><a href="${lookupLink}" target="_blank" class="lookup-link">${escapeHtml(lookup)}</a></td>
+          <td><a href="${lookupLink}" target="_blank" rel="noopener noreferrer" class="lookup-link">${escapeHtml(lookup)}</a></td>
           <td>${escapeHtml(resolved)}</td>
           <td class="stars">${escapeHtml(formatStars(entry.stars))}</td>
           <td>${escapeHtml(cacheSource)}${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
@@ -1052,7 +1052,7 @@ router.get('/', async (req, res, next) => {
           type="search"
           name="q"
           aria-label="Search players"
-          placeholder="Search by username or UUID"
+          placeholder="Search by username or UUID (Press /)"
           value="${escapeHtml(search)}"
         />
         <input type="hidden" name="page" value="1" />
@@ -1095,6 +1095,19 @@ router.get('/', async (req, res, next) => {
       const data = pageData.chartData || [];
       const topPlayers = pageData.topPlayers || [];
       const filters = pageData.filters || {};
+
+      // Keyboard shortcut for search
+      document.addEventListener('keydown', (e) => {
+        if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName)) {
+          e.preventDefault();
+          const searchInput = document.querySelector('input[name="q"]');
+          if (searchInput) {
+            searchInput.focus();
+            searchInput.select();
+          }
+        }
+      });
+
       const charts = [];
       // Store original chart configs for fullscreen cloning (avoids Chart.js resolver issues)
 
