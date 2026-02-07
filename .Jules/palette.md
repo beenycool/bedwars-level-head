@@ -5,3 +5,7 @@
 ## 2024-05-24 - Accessibility in Raw HTML Strings
 **Learning:** Backend template strings bypass standard a11y linters. Found inputs missing labels and tables missing scopes.
 **Action:** Manually audit raw HTML templates for `aria-label` on inputs and `scope` attributes on table headers during code review.
+
+## 2024-05-25 - Accessible Canvas Charts
+**Learning:** Chart.js canvases in raw HTML templates are invisible to screen readers by default. They need explicit `role="img"` and `aria-label` to provide context.
+**Action:** Always add descriptive ARIA labels to canvas elements when generating HTML server-side, and update those labels client-side whenever chart data changes to keep them accurate.
