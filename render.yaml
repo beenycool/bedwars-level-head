@@ -6,9 +6,6 @@ services:
     region: oregon
     image:
       url: ghcr.io/beenycool/bedwars-level-head:latest
-      creds:
-        fromRegistryCreds:
-          name: ghcr.io
     envVars:
       - key: NODE_ENV
         value: production
