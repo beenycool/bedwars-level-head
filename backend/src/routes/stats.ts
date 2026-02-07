@@ -1051,6 +1051,7 @@ router.get('/', async (req, res, next) => {
         <input
           type="search"
           name="q"
+          id="searchInput"
           aria-label="Search players"
           placeholder="Search by username or UUID (Press /)"
           value="${escapeHtml(search)}"
@@ -1098,9 +1099,14 @@ router.get('/', async (req, res, next) => {
 
       // Keyboard shortcut for search
       document.addEventListener('keydown', (e) => {
-        if (e.key === '/' && !['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName) && document.activeElement?.isContentEditable !== true) {
+        const activeElement = document.activeElement;
+        if (
+          e.key === '/'
+          && !['INPUT', 'TEXTAREA', 'SELECT'].includes(activeElement?.tagName)
+          && activeElement?.isContentEditable !== true
+        ) {
           e.preventDefault();
-          const searchInput = document.querySelector('input[name="q"]');
+          const searchInput = document.getElementById('searchInput');
           if (searchInput) {
             searchInput.focus();
             searchInput.select();
@@ -2531,7 +2537,7 @@ router.get('/', async (req, res, next) => {
               
               return \`<tr>
                 <td title="\${escapeHtmlClient(formatDateClient(entry.requestedAt))}">\${escapeHtmlClient(timeAgoClient(entry.requestedAt))}</td>
-                <td><a href="\${lookupLink}" target="_blank" class="lookup-link">\${escapeHtmlClient(lookup)}</a></td>
+                <td><a href="\${lookupLink}" target="_blank" rel="noopener noreferrer" class="lookup-link">\${escapeHtmlClient(lookup)}</a></td>
                 <td>\${escapeHtmlClient(resolved)}</td>
                 <td class="stars">\${escapeHtmlClient(formatStarsClient(entry.stars))}</td>
                 <td>\${escapeHtmlClient(cacheSource)}\${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
