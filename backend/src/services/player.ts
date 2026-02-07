@@ -3,11 +3,14 @@ import { HttpError } from '../util/httpError';
 import { CacheEntry, CacheMetadata } from './cache';
 import { fetchHypixelPlayer, HypixelFetchOptions, extractMinimalStats, MinimalPlayerStats } from './hypixel';
 import { lookupProfileByUsername } from './mojang';
-import { recordCacheMiss } from './metrics';
+import { recordCacheMiss, recordCacheRefresh, recordCacheSourceHit } from './metrics';
 import {
   buildPlayerCacheKey,
+  fetchWithDedupe,
   getIgnMapping,
   getPlayerStatsFromCache,
+  getPlayerStatsFromCacheWithSWR,
+  SWRCacheEntry,
   setIgnMapping,
   setPlayerStatsBoth,
   setPlayerStatsL1,
@@ -66,9 +69,14 @@ function logBackgroundRefreshFailure(message: string, error: unknown): void {
 }
 
 function scheduleBackgroundRefresh(task: () => Promise<void>, errorMessage: string): void {
-  void task().catch((error) => {
-    logBackgroundRefreshFailure(errorMessage, error);
-  });
+  void task()
+    .then(() => {
+      recordCacheRefresh('success');
+    })
+    .catch((error) => {
+      logBackgroundRefreshFailure(errorMessage, error);
+      recordCacheRefresh('fail');
+    });
 }
 
 function normalizeDisplayName(value: string | null | undefined): string | null {
@@ -129,6 +137,8 @@ export interface ResolvedPlayer {
   lookupType: 'uuid' | 'ign';
   lookupValue: string;
   nicked: boolean;
+  isStale?: boolean;
+  staleAgeMs?: number;
 }
 
 async function refreshUuidCache(
@@ -138,11 +148,23 @@ async function refreshUuidCache(
   conditional?: HypixelFetchOptions,
 ): Promise<ResolvedPlayer> {
   const cacheMetadata: CacheMetadata = cacheEntry ? summarizeCacheEntry(cacheEntry) : {};
-  const requestOptions = mergeConditionalOptions(conditional, cacheMetadata);
-  let response = await fetchHypixelPlayer(normalizedUuid, requestOptions);
+  
+  // Use single-flight fetch when no cache entry exists to prevent upstream request storms
+  // If cache entry exists, use conditional fetch for revalidation
+  let response: { stats: MinimalPlayerStats; etag: string | null; lastModified: number | null };
+  let revalidated = Boolean(cacheEntry);
+  
+  if (!cacheEntry) {
+    // Cache miss - use single-flight pattern to dedupe concurrent requests
+    const fetchResult = await fetchWithDedupe(normalizedUuid, conditional);
+    response = fetchResult;
+    revalidated = false;
+  } else {
+    // Cache hit - use conditional fetch for revalidation
+    const requestOptions = mergeConditionalOptions(conditional, cacheMetadata);
+    const hypixelResponse = await fetchHypixelPlayer(normalizedUuid, requestOptions);
 
-  if (response.notModified) {
-    if (cacheEntry) {
+    if (hypixelResponse.notModified) {
       void setPlayerStatsL1(cacheKey, cacheEntry.value, {
         etag: cacheMetadata.etag ?? undefined,
         lastModified: cacheMetadata.lastModified ?? undefined,
@@ -168,20 +190,21 @@ async function refreshUuidCache(
       return resolved;
     }
 
-    // Hypixel returned 304 but the local cache was purged; refetch without conditionals.
-    recordCacheMiss('not_modified_without_cache');
-    response = await fetchHypixelPlayer(normalizedUuid);
+    if (!hypixelResponse.payload) {
+      recordCacheMiss('empty_payload');
+      throw new HttpError(502, 'HYPIXEL_EMPTY_PAYLOAD', 'Hypixel did not return any data.');
+    }
+
+    response = {
+      stats: extractMinimalStats(hypixelResponse.payload),
+      etag: hypixelResponse.etag,
+      lastModified: hypixelResponse.lastModified,
+    };
   }
 
-  const payload = response.payload;
-  if (!payload) {
-    recordCacheMiss('empty_payload');
-    throw new HttpError(502, 'HYPIXEL_EMPTY_PAYLOAD', 'Hypixel did not return any data.');
-  }
+  const { stats, etag, lastModified } = response;
 
-  const etag = response.etag ?? cacheEntry?.etag ?? null;
-  const lastModified = response.lastModified ?? cacheEntry?.lastModified ?? null;
-  const stats = extractMinimalStats(payload);
+  recordCacheSourceHit('upstream');
 
   void setPlayerStatsBoth(cacheKey, stats, { etag, lastModified, source: 'hypixel' })
     .catch((e) => console.warn('[player] cache write failed', e));
@@ -196,7 +219,7 @@ async function refreshUuidCache(
     stats,
     { etag, lastModified },
     'network',
-    Boolean(cacheEntry),
+    revalidated,
     'uuid',
     normalizedUuid,
     normalizedUuid,
@@ -224,8 +247,7 @@ async function fetchByUuid(uuid: string, conditional?: HypixelFetchOptions): Pro
     return { ...memoized, source: 'cache' };
   }
 
-  const cacheEntry = await getPlayerStatsFromCache(cacheKey, true);
-  const now = Date.now();
+  const cacheEntry = await getPlayerStatsFromCacheWithSWR(cacheKey, normalizedUuid);
   if (cacheEntry) {
     const resolved = buildResolvedFromStats(
       cacheEntry.value,
@@ -236,21 +258,18 @@ async function fetchByUuid(uuid: string, conditional?: HypixelFetchOptions): Pro
       normalizedUuid,
       normalizedUuid,
     );
-    setMemoized('player', normalizedUuid, resolved);
-
-    if (cacheEntry.expiresAt <= now) {
-      scheduleBackgroundRefresh(
-        async () => {
-          await refreshUuidCache(cacheKey, normalizedUuid, cacheEntry, conditional);
-        },
-        `[player] background refresh for ${normalizedUuid} failed`,
-      );
+    
+    // Add SWR information
+    if (cacheEntry.isStale) {
+      resolved.isStale = true;
+      resolved.staleAgeMs = cacheEntry.staleAgeMs;
     }
-
+    
+    setMemoized('player', normalizedUuid, resolved);
     return resolved;
   }
 
-  return refreshUuidCache(cacheKey, normalizedUuid, cacheEntry, conditional);
+  return refreshUuidCache(cacheKey, normalizedUuid, null, conditional);
 }
 
 async function fetchByIgn(ign: string, conditional?: HypixelFetchOptions): Promise<ResolvedPlayer> {

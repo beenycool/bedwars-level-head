@@ -12,7 +12,7 @@ COPY package.json package-lock.json ./
 
 # Install only production dependencies + esbuild for bundling
 # This keeps the image much smaller (~50MB vs 111MB)
-RUN npm ci --production --no-audit --no-fund && \
+RUN npm install --omit=dev --no-audit --no-fund && \
     npm install esbuild --no-audit --no-fund && \
     npm cache clean --force
 

@@ -18,6 +18,7 @@ interface DatabaseError extends Error {
 interface CacheRow {
   payload: unknown;
   expires_at: number | string;
+  cached_at?: number | string | null;
   etag: string | null;
   last_modified: number | string | null;
   source: string | null;
@@ -110,12 +111,14 @@ async function ensurePlayerStatsTables(): Promise<void> {
         cache_key TEXT PRIMARY KEY,
         payload JSONB NOT NULL,
         expires_at BIGINT NOT NULL,
+        cached_at BIGINT,
         etag TEXT,
         last_modified BIGINT,
         source TEXT DEFAULT 'hypixel',
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`,
     );
+    await pool.query('ALTER TABLE player_stats_cache ADD COLUMN IF NOT EXISTS cached_at BIGINT');
     await pool.query(
       `CREATE INDEX IF NOT EXISTS idx_player_stats_expires ON player_stats_cache (expires_at)`,
     );
@@ -139,11 +142,16 @@ async function ensurePlayerStatsTables(): Promise<void> {
          cache_key NVARCHAR(450) PRIMARY KEY,
          payload NVARCHAR(MAX) NOT NULL,
          expires_at BIGINT NOT NULL,
+         cached_at BIGINT NULL,
          etag NVARCHAR(255),
          last_modified BIGINT,
          source NVARCHAR(64),
          created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
        )`,
+    );
+    await pool.query(
+      `IF COL_LENGTH('player_stats_cache', 'cached_at') IS NULL
+       ALTER TABLE player_stats_cache ADD cached_at BIGINT`,
     );
     await pool.query(
       "IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_player_stats_expires') CREATE INDEX idx_player_stats_expires ON player_stats_cache (expires_at)",
@@ -293,7 +301,7 @@ export async function getCacheEntry<T>(key: string, includeExpired = false): Pro
 
   // Fallback to SQL
   const result = await pool.query<CacheRow>(
-    'SELECT payload, expires_at, etag, last_modified, source FROM player_stats_cache WHERE cache_key = $1',
+    'SELECT payload, expires_at, cached_at, etag, last_modified, source FROM player_stats_cache WHERE cache_key = $1',
     [key],
   );
   markDbAccess();
@@ -341,36 +349,39 @@ export async function setCachedPayload<T>(
   }
 
   // Fallback to PostgreSQL
-  const expiresAt = Date.now() + ttlMs;
+  const cachedAt = Date.now();
+  const expiresAt = cachedAt + ttlMs;
   const payload = JSON.stringify(value);
 
   if (pool.type === DatabaseType.POSTGRESQL) {
     await pool.query(
-      `INSERT INTO player_stats_cache (cache_key, payload, expires_at, etag, last_modified, source)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO player_stats_cache (cache_key, payload, expires_at, cached_at, etag, last_modified, source)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (cache_key) DO UPDATE
        SET payload = EXCLUDED.payload,
            expires_at = EXCLUDED.expires_at,
+           cached_at = EXCLUDED.cached_at,
            etag = EXCLUDED.etag,
            last_modified = EXCLUDED.last_modified,
            source = EXCLUDED.source`,
-      [key, payload, expiresAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
+      [key, payload, expiresAt, cachedAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
     );
   } else {
     await pool.query(
       `MERGE player_stats_cache AS target
-       USING (SELECT $1 AS cache_key, $2 AS payload, $3 AS expires_at, $4 AS etag, $5 AS last_modified, $6 AS source) AS source
+       USING (SELECT $1 AS cache_key, $2 AS payload, $3 AS expires_at, $4 AS cached_at, $5 AS etag, $6 AS last_modified, $7 AS source) AS source
        ON (target.cache_key = source.cache_key)
        WHEN MATCHED THEN
          UPDATE SET payload = source.payload,
                     expires_at = source.expires_at,
+                    cached_at = source.cached_at,
                     etag = source.etag,
                     last_modified = source.last_modified,
                     source = source.source
        WHEN NOT MATCHED THEN
-         INSERT (cache_key, payload, expires_at, etag, last_modified, source)
-         VALUES (source.cache_key, source.payload, source.expires_at, source.etag, source.last_modified, source.source);`,
-      [key, payload, expiresAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
+         INSERT (cache_key, payload, expires_at, cached_at, etag, last_modified, source)
+         VALUES (source.cache_key, source.payload, source.expires_at, source.cached_at, source.etag, source.last_modified, source.source);`,
+      [key, payload, expiresAt, cachedAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
     );
   }
   markDbAccess();

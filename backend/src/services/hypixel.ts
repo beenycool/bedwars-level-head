@@ -2,6 +2,8 @@ import axios, { type AxiosResponseHeaders, type RawAxiosResponseHeaders } from '
 import https from 'node:https';
 import CacheableLookup from 'cacheable-lookup';
 import {
+  CB_FAILURE_THRESHOLD,
+  CB_RESET_TIMEOUT_MS,
   HYPIXEL_API_BASE_URL,
   HYPIXEL_API_KEY,
   HYPIXEL_RETRY_DELAY_MAX_MS,
@@ -33,8 +35,8 @@ const hypixelClient = axios.create({
 });
 
 const CIRCUIT_BREAKER = {
-  failureThreshold: 5,
-  resetTimeoutMs: 30_000,
+  failureThreshold: CB_FAILURE_THRESHOLD,
+  resetTimeoutMs: CB_RESET_TIMEOUT_MS,
   state: 'closed' as 'closed' | 'open' | 'half-open',
   failures: 0,
   lastFailureAt: 0,
@@ -74,6 +76,27 @@ function circuitBreakerFailure(): void {
   if (CIRCUIT_BREAKER.state === 'half-open' || CIRCUIT_BREAKER.failures >= CIRCUIT_BREAKER.failureThreshold) {
     CIRCUIT_BREAKER.state = 'open';
   }
+}
+
+export interface CircuitBreakerState {
+  state: 'closed' | 'open' | 'half-open';
+  failureCount: number;
+  lastFailureAt: number | null;
+  nextRetryAt: number | null;
+}
+
+export function getCircuitBreakerState(): CircuitBreakerState {
+  const nextRetryAt =
+    CIRCUIT_BREAKER.state === 'open' && CIRCUIT_BREAKER.lastFailureAt > 0
+      ? CIRCUIT_BREAKER.lastFailureAt + CIRCUIT_BREAKER.resetTimeoutMs
+      : null;
+
+  return {
+    state: CIRCUIT_BREAKER.state,
+    failureCount: CIRCUIT_BREAKER.failures,
+    lastFailureAt: CIRCUIT_BREAKER.lastFailureAt > 0 ? CIRCUIT_BREAKER.lastFailureAt : null,
+    nextRetryAt,
+  };
 }
 
 export interface HypixelPlayerResponse {
