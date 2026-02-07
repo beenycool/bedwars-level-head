@@ -147,6 +147,11 @@ router.delete('/:keyHash', enforceAdminAuth, enforceRateLimit, async (req, res, 
     return;
   }
 
+  if (!/^[a-fA-F0-9]{16}$/.test(keyHash)) {
+    next(new HttpError(400, 'INVALID_KEY_HASH_FORMAT', 'Key hash format is invalid.'));
+    return;
+  }
+
   try {
     const deleted = await deleteApiKey(keyHash);
     if (!deleted) {

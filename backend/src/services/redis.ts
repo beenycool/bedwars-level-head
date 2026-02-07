@@ -215,7 +215,7 @@ function getLocalRateLimitCount(cacheKey: string, windowMs: number, cost: number
             lastSyncTime: now,
         };
     } else {
-        local.count += cost;
+        local!.count += cost;
     }
 
     // Enforce max cache size (FIFO: delete oldest-inserted entry)
@@ -224,10 +224,10 @@ function getLocalRateLimitCount(cacheKey: string, windowMs: number, cost: number
         if (firstKey) localRateLimits.delete(firstKey);
     }
 
-    localRateLimits.set(cacheKey, local);
+    localRateLimits.set(cacheKey, local!);
     return {
-        count: local.count,
-        ttl: Math.max(0, windowMs - (now - local.windowStart)),
+        count: local!.count,
+        ttl: Math.max(0, windowMs - (now - local!.windowStart)),
     };
 }
 
@@ -241,7 +241,7 @@ export async function incrementRateLimit(ip: string, windowMs: number, cost: num
 
     // If we have a valid local entry in the current window
     if (local && (now - local.windowStart) < windowMs) {
-        local.count += cost;
+        local!.count += cost;
 
         // Decide if we need to sync to Redis
         const countDelta = local.count - local.lastSyncedCount;
@@ -256,8 +256,8 @@ export async function incrementRateLimit(ip: string, windowMs: number, cost: num
         }
 
         return {
-            count: local.count,
-            ttl: Math.max(0, windowMs - (now - local.windowStart)),
+            count: local!.count,
+            ttl: Math.max(0, windowMs - (now - local!.windowStart)),
         };
     }
 
@@ -297,7 +297,7 @@ export async function incrementRateLimit(ip: string, windowMs: number, cost: num
             if (firstKey) localRateLimits.delete(firstKey);
         }
 
-        localRateLimits.set(cacheKey, local);
+        localRateLimits.set(cacheKey, local!);
 
         return {
             count: result[0],

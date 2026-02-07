@@ -187,12 +187,12 @@ export async function getApiKeyValidation(key: string): Promise<ApiKeyValidation
     return null;
   }
 
-  const data = await redis.get(getRedisKey(keyHash));
-  if (!data) {
-    return null;
-  }
-
   try {
+    const data = await redis.get(getRedisKey(keyHash));
+    if (!data) {
+      return null;
+    }
+
     const stored = JSON.parse(data) as StoredApiKeyData;
     return {
       key: maskKey(key),
@@ -202,7 +202,8 @@ export async function getApiKeyValidation(key: string): Promise<ApiKeyValidation
       validatedCount: stored.validatedCount,
       errorMessage: stored.errorMessage,
     };
-  } catch {
+  } catch (error) {
+    console.error('[apikey] get failed', error);
     return null;
   }
 }
@@ -214,12 +215,12 @@ export async function getApiKeyValidationByHash(keyHash: string): Promise<ApiKey
     return null;
   }
 
-  const data = await redis.get(getRedisKey(keyHash));
-  if (!data) {
-    return null;
-  }
-
   try {
+    const data = await redis.get(getRedisKey(keyHash));
+    if (!data) {
+      return null;
+    }
+
     const stored = JSON.parse(data) as StoredApiKeyData;
     return {
       key: '***', // Masked since we don't have the original
@@ -229,7 +230,8 @@ export async function getApiKeyValidationByHash(keyHash: string): Promise<ApiKey
       validatedCount: stored.validatedCount,
       errorMessage: stored.errorMessage,
     };
-  } catch {
+  } catch (error) {
+    console.error('[apikey] getByHash failed', error);
     return null;
   }
 }
