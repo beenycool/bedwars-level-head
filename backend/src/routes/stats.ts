@@ -235,7 +235,7 @@ router.get('/', async (req, res, next) => {
 
         return `<tr>
           <td title="${escapeHtml(formatDate(entry.requestedAt))}">${escapeHtml(timeAgo(entry.requestedAt))}</td>
-          <td><a href="${lookupLink}" target="_blank" class="lookup-link">${escapeHtml(lookup)}</a></td>
+          <td><a href="${lookupLink}" target="_blank" rel="noopener noreferrer" class="lookup-link">${escapeHtml(lookup)}</a></td>
           <td>${escapeHtml(resolved)}</td>
           <td class="stars">${escapeHtml(formatStars(entry.stars))}</td>
           <td>${escapeHtml(cacheSource)}${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
@@ -1051,8 +1051,9 @@ router.get('/', async (req, res, next) => {
         <input
           type="search"
           name="q"
+          id="searchInput"
           aria-label="Search players"
-          placeholder="Search by username or UUID"
+          placeholder="Search by username or UUID (Press /)"
           value="${escapeHtml(search)}"
         />
         <input type="hidden" name="page" value="1" />
@@ -1095,6 +1096,25 @@ router.get('/', async (req, res, next) => {
       const data = pageData.chartData || [];
       const topPlayers = pageData.topPlayers || [];
       const filters = pageData.filters || {};
+
+      // Keyboard shortcut for search
+      document.addEventListener('keydown', (e) => {
+        const activeElement = document.activeElement;
+        if (
+          e.key === '/'
+          && !e.metaKey && !e.ctrlKey && !e.altKey
+          && !['INPUT', 'TEXTAREA', 'SELECT'].includes(activeElement?.tagName)
+          && activeElement?.isContentEditable !== true
+        ) {
+          e.preventDefault();
+          const searchInput = document.getElementById('searchInput');
+          if (searchInput) {
+            searchInput.focus();
+            searchInput.select();
+          }
+        }
+      });
+
       const charts = [];
       // Store original chart configs for fullscreen cloning (avoids Chart.js resolver issues)
 
@@ -2518,7 +2538,7 @@ router.get('/', async (req, res, next) => {
               
               return \`<tr>
                 <td title="\${escapeHtmlClient(formatDateClient(entry.requestedAt))}">\${escapeHtmlClient(timeAgoClient(entry.requestedAt))}</td>
-                <td><a href="\${lookupLink}" target="_blank" class="lookup-link">\${escapeHtmlClient(lookup)}</a></td>
+                <td><a href="\${lookupLink}" target="_blank" rel="noopener noreferrer" class="lookup-link">\${escapeHtmlClient(lookup)}</a></td>
                 <td>\${escapeHtmlClient(resolved)}</td>
                 <td class="stars">\${escapeHtmlClient(formatStarsClient(entry.stars))}</td>
                 <td>\${escapeHtmlClient(cacheSource)}\${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
