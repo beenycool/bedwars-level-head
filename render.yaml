@@ -3,7 +3,7 @@ services:
     name: bedwars-level-head
     runtime: image
     plan: free
-    region: oregon
+    region: frankfurt
     image:
       url: ghcr.io/beenycool/bedwars-level-head:latest
     envVars:
