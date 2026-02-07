@@ -173,23 +173,6 @@ export function createRateLimitMiddleware({
       const { count, ttl } = result;
 
       const fallbackState = getRateLimitFallbackState();
-      const nearLimit = count >= Math.ceil(effectiveMax * 0.8);
-      const logPayload = {
-        ip: bucketKey.substring(0, 8) + '...', // Log partial bucket key for privacy
-        count,
-        cost,
-        ttl,
-        max: effectiveMax,
-        redisRequired: RATE_LIMIT_REQUIRE_REDIS,
-        fallbackActive: fallbackState.isInFallbackMode,
-        fallbackMode: fallbackState.fallbackMode,
-      };
-
-      if (fallbackState.isInFallbackMode || nearLimit) {
-        console.info('[rate-limit] check', logPayload);
-      } else {
-        console.debug('[rate-limit] check', logPayload);
-      }
 
       // Fire-and-forget stats tracking with raw client IP (not prefixed bucket key)
       void trackGlobalStats(clientIp).catch((err) => {
@@ -201,6 +184,16 @@ export function createRateLimitMiddleware({
         const retryAfterHeader = retryAfterSeconds.toString();
         const labelValue = metricLabel ?? 'unknown';
         rateLimitBlocksTotal.inc({ type: labelValue });
+
+        // Compact single-line log for rate limit hits
+        const retryMins = Math.ceil(retryAfterSeconds / 60);
+        const retryStr = retryMins >= 60 ? `${Math.ceil(retryMins / 60)}h` : `${retryMins}m`;
+        console.warn(
+          `[rate-limit] 429 ${bucketKey.substring(0, 12)}... ` +
+            `(count: ${count}/${effectiveMax}, retry: ${retryStr}` +
+            `${fallbackState.isInFallbackMode ? ', fallback' : ''})`
+        );
+
         next(
           new HttpError(
             429,

@@ -92,6 +92,9 @@ app.use((req, res, next) => {
     const message = `[request] ${req.method} ${target} -> ${res.statusCode} (${durationMs.toFixed(2)} ms)`;
     if (res.statusCode >= 500) {
       console.error(message);
+    } else if (res.statusCode === 429) {
+      // Rate limit blocks are logged separately by the rate limit middleware
+      // Skip duplicate logging here
     } else if (res.statusCode >= 400) {
       console.warn(message);
     } else {
