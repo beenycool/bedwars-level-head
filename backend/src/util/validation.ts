@@ -4,6 +4,14 @@
  */
 
 import { isNonArrayObject } from './typeChecks';
+import { getRedisClient } from '../services/redis';
+import { SUBMISSION_TTL_MS } from '../config';
+
+export interface NonceValidationResult {
+    valid: boolean;
+    error?: string;
+    statusCode: number;
+}
 
 export interface ValidationError {
     field: string;
@@ -282,4 +290,81 @@ export function matchesCriticalFields(source: Record<string, unknown>, submitted
     }
 
     return true;
+}
+
+/**
+ * Validates timestamp and nonce for replay protection.
+ * Checks that timestamp is within the allowed window and nonce hasn't been used.
+ * 
+ * @param timestamp - Unix timestamp in milliseconds
+ * @param nonce - Unique nonce string
+ * @param keyId - Identifier for the key used (e.g., api key hash or identifier)
+ * @returns NonceValidationResult with validation status and error details
+ */
+export async function validateTimestampAndNonce(
+    timestamp: number,
+    nonce: string,
+    keyId: string,
+): Promise<NonceValidationResult> {
+    const now = Date.now();
+
+    // Validate timestamp is within allowed window
+    const timeDiff = Math.abs(now - timestamp);
+    if (timeDiff > SUBMISSION_TTL_MS) {
+        return {
+            valid: false,
+            error: `Timestamp expired or too far in future. Max allowed diff: ${SUBMISSION_TTL_MS}ms`,
+            statusCode: 400,
+        };
+    }
+
+    // Validate nonce format (alphanumeric, reasonable length)
+    if (!nonce || typeof nonce !== 'string' || nonce.length < 8 || nonce.length > 128) {
+        return {
+            valid: false,
+            error: 'Invalid nonce format. Must be 8-128 characters.',
+            statusCode: 400,
+        };
+    }
+
+    const redis = getRedisClient();
+    if (!redis) {
+        // Redis unavailable - fail closed for security (reject submission)
+        console.warn('[nonce-validation] Redis unavailable, rejecting submission for replay protection');
+        return {
+            valid: false,
+            error: 'Replay protection service temporarily unavailable. Please retry.',
+            statusCode: 503,
+        };
+    }
+
+    try {
+        // Use SET with NX (only if not exists) and EX (expire) for atomic nonce check
+        // Key format: nonce:{keyId}:{nonce}
+        const nonceKey = `nonce:${keyId}:${nonce}`;
+        const ttlSeconds = Math.ceil(SUBMISSION_TTL_MS / 1000);
+        
+        const result = await redis.set(nonceKey, '1', 'NX', 'EX', ttlSeconds);
+        
+        if (result !== 'OK') {
+            // Key already exists - replay attack detected
+            return {
+                valid: false,
+                error: 'Replay attack detected: nonce has already been used',
+                statusCode: 409,
+            };
+        }
+
+        return { valid: true, statusCode: 200 };
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[nonce-validation] Redis operation failed:', message);
+        
+        // Redis error - fail closed for security
+        return {
+            valid: false,
+            error: 'Replay protection check failed. Please retry.',
+            statusCode: 503,
+        };
+    }
 }

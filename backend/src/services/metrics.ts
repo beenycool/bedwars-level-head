@@ -31,7 +31,20 @@ export const httpRequestDurationSeconds = new client.Histogram({
   name: 'levelhead_http_request_duration_seconds',
   help: 'HTTP request duration in seconds.',
   labelNames: ['method', 'route'],
-  buckets: [0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10],
+  buckets: [
+    0.005, // 5ms   - very fast cache hits
+    0.01,  // 10ms
+    0.025, // 25ms
+    0.05,  // 50ms
+    0.1,   // 100ms - typical Redis hit
+    0.25,  // 250ms
+    0.5,   // 500ms - typical SQL hit
+    1,     // 1s
+    2.5,   // 2.5s  - typical upstream hit
+    5,     // 5s
+    10,    // 10s   - p99 worst case
+    30,    // 30s   - timeout cases
+  ],
   registers: [registry],
 });
 
@@ -72,6 +85,20 @@ export const cacheTierMissesTotal = new client.Counter({
   name: 'levelhead_cache_tier_misses_total',
   help: 'Number of cache misses grouped by cache tier.',
   labelNames: ['tier', 'reason'],
+  registers: [registry],
+});
+
+export const cacheSourceTotal = new client.Counter({
+  name: 'levelhead_cache_source_total',
+  help: 'Number of requests served grouped by data source (redis, sql, upstream).',
+  labelNames: ['source'],
+  registers: [registry],
+});
+
+const cacheRefreshTotal = new client.Counter({
+  name: 'levelhead_cache_refresh_total',
+  help: 'Total number of background cache refresh attempts.',
+  labelNames: ['result'],
   registers: [registry],
 });
 
@@ -149,6 +176,10 @@ export function recordCacheTierMiss(tier: 'l1' | 'l2', reason: string = 'unknown
   cacheTierMissesTotal.inc({ tier, reason });
 }
 
+export function recordCacheSourceHit(source: 'redis' | 'sql' | 'upstream'): void {
+  cacheSourceTotal.inc({ source });
+}
+
 export function observeRequest(
   method: string,
   route: string,
@@ -160,4 +191,8 @@ export function observeRequest(
   const classIndex = Math.trunc(status / 100);
   const label = classIndex > 0 ? `${classIndex}xx` : 'other';
   httpResponsesByStatusClassTotal.inc({ method, route, status_class: label });
+}
+
+export function recordCacheRefresh(result: 'success' | 'fail'): void {
+  cacheRefreshTotal.inc({ result });
 }

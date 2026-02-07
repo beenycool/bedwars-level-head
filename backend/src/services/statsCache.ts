@@ -8,15 +8,87 @@ import {
   PLAYER_L1_TTL_MIN_MS,
   PLAYER_L2_TTL_MS,
   REDIS_CACHE_MAX_BYTES,
+  SWR_ENABLED,
+  SWR_STALE_TTL_MS,
 } from '../config';
 import { CacheEntry, CacheMetadata, CacheSource, ensureInitialized, markDbAccess, pool, shouldReadFromDb } from './cache';
 import { DatabaseType } from './database/adapter';
-import { recordCacheHit, recordCacheMiss, recordCacheTierHit, recordCacheTierMiss } from './metrics';
-import { MinimalPlayerStats } from './hypixel';
+import { recordCacheHit, recordCacheMiss, recordCacheTierHit, recordCacheTierMiss, recordCacheSourceHit, recordCacheRefresh } from './metrics';
+import { fetchHypixelPlayer, HypixelFetchOptions, MinimalPlayerStats, extractMinimalStats } from './hypixel';
 import { getRedisClient, isRedisAvailable } from './redis';
+
+// Single-flight pattern: dedupe concurrent upstream fetches for the same UUID
+// Prevents cache stampede (thundering herd) when multiple requests hit a cache miss
+const fetchingLocks: Map<string, Promise<MinimalPlayerStats>> = new Map();
 
 const PLAYER_KEY_PREFIX = 'player:';
 const IGN_MAPPING_PREFIX = 'ignmap:';
+
+/**
+ * Fetch result with stats and metadata for cache storage
+ */
+interface FetchResult {
+  stats: MinimalPlayerStats;
+  etag: string | null;
+  lastModified: number | null;
+}
+
+/**
+ * Fetch player stats from Hypixel with single-flight deduplication.
+ * Prevents cache stampede by ensuring only one upstream request is in flight
+ * for a given UUID at any time. All concurrent callers wait for the same promise.
+ */
+export async function fetchWithDedupe(
+  uuid: string,
+  options?: HypixelFetchOptions,
+): Promise<FetchResult> {
+  const normalizedUuid = uuid.toLowerCase();
+
+  // Check if already fetching for this UUID
+  const existing = fetchingLocks.get(normalizedUuid);
+  if (existing) {
+    // Return the existing promise - all waiters get the same result
+    const stats = await existing;
+    return { stats, etag: null, lastModified: null };
+  }
+
+  // Create new fetch promise that includes the full result with metadata
+  const fetchPromise: Promise<MinimalPlayerStats> = (async (): Promise<MinimalPlayerStats> => {
+    const result = await fetchHypixelPlayer(normalizedUuid, options);
+
+    if (result.notModified) {
+      // Should not happen when called from cache miss, but handle gracefully
+      throw new Error('Unexpected 304 from Hypixel during cache miss');
+    }
+
+    if (!result.payload) {
+      throw new Error('Empty payload from Hypixel');
+    }
+
+    return extractMinimalStats(result.payload);
+  })();
+
+  // Store the promise so concurrent callers can wait for it
+  fetchingLocks.set(normalizedUuid, fetchPromise);
+
+  try {
+    // Wait for the stats, then fetch again to get metadata
+    // We need to do this because the promise only stores the stats
+    const stats = await fetchPromise;
+    
+    // Fetch metadata separately (this will be cached by the single-flight pattern)
+    const result = await fetchHypixelPlayer(normalizedUuid, options);
+    
+    return {
+      stats,
+      etag: result.etag,
+      lastModified: result.lastModified,
+    };
+  } finally {
+    // Clean up lock regardless of success or failure
+    fetchingLocks.delete(normalizedUuid);
+  }
+}
 
 interface CacheRow {
   payload: unknown;
@@ -49,6 +121,12 @@ export interface IgnMappingEntry {
   uuid: string | null;
   nicked: boolean;
   expiresAt: number;
+}
+
+// Stale-While-Revalidate (SWR) cache result with staleness information
+export interface SWRCacheEntry<T> extends CacheEntry<T> {
+  isStale: boolean;
+  staleAgeMs: number;
 }
 
 let lastMemorySample: MemorySample | null = null;
@@ -450,6 +528,7 @@ export async function getPlayerStatsFromCache(
               if (entry.expiresAt > now) {
                 recordCacheHit();
                 recordCacheTierHit('l1');
+                recordCacheSourceHit('redis');
                 l1Hit = true;
                 return entry;
               }
@@ -479,6 +558,7 @@ export async function getPlayerStatsFromCache(
   if (l2Entry) {
     recordCacheHit();
     recordCacheTierHit('l2');
+    recordCacheSourceHit('sql');
     const now = Date.now();
     if (l2Entry.expiresAt > now) {
       void setPlayerStatsL1(key, l2Entry.value, {
@@ -493,6 +573,207 @@ export async function getPlayerStatsFromCache(
   recordCacheTierMiss('l2', 'absent');
   recordCacheMiss('absent');
   return null;
+}
+
+/**
+ * Get player stats from cache with Stale-While-Revalidate (SWR) support.
+ * 
+ * Returns stale data immediately if it's within the SWR window, while triggering
+ * a background refresh. This improves response times for cache misses by serving
+ * slightly outdated data rather than waiting for a fresh fetch.
+ * 
+ * @param key - The cache key
+ * @param uuid - The player UUID (for background refresh)
+ * @returns SWRCacheEntry with staleness information, or null if no usable data
+ */
+export async function getPlayerStatsFromCacheWithSWR(
+  key: string,
+  uuid: string,
+): Promise<SWRCacheEntry<MinimalPlayerStats> | null> {
+  if (!SWR_ENABLED) {
+    const entry = await getPlayerStatsFromCache(key, false);
+    if (!entry) return null;
+    return {
+      ...entry,
+      isStale: false,
+      staleAgeMs: 0,
+    };
+  }
+
+  // Try L1 (Redis) first
+  if (isRedisAvailable()) {
+    try {
+      const client = getRedisClient();
+      if (client && client.status === 'ready') {
+        const redisKey = `cache:${key}`;
+        const data = await client.get(redisKey);
+        if (data) {
+          let row: CacheRow | undefined;
+          try {
+            row = JSON.parse(data) as CacheRow;
+          } catch {
+            await client.del(redisKey);
+          }
+          if (row) {
+            const entry = mapRow<MinimalPlayerStats>(row);
+            if (entry) {
+              const now = Date.now();
+              const isFresh = entry.expiresAt > now;
+              const ageMs = now - (entry.expiresAt - getAdaptiveL1TtlMs());
+
+              if (isFresh) {
+                recordCacheHit();
+                recordCacheTierHit('l1');
+                recordCacheSourceHit('redis');
+                return {
+                  ...entry,
+                  isStale: false,
+                  staleAgeMs: 0,
+                };
+              }
+
+              // Check if within SWR window
+              const isWithinSWRWindow = now <= entry.expiresAt + SWR_STALE_TTL_MS;
+              if (isWithinSWRWindow) {
+                recordCacheHit();
+                recordCacheTierHit('l1');
+                recordCacheSourceHit('redis');
+                
+                // Trigger background refresh
+                triggerBackgroundRefresh(key, uuid, entry);
+                
+                return {
+                  ...entry,
+                  isStale: true,
+                  staleAgeMs: ageMs,
+                };
+              }
+
+              // Too old, delete from Redis
+              await client.del(redisKey);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.error('[statsCache] L1 SWR read failed', message);
+    }
+  }
+
+  recordCacheTierMiss('l1', 'absent');
+
+  // Try L2 (Database) with SWR
+  if (shouldReadFromDb()) {
+    const l2Entry = await getPlayerStatsFromDb(key, true);
+    if (l2Entry) {
+      const now = Date.now();
+      const normalTtl = PLAYER_L2_TTL_MS;
+      const cachedAt = l2Entry.expiresAt - normalTtl;
+      const ageMs = now - cachedAt;
+      const isFresh = l2Entry.expiresAt > now;
+      const isWithinSWRWindow = now <= l2Entry.expiresAt + SWR_STALE_TTL_MS;
+
+      if (isFresh) {
+        recordCacheHit();
+        recordCacheTierHit('l2');
+        recordCacheSourceHit('sql');
+        
+        // Backfill L1 cache
+        void setPlayerStatsL1(key, l2Entry.value, {
+          etag: l2Entry.etag ?? undefined,
+          lastModified: l2Entry.lastModified ?? undefined,
+          source: l2Entry.source ?? undefined,
+        }).catch((e) => console.warn('[statsCache] L1 backfill failed', e));
+        
+        return {
+          ...l2Entry,
+          isStale: false,
+          staleAgeMs: 0,
+        };
+      }
+
+      if (isWithinSWRWindow) {
+        recordCacheHit();
+        recordCacheTierHit('l2');
+        recordCacheSourceHit('sql');
+        
+        // Trigger background refresh
+        triggerBackgroundRefresh(key, uuid, l2Entry);
+        
+        return {
+          ...l2Entry,
+          isStale: true,
+          staleAgeMs: ageMs,
+        };
+      }
+
+      // Data is too old, delete it
+      await pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [key]);
+      markDbAccess();
+    }
+  } else {
+    recordCacheTierMiss('l2', 'db_cold');
+  }
+
+  recordCacheMiss('absent');
+  return null;
+}
+
+/**
+ * Trigger a background refresh of player stats from Hypixel.
+ * This function doesn't wait for the refresh to complete.
+ */
+function triggerBackgroundRefresh(
+  key: string,
+  uuid: string,
+  entry: CacheEntry<MinimalPlayerStats>,
+): void {
+  // Use single-flight pattern to prevent duplicate fetches
+  if (fetchingLocks.has(key)) {
+    return;
+  }
+
+  const fetchPromise = (async () => {
+    try {
+      const options: HypixelFetchOptions = {
+        etag: entry.etag ?? undefined,
+        lastModified: entry.lastModified ?? undefined,
+      };
+
+      const result = await fetchHypixelPlayer(uuid, options);
+
+      if (result.notModified) {
+        // Data hasn't changed, update L1 cache TTL
+        await setPlayerStatsL1(key, entry.value, {
+          etag: entry.etag ?? undefined,
+          lastModified: entry.lastModified ?? undefined,
+          source: entry.source ?? undefined,
+        });
+        return;
+      }
+
+      if (result.payload) {
+        const stats = extractMinimalStats(result.payload);
+        await setPlayerStatsBoth(key, stats, {
+          etag: result.etag ?? undefined,
+          lastModified: result.lastModified ?? undefined,
+          source: 'hypixel',
+        });
+      }
+    } catch (error) {
+      console.warn(`[statsCache] background refresh failed for ${uuid}`, error);
+    } finally {
+      fetchingLocks.delete(key);
+    }
+  })();
+
+  fetchingLocks.set(key, fetchPromise);
+  
+  // Don't await - let it run in background
+  void fetchPromise.catch(() => {
+    // Error already logged in the try/catch above
+  });
 }
 
 export async function setPlayerStatsL1(

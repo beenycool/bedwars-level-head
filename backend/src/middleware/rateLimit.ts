@@ -3,11 +3,20 @@ import {
   DYNAMIC_RATE_LIMIT_CACHE_TTL_MS,
   RATE_LIMIT_MAX,
   RATE_LIMIT_WINDOW_MS,
+  RATE_LIMIT_REQUIRE_REDIS,
+  RATE_LIMIT_FALLBACK_MODE,
   TRUST_PROXY_ENABLED,
 } from '../config';
 import { HttpError } from '../util/httpError';
 import { rateLimitBlocksTotal } from '../services/metrics';
-import { incrementRateLimit, trackGlobalStats } from '../services/redis';
+import {
+  incrementRateLimit,
+  trackGlobalStats,
+  RATE_LIMIT_ALLOW_ALL,
+  RATE_LIMIT_DENY_ALL,
+  getRateLimitFallbackState,
+  type RateLimitResult,
+} from '../services/redis';
 import { calculateDynamicRateLimit } from '../services/dynamicRateLimit';
 
 interface DynamicLimitCacheEntry {
@@ -113,12 +122,25 @@ export function createRateLimitMiddleware({
         }
       }
 
-      const result = await incrementRateLimit(bucketKey, windowMs, cost);
+      const result: RateLimitResult = await incrementRateLimit(bucketKey, windowMs, cost);
 
-      // If Redis operation failed, fail open
-      if (result === null) {
-        console.warn('[rate-limit] Redis increment failed, failing open');
-        // Fire-and-forget stats tracking with raw client IP (not prefixed bucket key)
+      // Handle fallback mode results
+      if (result === RATE_LIMIT_DENY_ALL) {
+        // Fail closed - Redis unavailable and RATE_LIMIT_FALLBACK_MODE=deny
+        next(
+          new HttpError(
+            503,
+            'SERVICE_UNAVAILABLE',
+            'Rate limiting service unavailable. Please try again later.',
+            { 'Retry-After': '60' },
+          ),
+        );
+        return;
+      }
+
+      if (result === RATE_LIMIT_ALLOW_ALL) {
+        // Fail open dangerously - Redis unavailable and RATE_LIMIT_FALLBACK_MODE=allow
+        // Fire-and-forget stats tracking
         void trackGlobalStats(clientIp).catch((err) => {
           console.error('[rate-limit] trackGlobalStats failed', err);
         });
@@ -126,14 +148,29 @@ export function createRateLimitMiddleware({
         return;
       }
 
+      if (result === null) {
+        // Unexpected null result - fail open for safety
+        console.warn('[rate-limit] Unexpected null result from incrementRateLimit, failing open');
+        void trackGlobalStats(clientIp).catch((err) => {
+          console.error('[rate-limit] trackGlobalStats failed', err);
+        });
+        next();
+        return;
+      }
+
+      // Normal rate limit result
       const { count, ttl } = result;
 
+      const fallbackState = getRateLimitFallbackState();
       console.info('[rate-limit] check', {
         ip: bucketKey.substring(0, 8) + '...', // Log partial bucket key for privacy
         count,
         cost,
         ttl,
         max: effectiveMax,
+        redisRequired: RATE_LIMIT_REQUIRE_REDIS,
+        fallbackActive: fallbackState.isInFallbackMode,
+        fallbackMode: fallbackState.fallbackMode,
       });
 
       // Fire-and-forget stats tracking with raw client IP (not prefixed bucket key)
