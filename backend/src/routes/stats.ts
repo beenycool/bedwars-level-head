@@ -1967,7 +1967,7 @@ router.get('/', async (req, res, next) => {
       // 8. Process Memory Over Time
       const resourceMetricsHistory = pageData.resourceMetricsHistory || [];
       const resourceMetricsLabels = resourceMetricsHistory.map((m) => {
-        const date = new Date(m.hourStart);
+        const date = new Date(m.bucketStart);
         return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
       });
       const resourceMetricsData = resourceMetricsHistory.map((m) => m.avgRssMB);
@@ -2687,7 +2687,7 @@ router.get('/', async (req, res, next) => {
         const resourceMetricsHistory = json.resourceMetricsHistory || [];
         if (resourceMetricsHistory.length > 0) {
           const resourceMetricsLabels = resourceMetricsHistory.map((m) => {
-            const date = new Date(m.hourStart);
+            const date = new Date(m.bucketStart);
             return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
           });
           const resourceMetricsData = resourceMetricsHistory.map((m) => m.avgRssMB);

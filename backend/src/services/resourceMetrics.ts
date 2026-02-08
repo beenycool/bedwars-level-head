@@ -12,8 +12,8 @@ interface MemorySample {
   cpuPercent: number;
 }
 
-interface HourlyAggregate {
-  hourStart: Date;
+interface BucketAggregate {
+  bucketStart: Date;
   avgRssMB: number;
   maxRssMB: number;
   minRssMB: number;
@@ -33,7 +33,8 @@ interface HourlyAggregate {
 }
 
 const SAMPLE_INTERVAL_MS = 30_000;
-const FLUSH_INTERVAL_MS = 60 * 60 * 1000;
+const FLUSH_INTERVAL_MS = 60 * 1000; // Flush every minute
+const BUCKET_INTERVAL_MS = 60 * 1000; // 1-minute buckets
 const MAX_BUFFER_SIZE = 12_000;
 const RETENTION_DAYS = 30;
 
@@ -45,6 +46,8 @@ let lastCpuCheckTime = 0;
 let sampleInterval: NodeJS.Timeout | null = null;
 let flushInterval: NodeJS.Timeout | null = null;
 let alignmentTimeout: NodeJS.Timeout | null = null;
+
+const weightedAvg = (v1: number, c1: number, v2: number, c2: number) => (v1 * c1 + v2 * c2) / (c1 + c2);
 
 function getCpuPercent(): number {
   const now = Date.now();
@@ -83,32 +86,30 @@ const arrayMin = (arr: number[]) => arr.reduce((a, b) => Math.min(a, b), Infinit
 const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
 const avg = (arr: number[]) => arr.length > 0 ? sum(arr) / arr.length : 0;
 
-function getHourStart(timestamp: number): Date {
-  const date = new Date(timestamp);
-  date.setUTCMinutes(0, 0, 0);
-  date.setUTCMilliseconds(0);
-  return date;
+function getBucketStart(timestamp: number): Date {
+  const roundedMs = Math.floor(timestamp / BUCKET_INTERVAL_MS) * BUCKET_INTERVAL_MS;
+  return new Date(roundedMs);
 }
 
-function aggregateHourly(samples: MemorySample[]): HourlyAggregate[] {
+function aggregateToBuckets(samples: MemorySample[]): BucketAggregate[] {
   const buckets = new Map<string, MemorySample[]>();
 
   for (const sample of samples) {
-    const hourKey = getHourStart(sample.timestamp).toISOString();
-    if (!buckets.has(hourKey)) {
-      buckets.set(hourKey, []);
+    const bucketKey = getBucketStart(sample.timestamp).toISOString();
+    if (!buckets.has(bucketKey)) {
+      buckets.set(bucketKey, []);
     }
-    buckets.get(hourKey)!.push(sample);
+    buckets.get(bucketKey)!.push(sample);
   }
 
-  const aggregates: HourlyAggregate[] = [];
+  const aggregates: BucketAggregate[] = [];
   for (const bucketSamples of buckets.values()) {
     const rssValues = bucketSamples.map(s => s.rssMB).sort((a, b) => a - b);
     const heapValues = bucketSamples.map(s => s.heapMB).sort((a, b) => a - b);
     const cpuValues = bucketSamples.map(s => s.cpuPercent).sort((a, b) => a - b);
 
     aggregates.push({
-      hourStart: getHourStart(bucketSamples[0].timestamp),
+      bucketStart: getBucketStart(bucketSamples[0].timestamp),
       avgRssMB: avg(rssValues),
       maxRssMB: rssValues.length > 0 ? arrayMax(rssValues) : 0,
       minRssMB: rssValues.length > 0 ? arrayMin(rssValues) : 0,
@@ -128,62 +129,85 @@ function aggregateHourly(samples: MemorySample[]): HourlyAggregate[] {
     });
   }
 
-  return aggregates;
+  return aggregates.sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime());
 }
 
-async function persistAggregate(aggregates: HourlyAggregate[]): Promise<void> {
+async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
   try {
     for (const aggregate of aggregates) {
+      let existing;
       if (pool.type === DatabaseType.POSTGRESQL) {
-        const existingResult = await pool.query(
-          `SELECT * FROM resource_metrics WHERE hour_start = $1`,
-          [aggregate.hourStart]
+        const res = await pool.query<{ sample_count: number, avg_rss_mb: number, max_rss_mb: number, min_rss_mb: number, p95_rss_mb: number, p99_rss_mb: number, avg_heap_mb: number, max_heap_mb: number, min_heap_mb: number, p95_heap_mb: number, p99_heap_mb: number, avg_cpu_percent: number, max_cpu_percent: number, min_cpu_percent: number, p95_cpu_percent: number, p99_cpu_percent: number }>(
+          'SELECT * FROM resource_metrics WHERE bucket_start = $1',
+          [aggregate.bucketStart]
         );
+        existing = res.rows[0];
+      } else {
+        const res = await pool.query<any>(
+          'SELECT * FROM resource_metrics WHERE bucket_start = @p1',
+          [aggregate.bucketStart]
+        );
+        existing = res.rows[0];
+      }
 
-        if (existingResult.rows.length === 0) {
+      if (!existing) {
+        if (pool.type === DatabaseType.POSTGRESQL) {
           await pool.query(
             `INSERT INTO resource_metrics (
-              hour_start, avg_rss_mb, max_rss_mb, min_rss_mb, p95_rss_mb, p99_rss_mb,
+              bucket_start, avg_rss_mb, max_rss_mb, min_rss_mb, p95_rss_mb, p99_rss_mb,
               avg_heap_mb, max_heap_mb, min_heap_mb, p95_heap_mb, p99_heap_mb,
               avg_cpu_percent, max_cpu_percent, min_cpu_percent, p95_cpu_percent, p99_cpu_percent,
               sample_count
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
             [
-              aggregate.hourStart,
-              aggregate.avgRssMB, aggregate.maxRssMB, aggregate.minRssMB, aggregate.p95RssMB, aggregate.p99RssMB,
+              aggregate.bucketStart, aggregate.avgRssMB, aggregate.maxRssMB, aggregate.minRssMB, aggregate.p95RssMB, aggregate.p99RssMB,
               aggregate.avgHeapMB, aggregate.maxHeapMB, aggregate.minHeapMB, aggregate.p95HeapMB, aggregate.p99HeapMB,
               aggregate.avgCpuPercent, aggregate.maxCpuPercent, aggregate.minCpuPercent, aggregate.p95CpuPercent, aggregate.p99CpuPercent,
               aggregate.sampleCount,
             ]
           );
         } else {
-          const existing = existingResult.rows[0];
-          const existingSampleCount = existing.sample_count as number;
-          const newTotalCount = existingSampleCount + aggregate.sampleCount;
+          await pool.query(
+            `INSERT INTO resource_metrics (
+              bucket_start, avg_rss_mb, max_rss_mb, min_rss_mb, p95_rss_mb, p99_rss_mb,
+              avg_heap_mb, max_heap_mb, min_heap_mb, p95_heap_mb, p99_heap_mb,
+              avg_cpu_percent, max_cpu_percent, min_cpu_percent, p95_cpu_percent, p99_cpu_percent,
+              sample_count
+            ) VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16, @p17)`,
+            [
+              aggregate.bucketStart, aggregate.avgRssMB, aggregate.maxRssMB, aggregate.minRssMB, aggregate.p95_rss_mb, aggregate.p99_rss_mb,
+              aggregate.avgHeapMB, aggregate.maxHeapMB, aggregate.minHeapMB, aggregate.p95HeapMB, aggregate.p99HeapMB,
+              aggregate.avgCpuPercent, aggregate.maxCpuPercent, aggregate.minCpuPercent, aggregate.p95CpuPercent, aggregate.p99CpuPercent,
+              aggregate.sampleCount,
+            ]
+          );
+        }
+      } else {
+        const existingSampleCount = existing.sample_count;
+        const newTotalCount = existingSampleCount + aggregate.sampleCount;
 
-          const weightedAvg = (oldAvg: number, oldCount: number, newAvg: number, newCount: number) => {
-            return (oldAvg * oldCount + newAvg * newCount) / (oldCount + newCount);
-          };
+        const mergedAvgRssMB = weightedAvg(existing.avg_rss_mb, existingSampleCount, aggregate.avgRssMB, aggregate.sampleCount);
+        const mergedMaxRssMB = Math.max(existing.max_rss_mb, aggregate.maxRssMB);
+        const mergedMinRssMB = Math.min(existing.min_rss_mb, aggregate.min_rss_mb);
 
-          const mergedAvgRssMB = weightedAvg(existing.avg_rss_mb as number, existingSampleCount, aggregate.avgRssMB, aggregate.sampleCount);
-          const mergedAvgHeapMB = weightedAvg(existing.avg_heap_mb as number, existingSampleCount, aggregate.avgHeapMB, aggregate.sampleCount);
-          const mergedAvgCpuPercent = weightedAvg(existing.avg_cpu_percent as number, existingSampleCount, aggregate.avgCpuPercent, aggregate.sampleCount);
+        // Percentiles cannot be accurately averaged.
+        // We prefer the latest aggregate's percentile as a deterministic fallback for merged buckets.
+        const mergedP95RssMB = aggregate.p95RssMB;
+        const mergedP99RssMB = aggregate.p99RssMB;
 
-          const mergedMaxRssMB = Math.max(existing.max_rss_mb as number, aggregate.maxRssMB);
-          const mergedMaxHeapMB = Math.max(existing.max_heap_mb as number, aggregate.maxHeapMB);
-          const mergedMaxCpuPercent = Math.max(existing.max_cpu_percent as number, aggregate.maxCpuPercent);
+        const mergedAvgHeapMB = weightedAvg(existing.avg_heap_mb, existingSampleCount, aggregate.avgHeapMB, aggregate.sampleCount);
+        const mergedMaxHeapMB = Math.max(existing.max_heap_mb, aggregate.maxHeapMB);
+        const mergedMinHeapMB = Math.min(existing.min_heap_mb, aggregate.minHeapMB);
+        const mergedP95HeapMB = aggregate.p95HeapMB;
+        const mergedP99HeapMB = aggregate.p99HeapMB;
 
-          const mergedMinRssMB = Math.min(existing.min_rss_mb as number, aggregate.minRssMB);
-          const mergedMinHeapMB = Math.min(existing.min_heap_mb as number, aggregate.minHeapMB);
-          const mergedMinCpuPercent = Math.min(existing.min_cpu_percent as number, aggregate.minCpuPercent);
+        const mergedAvgCpuPercent = weightedAvg(existing.avg_cpu_percent, existingSampleCount, aggregate.avgCpuPercent, aggregate.sampleCount);
+        const mergedMaxCpuPercent = Math.max(existing.max_cpu_percent, aggregate.maxCpuPercent);
+        const mergedMinCpuPercent = Math.min(existing.min_cpu_percent, aggregate.minCpuPercent);
+        const mergedP95CpuPercent = aggregate.p95CpuPercent;
+        const mergedP99CpuPercent = aggregate.p99CpuPercent;
 
-          const mergedP95RssMB = weightedAvg(existing.p95_rss_mb as number, existingSampleCount, aggregate.p95RssMB, aggregate.sampleCount);
-          const mergedP99RssMB = weightedAvg(existing.p99_rss_mb as number, existingSampleCount, aggregate.p99RssMB, aggregate.sampleCount);
-          const mergedP95HeapMB = weightedAvg(existing.p95_heap_mb as number, existingSampleCount, aggregate.p95HeapMB, aggregate.sampleCount);
-          const mergedP99HeapMB = weightedAvg(existing.p99_heap_mb as number, existingSampleCount, aggregate.p99HeapMB, aggregate.sampleCount);
-          const mergedP95CpuPercent = weightedAvg(existing.p95_cpu_percent as number, existingSampleCount, aggregate.p95CpuPercent, aggregate.sampleCount);
-          const mergedP99CpuPercent = weightedAvg(existing.p99_cpu_percent as number, existingSampleCount, aggregate.p99CpuPercent, aggregate.sampleCount);
-
+        if (pool.type === DatabaseType.POSTGRESQL) {
           await pool.query(
             `UPDATE resource_metrics SET
               avg_rss_mb = $1, max_rss_mb = $2, min_rss_mb = $3,
@@ -193,7 +217,7 @@ async function persistAggregate(aggregates: HourlyAggregate[]): Promise<void> {
               avg_cpu_percent = $11, max_cpu_percent = $12, min_cpu_percent = $13,
               p95_cpu_percent = $14, p99_cpu_percent = $15,
               sample_count = $16
-            WHERE hour_start = $17`,
+            WHERE bucket_start = $17`,
             [
               mergedAvgRssMB, mergedMaxRssMB, mergedMinRssMB,
               mergedP95RssMB, mergedP99RssMB,
@@ -202,60 +226,10 @@ async function persistAggregate(aggregates: HourlyAggregate[]): Promise<void> {
               mergedAvgCpuPercent, mergedMaxCpuPercent, mergedMinCpuPercent,
               mergedP95CpuPercent, mergedP99CpuPercent,
               newTotalCount,
-              aggregate.hourStart,
-            ]
-          );
-        }
-      } else {
-        const existingResult = await pool.query(
-          `SELECT * FROM resource_metrics WHERE hour_start = @p1`,
-          [aggregate.hourStart]
-        );
-
-        if (existingResult.rows.length === 0) {
-          await pool.query(
-            `INSERT INTO resource_metrics (
-              hour_start, avg_rss_mb, max_rss_mb, min_rss_mb, p95_rss_mb, p99_rss_mb,
-              avg_heap_mb, max_heap_mb, min_heap_mb, p95_heap_mb, p99_heap_mb,
-              avg_cpu_percent, max_cpu_percent, min_cpu_percent, p95_cpu_percent, p99_cpu_percent,
-              sample_count
-            ) VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16, @p17)`,
-            [
-              aggregate.hourStart,
-              aggregate.avgRssMB, aggregate.maxRssMB, aggregate.minRssMB, aggregate.p95RssMB, aggregate.p99RssMB,
-              aggregate.avgHeapMB, aggregate.maxHeapMB, aggregate.minHeapMB, aggregate.p95HeapMB, aggregate.p99HeapMB,
-              aggregate.avgCpuPercent, aggregate.maxCpuPercent, aggregate.minCpuPercent, aggregate.p95CpuPercent, aggregate.p99CpuPercent,
-              aggregate.sampleCount,
+              aggregate.bucketStart,
             ]
           );
         } else {
-          const existing = existingResult.rows[0];
-          const existingSampleCount = existing.sample_count as number;
-          const newTotalCount = existingSampleCount + aggregate.sampleCount;
-
-          const weightedAvg = (oldAvg: number, oldCount: number, newAvg: number, newCount: number) => {
-            return (oldAvg * oldCount + newAvg * newCount) / (oldCount + newCount);
-          };
-
-          const mergedAvgRssMB = weightedAvg(existing.avg_rss_mb as number, existingSampleCount, aggregate.avgRssMB, aggregate.sampleCount);
-          const mergedAvgHeapMB = weightedAvg(existing.avg_heap_mb as number, existingSampleCount, aggregate.avgHeapMB, aggregate.sampleCount);
-          const mergedAvgCpuPercent = weightedAvg(existing.avg_cpu_percent as number, existingSampleCount, aggregate.avgCpuPercent, aggregate.sampleCount);
-
-          const mergedMaxRssMB = Math.max(existing.max_rss_mb as number, aggregate.maxRssMB);
-          const mergedMaxHeapMB = Math.max(existing.max_heap_mb as number, aggregate.maxHeapMB);
-          const mergedMaxCpuPercent = Math.max(existing.max_cpu_percent as number, aggregate.maxCpuPercent);
-
-          const mergedMinRssMB = Math.min(existing.min_rss_mb as number, aggregate.minRssMB);
-          const mergedMinHeapMB = Math.min(existing.min_heap_mb as number, aggregate.minHeapMB);
-          const mergedMinCpuPercent = Math.min(existing.min_cpu_percent as number, aggregate.minCpuPercent);
-
-          const mergedP95RssMB = weightedAvg(existing.p95_rss_mb as number, existingSampleCount, aggregate.p95RssMB, aggregate.sampleCount);
-          const mergedP99RssMB = weightedAvg(existing.p99_rss_mb as number, existingSampleCount, aggregate.p99RssMB, aggregate.sampleCount);
-          const mergedP95HeapMB = weightedAvg(existing.p95_heap_mb as number, existingSampleCount, aggregate.p95HeapMB, aggregate.sampleCount);
-          const mergedP99HeapMB = weightedAvg(existing.p99_heap_mb as number, existingSampleCount, aggregate.p99HeapMB, aggregate.sampleCount);
-          const mergedP95CpuPercent = weightedAvg(existing.p95_cpu_percent as number, existingSampleCount, aggregate.p95CpuPercent, aggregate.sampleCount);
-          const mergedP99CpuPercent = weightedAvg(existing.p99_cpu_percent as number, existingSampleCount, aggregate.p99CpuPercent, aggregate.sampleCount);
-
           await pool.query(
             `UPDATE resource_metrics SET
               avg_rss_mb = @p1, max_rss_mb = @p2, min_rss_mb = @p3,
@@ -265,7 +239,7 @@ async function persistAggregate(aggregates: HourlyAggregate[]): Promise<void> {
               avg_cpu_percent = @p11, max_cpu_percent = @p12, min_cpu_percent = @p13,
               p95_cpu_percent = @p14, p99_cpu_percent = @p15,
               sample_count = @p16
-            WHERE hour_start = @p17`,
+            WHERE bucket_start = @p17`,
             [
               mergedAvgRssMB, mergedMaxRssMB, mergedMinRssMB,
               mergedP95RssMB, mergedP99RssMB,
@@ -274,7 +248,7 @@ async function persistAggregate(aggregates: HourlyAggregate[]): Promise<void> {
               mergedAvgCpuPercent, mergedMaxCpuPercent, mergedMinCpuPercent,
               mergedP95CpuPercent, mergedP99CpuPercent,
               newTotalCount,
-              aggregate.hourStart,
+              aggregate.bucketStart,
             ]
           );
         }
@@ -292,7 +266,7 @@ async function flushBuffer(): Promise<void> {
     if (memoryBuffer.length === 0) return;
 
     const samples = [...memoryBuffer];
-    const aggregates = aggregateHourly(samples);
+    const aggregates = aggregateToBuckets(samples);
     if (aggregates.length === 0) {
       memoryBuffer.length = 0;
       return;
@@ -303,8 +277,8 @@ async function flushBuffer(): Promise<void> {
       const maxPersistedTimestamp = Math.max(...samples.map(s => s.timestamp));
       const retainedSamples = memoryBuffer.filter(sample => sample.timestamp > maxPersistedTimestamp);
       memoryBuffer.splice(0, memoryBuffer.length, ...retainedSamples);
-      const uniqueHours = aggregates.length;
-      console.info(`[resourceMetrics] flushed ${samples.length} samples across ${uniqueHours} hour${uniqueHours > 1 ? 's' : ''}`);
+      const uniqueBuckets = aggregates.length;
+      console.info(`[resourceMetrics] flushed ${samples.length} samples across ${uniqueBuckets} bucket${uniqueBuckets > 1 ? 's' : ''}`);
     } catch (error) {
       console.warn('Failed to flush resource metrics buffer, retaining for retry:', error);
     }
@@ -319,12 +293,12 @@ async function pruneOldData(): Promise<void> {
     cutoff.setUTCDate(cutoff.getUTCDate() - RETENTION_DAYS);
 
     if (pool.type === DatabaseType.POSTGRESQL) {
-      const result = await pool.query('DELETE FROM resource_metrics WHERE hour_start < $1', [cutoff]);
+      const result = await pool.query('DELETE FROM resource_metrics WHERE bucket_start < $1', [cutoff]);
       if (result.rowCount > 0) {
         console.info(`[resourceMetrics] pruned ${result.rowCount} old records`);
       }
     } else {
-      const result = await pool.query('DELETE FROM resource_metrics WHERE hour_start < @p1', [cutoff]);
+      const result = await pool.query('DELETE FROM resource_metrics WHERE bucket_start < @p1', [cutoff]);
       if (result.rowCount > 0) {
         console.info(`[resourceMetrics] pruned ${result.rowCount} old records`);
       }
@@ -362,10 +336,20 @@ async function takeSample(): Promise<void> {
 export async function initializeResourceMetrics(): Promise<void> {
   try {
     if (pool.type === DatabaseType.POSTGRESQL) {
+      // Backward compatibility: rename hour_start to bucket_start if it exists
+      await pool.query(`
+        DO $$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='resource_metrics' AND column_name='hour_start') THEN
+            ALTER TABLE resource_metrics RENAME COLUMN hour_start TO bucket_start;
+          END IF;
+        END $$;
+      `);
+
       await pool.query(`
         CREATE TABLE IF NOT EXISTS resource_metrics (
           id BIGSERIAL PRIMARY KEY,
-          hour_start TIMESTAMPTZ NOT NULL UNIQUE,
+          bucket_start TIMESTAMPTZ NOT NULL UNIQUE,
           avg_rss_mb FLOAT NOT NULL,
           max_rss_mb FLOAT NOT NULL,
           min_rss_mb FLOAT NOT NULL,
@@ -386,11 +370,17 @@ export async function initializeResourceMetrics(): Promise<void> {
         )
       `);
     } else {
+      // For Azure SQL
+      await pool.query(`
+        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[resource_metrics]') AND name = 'hour_start')
+        EXEC sp_rename 'resource_metrics.hour_start', 'bucket_start', 'COLUMN';
+      `);
+
       await pool.query(`
         IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[resource_metrics]') AND type in (N'U'))
         CREATE TABLE resource_metrics (
           id BIGINT IDENTITY(1,1) PRIMARY KEY,
-          hour_start DATETIME2 NOT NULL,
+          bucket_start DATETIME2 NOT NULL,
           avg_rss_mb FLOAT NOT NULL,
           max_rss_mb FLOAT NOT NULL,
           min_rss_mb FLOAT NOT NULL,
@@ -411,8 +401,8 @@ export async function initializeResourceMetrics(): Promise<void> {
         )
       `);
       await pool.query(`
-        IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_resource_metrics_hour')
-        CREATE UNIQUE INDEX idx_resource_metrics_hour ON resource_metrics (hour_start)
+        IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_resource_metrics_bucket')
+        CREATE UNIQUE INDEX idx_resource_metrics_bucket ON resource_metrics (bucket_start)
       `);
     }
     console.info('[resourceMetrics] table is ready');
@@ -428,9 +418,8 @@ export async function initializeResourceMetrics(): Promise<void> {
   }, SAMPLE_INTERVAL_MS);
 
   const now = new Date();
-  const nextHour = new Date(now);
-  nextHour.setUTCHours(now.getUTCHours() + 1, 0, 0, 0);
-  const msUntilNextHour = nextHour.getTime() - now.getTime();
+  const nextBucket = new Date(Math.ceil(now.getTime() / FLUSH_INTERVAL_MS) * FLUSH_INTERVAL_MS);
+  const msUntilNextBucket = nextBucket.getTime() - now.getTime();
 
   alignmentTimeout = setTimeout(() => {
     void flushBuffer().catch(err => console.error('[resourceMetrics] flush error', err));
@@ -439,7 +428,7 @@ export async function initializeResourceMetrics(): Promise<void> {
       void flushBuffer().catch(err => console.error('[resourceMetrics] flush error', err));
       void pruneOldData().catch(err => console.error('[resourceMetrics] prune error', err));
     }, FLUSH_INTERVAL_MS);
-  }, msUntilNextHour);
+  }, msUntilNextBucket);
 
   console.info('[resourceMetrics] initialized');
 }
@@ -494,7 +483,7 @@ export async function getCurrentResourceMetrics(): Promise<CurrentResourceMetric
 }
 
 export interface ResourceMetricsHistoryRow {
-  hourStart: Date;
+  bucketStart: Date;
   avgRssMB: number;
   maxRssMB: number;
   avgHeapMB: number;
@@ -509,11 +498,11 @@ export async function getResourceMetricsHistory(hours: number = 24): Promise<Res
     const cutoff = new Date();
     cutoff.setUTCHours(cutoff.getUTCHours() - hours);
 
-    let result;
+    let dbRows: ResourceMetricsHistoryRow[] = [];
     if (pool.type === DatabaseType.POSTGRESQL) {
-      result = await pool.query<ResourceMetricsHistoryRow>(`
+      const result = await pool.query<any>(`
         SELECT 
-          hour_start as "hourStart",
+          bucket_start as "bucketStart",
           avg_rss_mb as "avgRssMB",
           max_rss_mb as "maxRssMB",
           avg_heap_mb as "avgHeapMB",
@@ -522,13 +511,14 @@ export async function getResourceMetricsHistory(hours: number = 24): Promise<Res
           max_cpu_percent as "maxCpuPercent",
           sample_count as "sampleCount"
         FROM resource_metrics
-        WHERE hour_start >= $1
-        ORDER BY hour_start ASC
+        WHERE bucket_start >= $1
+        ORDER BY bucket_start ASC
       `, [cutoff]);
+      dbRows = result.rows;
     } else {
-      result = await pool.query<ResourceMetricsHistoryRow>(`
+      const result = await pool.query<any>(`
         SELECT 
-          hour_start as hourStart,
+          bucket_start as bucketStart,
           avg_rss_mb as avgRssMB,
           max_rss_mb as maxRssMB,
           avg_heap_mb as avgHeapMB,
@@ -537,12 +527,60 @@ export async function getResourceMetricsHistory(hours: number = 24): Promise<Res
           max_cpu_percent as maxCpuPercent,
           sample_count as sampleCount
         FROM resource_metrics
-        WHERE hour_start >= @p1
-        ORDER BY hour_start ASC
+        WHERE bucket_start >= @p1
+        ORDER BY bucket_start ASC
       `, [cutoff]);
+      dbRows = result.rows;
     }
 
-    return result.rows;
+    // Include current buffer
+    const release = await bufferMutex.acquire();
+    let bufferAggregates: BucketAggregate[] = [];
+    try {
+      bufferAggregates = aggregateToBuckets(memoryBuffer);
+    } finally {
+      release();
+    }
+
+    const merged = new Map<number, ResourceMetricsHistoryRow>();
+    for (const row of dbRows) {
+      merged.set(new Date(row.bucketStart).getTime(), row);
+    }
+
+    for (const agg of bufferAggregates) {
+      const ts = agg.bucketStart.getTime();
+      const existing = merged.get(ts);
+      if (existing) {
+        // Merge buffer data with existing DB data (likely for the most recent bucket)
+        const totalCount = existing.sampleCount + agg.sampleCount;
+
+        merged.set(ts, {
+          bucketStart: agg.bucketStart,
+          avgRssMB: weightedAvg(existing.avgRssMB, existing.sampleCount, agg.avgRssMB, agg.sampleCount),
+          maxRssMB: Math.max(existing.maxRssMB, agg.maxRssMB),
+          avgHeapMB: weightedAvg(existing.avgHeapMB, existing.sampleCount, agg.avgHeapMB, agg.sampleCount),
+          maxHeapMB: Math.max(existing.maxHeapMB, agg.maxHeapMB),
+          avgCpuPercent: weightedAvg(existing.avgCpuPercent, existing.sampleCount, agg.avgCpuPercent, agg.sampleCount),
+          maxCpuPercent: Math.max(existing.maxCpuPercent, agg.maxCpuPercent),
+          sampleCount: totalCount,
+        });
+      } else {
+        merged.set(ts, {
+          bucketStart: agg.bucketStart,
+          avgRssMB: agg.avgRssMB,
+          maxRssMB: agg.maxRssMB,
+          avgHeapMB: agg.avgHeapMB,
+          maxHeapMB: agg.maxHeapMB,
+          avgCpuPercent: agg.avgCpuPercent,
+          maxCpuPercent: agg.maxCpuPercent,
+          sampleCount: agg.sampleCount,
+        });
+      }
+    }
+
+    return Array.from(merged.values())
+      .filter(r => r.bucketStart >= cutoff)
+      .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime());
   } catch (err) {
     console.error('[resourceMetrics] failed to get history', err);
     return [];
