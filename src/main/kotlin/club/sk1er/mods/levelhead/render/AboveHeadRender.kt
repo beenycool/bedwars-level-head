@@ -26,6 +26,8 @@ import org.lwjgl.opengl.GL11
 object AboveHeadRender {
     private var nextSelfSkipLogAt: Long = 0L
 
+    private const val TEXT_SCALE = 0.016666668f * 1.6f
+
     @SubscribeEvent
     fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
         if (!displayManager.config.enabled) return
@@ -99,7 +101,7 @@ object AboveHeadRender {
 
     private fun renderName(tag: LevelheadTag, entityIn: EntityPlayer, x: Double, y: Double, z: Double, displayPosition: MasterConfig.DisplayPosition) {
         val fontrenderer = getFontRenderer()
-        val textScale = 0.016666668f * 1.6f * displayManager.config.fontSize
+        val textScale = TEXT_SCALE
         UGraphics.GL.pushMatrix()
         val mc = getMinecraft()
         val xMultiplier = if (

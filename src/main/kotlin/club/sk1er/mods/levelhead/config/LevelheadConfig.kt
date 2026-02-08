@@ -424,22 +424,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     var appearanceHeader: String = ""
 
     @Slider(
-        name = "Font Size",
-        description = "Scale factor for the display text. 1.0 is normal size.",
-        category = "Appearance",
-        min = 0.5f,
-        max = 2.0f,
-        step = 1
-    )
-    var fontSize: Float = 1.0f
-        set(value) {
-            field = value
-            Levelhead.displayManager.config.fontSize = value.toDouble()
-            Levelhead.displayManager.saveConfig()
-            save()
-        }
-
-    @Slider(
         name = "Vertical Offset",
         description = "Fine-tune the vertical position. Negative values move it closer to the nametag.",
         category = "Appearance",
@@ -1476,7 +1460,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         displayPositionIndex = 0
         showSelf = true
         showInInventory = true
-        fontSize = 1.0f
         verticalOffset = 0.0f
         showBackground = true
         backgroundOpacity = 0.25f
