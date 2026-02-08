@@ -232,7 +232,7 @@ function verifySignedSubmission(uuid: string, data: SignedData, signature?: stri
   }
 }
 
-async function verifyHypixelOrigin(
+export async function verifyHypixelOrigin(
   uuid: string,
   data: unknown,
   signature?: string,
@@ -283,6 +283,17 @@ async function verifyHypixelOrigin(
     }
 
     if (matchesCriticalFields(hypixelData, submittedData)) {
+      // Security fix: Also verify displayname if present in submission
+      // to prevent IGN spoofing/cache poisoning
+      const submittedName = (data as any).displayname;
+      const actualName = result.payload.player?.displayname;
+
+      if (typeof submittedName === 'string' && typeof actualName === 'string') {
+        if (submittedName.trim() !== actualName) {
+          return { valid: false, source: null, error: 'Displayname mismatch' };
+        }
+      }
+
       return { valid: true, source: 'community_verified' };
     }
 
