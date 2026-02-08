@@ -2,7 +2,7 @@ import { Mutex } from 'async-mutex';
 import { pool } from './cache';
 import { DatabaseType } from './database/adapter';
 import { getRedisCacheStats } from './redis';
-import { getCurrentResourceMetrics } from './resourceMetrics';
+import { getCurrentResourceMetrics, CurrentResourceMetrics } from './resourceMetrics';
 
 interface PlayerQueryHistoryRow {
   id: string | number;
@@ -480,14 +480,7 @@ export async function getPlayerQueryPage(params: {
   };
 }
 
-export interface ResourceMetrics {
-  rssMB: number;
-  heapMB: number;
-  heapTotalMB: number;
-  externalMB: number;
-  cpuPercent: number;
-  bufferSize: number;
-}
+export type ResourceMetrics = CurrentResourceMetrics;
 
 export interface SystemStats {
   dbSize: string;

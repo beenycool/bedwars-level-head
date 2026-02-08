@@ -276,9 +276,6 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   stopAdaptiveTtlRefresh();
   stopResourceMetrics();
 
-  // Flush resource metrics on shutdown
-  await flushResourceMetricsOnShutdown().catch(err => console.error('Failed to flush resource metrics on shutdown', err));
-
   const forcedShutdown = setTimeout(() => {
     console.error('Forcing shutdown.');
     void safeCloseCache();
@@ -301,6 +298,8 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
     await flushHistoryBuffer().catch((error) => {
       console.error('Error flushing history buffer during shutdown', error);
     });
+    // Flush resource metrics before closing cache
+    await flushResourceMetricsOnShutdown().catch(err => console.error('Failed to flush resource metrics on shutdown', err));
   } finally {
     safeCloseCache().finally(() => {
       clearTimeout(forcedShutdown);

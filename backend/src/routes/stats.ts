@@ -886,22 +886,22 @@ router.get('/', async (req, res, next) => {
     <div class="stat-grid">
       <div class="card stat-card">
         <p class="stat-label">Memory (RSS)</p>
-        <p class="stat-value">${escapeHtml(sysStats.resourceMetrics.rssMB.toFixed(1))} MB</p>
+        <p class="stat-value" id="rssMemoryValue">${escapeHtml(sysStats.resourceMetrics.rssMB.toFixed(1))} MB</p>
         <p class="stat-sub">Resident Set Size</p>
       </div>
       <div class="card stat-card">
         <p class="stat-label">Heap Used</p>
-        <p class="stat-value">${escapeHtml(sysStats.resourceMetrics.heapMB.toFixed(1))} MB</p>
-        <p class="stat-sub">Of ${escapeHtml(sysStats.resourceMetrics.heapTotalMB.toFixed(1))} MB allocated</p>
+        <p class="stat-value" id="heapUsedValue">${escapeHtml(sysStats.resourceMetrics.heapMB.toFixed(1))} MB</p>
+        <p class="stat-sub" id="heapUsedSub">Of ${escapeHtml(sysStats.resourceMetrics.heapTotalMB.toFixed(1))} MB allocated</p>
       </div>
       <div class="card stat-card">
         <p class="stat-label">CPU Usage</p>
-        <p class="stat-value">${escapeHtml(sysStats.resourceMetrics.cpuPercent.toFixed(1))}%</p>
+        <p class="stat-value" id="cpuUsageValue">${escapeHtml(sysStats.resourceMetrics.cpuPercent.toFixed(1))}%</p>
         <p class="stat-sub">Process CPU time</p>
       </div>
       <div class="card stat-card">
         <p class="stat-label">Buffer Size</p>
-        <p class="stat-value">${escapeHtml(sysStats.resourceMetrics.bufferSize.toLocaleString())}</p>
+        <p class="stat-value" id="bufferSizeValue">${escapeHtml(sysStats.resourceMetrics.bufferSize.toLocaleString())}</p>
         <p class="stat-sub">Resource samples in memory</p>
       </div>
     </div>
@@ -2683,6 +2683,51 @@ router.get('/', async (req, res, next) => {
           }
         }
         
+        // 9. Update Resource Metrics Chart
+        const resourceMetricsHistory = json.resourceMetricsHistory || [];
+        if (resourceMetricsHistory.length > 0) {
+          const resourceMetricsLabels = resourceMetricsHistory.map((m) => {
+            const date = new Date(m.hourStart);
+            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          });
+          const resourceMetricsData = resourceMetricsHistory.map((m) => m.avgRssMB);
+          const resourceMetricsCpuData = resourceMetricsHistory.map((m) => m.avgCpuPercent);
+
+          const resourceMetricsChart = charts.find(c => c.canvas && c.canvas.id === 'resourceMetricsChart');
+          if (resourceMetricsChart) {
+            resourceMetricsChart.data.labels = resourceMetricsLabels;
+            resourceMetricsChart.data.datasets[0].data = resourceMetricsData;
+            resourceMetricsChart.data.datasets[1].data = resourceMetricsCpuData;
+            resourceMetricsChart.update();
+            if (chartConfigs['resourceMetricsChart']) {
+              chartConfigs['resourceMetricsChart'].config.data.labels = resourceMetricsLabels;
+              chartConfigs['resourceMetricsChart'].config.data.datasets[0].data = resourceMetricsData;
+              chartConfigs['resourceMetricsChart'].config.data.datasets[1].data = resourceMetricsCpuData;
+            }
+          }
+        }
+
+        // 10. Update Process Resources Stat Cards
+        if (sysStats && sysStats.resourceMetrics) {
+          const rm = sysStats.resourceMetrics;
+
+          // RSS Memory
+          setMetric('rssMemoryValue', rm.rssMB.toFixed(1) + ' MB');
+
+          // Heap Used
+          setMetric('heapUsedValue', rm.heapMB.toFixed(1) + ' MB');
+          const heapUsedSub = document.getElementById('heapUsedSub');
+          if (heapUsedSub) {
+            heapUsedSub.textContent = \`Of \${rm.heapTotalMB.toFixed(1)} MB allocated\`;
+          }
+
+          // CPU Usage
+          setMetric('cpuUsageValue', rm.cpuPercent.toFixed(1) + '%');
+
+          // Buffer Size
+          setMetric('bufferSizeValue', rm.bufferSize.toLocaleString());
+        }
+
         // Update "last refreshed" indicator
         if (refreshCountdownEl) refreshCountdownEl.textContent = 'Updated just now';
       }
