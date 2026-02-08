@@ -44,6 +44,7 @@ let lastCpuUsage: NodeJS.CpuUsage | null = null;
 let lastCpuCheckTime = 0;
 let sampleInterval: NodeJS.Timeout | null = null;
 let flushInterval: NodeJS.Timeout | null = null;
+let alignmentTimeout: NodeJS.Timeout | null = null;
 
 function getCpuPercent(): number {
   const now = Date.now();
@@ -82,8 +83,8 @@ const arrayMin = (arr: number[]) => arr.reduce((a, b) => Math.min(a, b), Infinit
 
 function getHourStart(timestamp: number): Date {
   const date = new Date(timestamp);
-  date.setMinutes(0, 0, 0);
-  date.setMilliseconds(0);
+  date.setUTCMinutes(0, 0, 0);
+  date.setUTCMilliseconds(0);
   return date;
 }
 
@@ -223,24 +224,24 @@ async function persistAggregate(aggregates: HourlyAggregate[]): Promise<void> {
           );
         } else {
           const existing = existingResult.rows[0];
-          const existingSampleCount = existing.sampleCount as number;
+          const existingSampleCount = existing.sample_count as number;
           const newTotalCount = existingSampleCount + aggregate.sampleCount;
 
           const weightedAvg = (oldAvg: number, oldCount: number, newAvg: number, newCount: number) => {
             return (oldAvg * oldCount + newAvg * newCount) / (oldCount + newCount);
           };
 
-          const mergedAvgRssMB = weightedAvg(existing.avgRssMB as number, existingSampleCount, aggregate.avgRssMB, aggregate.sampleCount);
-          const mergedAvgHeapMB = weightedAvg(existing.avgHeapMB as number, existingSampleCount, aggregate.avgHeapMB, aggregate.sampleCount);
-          const mergedAvgCpuPercent = weightedAvg(existing.avgCpuPercent as number, existingSampleCount, aggregate.avgCpuPercent, aggregate.sampleCount);
+          const mergedAvgRssMB = weightedAvg(existing.avg_rss_mb as number, existingSampleCount, aggregate.avgRssMB, aggregate.sampleCount);
+          const mergedAvgHeapMB = weightedAvg(existing.avg_heap_mb as number, existingSampleCount, aggregate.avgHeapMB, aggregate.sampleCount);
+          const mergedAvgCpuPercent = weightedAvg(existing.avg_cpu_percent as number, existingSampleCount, aggregate.avgCpuPercent, aggregate.sampleCount);
 
-          const mergedMaxRssMB = Math.max(existing.maxRssMB as number, aggregate.maxRssMB);
-          const mergedMaxHeapMB = Math.max(existing.maxHeapMB as number, aggregate.maxHeapMB);
-          const mergedMaxCpuPercent = Math.max(existing.maxCpuPercent as number, aggregate.maxCpuPercent);
+          const mergedMaxRssMB = Math.max(existing.max_rss_mb as number, aggregate.maxRssMB);
+          const mergedMaxHeapMB = Math.max(existing.max_heap_mb as number, aggregate.maxHeapMB);
+          const mergedMaxCpuPercent = Math.max(existing.max_cpu_percent as number, aggregate.maxCpuPercent);
 
-          const mergedMinRssMB = Math.min(existing.minRssMB as number, aggregate.minRssMB);
-          const mergedMinHeapMB = Math.min(existing.minHeapMB as number, aggregate.minHeapMB);
-          const mergedMinCpuPercent = Math.min(existing.minCpuPercent as number, aggregate.minCpuPercent);
+          const mergedMinRssMB = Math.min(existing.min_rss_mb as number, aggregate.minRssMB);
+          const mergedMinHeapMB = Math.min(existing.min_heap_mb as number, aggregate.minHeapMB);
+          const mergedMinCpuPercent = Math.min(existing.min_cpu_percent as number, aggregate.minCpuPercent);
 
           await pool.query(
             `UPDATE resource_metrics SET
@@ -268,6 +269,7 @@ async function persistAggregate(aggregates: HourlyAggregate[]): Promise<void> {
     }
   } catch (err) {
     console.error('[resourceMetrics] failed to persist aggregate', err);
+    throw;
   }
 }
 
@@ -414,7 +416,7 @@ export async function initializeResourceMetrics(): Promise<void> {
   nextHour.setHours(now.getHours() + 1, 0, 0, 0);
   const msUntilNextHour = nextHour.getTime() - now.getTime();
 
-  setTimeout(() => {
+  alignmentTimeout = setTimeout(() => {
     void flushBuffer().catch(err => console.error('[resourceMetrics] flush error', err));
     void pruneOldData().catch(err => console.error('[resourceMetrics] prune error', err));
     flushInterval = setInterval(() => {
@@ -434,6 +436,10 @@ export function stopResourceMetrics(): void {
   if (flushInterval) {
     clearInterval(flushInterval);
     flushInterval = null;
+  }
+  if (alignmentTimeout) {
+    clearTimeout(alignmentTimeout);
+    alignmentTimeout = null;
   }
 }
 
