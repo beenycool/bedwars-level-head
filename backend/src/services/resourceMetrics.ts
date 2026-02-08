@@ -80,6 +80,8 @@ function calculatePercentile(sortedValues: number[], percentile: number): number
 
 const arrayMax = (arr: number[]) => arr.reduce((a, b) => Math.max(a, b), -Infinity);
 const arrayMin = (arr: number[]) => arr.reduce((a, b) => Math.min(a, b), Infinity);
+const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
+const avg = (arr: number[]) => arr.length > 0 ? sum(arr) / arr.length : 0;
 
 function getHourStart(timestamp: number): Date {
   const date = new Date(timestamp);
@@ -104,9 +106,6 @@ function aggregateHourly(samples: MemorySample[]): HourlyAggregate[] {
     const rssValues = bucketSamples.map(s => s.rssMB).sort((a, b) => a - b);
     const heapValues = bucketSamples.map(s => s.heapMB).sort((a, b) => a - b);
     const cpuValues = bucketSamples.map(s => s.cpuPercent).sort((a, b) => a - b);
-
-    const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
-    const avg = (arr: number[]) => arr.length > 0 ? sum(arr) / arr.length : 0;
 
     aggregates.push({
       hourStart: getHourStart(bucketSamples[0].timestamp),
@@ -178,6 +177,13 @@ async function persistAggregate(aggregates: HourlyAggregate[]): Promise<void> {
           const mergedMinHeapMB = Math.min(existing.min_heap_mb as number, aggregate.minHeapMB);
           const mergedMinCpuPercent = Math.min(existing.min_cpu_percent as number, aggregate.minCpuPercent);
 
+          const mergedP95RssMB = weightedAvg(existing.p95_rss_mb as number, existingSampleCount, aggregate.p95RssMB, aggregate.sampleCount);
+          const mergedP99RssMB = weightedAvg(existing.p99_rss_mb as number, existingSampleCount, aggregate.p99RssMB, aggregate.sampleCount);
+          const mergedP95HeapMB = weightedAvg(existing.p95_heap_mb as number, existingSampleCount, aggregate.p95HeapMB, aggregate.sampleCount);
+          const mergedP99HeapMB = weightedAvg(existing.p99_heap_mb as number, existingSampleCount, aggregate.p99HeapMB, aggregate.sampleCount);
+          const mergedP95CpuPercent = weightedAvg(existing.p95_cpu_percent as number, existingSampleCount, aggregate.p95CpuPercent, aggregate.sampleCount);
+          const mergedP99CpuPercent = weightedAvg(existing.p99_cpu_percent as number, existingSampleCount, aggregate.p99CpuPercent, aggregate.sampleCount);
+
           await pool.query(
             `UPDATE resource_metrics SET
               avg_rss_mb = $1, max_rss_mb = $2, min_rss_mb = $3,
@@ -190,11 +196,11 @@ async function persistAggregate(aggregates: HourlyAggregate[]): Promise<void> {
             WHERE hour_start = $17`,
             [
               mergedAvgRssMB, mergedMaxRssMB, mergedMinRssMB,
-              aggregate.p95RssMB, aggregate.p99RssMB,
+              mergedP95RssMB, mergedP99RssMB,
               mergedAvgHeapMB, mergedMaxHeapMB, mergedMinHeapMB,
-              aggregate.p95HeapMB, aggregate.p99HeapMB,
+              mergedP95HeapMB, mergedP99HeapMB,
               mergedAvgCpuPercent, mergedMaxCpuPercent, mergedMinCpuPercent,
-              aggregate.p95CpuPercent, aggregate.p99CpuPercent,
+              mergedP95CpuPercent, mergedP99CpuPercent,
               newTotalCount,
               aggregate.hourStart,
             ]
@@ -243,6 +249,13 @@ async function persistAggregate(aggregates: HourlyAggregate[]): Promise<void> {
           const mergedMinHeapMB = Math.min(existing.min_heap_mb as number, aggregate.minHeapMB);
           const mergedMinCpuPercent = Math.min(existing.min_cpu_percent as number, aggregate.minCpuPercent);
 
+          const mergedP95RssMB = weightedAvg(existing.p95_rss_mb as number, existingSampleCount, aggregate.p95RssMB, aggregate.sampleCount);
+          const mergedP99RssMB = weightedAvg(existing.p99_rss_mb as number, existingSampleCount, aggregate.p99RssMB, aggregate.sampleCount);
+          const mergedP95HeapMB = weightedAvg(existing.p95_heap_mb as number, existingSampleCount, aggregate.p95HeapMB, aggregate.sampleCount);
+          const mergedP99HeapMB = weightedAvg(existing.p99_heap_mb as number, existingSampleCount, aggregate.p99HeapMB, aggregate.sampleCount);
+          const mergedP95CpuPercent = weightedAvg(existing.p95_cpu_percent as number, existingSampleCount, aggregate.p95CpuPercent, aggregate.sampleCount);
+          const mergedP99CpuPercent = weightedAvg(existing.p99_cpu_percent as number, existingSampleCount, aggregate.p99CpuPercent, aggregate.sampleCount);
+
           await pool.query(
             `UPDATE resource_metrics SET
               avg_rss_mb = @p1, max_rss_mb = @p2, min_rss_mb = @p3,
@@ -255,11 +268,11 @@ async function persistAggregate(aggregates: HourlyAggregate[]): Promise<void> {
             WHERE hour_start = @p17`,
             [
               mergedAvgRssMB, mergedMaxRssMB, mergedMinRssMB,
-              aggregate.p95RssMB, aggregate.p99RssMB,
+              mergedP95RssMB, mergedP99RssMB,
               mergedAvgHeapMB, mergedMaxHeapMB, mergedMinHeapMB,
-              aggregate.p95HeapMB, aggregate.p99HeapMB,
+              mergedP95HeapMB, mergedP99HeapMB,
               mergedAvgCpuPercent, mergedMaxCpuPercent, mergedMinCpuPercent,
-              aggregate.p95CpuPercent, aggregate.p99CpuPercent,
+              mergedP95CpuPercent, mergedP99CpuPercent,
               newTotalCount,
               aggregate.hourStart,
             ]
@@ -269,7 +282,7 @@ async function persistAggregate(aggregates: HourlyAggregate[]): Promise<void> {
     }
   } catch (err) {
     console.error('[resourceMetrics] failed to persist aggregate', err);
-    throw;
+    throw err;
   }
 }
 
@@ -287,10 +300,13 @@ async function flushBuffer(): Promise<void> {
 
     try {
       await persistAggregate(aggregates);
-      memoryBuffer.length = 0;
+      const maxPersistedTimestamp = Math.max(...samples.map(s => s.timestamp));
+      const retainedSamples = memoryBuffer.filter(sample => sample.timestamp > maxPersistedTimestamp);
+      memoryBuffer.splice(0, memoryBuffer.length, ...retainedSamples);
       const uniqueHours = aggregates.length;
       console.info(`[resourceMetrics] flushed ${samples.length} samples across ${uniqueHours} hour${uniqueHours > 1 ? 's' : ''}`);
-    } catch {
+    } catch (error) {
+      console.warn('Failed to flush resource metrics buffer, retaining for retry:', error);
     }
   } finally {
     release();
@@ -413,7 +429,7 @@ export async function initializeResourceMetrics(): Promise<void> {
 
   const now = new Date();
   const nextHour = new Date(now);
-  nextHour.setHours(now.getHours() + 1, 0, 0, 0);
+  nextHour.setUTCHours(now.getUTCHours() + 1, 0, 0, 0);
   const msUntilNextHour = nextHour.getTime() - now.getTime();
 
   alignmentTimeout = setTimeout(() => {
