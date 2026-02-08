@@ -2,6 +2,7 @@ import { Mutex } from 'async-mutex';
 import { pool } from './cache';
 import { DatabaseType } from './database/adapter';
 import { getRedisCacheStats } from './redis';
+import { getCurrentResourceMetrics } from './resourceMetrics';
 
 interface PlayerQueryHistoryRow {
   id: string | number;
@@ -479,12 +480,22 @@ export async function getPlayerQueryPage(params: {
   };
 }
 
+export interface ResourceMetrics {
+  rssMB: number;
+  heapMB: number;
+  heapTotalMB: number;
+  externalMB: number;
+  cpuPercent: number;
+  bufferSize: number;
+}
+
 export interface SystemStats {
   dbSize: string;
   indexSize: string;
   cacheCount: number;
   apiCallsLastHour: number;
   avgPayloadSize: string;
+  resourceMetrics: ResourceMetrics;
 }
 
 export async function getSystemStats(): Promise<SystemStats> {
@@ -492,6 +503,9 @@ export async function getSystemStats(): Promise<SystemStats> {
 
   // Get Redis cache stats (L1 cache lives in Redis)
   const redisCacheStats = await getRedisCacheStats();
+
+  // Get current resource metrics
+  const resourceMetrics = await getCurrentResourceMetrics();
 
   const apiStatsQuery = pool.type === DatabaseType.POSTGRESQL
     ? `SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000)`
@@ -522,5 +536,6 @@ export async function getSystemStats(): Promise<SystemStats> {
     apiCallsLastHour: Number((apiStats.rows[0] as any)?.count ?? 0),
     cacheCount: redisCacheStats.cacheKeys,
     avgPayloadSize: bytesToHuman(redisCacheStats.memoryUsedBytes / Math.max(1, redisCacheStats.cacheKeys)),
+    resourceMetrics,
   };
 }

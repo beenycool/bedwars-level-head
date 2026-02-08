@@ -7,6 +7,7 @@ import {
   getSystemStats,
 } from '../services/history';
 import { getRedisStats } from '../services/redis';
+import { getResourceMetricsHistory } from '../services/resourceMetrics';
 import { escapeHtml } from '../util/html';
 import { toCSV } from '../util/csv';
 
@@ -120,7 +121,7 @@ router.get('/data', async (req, res, next) => {
     const page = 1;
 
     // Fetch all data in parallel
-    const [chartData, topPlayers, sysStats, redisStats, pageData, totalCount] = await Promise.all([
+    const [chartData, topPlayers, sysStats, redisStats, pageData, totalCount, resourceMetricsHistory] = await Promise.all([
       getPlayerQueriesWithFilters({
         startDate: validStartDate,
         endDate: validEndDate,
@@ -135,6 +136,7 @@ router.get('/data', async (req, res, next) => {
       getRedisStats(),
       getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search }),
       getPlayerQueryCount({ search }),
+      getResourceMetricsHistory(24),
     ]);
 
     res.json({
@@ -142,7 +144,8 @@ router.get('/data', async (req, res, next) => {
       topPlayers,
       sysStats,
       redisStats,
-      pageData: { ...pageData, totalCount }, // Include total count for pagination context if needed
+      pageData: { ...pageData, totalCount },
+      resourceMetricsHistory,
       filters: {
         from: validStartDate?.toISOString(),
         to: validEndDate?.toISOString(),
@@ -188,7 +191,7 @@ router.get('/', async (req, res, next) => {
     const pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search, totalCountOverride: totalCount });
 
     // Fetch filtered data for charts
-    const [chartData, topPlayers, sysStats, redisStats] = await Promise.all([
+    const [chartData, topPlayers, sysStats, redisStats, resourceMetricsHistory] = await Promise.all([
       getPlayerQueriesWithFilters({
         startDate: validStartDate,
         endDate: validEndDate,
@@ -201,6 +204,7 @@ router.get('/', async (req, res, next) => {
       }),
       getSystemStats(),
       getRedisStats(),
+      getResourceMetricsHistory(24),
     ]);
 
     // Serialise the data so the frontend script can use it
@@ -208,6 +212,7 @@ router.get('/', async (req, res, next) => {
     const jsonForFrontend = JSON.stringify({
       chartData,
       topPlayers,
+      resourceMetricsHistory,
       filters: {
         from: validStartDate?.toISOString(),
         to: validEndDate?.toISOString(),
@@ -877,6 +882,30 @@ router.get('/', async (req, res, next) => {
       </div>
     </div>
 
+    <h2>Process Resources</h2>
+    <div class="stat-grid">
+      <div class="card stat-card">
+        <p class="stat-label">Memory (RSS)</p>
+        <p class="stat-value">${escapeHtml(sysStats.resourceMetrics.rssMB.toFixed(1))} MB</p>
+        <p class="stat-sub">Resident Set Size</p>
+      </div>
+      <div class="card stat-card">
+        <p class="stat-label">Heap Used</p>
+        <p class="stat-value">${escapeHtml(sysStats.resourceMetrics.heapMB.toFixed(1))} MB</p>
+        <p class="stat-sub">Of ${escapeHtml(sysStats.resourceMetrics.heapTotalMB.toFixed(1))} MB allocated</p>
+      </div>
+      <div class="card stat-card">
+        <p class="stat-label">CPU Usage</p>
+        <p class="stat-value">${escapeHtml(sysStats.resourceMetrics.cpuPercent.toFixed(1))}%</p>
+        <p class="stat-sub">Process CPU time</p>
+      </div>
+      <div class="card stat-card">
+        <p class="stat-label">Buffer Size</p>
+        <p class="stat-value">${escapeHtml(sysStats.resourceMetrics.bufferSize.toLocaleString())}</p>
+        <p class="stat-sub">Resource samples in memory</p>
+      </div>
+    </div>
+
     <h2>Redis Rate Limiting</h2>
     <div class="stat-grid">
       <div class="card stat-card">
@@ -1002,6 +1031,17 @@ router.get('/', async (req, res, next) => {
           </button>
         </div>
         <div class="chart-shell"><canvas id="cacheOverTimeChart" role="img" aria-label="Line chart showing cache hit rate percentage over time"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="card-header">
+          <h2>Process Memory Over Time</h2>
+          <button class="expand-btn" data-chart="resourceMetricsChart" title="Expand chart" aria-label="Expand Process Memory Over Time chart">
+            <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/>
+            </svg>
+          </button>
+        </div>
+        <div class="chart-shell"><canvas id="resourceMetricsChart" role="img" aria-label="Line chart showing process memory usage over time"></canvas></div>
       </div>
       <div class="card">
         <div class="card-header">
@@ -1381,6 +1421,7 @@ router.get('/', async (req, res, next) => {
         lookupTypeChart: 'Doughnut chart showing distribution of UUID versus username lookups',
         requestsOverTimeChart: 'Line chart showing total requests over time',
         cacheOverTimeChart: 'Line chart showing cache hit rate percentage over time',
+        resourceMetricsChart: 'Line chart showing process memory usage and CPU percentage over time',
         latencyDistributionChart: 'Bar chart showing distribution of request latency in milliseconds',
         topPlayersChart: 'Bar chart showing top 20 most queried players',
       };
@@ -1923,7 +1964,97 @@ router.get('/', async (req, res, next) => {
 
       charts.push(new Chart(cacheOverTimeChartEl, cacheOverTimeChartConfig));
 
-      // 8. Latency Distribution
+      // 8. Process Memory Over Time
+      const resourceMetricsHistory = pageData.resourceMetricsHistory || [];
+      const resourceMetricsLabels = resourceMetricsHistory.map((m) => {
+        const date = new Date(m.hourStart);
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      });
+      const resourceMetricsData = resourceMetricsHistory.map((m) => m.avgRssMB);
+      const resourceMetricsCpuData = resourceMetricsHistory.map((m) => m.avgCpuPercent);
+
+      const resourceMetricsChartConfig = {
+        type: 'line',
+        data: {
+          labels: resourceMetricsLabels,
+          datasets: [
+            {
+              label: 'RSS Memory (MB)',
+              data: resourceMetricsData,
+              borderColor: '#10b981',
+              backgroundColor: 'rgba(16, 185, 129, 0.1)',
+              tension: 0.35,
+              fill: true,
+              pointRadius: 0,
+              pointHitRadius: 6,
+              yAxisID: 'y',
+            },
+            {
+              label: 'CPU %',
+              data: resourceMetricsCpuData,
+              borderColor: '#f59e0b',
+              backgroundColor: 'rgba(245, 158, 11, 0.1)',
+              tension: 0.35,
+              fill: false,
+              pointRadius: 0,
+              pointHitRadius: 6,
+              yAxisID: 'y1',
+            },
+          ],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          interaction: {
+            mode: 'index',
+            intersect: false,
+          },
+          scales: {
+            y: {
+              type: 'linear',
+              display: true,
+              position: 'left',
+              ticks: { color: '#94a3b8' },
+              grid: { color: '#1f2937' },
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: 'Memory (MB)',
+                color: '#94a3b8',
+              },
+            },
+            y1: {
+              type: 'linear',
+              display: true,
+              position: 'right',
+              ticks: { color: '#94a3b8', callback: (value) => value + '%' },
+              grid: { display: false },
+              beginAtZero: true,
+              max: 100,
+              title: {
+                display: true,
+                text: 'CPU %',
+                color: '#94a3b8',
+              },
+            },
+            x: {
+              ticks: { color: '#94a3b8', maxRotation: 45, minRotation: 0 },
+              grid: { display: false },
+            },
+          },
+          plugins: {
+            legend: {
+              display: true,
+              labels: { color: '#94a3b8' },
+            },
+          },
+        },
+      };
+      const resourceMetricsChartEl = document.getElementById('resourceMetricsChart');
+
+      charts.push(new Chart(resourceMetricsChartEl, resourceMetricsChartConfig));
+
+      // 9. Latency Distribution
       const latencyBins = {
         '0-50ms': 0,
         '50-100ms': 0,
@@ -2040,6 +2171,7 @@ router.get('/', async (req, res, next) => {
         lookupTypeChart: { title: 'Lookup Type Distribution', config: lookupTypeChartConfig },
         requestsOverTimeChart: { title: 'Requests Over Time', config: requestsOverTimeChartConfig },
         cacheOverTimeChart: { title: 'Cache Hit Rate Over Time', config: cacheOverTimeChartConfig },
+        resourceMetricsChart: { title: 'Process Memory Over Time', config: resourceMetricsChartConfig },
         latencyDistributionChart: { title: 'Latency Distribution', config: latencyDistributionChartConfig },
         topPlayersChart: { title: 'Top Queried Players', config: topPlayersChartConfig },
       };

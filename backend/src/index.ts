@@ -24,6 +24,11 @@ import {
 } from './services/dynamicRateLimit';
 import { startAdaptiveTtlRefresh, stopAdaptiveTtlRefresh } from './services/statsCache';
 import { getRedisClient, getRateLimitFallbackState } from './services/redis';
+import {
+  initializeResourceMetrics,
+  stopResourceMetrics,
+  flushResourceMetricsOnShutdown,
+} from './services/resourceMetrics';
 import adminRouter from './routes/admin';
 import apikeyRouter from './routes/apikey';
 import statsRouter from './routes/stats';
@@ -184,6 +189,11 @@ void initializeDynamicRateLimitService().catch((error) => {
   process.exit(1);
 });
 
+void initializeResourceMetrics().catch((error) => {
+  console.error('Failed initializing resource metrics', error);
+  process.exit(1);
+});
+
 // Start history flush interval
 startHistoryFlushInterval();
 
@@ -264,6 +274,10 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   stopHistoryFlushInterval();
   stopDynamicRateLimitService();
   stopAdaptiveTtlRefresh();
+  stopResourceMetrics();
+
+  // Flush resource metrics on shutdown
+  await flushResourceMetricsOnShutdown().catch(err => console.error('Failed to flush resource metrics on shutdown', err));
 
   const forcedShutdown = setTimeout(() => {
     console.error('Forcing shutdown.');
