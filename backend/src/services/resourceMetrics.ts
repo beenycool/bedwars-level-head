@@ -47,6 +47,8 @@ let sampleInterval: NodeJS.Timeout | null = null;
 let flushInterval: NodeJS.Timeout | null = null;
 let alignmentTimeout: NodeJS.Timeout | null = null;
 
+const weightedAvg = (v1: number, c1: number, v2: number, c2: number) => (v1 * c1 + v2 * c2) / (c1 + c2);
+
 function getCpuPercent(): number {
   const now = Date.now();
   const currentUsage = process.cpuUsage();
@@ -85,9 +87,7 @@ const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
 const avg = (arr: number[]) => arr.length > 0 ? sum(arr) / arr.length : 0;
 
 function getBucketStart(timestamp: number): Date {
-  const date = new Date(timestamp);
-  const ms = date.getTime();
-  const roundedMs = Math.floor(ms / BUCKET_INTERVAL_MS) * BUCKET_INTERVAL_MS;
+  const roundedMs = Math.floor(timestamp / BUCKET_INTERVAL_MS) * BUCKET_INTERVAL_MS;
   return new Date(roundedMs);
 }
 
@@ -134,8 +134,6 @@ function aggregateToBuckets(samples: MemorySample[]): BucketAggregate[] {
 
 async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
   try {
-    const weightedAvg = (v1: number, c1: number, v2: number, c2: number) => (v1 * c1 + v2 * c2) / (c1 + c2);
-
     for (const aggregate of aggregates) {
       let existing;
       if (pool.type === DatabaseType.POSTGRESQL) {
@@ -177,7 +175,7 @@ async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
               sample_count
             ) VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16, @p17)`,
             [
-              aggregate.bucketStart, aggregate.avgRssMB, aggregate.maxRssMB, aggregate.minRssMB, aggregate.p95RssMB, aggregate.p99RssMB,
+              aggregate.bucketStart, aggregate.avgRssMB, aggregate.maxRssMB, aggregate.minRssMB, aggregate.p95_rss_mb, aggregate.p99_rss_mb,
               aggregate.avgHeapMB, aggregate.maxHeapMB, aggregate.minHeapMB, aggregate.p95HeapMB, aggregate.p99HeapMB,
               aggregate.avgCpuPercent, aggregate.maxCpuPercent, aggregate.minCpuPercent, aggregate.p95CpuPercent, aggregate.p99CpuPercent,
               aggregate.sampleCount,
@@ -190,21 +188,24 @@ async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
 
         const mergedAvgRssMB = weightedAvg(existing.avg_rss_mb, existingSampleCount, aggregate.avgRssMB, aggregate.sampleCount);
         const mergedMaxRssMB = Math.max(existing.max_rss_mb, aggregate.maxRssMB);
-        const mergedMinRssMB = Math.min(existing.min_rss_mb, aggregate.minRssMB);
-        const mergedP95RssMB = weightedAvg(existing.p95_rss_mb, existingSampleCount, aggregate.p95RssMB, aggregate.sampleCount);
-        const mergedP99RssMB = weightedAvg(existing.p99_rss_mb, existingSampleCount, aggregate.p99RssMB, aggregate.sampleCount);
+        const mergedMinRssMB = Math.min(existing.min_rss_mb, aggregate.min_rss_mb);
+
+        // Percentiles cannot be accurately averaged.
+        // We prefer the latest aggregate's percentile as a deterministic fallback for merged buckets.
+        const mergedP95RssMB = aggregate.p95RssMB;
+        const mergedP99RssMB = aggregate.p99RssMB;
 
         const mergedAvgHeapMB = weightedAvg(existing.avg_heap_mb, existingSampleCount, aggregate.avgHeapMB, aggregate.sampleCount);
         const mergedMaxHeapMB = Math.max(existing.max_heap_mb, aggregate.maxHeapMB);
         const mergedMinHeapMB = Math.min(existing.min_heap_mb, aggregate.minHeapMB);
-        const mergedP95HeapMB = weightedAvg(existing.p95_heap_mb, existingSampleCount, aggregate.p95HeapMB, aggregate.sampleCount);
-        const mergedP99HeapMB = weightedAvg(existing.p99_heap_mb, existingSampleCount, aggregate.p99HeapMB, aggregate.sampleCount);
+        const mergedP95HeapMB = aggregate.p95HeapMB;
+        const mergedP99HeapMB = aggregate.p99HeapMB;
 
         const mergedAvgCpuPercent = weightedAvg(existing.avg_cpu_percent, existingSampleCount, aggregate.avgCpuPercent, aggregate.sampleCount);
         const mergedMaxCpuPercent = Math.max(existing.max_cpu_percent, aggregate.maxCpuPercent);
         const mergedMinCpuPercent = Math.min(existing.min_cpu_percent, aggregate.minCpuPercent);
-        const mergedP95CpuPercent = weightedAvg(existing.p95_cpu_percent, existingSampleCount, aggregate.p95CpuPercent, aggregate.sampleCount);
-        const mergedP99CpuPercent = weightedAvg(existing.p99_cpu_percent, existingSampleCount, aggregate.p99CpuPercent, aggregate.sampleCount);
+        const mergedP95CpuPercent = aggregate.p95CpuPercent;
+        const mergedP99CpuPercent = aggregate.p99CpuPercent;
 
         if (pool.type === DatabaseType.POSTGRESQL) {
           await pool.query(
@@ -552,7 +553,6 @@ export async function getResourceMetricsHistory(hours: number = 24): Promise<Res
       if (existing) {
         // Merge buffer data with existing DB data (likely for the most recent bucket)
         const totalCount = existing.sampleCount + agg.sampleCount;
-        const weightedAvg = (v1: number, c1: number, v2: number, c2: number) => (v1 * c1 + v2 * c2) / (c1 + c2);
 
         merged.set(ts, {
           bucketStart: agg.bucketStart,
