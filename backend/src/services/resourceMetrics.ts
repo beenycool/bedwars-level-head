@@ -337,14 +337,13 @@ export async function initializeResourceMetrics(): Promise<void> {
   try {
     if (pool.type === DatabaseType.POSTGRESQL) {
       // Backward compatibility: rename hour_start to bucket_start if it exists
-      await pool.query(`
-        DO $$
-        BEGIN
-          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='resource_metrics' AND column_name='hour_start') THEN
-            ALTER TABLE resource_metrics RENAME COLUMN hour_start TO bucket_start;
-          END IF;
-        END $$;
+      const checkColumnResult = await pool.query(`
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='resource_metrics' AND column_name='hour_start'
       `);
+      if (checkColumnResult.rowCount > 0) {
+        await pool.query('ALTER TABLE resource_metrics RENAME COLUMN hour_start TO bucket_start');
+      }
 
       await pool.query(`
         CREATE TABLE IF NOT EXISTS resource_metrics (
