@@ -16,7 +16,7 @@ object ConfigProfiles {
 
     enum class Preset(val displayName: String, val description: String) {
         DEFAULT("Default", "BedWars defaults with a star footer"),
-        COMPACT("Compact", "Tighter spacing with smaller font size"),
+        COMPACT("Compact", "Tighter spacing"),
     }
 
     fun getPreset(preset: Preset): Profile {
@@ -31,7 +31,6 @@ object ConfigProfiles {
             Preset.COMPACT -> Profile(
                 name = preset.displayName,
                 master = master.apply {
-                    fontSize = 0.85
                     offset = -0.1
                 },
                 displays = listOf(display.apply {
@@ -82,7 +81,6 @@ object ConfigProfiles {
     private fun cloneMaster(master: MasterConfig): MasterConfig {
         return MasterConfig().apply {
             enabled = master.enabled
-            fontSize = master.fontSize
             offset = master.offset
             displayPosition = master.displayPosition
             renderDistance = master.renderDistance

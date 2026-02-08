@@ -1,6 +1,8 @@
 package club.sk1er.mods.levelhead.duels
 
 import club.sk1er.mods.levelhead.Levelhead
+import club.sk1er.mods.levelhead.core.BedwarsModeDetector
+import club.sk1er.mods.levelhead.skywars.SkyWarsModeDetector
 import net.minecraft.client.Minecraft
 import net.minecraft.scoreboard.Score
 import net.minecraft.scoreboard.ScorePlayerTeam
@@ -28,7 +30,10 @@ object DuelsModeDetector {
         "protect your bed",
         "bed destruction",
         "your bed was",
-        "bed was destroyed"
+        "bed was destroyed",
+        "bedwars",
+        "bed wars",
+        "sending you to mini"
     )
 
     private val skywarsChatIndicators = listOf(
@@ -101,6 +106,10 @@ object DuelsModeDetector {
     }
 
     private fun detectContext(): Context {
+        if (BedwarsModeDetector.isInBedwars() || SkyWarsModeDetector.isInSkyWars()) {
+            return Context.NONE
+        }
+
         val scoreboardContext = detectScoreboardContext()
         if (scoreboardContext != null && scoreboardContext != Context.NONE) {
             return scoreboardContext

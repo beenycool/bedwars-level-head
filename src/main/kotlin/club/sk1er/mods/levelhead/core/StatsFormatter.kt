@@ -14,6 +14,8 @@ import java.util.UUID
  * Handles template substitution and color styling for all game modes.
  */
 object StatsFormatter {
+    private val unresolvedTokenPattern = Regex("%[a-z0-9_]+%", RegexOption.IGNORE_CASE)
+
     
     /**
      * Build a LevelheadTag from GameStats and DisplayConfig.
@@ -75,6 +77,7 @@ object StatsFormatter {
         footerValue = footerValue.replace("%star%", starString, ignoreCase = true)
         footerValue = footerValue.replace("%fkdr%", fkdrString, ignoreCase = true)
         footerValue = footerValue.replace("%ws%", winstreakString, ignoreCase = true)
+        footerValue = sanitizeUnresolvedTokens(footerValue)
         
         val style = starValue?.let { BedwarsStar.styleForStar(it) }
             ?: BedwarsStar.PrestigeStyle(config.footerColor, false, "")
@@ -116,6 +119,7 @@ object StatsFormatter {
         footerValue = footerValue.replace("%division%", styledDivisionTitle, ignoreCase = true)
         footerValue = footerValue.replace("%divlevel%", divisionLevel, ignoreCase = true)
         footerValue = footerValue.replace("%divsymbol%", divisionSymbol, ignoreCase = true)
+        footerValue = sanitizeUnresolvedTokens(footerValue)
         
         val duelsMode = LevelheadConfig.DuelsStatMode.entries.getOrNull(LevelheadConfig.duelsStatDisplayIndex)
             ?: LevelheadConfig.DuelsStatMode.DIVISION_TITLE
@@ -154,10 +158,15 @@ object StatsFormatter {
         footerValue = footerValue.replace("%losses%", lossesString, ignoreCase = true)
         footerValue = footerValue.replace("%wlr%", wlrString, ignoreCase = true)
         footerValue = footerValue.replace("%kdr%", kdrString, ignoreCase = true)
+        footerValue = sanitizeUnresolvedTokens(footerValue)
 
         val style = levelValue?.let { SkyWarsStats.getPrestigeStyle(it) }
         val color = style?.color ?: config.footerColor
 
         return Triple(footerValue, color, false)
+    }
+
+    private fun sanitizeUnresolvedTokens(value: String): String {
+        return unresolvedTokenPattern.replace(value, "?")
     }
 }
