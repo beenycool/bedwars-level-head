@@ -620,7 +620,7 @@ object Levelhead {
         if (entry != null) {
             listeners
                 .filter { it.config.enabled && it.cache.containsKey(cacheKey.uuid) }
-                .forEach { display -> updateDisplayCache(display, cacheKey.uuid, entry) }
+                .forEach { display -> updateDisplayCache(display, cacheKey.uuid, entry, cacheKey.gameMode) }
         }
     }
 
@@ -651,13 +651,12 @@ object Levelhead {
         requests.forEach { req ->
             val gameMode = resolveGameMode(req.type)
             val matchingStats = statsForMode(stats, gameMode)
-            updateDisplayCache(req.display, uuid, matchingStats)
+            updateDisplayCache(req.display, uuid, matchingStats, gameMode)
         }
     }
 
-    private fun updateDisplayCache(display: LevelheadDisplay, uuid: UUID, stats: GameStats?) {
+    private fun updateDisplayCache(display: LevelheadDisplay, uuid: UUID, stats: GameStats?, gameMode: GameMode) {
         if (!display.config.enabled) return
-        val gameMode = resolveGameMode(display.config.type)
         val tag = StatsFormatter.formatTag(uuid, stats, display.config, gameMode)
         display.cache[uuid] = tag
     }
