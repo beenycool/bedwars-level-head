@@ -342,7 +342,14 @@ export async function initializeResourceMetrics(): Promise<void> {
         WHERE table_name='resource_metrics' AND column_name='hour_start'
       `);
       if (checkColumnResult.rowCount > 0) {
-        await pool.query('ALTER TABLE resource_metrics RENAME COLUMN hour_start TO bucket_start');
+        try {
+          await pool.query('ALTER TABLE resource_metrics RENAME COLUMN hour_start TO bucket_start');
+        } catch (err: any) {
+          // Ignore undefined_column error (42703) - column already renamed by another instance
+          if (err.code !== '42703') {
+            throw err;
+          }
+        }
       }
 
       await pool.query(`
