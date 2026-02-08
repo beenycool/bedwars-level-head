@@ -55,6 +55,24 @@ export interface PlayerQuerySummary {
   requestedAt: Date;
 }
 
+export interface PlayerQueryStatsSummary {
+  lookupType: 'uuid' | 'ign';
+  stars: number | null;
+  cacheHit: boolean;
+  responseStatus: number;
+  latencyMs: number | null;
+  requestedAt: Date;
+}
+
+interface PlayerQueryStatsRow {
+  lookup_type: 'uuid' | 'ign';
+  stars: number | null;
+  cache_hit: boolean;
+  response_status: number;
+  latency_ms: number | null;
+  requested_at: Date | string;
+}
+
 export interface PlayerQueryPage {
   rows: PlayerQuerySummary[];
   totalCount: number;
@@ -348,6 +366,62 @@ export async function getPlayerQueriesWithFilters(params: {
 
   const result = await pool.query<PlayerQueryHistoryRow>(sql, queryParams);
   return result.rows.map(mapRowToSummary);
+}
+
+export async function getPlayerQueriesStats(params: {
+  startDate?: Date;
+  endDate?: Date;
+  limit?: number;
+}): Promise<PlayerQueryStatsSummary[]> {
+  await ensureInitialized();
+
+  const { clause: dateClause, params: dateParams } = buildDateRangeClause(
+    params.startDate,
+    params.endDate,
+    1,
+  );
+
+  const hasTimeFilters = params.startDate !== undefined || params.endDate !== undefined;
+  const requestedLimit = params.limit !== undefined && params.limit > 0
+    ? Math.min(params.limit, MAX_ALLOWED_LIMIT)
+    : (hasTimeFilters ? MAX_ALLOWED_LIMIT : DEFAULT_PLAYER_QUERIES_LIMIT);
+
+  const queryParams = [...dateParams, requestedLimit];
+
+  let sql;
+  if (pool.type === DatabaseType.POSTGRESQL) {
+    sql = `
+      SELECT lookup_type, stars, cache_hit, response_status, latency_ms, requested_at
+      FROM player_query_history
+      ${dateClause}
+      ORDER BY requested_at DESC
+      LIMIT $${dateParams.length + 1}
+    `;
+  } else {
+    sql = `
+      SELECT TOP ($${dateParams.length + 1}) lookup_type, stars, cache_hit, response_status, latency_ms, requested_at
+      FROM player_query_history
+      ${dateClause}
+      ORDER BY requested_at DESC
+    `;
+  }
+
+  const result = await pool.query<PlayerQueryStatsRow>(sql, queryParams);
+  return result.rows.map(mapRowToStatsSummary);
+}
+
+function mapRowToStatsSummary(row: PlayerQueryStatsRow): PlayerQueryStatsSummary {
+  const parsedResponseStatus = Number(row.response_status);
+  const parsedLatency = row.latency_ms === null ? null : Number(row.latency_ms);
+
+  return {
+    lookupType: row.lookup_type,
+    stars: row.stars,
+    cacheHit: row.cache_hit,
+    responseStatus: Number.isFinite(parsedResponseStatus) ? parsedResponseStatus : 0,
+    latencyMs: Number.isFinite(parsedLatency) ? parsedLatency : null,
+    requestedAt: new Date(row.requested_at),
+  };
 }
 
 export async function getTopPlayersByQueryCount(params: {

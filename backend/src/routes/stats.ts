@@ -3,6 +3,7 @@ import {
   getPlayerQueryCount,
   getPlayerQueryPage,
   getPlayerQueriesWithFilters,
+  getPlayerQueriesStats,
   getTopPlayersByQueryCount,
   getSystemStats,
 } from '../services/history';
@@ -122,7 +123,7 @@ router.get('/data', async (req, res, next) => {
 
     // Fetch all data in parallel
     const [chartData, topPlayers, sysStats, redisStats, pageData, totalCount, resourceMetricsHistory] = await Promise.all([
-      getPlayerQueriesWithFilters({
+      getPlayerQueriesStats({
         startDate: validStartDate,
         endDate: validEndDate,
         limit: effectiveLimit,
@@ -192,7 +193,7 @@ router.get('/', async (req, res, next) => {
 
     // Fetch filtered data for charts
     const [chartData, topPlayers, sysStats, redisStats, resourceMetricsHistory] = await Promise.all([
-      getPlayerQueriesWithFilters({
+      getPlayerQueriesStats({
         startDate: validStartDate,
         endDate: validEndDate,
         limit: effectiveLimit,
