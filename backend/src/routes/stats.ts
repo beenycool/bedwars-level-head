@@ -2142,7 +2142,9 @@ router.get('/', async (req, res, next) => {
             }
           },
           onHover: (event, chartElement) => {
-            event.native.target.style.cursor = chartElement.length ? 'pointer' : 'default';
+            if (event.native && event.native.target instanceof HTMLElement) {
+              event.native.target.style.cursor = chartElement.length ? 'pointer' : 'default';
+            }
           },
           scales: {
             x: {
