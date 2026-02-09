@@ -23,7 +23,6 @@ describe('resourceMetrics', () => {
       rowCount: 0,
     });
 
-    // @ts-ignore - testing new signature
     await getResourceMetricsHistory({ startDate, endDate });
 
     const lastCall = (pool.query as jest.Mock).mock.calls[0];
