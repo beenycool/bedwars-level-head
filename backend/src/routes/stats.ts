@@ -2127,6 +2127,28 @@ router.get('/', async (req, res, next) => {
           indexAxis: 'y',
           responsive: true,
           maintainAspectRatio: false,
+          onClick: (e, elements, chart) => {
+            if (elements.length === 0) {
+              return;
+            }
+
+            const index = elements[0].index;
+            const label = chart.data.labels[index];
+            if (!label) {
+              return;
+            }
+
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput instanceof HTMLInputElement && searchInput.form) {
+              searchInput.value = label;
+              searchInput.form.submit();
+            }
+          },
+          onHover: (event, chartElement) => {
+            if (event.native && event.native.target instanceof HTMLElement) {
+              event.native.target.style.cursor = chartElement.length ? 'pointer' : 'default';
+            }
+          },
           scales: {
             x: {
               ticks: { color: '#94a3b8', precision: 0 },
