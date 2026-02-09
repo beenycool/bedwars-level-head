@@ -7,10 +7,6 @@ jest.mock('../src/services/cache', () => ({
     type: 'POSTGRESQL',
     query: jest.fn(),
   },
-  DatabaseType: {
-    POSTGRESQL: 'POSTGRESQL',
-    AZURE_SQL: 'AZURE_SQL',
-  },
 }));
 
 describe('resourceMetrics', () => {
