@@ -10,6 +10,7 @@
 **Prevention:** Prepend a single quote `'` to any field starting with these characters to force text interpretation.
 
 ## 2025-02-14 - IGN Spoofing via Unverified Displayname in Fallback Validation
+
 **Vulnerability:** The `verifyHypixelOrigin` fallback mechanism (used when signature is missing) verified numeric stats against Hypixel API but accepted the `displayname` from the user submission without verification. This allowed attackers to spoof their IGN in the cache/database by submitting their own valid stats but a fake name.
 **Learning:** When validating data against a trusted source (like an API), ensure *all* fields that are used/stored are verified, not just a subset of "critical" fields. Partial validation can lead to partial trust, which can be exploited.
 **Prevention:** Explicitly verify all user-submitted fields against the trusted source, or prefer using the data directly from the trusted source instead of the user submission when falling back.

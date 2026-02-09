@@ -1,5 +1,7 @@
 import { describe, it, expect, jest } from '@jest/globals';
-import { verifyHypixelOrigin } from '../../src/routes/player';
+import { _test } from '../../src/routes/player';
+
+const { verifyHypixelOrigin } = _test;
 
 // Mock the hypixel service
 jest.mock('../../src/services/hypixel', () => ({
@@ -31,7 +33,7 @@ jest.mock('../../src/services/hypixel', () => ({
       notModified: false,
     };
   }),
-  isValidBedwarsObject: () => true,
+  // Only mock what is used
 }));
 
 // Mock validation
@@ -76,8 +78,9 @@ jest.mock('../../src/services/redis', () => ({
 
 
 describe('IGN Spoofing Vulnerability', () => {
+  const uuid = '069a79f444e94726a5befca90e38aaf5';
+
   it('should reject submission with fake displayname even if stats match', async () => {
-    const uuid = '069a79f444e94726a5befca90e38aaf5';
     const fakeDisplayname = 'Technoblade';
 
     // Data matches critical stats but has fake displayname
@@ -92,11 +95,52 @@ describe('IGN Spoofing Vulnerability', () => {
     // No signature -> fallback to Hypixel fetch
     const result = await verifyHypixelOrigin(uuid, spoofedData, undefined, 'test-key-id');
 
-    // Currently vulnerable: returns true because stats match
-    // We expect it to be false after fix
+    // No longer vulnerable — returns false as expected
     expect(result.valid).toBe(false);
     if (result.valid === false) {
         expect(result.error).toMatch(/Displayname mismatch/i);
     }
+  });
+
+  it('should accept submission where displayname exactly matches the real IGN', async () => {
+    const validData = {
+      displayname: 'Notch',
+      bedwars_experience: 1000,
+      final_kills_bedwars: 10,
+      final_deaths_bedwars: 5,
+      wins_bedwars: 2,
+    };
+
+    const result = await verifyHypixelOrigin(uuid, validData, undefined, 'test-key-id');
+    expect(result.valid).toBe(true);
+    expect(result.verifiedDisplayname).toBe('Notch');
+  });
+
+  it('should accept submission with no displayname property', async () => {
+    const validDataNoName = {
+      bedwars_experience: 1000,
+      final_kills_bedwars: 10,
+      final_deaths_bedwars: 5,
+      wins_bedwars: 2,
+    };
+
+    const result = await verifyHypixelOrigin(uuid, validDataNoName, undefined, 'test-key-id');
+    expect(result.valid).toBe(true);
+    // Should still populate verified name from source
+    expect(result.verifiedDisplayname).toBe('Notch');
+  });
+
+  it('should reject submission where displayname differs only by case', async () => {
+    const caseMismatchData = {
+      displayname: 'notch', // Lowercase vs 'Notch'
+      bedwars_experience: 1000,
+      final_kills_bedwars: 10,
+      final_deaths_bedwars: 5,
+      wins_bedwars: 2,
+    };
+
+    const result = await verifyHypixelOrigin(uuid, caseMismatchData, undefined, 'test-key-id');
+    expect(result.valid).toBe(false);
+    expect(result.error).toMatch(/Displayname mismatch/i);
   });
 });

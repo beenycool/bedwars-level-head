@@ -1,5 +1,7 @@
 import { describe, it, expect, jest } from '@jest/globals';
-import { verifyHypixelOrigin } from '../../src/routes/player';
+import { _test } from '../../src/routes/player';
+
+const { verifyHypixelOrigin } = _test;
 
 // Mock the hypixel service
 jest.mock('../../src/services/hypixel', () => ({

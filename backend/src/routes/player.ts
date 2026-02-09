@@ -205,6 +205,7 @@ interface VerificationResult {
   source: CacheSource | null;
   error?: string;
   statusCode?: number;
+  verifiedDisplayname?: string;
 }
 
 interface SignedData {
@@ -232,7 +233,7 @@ function verifySignedSubmission(uuid: string, data: SignedData, signature?: stri
   }
 }
 
-export async function verifyHypixelOrigin(
+async function verifyHypixelOrigin(
   uuid: string,
   data: unknown,
   signature?: string,
@@ -289,12 +290,16 @@ export async function verifyHypixelOrigin(
       const actualName = result.payload.player?.displayname;
 
       if (typeof submittedName === 'string' && typeof actualName === 'string') {
-        if (submittedName.trim() !== actualName) {
+        if (submittedName.trim() !== actualName.trim()) {
           return { valid: false, source: null, error: 'Displayname mismatch' };
         }
       }
 
-      return { valid: true, source: 'community_verified' };
+      return {
+        valid: true,
+        source: 'community_verified',
+        verifiedDisplayname: actualName,
+      };
     }
 
     return { valid: false, source: null };
@@ -303,6 +308,8 @@ export async function verifyHypixelOrigin(
     return { valid: false, source: null };
   }
 }
+
+export const _test = { verifyHypixelOrigin };
 
 function buildMinimalStatsFromSubmission(data: Record<string, unknown>): MinimalPlayerStats {
   const rawExperience = data.bedwars_experience ?? data.Experience ?? data.experience;
@@ -405,10 +412,14 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
       Object.prototype.hasOwnProperty.call(submission, 'experience');
     const hasFinalKills = Object.prototype.hasOwnProperty.call(submission, 'final_kills_bedwars');
     const hasFinalDeaths = Object.prototype.hasOwnProperty.call(submission, 'final_deaths_bedwars');
+    const verifiedName = verificationResult.verifiedDisplayname;
+    // Prefer verified name from Hypixel if available, otherwise fallback to user submission (which was validated against Hypixel if present)
+    const displaynameToUse = verifiedName ?? minimalStats.displayname;
+
     const mergedStats = existingEntry?.value
       ? {
           ...existingEntry.value,
-          displayname: minimalStats.displayname ?? existingEntry.value.displayname,
+          displayname: displaynameToUse ?? existingEntry.value.displayname,
           bedwars_experience:
             hasExperience && minimalStats.bedwars_experience !== null
               ? minimalStats.bedwars_experience
@@ -420,7 +431,7 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
             ? minimalStats.bedwars_final_deaths
             : existingEntry.value.bedwars_final_deaths,
         }
-      : minimalStats;
+      : { ...minimalStats, displayname: displaynameToUse };
     const etag = `contrib-${Date.now()}`;
     const lastModified = Date.now();
 
