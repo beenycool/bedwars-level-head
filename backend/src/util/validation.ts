@@ -130,11 +130,14 @@ function getObjectDepth(obj: unknown, currentDepth = 0): number {
     }
 
     let maxDepth = currentDepth;
-    for (const value of Object.values(obj)) {
-        const depth = getObjectDepth(value, currentDepth + 1);
-        maxDepth = Math.max(maxDepth, depth);
-        if (maxDepth > MAX_OBJECT_DEPTH) {
-            return maxDepth;
+    for (const key in obj) {
+        if (Object.prototype.hasOwnProperty.call(obj, key)) {
+            const value = obj[key];
+            const depth = getObjectDepth(value, currentDepth + 1);
+            maxDepth = Math.max(maxDepth, depth);
+            if (maxDepth > MAX_OBJECT_DEPTH) {
+                return maxDepth;
+            }
         }
     }
 
