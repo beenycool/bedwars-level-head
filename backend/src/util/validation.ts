@@ -274,19 +274,33 @@ export function validatePlayerSubmission(
 export const criticalFields = ['bedwars_experience', 'Experience', 'kills_bedwars', 'wins_bedwars'];
 
 export function matchesCriticalFields(source: Record<string, unknown>, submitted: Record<string, unknown>): boolean {
+    let hasMatchedAnyField = false;
+
     for (const field of criticalFields) {
         const sourceValue = source[field];
         const submittedValue = submitted[field];
 
-        if (sourceValue !== undefined && submittedValue !== undefined) {
-            if (Number(sourceValue) !== Number(submittedValue)) {
+        if (sourceValue !== undefined) {
+            // Source has data for this field
+            hasMatchedAnyField = true;
+
+            if (submittedValue !== undefined) {
+                // Both have data, must match
+                if (Number(sourceValue) !== Number(submittedValue)) {
+                    return false;
+                }
+            } else {
+                // Source has data but submission doesn't -> mismatch
                 return false;
             }
         }
+    }
 
-        if (sourceValue !== undefined && submittedValue === undefined) {
-            return false;
-        }
+    // If source had NO critical fields (e.g. empty stats for new player),
+    // we cannot verify the submission against it.
+    // In this case, we should reject the submission to prevent poisoning.
+    if (!hasMatchedAnyField) {
+        return false;
     }
 
     return true;

@@ -288,8 +288,8 @@ export async function verifyHypixelOrigin(
       const submittedName = (data as any).displayname;
       const actualName = result.payload.player?.displayname;
 
-      if (typeof submittedName === 'string') {
-        if (typeof actualName !== 'string' || submittedName.trim() !== actualName) {
+      if (typeof submittedName === 'string' && typeof actualName === 'string') {
+        if (submittedName.trim() !== actualName) {
           return { valid: false, source: null, error: 'Displayname mismatch' };
         }
       }
