@@ -137,7 +137,7 @@ router.get('/data', async (req, res, next) => {
       getRedisStats(),
       getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search }),
       getPlayerQueryCount({ search }),
-      getResourceMetricsHistory(24),
+      getResourceMetricsHistory({ startDate: validStartDate, endDate: validEndDate }),
     ]);
 
     res.json({
@@ -205,7 +205,7 @@ router.get('/', async (req, res, next) => {
       }),
       getSystemStats(),
       getRedisStats(),
-      getResourceMetricsHistory(24),
+      getResourceMetricsHistory({ startDate: validStartDate, endDate: validEndDate }),
     ]);
 
     // Serialise the data so the frontend script can use it
