@@ -473,7 +473,7 @@ export async function getTopPlayersByQueryCount(params: {
   }));
 }
 
-function buildSearchClause(searchTerm: string | undefined, startIndex: number): { clause: string; params: string[] } {
+export function buildSearchClause(searchTerm: string | undefined, startIndex: number): { clause: string; params: string[] } {
   if (!searchTerm) {
     return { clause: '', params: [] };
   }
@@ -483,7 +483,7 @@ function buildSearchClause(searchTerm: string | undefined, startIndex: number): 
   
   let clause;
   if (pool.type === DatabaseType.POSTGRESQL) {
-    clause = `WHERE normalized_identifier ILIKE ${placeholder} ESCAPE '\\\\' OR resolved_username ILIKE ${placeholder} ESCAPE '\\\\' OR resolved_uuid ILIKE ${placeholder} ESCAPE '\\\\'`;
+    clause = `WHERE normalized_identifier ILIKE ${placeholder} ESCAPE '\\' OR resolved_username ILIKE ${placeholder} ESCAPE '\\' OR resolved_uuid ILIKE ${placeholder} ESCAPE '\\'`;
   } else {
     // SQL Server is usually case-insensitive by default with its default collation.
     // We use [key] notation for identifier if it's a reserved word, but here they aren't.
