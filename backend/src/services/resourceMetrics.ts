@@ -175,7 +175,7 @@ async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
               sample_count
             ) VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16, @p17)`,
             [
-              aggregate.bucketStart, aggregate.avgRssMB, aggregate.maxRssMB, aggregate.minRssMB, aggregate.p95_rss_mb, aggregate.p99_rss_mb,
+              aggregate.bucketStart, aggregate.avgRssMB, aggregate.maxRssMB, aggregate.minRssMB, aggregate.p95RssMB, aggregate.p99RssMB,
               aggregate.avgHeapMB, aggregate.maxHeapMB, aggregate.minHeapMB, aggregate.p95HeapMB, aggregate.p99HeapMB,
               aggregate.avgCpuPercent, aggregate.maxCpuPercent, aggregate.minCpuPercent, aggregate.p95CpuPercent, aggregate.p99CpuPercent,
               aggregate.sampleCount,
@@ -188,7 +188,7 @@ async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
 
         const mergedAvgRssMB = weightedAvg(existing.avg_rss_mb, existingSampleCount, aggregate.avgRssMB, aggregate.sampleCount);
         const mergedMaxRssMB = Math.max(existing.max_rss_mb, aggregate.maxRssMB);
-        const mergedMinRssMB = Math.min(existing.min_rss_mb, aggregate.min_rss_mb);
+        const mergedMinRssMB = Math.min(existing.min_rss_mb, aggregate.minRssMB);
 
         // Percentiles cannot be accurately averaged.
         // We prefer the latest aggregate's percentile as a deterministic fallback for merged buckets.
@@ -337,14 +337,20 @@ export async function initializeResourceMetrics(): Promise<void> {
   try {
     if (pool.type === DatabaseType.POSTGRESQL) {
       // Backward compatibility: rename hour_start to bucket_start if it exists
-      await pool.query(`
-        DO $$
-        BEGIN
-          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='resource_metrics' AND column_name='hour_start') THEN
-            ALTER TABLE resource_metrics RENAME COLUMN hour_start TO bucket_start;
-          END IF;
-        END $$;
+      const checkColumnResult = await pool.query(`
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name='resource_metrics' AND column_name='hour_start'
       `);
+      if (checkColumnResult.rowCount > 0) {
+        try {
+          await pool.query('ALTER TABLE resource_metrics RENAME COLUMN hour_start TO bucket_start');
+        } catch (err: any) {
+          // Ignore undefined_column error (42703) - column already renamed by another instance
+          if (err.code !== '42703') {
+            throw err;
+          }
+        }
+      }
 
       await pool.query(`
         CREATE TABLE IF NOT EXISTS resource_metrics (
@@ -493,14 +499,22 @@ export interface ResourceMetricsHistoryRow {
   sampleCount: number;
 }
 
-export async function getResourceMetricsHistory(hours: number = 24): Promise<ResourceMetricsHistoryRow[]> {
+export async function getResourceMetricsHistory(
+  hoursOrOptions: number | { hours?: number; startDate?: Date; endDate?: Date } = 24
+): Promise<ResourceMetricsHistoryRow[]> {
   try {
-    const cutoff = new Date();
-    cutoff.setUTCHours(cutoff.getUTCHours() - hours);
+    const options = typeof hoursOrOptions === 'number' ? { hours: hoursOrOptions } : hoursOrOptions;
+    const { hours = 24, startDate, endDate } = options;
+
+    const cutoff = startDate ?? (() => {
+      const d = new Date();
+      d.setUTCHours(d.getUTCHours() - hours);
+      return d;
+    })();
 
     let dbRows: ResourceMetricsHistoryRow[] = [];
     if (pool.type === DatabaseType.POSTGRESQL) {
-      const result = await pool.query<any>(`
+      const query = `
         SELECT 
           bucket_start as "bucketStart",
           avg_rss_mb as "avgRssMB",
@@ -512,11 +526,15 @@ export async function getResourceMetricsHistory(hours: number = 24): Promise<Res
           sample_count as "sampleCount"
         FROM resource_metrics
         WHERE bucket_start >= $1
+        ${endDate ? 'AND bucket_start <= $2' : ''}
         ORDER BY bucket_start ASC
-      `, [cutoff]);
+      `;
+      const params: any[] = [cutoff];
+      if (endDate) params.push(endDate);
+      const result = await pool.query<any>(query, params);
       dbRows = result.rows;
     } else {
-      const result = await pool.query<any>(`
+      const query = `
         SELECT 
           bucket_start as bucketStart,
           avg_rss_mb as avgRssMB,
@@ -528,8 +546,12 @@ export async function getResourceMetricsHistory(hours: number = 24): Promise<Res
           sample_count as sampleCount
         FROM resource_metrics
         WHERE bucket_start >= @p1
+        ${endDate ? 'AND bucket_start <= @p2' : ''}
         ORDER BY bucket_start ASC
-      `, [cutoff]);
+      `;
+      const params: any[] = [cutoff];
+      if (endDate) params.push(endDate);
+      const result = await pool.query<any>(query, params);
       dbRows = result.rows;
     }
 
@@ -579,7 +601,7 @@ export async function getResourceMetricsHistory(hours: number = 24): Promise<Res
     }
 
     return Array.from(merged.values())
-      .filter(r => r.bucketStart >= cutoff)
+      .filter(r => r.bucketStart >= cutoff && (!endDate || r.bucketStart <= endDate))
       .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime());
   } catch (err) {
     console.error('[resourceMetrics] failed to get history', err);

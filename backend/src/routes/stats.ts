@@ -3,6 +3,7 @@ import {
   getPlayerQueryCount,
   getPlayerQueryPage,
   getPlayerQueriesWithFilters,
+  getPlayerQueriesStats,
   getTopPlayersByQueryCount,
   getSystemStats,
 } from '../services/history';
@@ -122,7 +123,7 @@ router.get('/data', async (req, res, next) => {
 
     // Fetch all data in parallel
     const [chartData, topPlayers, sysStats, redisStats, pageData, totalCount, resourceMetricsHistory] = await Promise.all([
-      getPlayerQueriesWithFilters({
+      getPlayerQueriesStats({
         startDate: validStartDate,
         endDate: validEndDate,
         limit: effectiveLimit,
@@ -136,7 +137,7 @@ router.get('/data', async (req, res, next) => {
       getRedisStats(),
       getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search }),
       getPlayerQueryCount({ search }),
-      getResourceMetricsHistory(24),
+      getResourceMetricsHistory({ startDate: validStartDate, endDate: validEndDate }),
     ]);
 
     res.json({
@@ -192,7 +193,7 @@ router.get('/', async (req, res, next) => {
 
     // Fetch filtered data for charts
     const [chartData, topPlayers, sysStats, redisStats, resourceMetricsHistory] = await Promise.all([
-      getPlayerQueriesWithFilters({
+      getPlayerQueriesStats({
         startDate: validStartDate,
         endDate: validEndDate,
         limit: effectiveLimit,
@@ -204,7 +205,7 @@ router.get('/', async (req, res, next) => {
       }),
       getSystemStats(),
       getRedisStats(),
-      getResourceMetricsHistory(24),
+      getResourceMetricsHistory({ startDate: validStartDate, endDate: validEndDate }),
     ]);
 
     // Serialise the data so the frontend script can use it
@@ -2126,6 +2127,28 @@ router.get('/', async (req, res, next) => {
           indexAxis: 'y',
           responsive: true,
           maintainAspectRatio: false,
+          onClick: (e, elements, chart) => {
+            if (elements.length === 0) {
+              return;
+            }
+
+            const index = elements[0].index;
+            const label = chart.data.labels[index];
+            if (!label) {
+              return;
+            }
+
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput instanceof HTMLInputElement && searchInput.form) {
+              searchInput.value = label;
+              searchInput.form.submit();
+            }
+          },
+          onHover: (event, chartElement) => {
+            if (event.native && event.native.target instanceof HTMLElement) {
+              event.native.target.style.cursor = chartElement.length ? 'pointer' : 'default';
+            }
+          },
           scales: {
             x: {
               ticks: { color: '#94a3b8', precision: 0 },

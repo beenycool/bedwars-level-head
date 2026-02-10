@@ -59,6 +59,8 @@ router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
       res.set('Age', ageSeconds.toString());
     }
 
+    res.set('X-Cache', resolved.source === 'cache' ? 'HIT' : 'MISS');
+
     res.statusCode = 200;
     const notModified = req.fresh;
     const responseStatus = notModified ? 304 : 200;
@@ -166,6 +168,7 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
               ...resolved.payload,
               ...(resolved.isStale ? { stale: true } : {}),
             },
+            source: resolved.source,
           };
         } catch (error) {
           if (error instanceof HttpError) {
@@ -180,11 +183,21 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
     );
 
     const payloadMap: Record<string, ResolvedPlayer['payload']> = {};
+    let cacheHits = 0;
+    let total = 0;
     results.forEach((result) => {
       if (result) {
         payloadMap[result.identifier] = result.payload;
+        total++;
+        if ((result as any).source === 'cache') {
+          cacheHits++;
+        }
       }
     });
+
+    if (total > 0) {
+      res.set('X-Cache', cacheHits === total ? 'HIT' : cacheHits > 0 ? 'PARTIAL' : 'MISS');
+    }
 
     const circuitBreaker = getCircuitBreakerState();
     const isCircuitOpen = circuitBreaker.state === 'open';
@@ -205,6 +218,7 @@ interface VerificationResult {
   source: CacheSource | null;
   error?: string;
   statusCode?: number;
+  verifiedDisplayname?: string;
 }
 
 interface SignedData {
@@ -283,7 +297,22 @@ async function verifyHypixelOrigin(
     }
 
     if (matchesCriticalFields(hypixelData, submittedData)) {
-      return { valid: true, source: 'community_verified' };
+      // Security fix: Also verify displayname if present in submission
+      // to prevent IGN spoofing/cache poisoning
+      const submittedName = (data as any).displayname;
+      const actualName = result.payload.player?.displayname;
+
+      if (typeof submittedName === 'string' && typeof actualName === 'string') {
+        if (submittedName.trim() !== actualName.trim()) {
+          return { valid: false, source: null, error: 'Displayname mismatch' };
+        }
+      }
+
+      return {
+        valid: true,
+        source: 'community_verified',
+        verifiedDisplayname: actualName,
+      };
     }
 
     return { valid: false, source: null };
@@ -292,6 +321,8 @@ async function verifyHypixelOrigin(
     return { valid: false, source: null };
   }
 }
+
+export const _test = { verifyHypixelOrigin };
 
 function buildMinimalStatsFromSubmission(data: Record<string, unknown>): MinimalPlayerStats {
   const rawExperience = data.bedwars_experience ?? data.Experience ?? data.experience;
@@ -394,10 +425,14 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
       Object.prototype.hasOwnProperty.call(submission, 'experience');
     const hasFinalKills = Object.prototype.hasOwnProperty.call(submission, 'final_kills_bedwars');
     const hasFinalDeaths = Object.prototype.hasOwnProperty.call(submission, 'final_deaths_bedwars');
+    const verifiedName = verificationResult.verifiedDisplayname;
+    // Prefer verified name from Hypixel if available, otherwise fallback to user submission (which was validated against Hypixel if present)
+    const displaynameToUse = verifiedName ?? minimalStats.displayname;
+
     const mergedStats = existingEntry?.value
       ? {
           ...existingEntry.value,
-          displayname: minimalStats.displayname ?? existingEntry.value.displayname,
+          displayname: displaynameToUse ?? existingEntry.value.displayname,
           bedwars_experience:
             hasExperience && minimalStats.bedwars_experience !== null
               ? minimalStats.bedwars_experience
@@ -409,7 +444,7 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
             ? minimalStats.bedwars_final_deaths
             : existingEntry.value.bedwars_final_deaths,
         }
-      : minimalStats;
+      : { ...minimalStats, displayname: displaynameToUse };
     const etag = `contrib-${Date.now()}`;
     const lastModified = Date.now();
 
