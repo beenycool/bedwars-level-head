@@ -690,7 +690,8 @@ router.get('/', async (req, res, next) => {
       .apply-btn:focus-visible,
       .reset-btn:focus-visible,
       .search-box button:focus-visible,
-      .pager button:focus-visible {
+      .pager button:focus-visible,
+      .copy-btn:focus-visible {
         outline: 2px solid #38bdf8;
         outline-offset: 2px;
       }
@@ -2838,14 +2839,19 @@ router.get('/', async (req, res, next) => {
       }
       
       // Copy button handler
+      let isCopying = false;
       document.addEventListener('click', async (e) => {
         const btn = e.target.closest('.copy-btn');
         if (!btn) return;
+
+        // Prevent re-entry while copying
+        if (isCopying) return;
 
         const text = btn.getAttribute('data-copy');
         if (!text) return;
 
         try {
+          isCopying = true;
           await navigator.clipboard.writeText(text);
           btn.classList.add('copied');
           const originalHtml = btn.innerHTML;
@@ -2855,9 +2861,11 @@ router.get('/', async (req, res, next) => {
           setTimeout(() => {
             btn.innerHTML = originalHtml;
             btn.classList.remove('copied');
+            isCopying = false;
           }, 2000);
         } catch (err) {
           console.error('Failed to copy', err);
+          isCopying = false;
         }
       });
 
