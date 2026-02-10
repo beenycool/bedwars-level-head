@@ -241,7 +241,14 @@ router.get('/', async (req, res, next) => {
 
         return `<tr>
           <td title="${escapeHtml(formatDate(entry.requestedAt))}">${escapeHtml(timeAgo(entry.requestedAt))}</td>
-          <td><a href="${lookupLink}" target="_blank" rel="noopener noreferrer" class="lookup-link">${escapeHtml(lookup)}</a></td>
+          <td>
+            <div class="lookup-cell">
+              <a href="${lookupLink}" target="_blank" rel="noopener noreferrer" class="lookup-link">${escapeHtml(lookup)}</a>
+              <button class="copy-btn" aria-label="Copy identifier" title="Copy identifier" data-copy="${escapeHtml(lookupIdentifier)}">
+                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+              </button>
+            </div>
+          </td>
           <td>${escapeHtml(resolved)}</td>
           <td class="stars">${escapeHtml(formatStars(entry.stars))}</td>
           <td>${escapeHtml(cacheSource)}${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
@@ -683,7 +690,8 @@ router.get('/', async (req, res, next) => {
       .apply-btn:focus-visible,
       .reset-btn:focus-visible,
       .search-box button:focus-visible,
-      .pager button:focus-visible {
+      .pager button:focus-visible,
+      .copy-btn:focus-visible {
         outline: 2px solid #38bdf8;
         outline-offset: 2px;
       }
@@ -767,6 +775,38 @@ router.get('/', async (req, res, next) => {
         background: rgba(59, 130, 246, 0.2);
         border-color: rgba(59, 130, 246, 0.4);
         color: #93c5fd;
+      }
+      .lookup-cell {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      }
+      .copy-btn {
+        background: transparent;
+        border: none;
+        color: #64748b;
+        cursor: pointer;
+        padding: 4px;
+        border-radius: 4px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        transition: color 0.2s, background 0.2s;
+        opacity: 0.6;
+      }
+      .copy-btn:hover {
+        color: #cbd5f5;
+        background: rgba(255, 255, 255, 0.1);
+        opacity: 1;
+      }
+      .copy-btn svg {
+        width: 14px;
+        height: 14px;
+        fill: currentColor;
+      }
+      .copy-btn.copied {
+        color: #4ade80;
+        opacity: 1;
       }
       ${dynamicStyles}
     </style>
@@ -2693,7 +2733,14 @@ router.get('/', async (req, res, next) => {
               
               return \`<tr>
                 <td title="\${escapeHtmlClient(formatDateClient(entry.requestedAt))}">\${escapeHtmlClient(timeAgoClient(entry.requestedAt))}</td>
-                <td><a href="\${lookupLink}" target="_blank" rel="noopener noreferrer" class="lookup-link">\${escapeHtmlClient(lookup)}</a></td>
+                <td>
+                  <div class="lookup-cell">
+                    <a href="\${lookupLink}" target="_blank" rel="noopener noreferrer" class="lookup-link">\${escapeHtmlClient(lookup)}</a>
+                    <button class="copy-btn" aria-label="Copy identifier" title="Copy identifier" data-copy="\${escapeHtmlClient(lookupIdentifier)}">
+                      <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+                    </button>
+                  </div>
+                </td>
                 <td>\${escapeHtmlClient(resolved)}</td>
                 <td class="stars">\${escapeHtmlClient(formatStarsClient(entry.stars))}</td>
                 <td>\${escapeHtmlClient(cacheSource)}\${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
@@ -2791,6 +2838,37 @@ router.get('/', async (req, res, next) => {
         });
       }
       
+      // Copy button handler
+      let isCopying = false;
+      document.addEventListener('click', async (e) => {
+        const btn = e.target.closest('.copy-btn');
+        if (!btn) return;
+
+        // Prevent re-entry while copying
+        if (isCopying) return;
+
+        const text = btn.getAttribute('data-copy');
+        if (!text) return;
+
+        try {
+          isCopying = true;
+          await navigator.clipboard.writeText(text);
+          btn.classList.add('copied');
+          const originalHtml = btn.innerHTML;
+          // Checkmark icon
+          btn.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
+
+          setTimeout(() => {
+            btn.innerHTML = originalHtml;
+            btn.classList.remove('copied');
+            isCopying = false;
+          }, 2000);
+        } catch (err) {
+          console.error('Failed to copy', err);
+          isCopying = false;
+        }
+      });
+
       // Start auto-refresh if enabled from localStorage
       if (autoRefreshEnabled) {
         scheduleNextRefresh();
