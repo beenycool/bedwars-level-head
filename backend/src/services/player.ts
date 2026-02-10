@@ -10,6 +10,7 @@ import {
   getIgnMapping,
   getPlayerStatsFromCache,
   getPlayerStatsFromCacheWithSWR,
+  getManyPlayerStatsFromCacheWithSWR,
   SWRCacheEntry,
   setIgnMapping,
   setPlayerStatsBoth,
@@ -370,6 +371,45 @@ function normalizeConditionalHeaders(options?: PlayerResolutionOptions): Hypixel
 export interface PlayerResolutionOptions {
   etag?: string;
   lastModified?: number;
+}
+
+export async function warmupPlayerCache(identifiers: string[]): Promise<void> {
+  // Filter for valid UUIDs (no dashes)
+  const uuids = identifiers.filter((id) => uuidRegex.test(id)).map((id) => id.toLowerCase());
+
+  if (uuids.length === 0) {
+    return;
+  }
+
+  const keys = uuids.map((uuid) => ({ key: buildPlayerCacheKey(uuid), uuid }));
+
+  try {
+    const results = await getManyPlayerStatsFromCacheWithSWR(keys);
+
+    for (const { key, uuid } of keys) {
+      const entry = results.get(key);
+      if (!entry) continue;
+
+      const resolved = buildResolvedFromStats(
+        entry.value,
+        { etag: entry.etag, lastModified: entry.lastModified },
+        'cache',
+        false,
+        'uuid',
+        uuid,
+        uuid,
+      );
+
+      if (entry.isStale) {
+        resolved.isStale = true;
+        resolved.staleAgeMs = entry.staleAgeMs;
+      }
+
+      setMemoized('player', uuid, resolved);
+    }
+  } catch (error) {
+    console.warn('[player] warmupPlayerCache failed', error);
+  }
 }
 
 export async function resolvePlayer(

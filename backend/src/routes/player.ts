@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import pLimit from 'p-limit';
 import { enforceRateLimit, enforceBatchRateLimit } from '../middleware/rateLimit';
-import { resolvePlayer, ResolvedPlayer } from '../services/player';
+import { resolvePlayer, ResolvedPlayer, warmupPlayerCache } from '../services/player';
 import { computeBedwarsStar } from '../util/bedwars';
 import { HttpError } from '../util/httpError';
 import { validatePlayerSubmission, matchesCriticalFields, validateTimestampAndNonce } from '../util/validation';
@@ -138,6 +138,9 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
   }
 
   try {
+    // Warmup cache for all UUIDs in parallel (single Redis round-trip)
+    await warmupPlayerCache(uniqueUuids);
+
     const results = await Promise.all(
       uniqueUuids.map((identifier) => batchLimit(async () => {
         try {

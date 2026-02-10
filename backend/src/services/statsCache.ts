@@ -795,6 +795,95 @@ function triggerBackgroundRefresh(
   });
 }
 
+/**
+ * Fetch multiple player stats from L1 cache (Redis) with SWR support.
+ * Optimized using MGET to reduce network round-trips.
+ */
+export async function getManyPlayerStatsFromCacheWithSWR(
+  identifiers: { key: string; uuid: string }[]
+): Promise<Map<string, SWRCacheEntry<MinimalPlayerStats>>> {
+  const result = new Map<string, SWRCacheEntry<MinimalPlayerStats>>();
+
+  if (identifiers.length === 0) {
+    return result;
+  }
+
+  if (!isRedisAvailable()) {
+    return result;
+  }
+
+  const client = getRedisClient();
+  if (!client || client.status !== 'ready') {
+    return result;
+  }
+
+  const redisKeys = identifiers.map((i) => `cache:${i.key}`);
+
+  try {
+    const values = await client.mget(...redisKeys);
+
+    for (let i = 0; i < values.length; i++) {
+      const val = values[i];
+      if (!val) continue;
+
+      const identifier = identifiers[i];
+      let row: CacheRow | undefined;
+      try {
+        row = JSON.parse(val) as CacheRow;
+      } catch {
+        continue;
+      }
+
+      if (!row) continue;
+
+      const entry = mapRow<MinimalPlayerStats>(row);
+      if (!entry) continue;
+
+      const now = Date.now();
+      const isFresh = entry.expiresAt > now;
+      const cachedAt = entry.cachedAt ?? (entry.expiresAt - getAdaptiveL1TtlMs());
+      const ageMs = now - cachedAt;
+
+      if (isFresh) {
+        recordCacheHit();
+        recordCacheTierHit('l1');
+        recordCacheSourceHit('redis');
+        result.set(identifier.key, {
+          ...entry,
+          isStale: false,
+          staleAgeMs: 0,
+        });
+        continue;
+      }
+
+      if (SWR_ENABLED) {
+        const isWithinSWRWindow = now <= entry.expiresAt + SWR_STALE_TTL_MS;
+        if (isWithinSWRWindow) {
+          recordCacheHit();
+          recordCacheTierHit('l1');
+          recordCacheSourceHit('redis');
+
+          triggerBackgroundRefresh(identifier.key, identifier.uuid, entry);
+
+          result.set(identifier.key, {
+            ...entry,
+            isStale: true,
+            staleAgeMs: ageMs,
+          });
+          continue;
+        }
+      }
+
+      // Expired and not SWR-eligible, ignore.
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error('[statsCache] L1 batch read failed', message);
+  }
+
+  return result;
+}
+
 export async function setPlayerStatsL1(
   key: string,
   stats: MinimalPlayerStats,
