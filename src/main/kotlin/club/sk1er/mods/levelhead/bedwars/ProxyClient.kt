@@ -102,10 +102,15 @@ object ProxyClient {
                 if (response.code() == 304) {
                     networkIssueWarned.set(false)
                     invalidProxyTokenWarned.set(false)
+                    val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
+                    handleRetryAfterHint("proxy", retryAfterMillis, silent = true)
                     return FetchResult.NotModified
                 }
 
                 val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
+                val cacheHeader = response.header("X-Cache")
+                val isCacheHit = cacheHeader?.equals("HIT", ignoreCase = true) == true ||
+                        cacheHeader?.equals("PARTIAL", ignoreCase = true) == true
                 val body = response.body()?.string().orEmpty()
 
                 if (!response.isSuccessful) {
@@ -147,7 +152,7 @@ object ProxyClient {
                 }
 
                 networkIssueWarned.set(false)
-                handleRetryAfterHint("proxy", retryAfterMillis)
+                handleRetryAfterHint("proxy", retryAfterMillis, silent = isCacheHit)
                 val newEtag = response.header("ETag")
                 FetchResult.Success(json, newEtag)
             }
@@ -214,6 +219,9 @@ object ProxyClient {
             executeWithRetries(request, "proxy batch").use { response ->
                 val body = response.body()?.string().orEmpty()
                 val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
+                val cacheHeader = response.header("X-Cache")
+                val isCacheHit = cacheHeader?.equals("HIT", ignoreCase = true) == true ||
+                        cacheHeader?.equals("PARTIAL", ignoreCase = true) == true
 
                 if (!response.isSuccessful) {
                     return when (response.code()) {
@@ -260,7 +268,7 @@ object ProxyClient {
                 }
 
                 networkIssueWarned.set(false)
-                handleRetryAfterHint("proxy", retryAfterMillis)
+                handleRetryAfterHint("proxy", retryAfterMillis, silent = isCacheHit)
 
                 val results = mutableMapOf<UUID, FetchResult>()
                 identifierToUuid.forEach { (identifier, uuid) ->

@@ -1,0 +1,57 @@
+<<<<<<< SEARCH
+    fun registerServerCooldown(duration: Duration) {
+        if (duration.isZero || duration.isNegative) return
+        val sanitized = duration
+        Levelhead.scope.launch {
+            var applied = false
+            mutex.withLock {
+                val now = clock.instant()
+                val target = now + sanitized
+                val currentHint = serverCooldownUntil
+                if (currentHint == null || currentHint.isBefore(target)) {
+                    serverCooldownUntil = target
+                    if (nextInterval.isBefore(target)) {
+                        nextInterval = target
+                    }
+                    updateMetrics(now)
+                    applied = true
+                }
+            }
+            if (applied) {
+                Levelhead.logger.info(
+                    "Server requested cooldown for ${sanitized.seconds} seconds via Retry-After."
+                )
+                Levelhead.onServerRetryAfter(sanitized)
+            }
+        }
+    }
+=======
+    fun registerServerCooldown(duration: Duration, silent: Boolean = false) {
+        if (duration.isZero || duration.isNegative) return
+        val sanitized = duration
+        Levelhead.scope.launch {
+            var applied = false
+            mutex.withLock {
+                val now = clock.instant()
+                val target = now + sanitized
+                val currentHint = serverCooldownUntil
+                if (currentHint == null || currentHint.isBefore(target)) {
+                    serverCooldownUntil = target
+                    if (nextInterval.isBefore(target)) {
+                        nextInterval = target
+                    }
+                    updateMetrics(now)
+                    applied = true
+                }
+            }
+            if (applied) {
+                Levelhead.logger.info(
+                    "Server requested cooldown for ${sanitized.seconds} seconds via Retry-After (silent=$silent)."
+                )
+                if (!silent) {
+                    Levelhead.onServerRetryAfter(sanitized)
+                }
+            }
+        }
+    }
+>>>>>>> REPLACE

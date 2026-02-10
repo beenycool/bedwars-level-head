@@ -71,11 +71,11 @@ object BedwarsHttpUtils {
         return error is InterruptedIOException && error.message?.contains("timeout", ignoreCase = true) == true
     }
 
-    fun handleRetryAfterHint(source: String, retryAfterMillis: Long?) {
+    fun handleRetryAfterHint(source: String, retryAfterMillis: Long?, silent: Boolean = false) {
         val millis = retryAfterMillis ?: return
         if (millis <= 0) return
-        Levelhead.logger.info("Received Retry-After hint from {} for {} ms", source, millis)
-        Levelhead.rateLimiter.registerServerCooldown(Duration.ofMillis(millis))
+        Levelhead.logger.info("Received Retry-After hint from {} for {} ms (silent=$silent)", source, millis)
+        Levelhead.rateLimiter.registerServerCooldown(Duration.ofMillis(millis), silent)
     }
 
     fun parseRetryAfterMillis(value: String?): Long? {

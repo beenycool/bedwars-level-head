@@ -1,0 +1,66 @@
+<<<<<<< SEARCH
+                if (response.code() == 304) {
+                    networkIssueWarned.set(false)
+                    invalidProxyTokenWarned.set(false)
+                    return FetchResult.NotModified
+                }
+
+                val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
+                val body = response.body()?.string().orEmpty()
+
+                if (!response.isSuccessful) {
+=======
+                if (response.code() == 304) {
+                    networkIssueWarned.set(false)
+                    invalidProxyTokenWarned.set(false)
+                    val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
+                    handleRetryAfterHint("proxy", retryAfterMillis, silent = true)
+                    return FetchResult.NotModified
+                }
+
+                val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
+                val cacheHeader = response.header("X-Cache")
+                val isCacheHit = cacheHeader?.equals("HIT", ignoreCase = true) == true ||
+                        cacheHeader?.equals("PARTIAL", ignoreCase = true) == true
+                val body = response.body()?.string().orEmpty()
+
+                if (!response.isSuccessful) {
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+                networkIssueWarned.set(false)
+                handleRetryAfterHint("proxy", retryAfterMillis)
+                val newEtag = response.header("ETag")
+=======
+                networkIssueWarned.set(false)
+                handleRetryAfterHint("proxy", retryAfterMillis, silent = isCacheHit)
+                val newEtag = response.header("ETag")
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+        return try {
+            executeWithRetries(request, "proxy batch").use { response ->
+                val body = response.body()?.string().orEmpty()
+                val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
+
+                if (!response.isSuccessful) {
+=======
+        return try {
+            executeWithRetries(request, "proxy batch").use { response ->
+                val body = response.body()?.string().orEmpty()
+                val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
+                val cacheHeader = response.header("X-Cache")
+                val isCacheHit = cacheHeader?.equals("HIT", ignoreCase = true) == true ||
+                        cacheHeader?.equals("PARTIAL", ignoreCase = true) == true
+
+                if (!response.isSuccessful) {
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+                networkIssueWarned.set(false)
+                handleRetryAfterHint("proxy", retryAfterMillis)
+
+                val results = mutableMapOf<UUID, FetchResult>()
+=======
+                networkIssueWarned.set(false)
+                handleRetryAfterHint("proxy", retryAfterMillis, silent = isCacheHit)
+
+                val results = mutableMapOf<UUID, FetchResult>()
+>>>>>>> REPLACE

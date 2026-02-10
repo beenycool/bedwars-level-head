@@ -116,7 +116,7 @@ class RateLimiter constructor(
 
     fun metricsSnapshot(): Metrics = latestMetrics
 
-    fun registerServerCooldown(duration: Duration) {
+    fun registerServerCooldown(duration: Duration, silent: Boolean = false) {
         if (duration.isZero || duration.isNegative) return
         val sanitized = duration
         Levelhead.scope.launch {
@@ -136,9 +136,11 @@ class RateLimiter constructor(
             }
             if (applied) {
                 Levelhead.logger.info(
-                    "Server requested cooldown for ${sanitized.seconds} seconds via Retry-After."
+                    "Server requested cooldown for ${sanitized.seconds} seconds via Retry-After (silent=$silent)."
                 )
-                Levelhead.onServerRetryAfter(sanitized)
+                if (!silent) {
+                    Levelhead.onServerRetryAfter(sanitized)
+                }
             }
         }
     }
