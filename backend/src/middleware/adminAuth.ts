@@ -5,14 +5,17 @@ import { HttpError } from '../util/httpError';
 
 // Generate a random salt on startup to ensure these hashes are unique to this process
 // and cannot be pre-computed by an attacker.
-// This also addresses CodeQL concerns about static hashing of secrets.
-const SALT = crypto.randomBytes(32);
+// PBKDF2 is used to satisfy CodeQL's requirement for secure password hashing.
+const SALT = crypto.randomBytes(16);
+const ITERATIONS = 10000; // Sufficient for API keys, fast enough for per-request
+const KEYLEN = 32; // SHA-256 output length
+const DIGEST = 'sha256';
 
-// Pre-compute HMACs of allowed keys
+// Pre-compute PBKDF2 hashes of allowed keys
 // This mitigates timing attacks by ensuring constant-time comparison
 // and improves performance.
-const ALLOWED_KEY_HMACS = ADMIN_API_KEYS.map((key) =>
-  crypto.createHmac('sha256', SALT).update(key).digest()
+const ALLOWED_KEY_HASHES = ADMIN_API_KEYS.map((key) =>
+  crypto.pbkdf2Sync(key, SALT, ITERATIONS, KEYLEN, DIGEST)
 );
 
 function extractAdminToken(req: Request): string | null {
@@ -37,18 +40,18 @@ function extractAdminToken(req: Request): string | null {
 
 /**
  * Compares a provided token against a list of allowed keys in a timing-safe manner.
- * Using HMAC-SHA256 with a random salt ensures constant length comparison.
+ * Using PBKDF2 ensures constant length comparison and cryptographic strength.
  */
 function secureCompare(token: string): boolean {
   if (!token) return false;
 
-  // HMAC the incoming token with the same random salt
-  const tokenHmac = crypto.createHmac('sha256', SALT).update(token).digest();
+  // Hash the incoming token with the same salt and parameters
+  const tokenHash = crypto.pbkdf2Sync(token, SALT, ITERATIONS, KEYLEN, DIGEST);
   let match = false;
 
-  for (const keyHmac of ALLOWED_KEY_HMACS) {
-    // timingSafeEqual requires buffers of equal length, which SHA-256 guarantees (32 bytes)
-    if (crypto.timingSafeEqual(tokenHmac, keyHmac)) {
+  for (const keyHash of ALLOWED_KEY_HASHES) {
+    // timingSafeEqual requires buffers of equal length
+    if (crypto.timingSafeEqual(tokenHash, keyHash)) {
       match = true;
     }
   }
