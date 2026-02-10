@@ -347,7 +347,7 @@ object Levelhead {
                             
                             val results = club.sk1er.mods.levelhead.bedwars.ProxyClient.fetchBatch(chunk)
                             
-                            chunk.forEach { uuid ->
+                            chunk.forEach uuidLoop@{ uuid ->
                                 val result = results[uuid]
                                 val entries = entriesByUuid[uuid].orEmpty()
 
@@ -356,7 +356,7 @@ object Levelhead {
                                         batchLocks[entry.cacheKey]?.complete(null)
                                         inFlightStatsRequests.remove(entry.cacheKey)
                                     }
-                                    return@forEach
+                                    return@uuidLoop
                                 }
 
                                 when (result) {
