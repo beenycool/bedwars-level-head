@@ -59,6 +59,8 @@ router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
       res.set('Age', ageSeconds.toString());
     }
 
+    res.set('X-Cache', resolved.source === 'cache' ? 'HIT' : 'MISS');
+
     res.statusCode = 200;
     const notModified = req.fresh;
     const responseStatus = notModified ? 304 : 200;
@@ -166,6 +168,7 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
               ...resolved.payload,
               ...(resolved.isStale ? { stale: true } : {}),
             },
+            source: resolved.source,
           };
         } catch (error) {
           if (error instanceof HttpError) {
@@ -180,11 +183,21 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
     );
 
     const payloadMap: Record<string, ResolvedPlayer['payload']> = {};
+    let cacheHits = 0;
+    let total = 0;
     results.forEach((result) => {
       if (result) {
         payloadMap[result.identifier] = result.payload;
+        total++;
+        if ((result as any).source === 'cache') {
+          cacheHits++;
+        }
       }
     });
+
+    if (total > 0) {
+      res.set('X-Cache', cacheHits === total ? 'HIT' : cacheHits > 0 ? 'PARTIAL' : 'MISS');
+    }
 
     const circuitBreaker = getCircuitBreakerState();
     const isCircuitOpen = circuitBreaker.state === 'open';
