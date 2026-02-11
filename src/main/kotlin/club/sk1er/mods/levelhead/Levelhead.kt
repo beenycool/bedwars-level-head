@@ -112,7 +112,7 @@ object Levelhead {
     private var worldJob: Job = SupervisorJob(modJob)
     @Volatile
     private var worldScope: CoroutineScope = CoroutineScope(worldJob + Dispatchers.IO)
-    val rateLimiter: RateLimiter = RateLimiter(150, Duration.ofMinutes(5), onBlocked = { onRateLimiterBlocked(it) }, onReset = { resetRateLimiterNotification() })
+    val rateLimiter: RateLimiter = RateLimiter(150, Duration.ofMinutes(5), onBlocked = ::onRateLimiterBlocked, onReset = ::resetRateLimiterNotification)
 
     private val statsCache: ConcurrentHashMap<StatsCacheKey, GameStats> = ConcurrentHashMap()
     private val inFlightStatsRequests: ConcurrentHashMap<StatsCacheKey, Deferred<GameStats?>> = ConcurrentHashMap()
