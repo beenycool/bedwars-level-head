@@ -2839,6 +2839,7 @@ router.get('/', async (req, res, next) => {
       }
       
       // Copy button handler
+      // Note: This script runs in the browser, so it must be valid vanilla JS (no TypeScript syntax).
       document.addEventListener('click', async (e) => {
         const btn = e.target.closest('.copy-btn');
         if (!btn) return;
