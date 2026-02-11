@@ -2839,33 +2839,51 @@ router.get('/', async (req, res, next) => {
       }
       
       // Copy button handler
-      let isCopying = false;
       document.addEventListener('click', async (e) => {
         const btn = e.target.closest('.copy-btn');
         if (!btn) return;
 
-        // Prevent re-entry while copying
-        if (isCopying) return;
+        // Prevent re-entry on this specific button
+        if (btn.dataset.copying === 'true') return;
 
         const text = btn.getAttribute('data-copy');
         if (!text) return;
 
+        // Lock this button
+        btn.dataset.copying = 'true';
+        const originalHtml = btn.innerHTML;
+        const originalLabel = btn.getAttribute('aria-label');
+        const originalTitle = btn.getAttribute('title');
+
         try {
-          isCopying = true;
           await navigator.clipboard.writeText(text);
           btn.classList.add('copied');
-          const originalHtml = btn.innerHTML;
+          btn.setAttribute('aria-label', 'Copied');
+          btn.setAttribute('title', 'Copied');
           // Checkmark icon
           btn.innerHTML = '<svg aria-hidden="true" viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg>';
 
           setTimeout(() => {
             btn.innerHTML = originalHtml;
             btn.classList.remove('copied');
-            isCopying = false;
+
+            if (originalLabel) {
+              btn.setAttribute('aria-label', originalLabel);
+            } else {
+              btn.removeAttribute('aria-label');
+            }
+
+            if (originalTitle) {
+              btn.setAttribute('title', originalTitle);
+            } else {
+              btn.removeAttribute('title');
+            }
+
+            delete btn.dataset.copying;
           }, 2000);
         } catch (err) {
           console.error('Failed to copy', err);
-          isCopying = false;
+          delete btn.dataset.copying;
         }
       });
 
