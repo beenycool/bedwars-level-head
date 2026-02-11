@@ -292,6 +292,66 @@ function mapRow<T>(row: CacheRow): CacheEntryWithCachedAt<T> | null {
   };
 }
 
+async function getManyPlayerStatsFromDb(
+  keys: string[],
+  includeExpired: boolean,
+): Promise<Map<string, CacheEntryWithCachedAt<MinimalPlayerStats>>> {
+  await ensureInitialized();
+
+  const result = new Map<string, CacheEntryWithCachedAt<MinimalPlayerStats>>();
+  if (keys.length === 0) {
+    return result;
+  }
+
+  try {
+    let queryResult;
+    if (pool.type === DatabaseType.POSTGRESQL) {
+      queryResult = await pool.query<CacheRow & { cache_key: string }>(
+        'SELECT payload, expires_at, cached_at, etag, last_modified, source, cache_key FROM player_stats_cache WHERE cache_key = ANY($1)',
+        [keys],
+      );
+    } else {
+      const placeholders = keys.map((_, i) => `@p${i + 1}`).join(',');
+      queryResult = await pool.query<CacheRow & { cache_key: string }>(
+        `SELECT payload, expires_at, cached_at, etag, last_modified, source, cache_key FROM player_stats_cache WHERE cache_key IN (${placeholders})`,
+        keys,
+      );
+    }
+    markDbAccess();
+
+    for (const row of queryResult.rows) {
+      const cacheKey = row.cache_key;
+      const entry = mapRow<MinimalPlayerStats>(row);
+
+      if (!entry) {
+        if (!includeExpired) {
+          void pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [cacheKey])
+            .catch((e) => console.warn('[statsCache] failed to delete invalid L2 entry', e));
+        }
+        continue;
+      }
+
+      const now = Date.now();
+      if (Number.isNaN(entry.expiresAt) || entry.expiresAt <= now) {
+        if (!includeExpired) {
+          void pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [cacheKey])
+            .catch((e) => console.warn('[statsCache] failed to delete expired L2 entry', e));
+        }
+        if (includeExpired) {
+          result.set(cacheKey, entry);
+        }
+        continue;
+      }
+
+      result.set(cacheKey, entry);
+    }
+  } catch (error) {
+    console.error('[statsCache] failed to batch read L2 cache', error);
+  }
+
+  return result;
+}
+
 async function getPlayerStatsFromDb(
   key: string,
   includeExpired: boolean,
@@ -879,6 +939,70 @@ export async function getManyPlayerStatsFromCacheWithSWR(
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     console.error('[statsCache] L1 batch read failed', message);
+  }
+
+  const missing = identifiers.filter((i) => !result.has(i.key));
+  if (missing.length > 0 && shouldReadFromDb()) {
+    const missingKeys = missing.map((m) => m.key);
+    const l2Results = await getManyPlayerStatsFromDb(missingKeys, true);
+
+    for (const [key, entry] of l2Results) {
+      const idObj = missing.find((m) => m.key === key);
+      if (!idObj) continue;
+
+      const now = Date.now();
+      const normalTtl = PLAYER_L2_TTL_MS;
+      const cachedAt = entry.cachedAt ?? entry.expiresAt - normalTtl;
+      const ageMs = now - cachedAt;
+      const isFresh = entry.expiresAt > now;
+      const isWithinSWRWindow = now <= entry.expiresAt + SWR_STALE_TTL_MS;
+
+      if (isFresh) {
+        recordCacheHit();
+        recordCacheTierHit('l2');
+        recordCacheSourceHit('sql');
+
+        void setPlayerStatsL1(key, entry.value, {
+          etag: entry.etag ?? undefined,
+          lastModified: entry.lastModified ?? undefined,
+          source: entry.source ?? undefined,
+        }).catch((e) => console.warn('[statsCache] L1 backfill failed', e));
+
+        result.set(key, {
+          ...entry,
+          isStale: false,
+          staleAgeMs: 0,
+        });
+        continue;
+      }
+
+      if (SWR_ENABLED && isWithinSWRWindow) {
+        recordCacheHit();
+        recordCacheTierHit('l2');
+        recordCacheSourceHit('sql');
+
+        triggerBackgroundRefresh(key, idObj.uuid, entry);
+
+        result.set(key, {
+          ...entry,
+          isStale: true,
+          staleAgeMs: ageMs,
+        });
+        continue;
+      }
+
+      void pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [key])
+        .catch((e) => console.warn('[statsCache] failed to delete expired L2 entry', e));
+      recordCacheMiss('expired');
+    }
+
+    const stillMissing = missing.filter((m) => !result.has(m.key));
+    if (stillMissing.length > 0) {
+      recordCacheTierMiss('l2', 'absent');
+      recordCacheMiss('absent');
+    }
+  } else if (missing.length > 0) {
+    recordCacheTierMiss('l2', 'db_cold');
   }
 
   return result;
