@@ -11,7 +11,7 @@ import club.sk1er.mods.levelhead.core.GameMode
 import club.sk1er.mods.levelhead.core.GameStats
 import club.sk1er.mods.levelhead.core.ModeManager
 import club.sk1er.mods.levelhead.core.RateLimiter
-import club.sk1er.mods.levelhead.core.RateLimiter.Metrics
+import club.sk1er.mods.levelhead.core.RateLimiterMetrics
 import club.sk1er.mods.levelhead.core.StatsFetcher
 import club.sk1er.mods.levelhead.core.StatsFormatter
 import club.sk1er.mods.levelhead.core.dashUUID
@@ -112,7 +112,7 @@ object Levelhead {
     private var worldJob: Job = SupervisorJob(modJob)
     @Volatile
     private var worldScope: CoroutineScope = CoroutineScope(worldJob + Dispatchers.IO)
-    val rateLimiter: RateLimiter = RateLimiter(150, Duration.ofMinutes(5))
+    val rateLimiter: RateLimiter = RateLimiter(150, Duration.ofMinutes(5), onBlocked = { onRateLimiterBlocked(it) }, onReset = { resetRateLimiterNotification() })
 
     private val statsCache: ConcurrentHashMap<StatsCacheKey, GameStats> = ConcurrentHashMap()
     private val inFlightStatsRequests: ConcurrentHashMap<StatsCacheKey, Deferred<GameStats?>> = ConcurrentHashMap()
@@ -442,7 +442,7 @@ object Levelhead {
         statsCacheMetrics.reset()
     }
 
-    internal fun onRateLimiterBlocked(metrics: Metrics) {
+    internal fun onRateLimiterBlocked(metrics: RateLimiterMetrics) {
         if (rateLimiterNotified.compareAndSet(false, true)) {
             val resetText = formatCooldownDuration(metrics.resetIn)
             sendChat(
