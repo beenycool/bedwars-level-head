@@ -58,6 +58,36 @@ function formatLatency(latency: number | null): string {
   return `${latency.toLocaleString()} ms`;
 }
 
+function getEmptyStateForSearch(searchTerm: string): string {
+  return `
+    <tr>
+      <td colspan="7" class="empty-state">
+        <div class="empty-content">
+          <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+          </svg>
+          <p>No players found matching "<strong>${escapeHtml(searchTerm)}</strong>"</p>
+          <a href="?" class="clear-search-btn">Clear Search</a>
+        </div>
+      </td>
+    </tr>`;
+}
+
+function getEmptyStateForNoLookups(): string {
+  return `
+    <tr>
+      <td colspan="7" class="empty-state">
+        <div class="empty-content">
+          <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
+          </svg>
+          <p>No lookups recorded yet</p>
+          <p class="sub-text">Search for a player to get started</p>
+        </div>
+      </td>
+    </tr>`;
+}
+
 router.get('/csv', async (req, res) => {
   try {
     const fromParam = typeof req.query.from === 'string' ? req.query.from : undefined;
@@ -260,31 +290,9 @@ router.get('/', async (req, res, next) => {
 
     if (!rows) {
       if (search) {
-        rows = `
-          <tr>
-            <td colspan="7" class="empty-state">
-              <div class="empty-content">
-                <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                </svg>
-                <p>No players found matching "<strong>${escapeHtml(search)}</strong>"</p>
-                <a href="?" class="clear-search-btn">Clear Search</a>
-              </div>
-            </td>
-          </tr>`;
+        rows = getEmptyStateForSearch(search);
       } else {
-        rows = `
-          <tr>
-            <td colspan="7" class="empty-state">
-              <div class="empty-content">
-                <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                  <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
-                </svg>
-                <p>No lookups recorded yet</p>
-                <p class="sub-text">Search for a player to get started</p>
-              </div>
-            </td>
-          </tr>`;
+        rows = getEmptyStateForNoLookups();
       }
     }
 
@@ -2454,6 +2462,36 @@ router.get('/', async (req, res, next) => {
         if (latency === null || latency === undefined || Number.isNaN(latency) || latency < 0) return '--';
         return \`\${latency.toLocaleString()} ms\`;
       }
+
+      function getEmptyStateForSearch(searchTerm) {
+        return \`
+            <tr>
+              <td colspan="7" class="empty-state">
+                <div class="empty-content">
+                  <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                  </svg>
+                  <p>No players found matching "<strong>\${escapeHtmlClient(searchTerm)}</strong>"</p>
+                  <a href="?" class="clear-search-btn">Clear Search</a>
+                </div>
+              </td>
+            </tr>\`;
+      }
+
+      function getEmptyStateForNoLookups() {
+        return \`
+            <tr>
+              <td colspan="7" class="empty-state">
+                <div class="empty-content">
+                  <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
+                  </svg>
+                  <p>No lookups recorded yet</p>
+                  <p class="sub-text">Search for a player to get started</p>
+                </div>
+              </td>
+            </tr>\`;
+      }
       
       let autoRefreshEnabled = false;
       let refreshIntervalMs = 30000;
@@ -2821,31 +2859,9 @@ router.get('/', async (req, res, next) => {
               const currentSearch = urlParams.get('q');
 
               if (currentSearch) {
-                tbody.innerHTML = \`
-                  <tr>
-                    <td colspan="7" class="empty-state">
-                      <div class="empty-content">
-                        <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-                        </svg>
-                        <p>No players found matching "<strong>\${escapeHtmlClient(currentSearch)}</strong>"</p>
-                        <a href="?" class="clear-search-btn">Clear Search</a>
-                      </div>
-                    </td>
-                  </tr>\`;
+                tbody.innerHTML = getEmptyStateForSearch(currentSearch);
               } else {
-                tbody.innerHTML = \`
-                  <tr>
-                    <td colspan="7" class="empty-state">
-                      <div class="empty-content">
-                        <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                          <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
-                        </svg>
-                        <p>No lookups recorded yet</p>
-                        <p class="sub-text">Search for a player to get started</p>
-                      </div>
-                    </td>
-                  </tr>\`;
+                tbody.innerHTML = getEmptyStateForNoLookups();
               }
             }
           }
