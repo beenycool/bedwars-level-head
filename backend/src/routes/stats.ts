@@ -58,6 +58,36 @@ function formatLatency(latency: number | null): string {
   return `${latency.toLocaleString()} ms`;
 }
 
+function getEmptyStateForSearch(searchTerm: string): string {
+  return `
+    <tr>
+      <td colspan="7" class="empty-state">
+        <div class="empty-content">
+          <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+          </svg>
+          <p>No players found matching "<strong>${escapeHtml(searchTerm)}</strong>"</p>
+          <a href="?" class="clear-search-btn">Clear Search</a>
+        </div>
+      </td>
+    </tr>`;
+}
+
+function getEmptyStateForNoLookups(): string {
+  return `
+    <tr>
+      <td colspan="7" class="empty-state">
+        <div class="empty-content">
+          <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
+          </svg>
+          <p>No lookups recorded yet</p>
+          <p class="sub-text">Search for a player to get started</p>
+        </div>
+      </td>
+    </tr>`;
+}
+
 router.get('/csv', async (req, res) => {
   try {
     const fromParam = typeof req.query.from === 'string' ? req.query.from : undefined;
@@ -223,7 +253,7 @@ router.get('/', async (req, res, next) => {
 
     const quotaPct = Math.max(0, Math.min(100, (sysStats.apiCallsLastHour / (120 * 60)) * 100));
 
-    const rows = pageData.rows
+    let rows = pageData.rows
       .map((entry) => {
         const lookupIdentifier =
           entry.lookupType === 'uuid' && entry.resolvedUsername
@@ -258,6 +288,14 @@ router.get('/', async (req, res, next) => {
       })
       .join('\n');
 
+    if (!rows) {
+      if (search) {
+        rows = getEmptyStateForSearch(search);
+      } else {
+        rows = getEmptyStateForNoLookups();
+      }
+    }
+
 
     const dynamicStyles = `
       #quotaBar { width: ${quotaPct}%; }
@@ -282,6 +320,41 @@ router.get('/', async (req, res, next) => {
         color: #e2e8f0;
         --chart-height: 320px;
       }
+
+      .empty-state {
+        text-align: center;
+        padding: 4rem 1rem;
+        color: #94a3b8;
+      }
+      .empty-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+      }
+      .empty-content svg {
+        color: #475569;
+        margin-bottom: 0.5rem;
+      }
+      .empty-content p {
+        margin: 0;
+        font-size: 1rem;
+      }
+      .empty-content .sub-text {
+        font-size: 0.875rem;
+        color: #64748b;
+      }
+      .clear-search-btn {
+        margin-top: 0.5rem;
+        color: #38bdf8;
+        text-decoration: none;
+        font-weight: 500;
+        font-size: 0.9rem;
+      }
+      .clear-search-btn:hover {
+        text-decoration: underline;
+      }
+
       body {
         padding: 1.5rem 1rem;
         margin: 0;
@@ -1167,7 +1240,7 @@ router.get('/', async (req, res, next) => {
         </tr>
       </thead>
       <tbody>
-        ${rows || '<tr><td colspan="7">No lookups recorded yet.</td></tr>'}
+        ${rows}
       </tbody>
     </table>
 
@@ -2389,6 +2462,36 @@ router.get('/', async (req, res, next) => {
         if (latency === null || latency === undefined || Number.isNaN(latency) || latency < 0) return '--';
         return \`\${latency.toLocaleString()} ms\`;
       }
+
+      function getEmptyStateForSearch(searchTerm) {
+        return \`
+            <tr>
+              <td colspan="7" class="empty-state">
+                <div class="empty-content">
+                  <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                  </svg>
+                  <p>No players found matching "<strong>\${escapeHtmlClient(searchTerm)}</strong>"</p>
+                  <a href="?" class="clear-search-btn">Clear Search</a>
+                </div>
+              </td>
+            </tr>\`;
+      }
+
+      function getEmptyStateForNoLookups() {
+        return \`
+            <tr>
+              <td colspan="7" class="empty-state">
+                <div class="empty-content">
+                  <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
+                  </svg>
+                  <p>No lookups recorded yet</p>
+                  <p class="sub-text">Search for a player to get started</p>
+                </div>
+              </td>
+            </tr>\`;
+      }
       
       let autoRefreshEnabled = false;
       let refreshIntervalMs = 30000;
@@ -2749,7 +2852,18 @@ router.get('/', async (req, res, next) => {
               </tr>\`;
             }).join('\\n');
             
-            tbody.innerHTML = rowsHtml || '<tr><td colspan="7">No lookups recorded yet.</td></tr>';
+            if (rowsHtml) {
+              tbody.innerHTML = rowsHtml;
+            } else {
+              const urlParams = new URLSearchParams(window.location.search);
+              const currentSearch = (urlParams.get('q') || '').trim();
+
+              if (currentSearch.length > 0) {
+                tbody.innerHTML = getEmptyStateForSearch(currentSearch);
+              } else {
+                tbody.innerHTML = getEmptyStateForNoLookups();
+              }
+            }
           }
         }
         
