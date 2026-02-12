@@ -68,11 +68,10 @@ import { getManyPlayerStatsFromCacheWithSWR } from '../src/services/statsCache';
 
 describe('getManyPlayerStatsFromCacheWithSWR (L2 Batch)', () => {
   beforeEach(() => {
+    jest.clearAllMocks();
     mockMGet.mockReset();
     mockQuery.mockReset();
     mockSetEx.mockReset();
-    mockRecordCacheMiss.mockClear();
-    mockRecordCacheTierMiss.mockClear();
   });
 
   it('should fetch from L2 (DB) when L1 (Redis) misses', async () => {
@@ -156,13 +155,8 @@ describe('getManyPlayerStatsFromCacheWithSWR (L2 Batch)', () => {
     expect(mockRecordCacheMiss).toHaveBeenCalledTimes(2);
     expect(mockRecordCacheMiss).toHaveBeenCalledWith('absent');
 
-    // recordCacheTierMiss('l1', 'absent') called for each missing key (not strictly checked here but implied)
     // recordCacheTierMiss('l2', 'absent') called for each missing key
     expect(mockRecordCacheTierMiss).toHaveBeenCalledWith('l2', 'absent');
-    // Total tier misses: 2 (L1) + 2 (L2) = 4 (approx, depends on impl detail of L1 miss recording in getManyPlayerStatsFromCacheWithSWR)
-    // Actually, L1 miss recording is implicit or explicit?
-    // In getManyPlayerStatsFromCacheWithSWR:
-    // It doesn't seem to record L1 miss per key explicitly in the loop?
-    // Let's check statsCache.ts source again for L1 miss recording.
+    expect(mockRecordCacheTierMiss).toHaveBeenCalledTimes(2);
   });
 });

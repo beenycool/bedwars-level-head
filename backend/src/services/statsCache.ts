@@ -945,6 +945,7 @@ export async function getManyPlayerStatsFromCacheWithSWR(
   if (missing.length > 0 && shouldReadFromDb()) {
     const missingKeys = missing.map((m) => m.key);
     const l2Results = await getManyPlayerStatsFromDb(missingKeys, true);
+    const expiredKeys: string[] = [];
 
     for (const [key, entry] of l2Results) {
       const idObj = missing.find((m) => m.key === key);
@@ -991,9 +992,24 @@ export async function getManyPlayerStatsFromCacheWithSWR(
         continue;
       }
 
-      void pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [key])
-        .catch((e) => console.warn('[statsCache] failed to delete expired L2 entry', e));
+      expiredKeys.push(key);
       recordCacheMiss('expired');
+    }
+
+    if (expiredKeys.length > 0) {
+      const doBatchDelete = async () => {
+        try {
+          if (pool.type === DatabaseType.POSTGRESQL) {
+            await pool.query('DELETE FROM player_stats_cache WHERE cache_key = ANY($1)', [expiredKeys]);
+          } else {
+            const placeholders = expiredKeys.map((_, i) => `@p${i + 1}`).join(',');
+            await pool.query(`DELETE FROM player_stats_cache WHERE cache_key IN (${placeholders})`, expiredKeys);
+          }
+        } catch (e) {
+          console.warn('[statsCache] failed to batch delete expired L2 entries', e);
+        }
+      };
+      void doBatchDelete();
     }
 
     const stillMissing = missing.filter((m) => !result.has(m.key));
