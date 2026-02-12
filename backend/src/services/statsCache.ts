@@ -292,20 +292,6 @@ function mapRow<T>(row: CacheRow): CacheEntryWithCachedAt<T> | null {
   };
 }
 
-async function batchDeletePlayerStatsCacheKeys(keys: string[]): Promise<void> {
-  if (keys.length === 0) {
-    return;
-  }
-
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    await pool.query('DELETE FROM player_stats_cache WHERE cache_key = ANY($1)', [keys]);
-    return;
-  }
-
-  const placeholders = keys.map((_, i) => `@p${i + 1}`).join(',');
-  await pool.query(`DELETE FROM player_stats_cache WHERE cache_key IN (${placeholders})`, keys);
-}
-
 async function getManyPlayerStatsFromDb(
   keys: string[],
   includeExpired: boolean,
@@ -332,8 +318,6 @@ async function getManyPlayerStatsFromDb(
       );
     }
     markDbAccess();
-    const keysToDelete: string[] = [];
-    const now = Date.now();
 
     for (const row of queryResult.rows) {
       const cacheKey = row.cache_key;
@@ -341,14 +325,17 @@ async function getManyPlayerStatsFromDb(
 
       if (!entry) {
         if (!includeExpired) {
-          keysToDelete.push(cacheKey);
+          void pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [cacheKey])
+            .catch((e) => console.warn('[statsCache] failed to delete invalid L2 entry', e));
         }
         continue;
       }
 
+      const now = Date.now();
       if (Number.isNaN(entry.expiresAt) || entry.expiresAt <= now) {
         if (!includeExpired) {
-          keysToDelete.push(cacheKey);
+          void pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [cacheKey])
+            .catch((e) => console.warn('[statsCache] failed to delete expired L2 entry', e));
         }
         if (includeExpired) {
           result.set(cacheKey, entry);
@@ -357,11 +344,6 @@ async function getManyPlayerStatsFromDb(
       }
 
       result.set(cacheKey, entry);
-    }
-
-    if (keysToDelete.length > 0) {
-      void batchDeletePlayerStatsCacheKeys(keysToDelete)
-        .catch((e) => console.warn('[statsCache] failed to batch delete invalid/expired L2 entries', e));
     }
   } catch (error) {
     console.error('[statsCache] failed to batch read L2 cache', error);
@@ -961,13 +943,11 @@ export async function getManyPlayerStatsFromCacheWithSWR(
 
   const missing = identifiers.filter((i) => !result.has(i.key));
   if (missing.length > 0 && shouldReadFromDb()) {
-    const missingMap = new Map(missing.map((m) => [m.key, m]));
-    const missingKeys = Array.from(missingMap.keys());
+    const missingKeys = missing.map((m) => m.key);
     const l2Results = await getManyPlayerStatsFromDb(missingKeys, true);
-    const keysToDelete: string[] = [];
 
     for (const [key, entry] of l2Results) {
-      const idObj = missingMap.get(key);
+      const idObj = missing.find((m) => m.key === key);
       if (!idObj) continue;
 
       const now = Date.now();
@@ -1011,22 +991,21 @@ export async function getManyPlayerStatsFromCacheWithSWR(
         continue;
       }
 
-      keysToDelete.push(key);
+      void pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [key])
+        .catch((e) => console.warn('[statsCache] failed to delete expired L2 entry', e));
       recordCacheMiss('expired');
     }
 
-    if (keysToDelete.length > 0) {
-      void batchDeletePlayerStatsCacheKeys(keysToDelete)
-        .catch((e) => console.warn('[statsCache] failed to batch delete expired L2 entries', e));
-    }
-
     const stillMissing = missing.filter((m) => !result.has(m.key));
-    if (stillMissing.length > 0) {
+    for (const _ of stillMissing) {
       recordCacheTierMiss('l2', 'absent');
       recordCacheMiss('absent');
     }
   } else if (missing.length > 0) {
-    recordCacheTierMiss('l2', 'db_cold');
+    for (const _ of missing) {
+      recordCacheTierMiss('l2', 'db_cold');
+      recordCacheMiss('db_cold');
+    }
   }
 
   return result;
