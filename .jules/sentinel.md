@@ -14,3 +14,8 @@
 **Vulnerability:** The `verifyHypixelOrigin` fallback mechanism (used when signature is missing) verified numeric stats against Hypixel API but accepted the `displayname` from the user submission without verification. This allowed attackers to spoof their IGN in the cache/database by submitting their own valid stats but a fake name.
 **Learning:** When validating data against a trusted source (like an API), ensure *all* fields that are used/stored are verified, not just a subset of "critical" fields. Partial validation can lead to partial trust, which can be exploited.
 **Prevention:** Explicitly verify all user-submitted fields against the trusted source, or prefer using the data directly from the trusted source instead of the user submission when falling back.
+
+## 2025-05-18 - Unauthenticated CPU Exhaustion DoS in Admin Routes
+**Vulnerability:** The `enforceAdminAuth` middleware (which performs CPU-intensive PBKDF2 hashing) was placed *before* the `enforceRateLimit` middleware in sensitive routes like `admin.ts` and `apikey.ts`.
+**Learning:** Middleware order is critical for security. CPU-intensive operations (like password hashing or heavy crypto) must always be protected by rate limiting to prevent attackers from exhausting server resources with invalid requests.
+**Prevention:** Always place rate limiting middleware as early as possible in the request processing pipeline, especially before any resource-intensive authentication or validation steps.

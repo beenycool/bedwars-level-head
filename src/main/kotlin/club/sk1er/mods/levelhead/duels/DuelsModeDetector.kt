@@ -186,11 +186,14 @@ object DuelsModeDetector {
             return Context.NONE
         }
 
-        // In Duels, look for indicators like "Opponent:" or timer patterns
+        // In Duels, only use strong in-match indicators.
+        // Lobby scoreboards can include lifetime stat lines (for example "Kills:"),
+        // so those should not be treated as match context.
         val matchIndicators = lines.any { 
             it.contains("Opponent:", ignoreCase = true) || 
-            it.contains("Kills:", ignoreCase = true) ||
-            it.contains("Time Left:", ignoreCase = true)
+            it.contains("Time Left:", ignoreCase = true) ||
+            it.contains("Health:", ignoreCase = true) ||
+            it.contains("Round:", ignoreCase = true)
         }
         
         val preGameIndicators = lines.any {
@@ -201,6 +204,8 @@ object DuelsModeDetector {
 
         val mainLobbyIndicators = lines.any {
             it.contains("Wins:", ignoreCase = true) && !it.contains("Opponent:", ignoreCase = true) ||
+            it.contains("Losses:", ignoreCase = true) ||
+            it.contains("Winstreak", ignoreCase = true) ||
             it.contains("Coins:", ignoreCase = true) ||
             it.contains("Tokens:", ignoreCase = true)
         }
@@ -209,7 +214,7 @@ object DuelsModeDetector {
             return Context.MATCH
         }
 
-        if (preGameIndicators && !mainLobbyIndicators) {
+        if (preGameIndicators || mainLobbyIndicators) {
             return Context.LOBBY
         }
 
