@@ -2856,9 +2856,9 @@ router.get('/', async (req, res, next) => {
               tbody.innerHTML = rowsHtml;
             } else {
               const urlParams = new URLSearchParams(window.location.search);
-              const currentSearch = urlParams.get('q');
+              const currentSearch = (urlParams.get('q') || '').trim();
 
-              if (currentSearch) {
+              if (currentSearch.length > 0) {
                 tbody.innerHTML = getEmptyStateForSearch(currentSearch);
               } else {
                 tbody.innerHTML = getEmptyStateForNoLookups();
