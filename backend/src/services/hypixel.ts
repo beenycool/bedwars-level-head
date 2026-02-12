@@ -392,18 +392,21 @@ function computeAggregates(stats: Record<string, unknown>) {
   let kills = 0;
   let deaths = 0;
 
-  for (const key of Object.keys(stats)) {
-    const value = stats[key];
-    if (typeof value !== 'number') continue;
+  // Optimization: Use for..in to avoid Object.keys() allocation
+  for (const key in stats) {
+    if (Object.prototype.hasOwnProperty.call(stats, key)) {
+      const value = stats[key];
+      if (typeof value !== 'number') continue;
 
-    if (key.startsWith('wins_')) {
-      wins += value;
-    } else if (key.startsWith('losses_')) {
-      losses += value;
-    } else if (key.startsWith('kills_')) {
-      kills += value;
-    } else if (key.startsWith('deaths_')) {
-      deaths += value;
+      if (key.startsWith('wins_')) {
+        wins += value;
+      } else if (key.startsWith('losses_')) {
+        losses += value;
+      } else if (key.startsWith('kills_')) {
+        kills += value;
+      } else if (key.startsWith('deaths_')) {
+        deaths += value;
+      }
     }
   }
   return { wins, losses, kills, deaths };
