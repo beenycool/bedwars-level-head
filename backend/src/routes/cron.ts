@@ -13,7 +13,7 @@ const enforceCronRateLimit = createRateLimitMiddleware({
   metricLabel: 'cron',
 });
 
-router.post('/ping', enforceCronAuth, enforceCronRateLimit, (_req, res) => {
+router.post('/ping', enforceCronRateLimit, enforceCronAuth, (_req, res) => {
   res.locals.metricsRoute = '/api/cron/ping';
   res.json({
     success: true,
@@ -26,7 +26,7 @@ router.post('/ping', enforceCronAuth, enforceCronRateLimit, (_req, res) => {
  * GET /api/cron/apikey-status
  * Returns status of all stored API keys for monitoring
  */
-router.get('/apikey-status', enforceCronAuth, enforceCronRateLimit, async (_req, res, next) => {
+router.get('/apikey-status', enforceCronRateLimit, enforceCronAuth, async (_req, res, next) => {
   res.locals.metricsRoute = '/api/cron/apikey-status';
 
   try {

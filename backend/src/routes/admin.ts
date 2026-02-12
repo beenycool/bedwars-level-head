@@ -41,7 +41,7 @@ async function cacheKeysForIdentifier(identifier: string): Promise<{ playerKeys:
   return { playerKeys: [], igns: [] };
 }
 
-router.post('/cache/purge', enforceAdminAuth, enforceRateLimit, async (req, res, next) => {
+router.post('/cache/purge', enforceRateLimit, enforceAdminAuth, async (req, res, next) => {
   res.locals.metricsRoute = '/api/admin/cache/purge';
   const { identifier } = req.body ?? {};
 
