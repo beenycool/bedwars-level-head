@@ -46,16 +46,14 @@ function secureCompare(token: string): boolean {
 
   // Hash the incoming token with the same salt and parameters
   const tokenHash = crypto.pbkdf2Sync(token, SALT, ITERATIONS, KEYLEN, DIGEST);
-  let match = false;
+  // To prevent timing attacks, we must iterate through all keys and not short-circuit.
+  // Using reduce with a bitwise OR ensures we process every key without conditional branching.
+  const match = ALLOWED_KEY_HASHES.reduce(
+    (acc, keyHash) => acc | Number(crypto.timingSafeEqual(tokenHash, keyHash)),
+    0
+  );
 
-  for (const keyHash of ALLOWED_KEY_HASHES) {
-    // timingSafeEqual requires buffers of equal length
-    if (crypto.timingSafeEqual(tokenHash, keyHash)) {
-      match = true;
-    }
-  }
-
-  return match;
+  return Boolean(match);
 }
 
 export const enforceCronAuth: RequestHandler = (req: Request, _res: Response, next: NextFunction) => {
