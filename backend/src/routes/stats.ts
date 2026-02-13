@@ -262,16 +262,25 @@ router.get('/', async (req, res, next) => {
       },
     }).replace(/</g, '\\u003c');
 
+    const { cacheHits, successCount, latencyValues } = chartData.reduce(
+      (stats, d) => {
+        if (d.cacheHit) stats.cacheHits++;
+        if (d.responseStatus >= 200 && d.responseStatus < 400) stats.successCount++;
+        if (d.latencyMs !== null && d.latencyMs !== undefined && d.latencyMs >= 0) {
+          stats.latencyValues.push(d.latencyMs);
+        }
+        return stats;
+      },
+      { cacheHits: 0, successCount: 0, latencyValues: [] as number[] }
+    );
+
     const totalLookups = chartData.length;
-    const cacheHits = chartData.filter((d) => d.cacheHit).length;
-    const successCount = chartData.filter((d) => d.responseStatus >= 200 && d.responseStatus < 400).length;
+    const cacheHitRateRaw = totalLookups === 0 ? 0 : (cacheHits / totalLookups) * 100;
+    const successRateRaw = totalLookups === 0 ? 0 : (successCount / totalLookups) * 100;
 
-    const cacheHitRate = totalLookups === 0 ? 0 : (cacheHits / totalLookups) * 100;
-    const successRate = totalLookups === 0 ? 0 : (successCount / totalLookups) * 100;
-
-    const latencyValues = chartData
-      .map((d) => (typeof d.latencyMs === 'number' && d.latencyMs >= 0 ? d.latencyMs : null))
-      .filter((v): v is number => v !== null);
+    // Match client-side rounding logic: Math.round(value * 10) / 10
+    const cacheHitRate = Math.round(cacheHitRateRaw * 10) / 10;
+    const successRate = Math.round(successRateRaw * 10) / 10;
 
     const latencyP95 = percentile(latencyValues, 95);
 
