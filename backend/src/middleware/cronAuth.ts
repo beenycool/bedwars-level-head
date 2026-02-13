@@ -1,6 +1,21 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
+import crypto from 'crypto';
 import { CRON_API_KEYS } from '../config';
 import { HttpError } from '../util/httpError';
+
+// Generate a random salt on startup to ensure these hashes are unique to this process
+// and cannot be pre-computed by an attacker.
+// Using PBKDF2 ensures cryptographic strength and constant length for comparison.
+const SALT = crypto.randomBytes(16);
+const ITERATIONS = 10000;
+const KEYLEN = 32; // SHA-256 output length
+const DIGEST = 'sha256';
+
+// Pre-compute PBKDF2 hashes of allowed keys
+// This mitigates timing attacks by ensuring constant-time comparison.
+const ALLOWED_KEY_HASHES = CRON_API_KEYS.map((key) =>
+  crypto.pbkdf2Sync(key, SALT, ITERATIONS, KEYLEN, DIGEST)
+);
 
 function extractCronToken(req: Request): string | null {
   const header = req.get('authorization');
@@ -22,9 +37,28 @@ function extractCronToken(req: Request): string | null {
   return null;
 }
 
+/**
+ * Compares a provided token against a list of allowed keys in a timing-safe manner.
+ * Using PBKDF2 ensures constant length comparison and cryptographic strength.
+ */
+function secureCompare(token: string): boolean {
+  if (!token) return false;
+
+  // Hash the incoming token with the same salt and parameters
+  const tokenHash = crypto.pbkdf2Sync(token, SALT, ITERATIONS, KEYLEN, DIGEST);
+  // To prevent timing attacks, we must iterate through all keys and not short-circuit.
+  // Using reduce with a bitwise OR ensures we process every key without conditional branching.
+  const match = ALLOWED_KEY_HASHES.reduce(
+    (acc, keyHash) => acc | Number(crypto.timingSafeEqual(tokenHash, keyHash)),
+    0
+  );
+
+  return Boolean(match);
+}
+
 export const enforceCronAuth: RequestHandler = (req: Request, _res: Response, next: NextFunction) => {
   const token = extractCronToken(req);
-  if (!token || !CRON_API_KEYS.includes(token)) {
+  if (!token || !secureCompare(token)) {
     next(new HttpError(401, 'UNAUTHORIZED', 'Missing or invalid cron API token.'));
     return;
   }
