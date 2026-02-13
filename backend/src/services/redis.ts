@@ -476,18 +476,17 @@ async function refreshKeyCounts(): Promise<void> {
   if (isRefreshingKeyCounts) return;
   isRefreshingKeyCounts = true;
 
-  const client = getRedisClient();
-  if (!client || client.status !== 'ready') {
-    isRefreshingKeyCounts = false;
-    return;
-  }
-
-  let cursor = '0';
-  let tempRateLimitKeys = 0;
-  let tempStatsKeys = 0;
-  let tempCacheKeys = 0;
-
   try {
+    const client = getRedisClient();
+    if (!client || client.status !== 'ready') {
+      return;
+    }
+
+    let cursor = '0';
+    let tempRateLimitKeys = 0;
+    let tempStatsKeys = 0;
+    let tempCacheKeys = 0;
+
     do {
       // Use Lua script to scan and count in one pass
       const result = await client.eval(
@@ -528,6 +527,7 @@ export function startKeyCountRefresher(): void {
       console.error('[redis] key count refresh interval error', err);
     });
   }, HEAVY_STATS_TTL_MS);
+  keyCountRefreshInterval.unref();
 }
 
 export function stopKeyCountRefresher(): void {
@@ -537,7 +537,7 @@ export function stopKeyCountRefresher(): void {
   }
 }
 
-async function getKeyCounts(): Promise<KeyCounts> {
+function getKeyCounts(): KeyCounts {
   return cachedKeyCounts;
 }
 
@@ -671,7 +671,7 @@ export async function getRedisStats(): Promise<RedisStats> {
             const totalKeys = await client.dbsize();
 
             // Bolt: Optimized to count all prefixes in one pass
-            const { rateLimitKeys, statsKeys } = await getKeyCounts();
+            const { rateLimitKeys, statsKeys } = getKeyCounts();
 
             return {
                 connected: true,
@@ -922,7 +922,7 @@ export async function getRedisCacheStats(): Promise<RedisCacheStats> {
             const totalKeys = await client.dbsize();
 
             // Bolt: Optimized to count all prefixes in one pass
-            const { cacheKeys } = await getKeyCounts();
+            const { cacheKeys } = getKeyCounts();
 
             return {
                 totalKeys,
