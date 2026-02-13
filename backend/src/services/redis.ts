@@ -450,8 +450,6 @@ interface KeyCounts {
   cacheKeys: number;
 }
 
-const keyCountsCache: InMemoryCache<KeyCounts> = { value: null, expiresAt: 0 };
-
 async function withMemoryCache<T>(
     cache: InMemoryCache<T>,
     ttlMs: number,
@@ -468,50 +466,79 @@ async function withMemoryCache<T>(
     return result;
 }
 
+// Background refresher for key counts (avoids blocking requests)
+let cachedKeyCounts: KeyCounts = { rateLimitKeys: 0, statsKeys: 0, cacheKeys: 0 };
+let keyCountRefreshInterval: NodeJS.Timeout | null = null;
+let isRefreshingKeyCounts = false;
+
+// Bolt: Decoupled heavy scan from request path
+async function refreshKeyCounts(): Promise<void> {
+  if (isRefreshingKeyCounts) return;
+  isRefreshingKeyCounts = true;
+
+  const client = getRedisClient();
+  if (!client || client.status !== 'ready') {
+    isRefreshingKeyCounts = false;
+    return;
+  }
+
+  let cursor = '0';
+  let tempRateLimitKeys = 0;
+  let tempStatsKeys = 0;
+  let tempCacheKeys = 0;
+
+  try {
+    do {
+      // Use Lua script to scan and count in one pass
+      const result = await client.eval(
+        COUNT_KEYS_SCRIPT,
+        0,
+        cursor,
+        String(REDIS_SCAN_BATCH_SIZE),
+      ) as [string, number, number, number];
+      const [nextCursor, rl, stats, cache] = result;
+
+      cursor = nextCursor;
+      tempRateLimitKeys += rl;
+      tempStatsKeys += stats;
+      tempCacheKeys += cache;
+    } while (cursor !== '0');
+
+    cachedKeyCounts = {
+      rateLimitKeys: tempRateLimitKeys,
+      statsKeys: tempStatsKeys,
+      cacheKeys: tempCacheKeys,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error('[redis] refreshKeyCounts failed', message);
+  } finally {
+    isRefreshingKeyCounts = false;
+  }
+}
+
+export function startKeyCountRefresher(): void {
+  if (keyCountRefreshInterval) return;
+
+  // Initial refresh (fire and forget)
+  void refreshKeyCounts().catch(() => {});
+
+  keyCountRefreshInterval = setInterval(() => {
+    void refreshKeyCounts().catch((err) => {
+      console.error('[redis] key count refresh interval error', err);
+    });
+  }, HEAVY_STATS_TTL_MS);
+}
+
+export function stopKeyCountRefresher(): void {
+  if (keyCountRefreshInterval) {
+    clearInterval(keyCountRefreshInterval);
+    keyCountRefreshInterval = null;
+  }
+}
+
 async function getKeyCounts(): Promise<KeyCounts> {
-  return withMemoryCache(keyCountsCache, HEAVY_STATS_TTL_MS, async () => {
-    const client = getRedisClient();
-    if (!client || client.status !== 'ready') {
-      return { rateLimitKeys: 0, statsKeys: 0, cacheKeys: 0 };
-    }
-
-    let cursor = '0';
-    let rateLimitKeys = 0;
-    let statsKeys = 0;
-    let cacheKeys = 0;
-
-    try {
-      let tempRateLimitKeys = 0;
-      let tempStatsKeys = 0;
-      let tempCacheKeys = 0;
-
-      do {
-        // Use Lua script to scan and count in one pass
-        const result = await client.eval(
-          COUNT_KEYS_SCRIPT,
-          0,
-          cursor,
-          String(REDIS_SCAN_BATCH_SIZE),
-        ) as [string, number, number, number];
-        const [nextCursor, rl, stats, cache] = result;
-
-        cursor = nextCursor;
-        tempRateLimitKeys += rl;
-        tempStatsKeys += stats;
-        tempCacheKeys += cache;
-      } while (cursor !== '0');
-
-      rateLimitKeys = tempRateLimitKeys;
-      statsKeys = tempStatsKeys;
-      cacheKeys = tempCacheKeys;
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error('[redis] getKeyCounts failed', message);
-      throw err;
-    }
-
-    return { rateLimitKeys, statsKeys, cacheKeys };
-  });
+  return cachedKeyCounts;
 }
 
 export async function getGlobalStats(windowMs: number): Promise<{ requestCount: number; activeUsers: number }> {
