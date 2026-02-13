@@ -58,6 +58,17 @@ function formatLatency(latency: number | null): string {
   return `${latency.toLocaleString()} ms`;
 }
 
+function percentile(values: number[], p: number): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const rank = (p / 100) * (sorted.length - 1);
+  const lower = Math.floor(rank);
+  const upper = Math.ceil(rank);
+  if (lower === upper) return sorted[lower];
+  const weight = rank - lower;
+  return sorted[lower] * (1 - weight) + sorted[upper] * weight;
+}
+
 function getEmptyStateForSearch(searchTerm: string): string {
   return `
     <tr>
@@ -251,6 +262,19 @@ router.get('/', async (req, res, next) => {
       },
     }).replace(/</g, '\\u003c');
 
+    const totalLookups = chartData.length;
+    const cacheHits = chartData.filter((d) => d.cacheHit).length;
+    const successCount = chartData.filter((d) => d.responseStatus >= 200 && d.responseStatus < 400).length;
+
+    const cacheHitRate = totalLookups === 0 ? 0 : (cacheHits / totalLookups) * 100;
+    const successRate = totalLookups === 0 ? 0 : (successCount / totalLookups) * 100;
+
+    const latencyValues = chartData
+      .map((d) => (typeof d.latencyMs === 'number' && d.latencyMs >= 0 ? d.latencyMs : null))
+      .filter((v): v is number => v !== null);
+
+    const latencyP95 = percentile(latencyValues, 95);
+
     const quotaPct = Math.max(0, Math.min(100, (sysStats.apiCallsLastHour / (120 * 60)) * 100));
 
     let rows = pageData.rows
@@ -304,6 +328,8 @@ router.get('/', async (req, res, next) => {
         background: ${redisStats.memoryPercent > 80 ? 'linear-gradient(90deg, #f87171, #ef4444)' : 'linear-gradient(90deg, #22d3ee, #3b82f6)'};
       }
       #localCacheBar { width: ${((redisStats.localCacheSize / redisStats.localCacheMaxSize) * 100).toFixed(1)}%; }
+      #cacheHitProgress { width: ${Math.max(0, Math.min(100, cacheHitRate))}%; }
+      #successRateProgress { width: ${Math.max(0, Math.min(100, successRate))}%; }
     `;
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -941,24 +967,24 @@ router.get('/', async (req, res, next) => {
     <div class="stat-grid">
       <div class="card stat-card">
         <p class="stat-label">Total Lookups</p>
-        <p class="stat-value" id="totalLookupsValue">--</p>
-        <p class="stat-sub" id="totalLookupsSub">Filtered data</p>
+        <p class="stat-value" id="totalLookupsValue">${totalLookups.toLocaleString()}</p>
+        <p class="stat-sub" id="totalLookupsSub">${validLimit ? `Showing ${totalLookups.toLocaleString()} of ${validLimit} limit` : `${totalLookups.toLocaleString()} total lookups`}</p>
       </div>
       <div class="card stat-card">
         <p class="stat-label">Cache Hit Rate</p>
-        <p class="stat-value" id="cacheHitRateValue">--</p>
-        <div class="progress" role="progressbar" aria-label="Cache Hit Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="cacheHitProgress"></span></div>
+        <p class="stat-value" id="cacheHitRateValue">${cacheHitRate.toFixed(1)}%</p>
+        <div class="progress" role="progressbar" aria-label="Cache Hit Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(cacheHitRate)}"><span id="cacheHitProgress"></span></div>
         <p class="stat-sub">Measured from recent lookups</p>
       </div>
       <div class="card stat-card">
         <p class="stat-label">Success Rate</p>
-        <p class="stat-value" id="successRateValue">--</p>
-        <div class="progress" role="progressbar" aria-label="Success Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="successRateProgress"></span></div>
+        <p class="stat-value" id="successRateValue">${successRate.toFixed(1)}%</p>
+        <div class="progress" role="progressbar" aria-label="Success Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(successRate)}"><span id="successRateProgress"></span></div>
         <p class="stat-sub">Based on HTTP status codes</p>
       </div>
       <div class="card stat-card">
         <p class="stat-label" id="latencyLabel">Latency (p95)</p>
-        <p class="stat-value" id="latencyP95Value">--</p>
+        <p class="stat-value" id="latencyP95Value">${latencyP95 !== null ? Math.round(latencyP95).toLocaleString() + ' ms' : '--'}</p>
         <p class="stat-sub">Derived from real latency samples</p>
         <div class="stat-card-controls">
           <label for="latencyMetricSelect">Metric:</label>
