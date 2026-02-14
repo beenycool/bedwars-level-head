@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { enforceRateLimit } from '../middleware/rateLimit';
+import { enforceAdminRateLimit } from '../middleware/rateLimit';
 import { enforceAdminAuth } from '../middleware/adminAuth';
 import { clearInMemoryPlayerCache } from '../services/player';
 import { HttpError } from '../util/httpError';
@@ -41,7 +41,7 @@ async function cacheKeysForIdentifier(identifier: string): Promise<{ playerKeys:
   return { playerKeys: [], igns: [] };
 }
 
-router.post('/cache/purge', enforceRateLimit, enforceAdminAuth, async (req, res, next) => {
+router.post('/cache/purge', enforceAdminRateLimit, enforceAdminAuth, async (req, res, next) => {
   res.locals.metricsRoute = '/api/admin/cache/purge';
   const { identifier } = req.body ?? {};
 

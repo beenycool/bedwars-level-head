@@ -6,6 +6,8 @@ import {
   RATE_LIMIT_REQUIRE_REDIS,
   RATE_LIMIT_FALLBACK_MODE,
   TRUST_PROXY_ENABLED,
+  ADMIN_RATE_LIMIT_WINDOW_MS,
+  ADMIN_RATE_LIMIT_MAX,
 } from '../config';
 import { HttpError } from '../util/httpError';
 import { rateLimitBlocksTotal } from '../services/metrics';
@@ -231,6 +233,17 @@ export const enforceRateLimit = createRateLimitMiddleware({
     return getClientIpAddress(req);
   },
   metricLabel: 'private',
+  getDynamicMax: resolveDynamicLimitValue,
+});
+
+// Stricter rate limiter for administrative endpoints
+export const enforceAdminRateLimit = createRateLimitMiddleware({
+  windowMs: ADMIN_RATE_LIMIT_WINDOW_MS,
+  max: ADMIN_RATE_LIMIT_MAX,
+  getBucketKey(req: Request) {
+    return `admin:${getClientIpAddress(req)}`;
+  },
+  metricLabel: 'admin',
   getDynamicMax: resolveDynamicLimitValue,
 });
 
