@@ -1,4 +1,5 @@
 import { Mutex } from 'async-mutex';
+import pLimit from 'p-limit';
 import { pool } from './cache';
 import { DatabaseType } from './database/adapter';
 import { getRedisCacheStats } from './redis';
@@ -199,32 +200,39 @@ async function flushHistoryBuffer(): Promise<void> {
     const maxRecordsPerChunk = Math.max(1, Math.floor(maxParams / 13));
     let flushed = 0;
 
+    const limit = pLimit(5);
+    const promises = [];
+
     for (let offset = 0; offset < batch.length; offset += maxRecordsPerChunk) {
       const chunk = batch.slice(offset, offset + maxRecordsPerChunk);
-      const params = chunk.flatMap((record: PlayerQueryRecord) => [
-        record.identifier, record.normalizedIdentifier, record.lookupType,
-        record.resolvedUuid, record.resolvedUsername, record.stars,
-        record.nicked, record.cacheSource, record.cacheHit,
-        record.revalidated, record.installId, record.responseStatus,
-        record.latencyMs != null ? Math.round(record.latencyMs) : null,
-      ]);
-      
-      const universalRows = chunk.map((_, i) => {
-        const base = i * 13;
-        return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`;
-      });
-      
-      const universalQuery = `
-        INSERT INTO player_query_history (
-          identifier, normalized_identifier, lookup_type, resolved_uuid, 
-          resolved_username, stars, nicked, cache_source, cache_hit, 
-          revalidated, install_id, response_status, latency_ms
-        ) VALUES ${universalRows.join(', ')}
-      `;
+      promises.push(limit(async () => {
+        const params = chunk.flatMap((record: PlayerQueryRecord) => [
+          record.identifier, record.normalizedIdentifier, record.lookupType,
+          record.resolvedUuid, record.resolvedUsername, record.stars,
+          record.nicked, record.cacheSource, record.cacheHit,
+          record.revalidated, record.installId, record.responseStatus,
+          record.latencyMs != null ? Math.round(record.latencyMs) : null,
+        ]);
 
-      await pool.query(universalQuery, params);
-      flushed += chunk.length;
+        const universalRows = chunk.map((_, i) => {
+          const base = i * 13;
+          return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`;
+        });
+
+        const universalQuery = `
+          INSERT INTO player_query_history (
+            identifier, normalized_identifier, lookup_type, resolved_uuid,
+            resolved_username, stars, nicked, cache_source, cache_hit,
+            revalidated, install_id, response_status, latency_ms
+          ) VALUES ${universalRows.join(', ')}
+        `;
+
+        await pool.query(universalQuery, params);
+        flushed += chunk.length;
+      }));
     }
+
+    await Promise.all(promises);
 
     console.info(`[history] Flushed ${flushed} records in batch`);
   } catch (err) {
