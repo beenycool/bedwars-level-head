@@ -55,7 +55,7 @@ function formatLatency(latency: number | null): string {
     return '--';
   }
 
-  return `${latency.toLocaleString()} ms`;
+  return `${new Intl.NumberFormat('en-US').format(latency)} ms`;
 }
 
 function percentile(values: number[], p: number): number | null {
@@ -266,7 +266,7 @@ router.get('/', async (req, res, next) => {
       (stats, d) => {
         if (d.cacheHit) stats.cacheHits++;
         if (d.responseStatus >= 200 && d.responseStatus < 400) stats.successCount++;
-        if (d.latencyMs !== null && d.latencyMs !== undefined && d.latencyMs >= 0) {
+        if (typeof d.latencyMs === 'number' && d.latencyMs >= 0) {
           stats.latencyValues.push(d.latencyMs);
         }
         return stats;
@@ -976,8 +976,8 @@ router.get('/', async (req, res, next) => {
     <div class="stat-grid">
       <div class="card stat-card">
         <p class="stat-label">Total Lookups</p>
-        <p class="stat-value" id="totalLookupsValue">${totalLookups.toLocaleString()}</p>
-        <p class="stat-sub" id="totalLookupsSub">${validLimit ? `Showing ${totalLookups.toLocaleString()} of ${validLimit} limit` : `${totalLookups.toLocaleString()} total lookups`}</p>
+        <p class="stat-value" id="totalLookupsValue">${new Intl.NumberFormat('en-US').format(totalLookups)}</p>
+        <p class="stat-sub" id="totalLookupsSub">${validLimit ? `Showing ${new Intl.NumberFormat('en-US').format(totalLookups)} of ${validLimit} limit` : `${new Intl.NumberFormat('en-US').format(totalLookups)} total lookups`}</p>
       </div>
       <div class="card stat-card">
         <p class="stat-label">Cache Hit Rate</p>
@@ -993,7 +993,7 @@ router.get('/', async (req, res, next) => {
       </div>
       <div class="card stat-card">
         <p class="stat-label" id="latencyLabel">Latency (p95)</p>
-        <p class="stat-value" id="latencyP95Value">${latencyP95 !== null ? Math.round(latencyP95).toLocaleString() + ' ms' : '--'}</p>
+        <p class="stat-value" id="latencyP95Value">${latencyP95 !== null ? new Intl.NumberFormat('en-US').format(Math.round(latencyP95)) + ' ms' : '--'}</p>
         <p class="stat-sub">Derived from real latency samples</p>
         <div class="stat-card-controls">
           <label for="latencyMetricSelect">Metric:</label>
@@ -2495,7 +2495,7 @@ router.get('/', async (req, res, next) => {
       
       function formatLatencyClient(latency) {
         if (latency === null || latency === undefined || Number.isNaN(latency) || latency < 0) return '--';
-        return \`\${latency.toLocaleString()} ms\`;
+        return \`\${new Intl.NumberFormat('en-US').format(latency)} ms\`;
       }
 
       function getEmptyStateForSearch(searchTerm) {
@@ -2658,13 +2658,13 @@ router.get('/', async (req, res, next) => {
           : null;
         
         // Update Stat Cards
-        setMetric('totalLookupsValue', totalReqs.toLocaleString());
+        setMetric('totalLookupsValue', new Intl.NumberFormat('en-US').format(totalReqs));
         const totalLookupsSub = document.getElementById('totalLookupsSub');
         if (totalLookupsSub) {
           if (json.filters && json.filters.limit) {
-            totalLookupsSub.textContent = \`Showing \${totalReqs.toLocaleString()} of \${json.filters.limit} limit\`;
+            totalLookupsSub.textContent = \`Showing \${new Intl.NumberFormat('en-US').format(totalReqs)} of \${json.filters.limit} limit\`;
           } else {
-            totalLookupsSub.textContent = \`\${totalReqs.toLocaleString()} total lookups\`;
+            totalLookupsSub.textContent = \`\${new Intl.NumberFormat('en-US').format(totalReqs)} total lookups\`;
           }
         }
         
