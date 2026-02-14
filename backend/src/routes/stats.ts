@@ -55,7 +55,48 @@ function formatLatency(latency: number | null): string {
     return '--';
   }
 
-  return `${latency.toLocaleString()} ms`;
+  return `${new Intl.NumberFormat('en-US').format(latency)} ms`;
+}
+
+function percentile(values: number[], p: number): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const rank = (p / 100) * (sorted.length - 1);
+  const lower = Math.floor(rank);
+  const upper = Math.ceil(rank);
+  if (lower === upper) return sorted[lower];
+  const weight = rank - lower;
+  return sorted[lower] * (1 - weight) + sorted[upper] * weight;
+}
+
+function getEmptyStateForSearch(searchTerm: string): string {
+  return `
+    <tr>
+      <td colspan="7" class="empty-state">
+        <div class="empty-content">
+          <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+          </svg>
+          <p>No players found matching "<strong>${escapeHtml(searchTerm)}</strong>"</p>
+          <a href="?" class="clear-search-btn">Clear Search</a>
+        </div>
+      </td>
+    </tr>`;
+}
+
+function getEmptyStateForNoLookups(): string {
+  return `
+    <tr>
+      <td colspan="7" class="empty-state">
+        <div class="empty-content">
+          <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
+          </svg>
+          <p>No lookups recorded yet</p>
+          <p class="sub-text">Search for a player to get started</p>
+        </div>
+      </td>
+    </tr>`;
 }
 
 router.get('/csv', async (req, res) => {
@@ -221,9 +262,31 @@ router.get('/', async (req, res, next) => {
       },
     }).replace(/</g, '\\u003c');
 
+    const { cacheHits, successCount, latencyValues } = chartData.reduce(
+      (stats, d) => {
+        if (d.cacheHit) stats.cacheHits++;
+        if (d.responseStatus >= 200 && d.responseStatus < 400) stats.successCount++;
+        if (typeof d.latencyMs === 'number' && d.latencyMs >= 0) {
+          stats.latencyValues.push(d.latencyMs);
+        }
+        return stats;
+      },
+      { cacheHits: 0, successCount: 0, latencyValues: [] as number[] }
+    );
+
+    const totalLookups = chartData.length;
+    const cacheHitRateRaw = totalLookups === 0 ? 0 : (cacheHits / totalLookups) * 100;
+    const successRateRaw = totalLookups === 0 ? 0 : (successCount / totalLookups) * 100;
+
+    // Match client-side rounding logic: Math.round(value * 10) / 10
+    const cacheHitRate = Math.round(cacheHitRateRaw * 10) / 10;
+    const successRate = Math.round(successRateRaw * 10) / 10;
+
+    const latencyP95 = percentile(latencyValues, 95);
+
     const quotaPct = Math.max(0, Math.min(100, (sysStats.apiCallsLastHour / (120 * 60)) * 100));
 
-    const rows = pageData.rows
+    let rows = pageData.rows
       .map((entry) => {
         const lookupIdentifier =
           entry.lookupType === 'uuid' && entry.resolvedUsername
@@ -258,6 +321,14 @@ router.get('/', async (req, res, next) => {
       })
       .join('\n');
 
+    if (!rows) {
+      if (search) {
+        rows = getEmptyStateForSearch(search);
+      } else {
+        rows = getEmptyStateForNoLookups();
+      }
+    }
+
 
     const dynamicStyles = `
       #quotaBar { width: ${quotaPct}%; }
@@ -266,6 +337,8 @@ router.get('/', async (req, res, next) => {
         background: ${redisStats.memoryPercent > 80 ? 'linear-gradient(90deg, #f87171, #ef4444)' : 'linear-gradient(90deg, #22d3ee, #3b82f6)'};
       }
       #localCacheBar { width: ${((redisStats.localCacheSize / redisStats.localCacheMaxSize) * 100).toFixed(1)}%; }
+      #cacheHitProgress { width: ${Math.max(0, Math.min(100, cacheHitRate))}%; }
+      #successRateProgress { width: ${Math.max(0, Math.min(100, successRate))}%; }
     `;
     const html = `<!DOCTYPE html>
 <html lang="en">
@@ -282,6 +355,41 @@ router.get('/', async (req, res, next) => {
         color: #e2e8f0;
         --chart-height: 320px;
       }
+
+      .empty-state {
+        text-align: center;
+        padding: 4rem 1rem;
+        color: #94a3b8;
+      }
+      .empty-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+      }
+      .empty-content svg {
+        color: #475569;
+        margin-bottom: 0.5rem;
+      }
+      .empty-content p {
+        margin: 0;
+        font-size: 1rem;
+      }
+      .empty-content .sub-text {
+        font-size: 0.875rem;
+        color: #64748b;
+      }
+      .clear-search-btn {
+        margin-top: 0.5rem;
+        color: #38bdf8;
+        text-decoration: none;
+        font-weight: 500;
+        font-size: 0.9rem;
+      }
+      .clear-search-btn:hover {
+        text-decoration: underline;
+      }
+
       body {
         padding: 1.5rem 1rem;
         margin: 0;
@@ -868,24 +976,24 @@ router.get('/', async (req, res, next) => {
     <div class="stat-grid">
       <div class="card stat-card">
         <p class="stat-label">Total Lookups</p>
-        <p class="stat-value" id="totalLookupsValue">--</p>
-        <p class="stat-sub" id="totalLookupsSub">Filtered data</p>
+        <p class="stat-value" id="totalLookupsValue">${new Intl.NumberFormat('en-US').format(totalLookups)}</p>
+        <p class="stat-sub" id="totalLookupsSub">${validLimit ? `Showing ${new Intl.NumberFormat('en-US').format(totalLookups)} of ${validLimit} limit` : `${new Intl.NumberFormat('en-US').format(totalLookups)} total lookups`}</p>
       </div>
       <div class="card stat-card">
         <p class="stat-label">Cache Hit Rate</p>
-        <p class="stat-value" id="cacheHitRateValue">--</p>
-        <div class="progress" role="progressbar" aria-label="Cache Hit Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="cacheHitProgress"></span></div>
+        <p class="stat-value" id="cacheHitRateValue">${cacheHitRate.toFixed(1)}%</p>
+        <div class="progress" role="progressbar" aria-label="Cache Hit Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(cacheHitRate)}"><span id="cacheHitProgress"></span></div>
         <p class="stat-sub">Measured from recent lookups</p>
       </div>
       <div class="card stat-card">
         <p class="stat-label">Success Rate</p>
-        <p class="stat-value" id="successRateValue">--</p>
-        <div class="progress" role="progressbar" aria-label="Success Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="successRateProgress"></span></div>
+        <p class="stat-value" id="successRateValue">${successRate.toFixed(1)}%</p>
+        <div class="progress" role="progressbar" aria-label="Success Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(successRate)}"><span id="successRateProgress"></span></div>
         <p class="stat-sub">Based on HTTP status codes</p>
       </div>
       <div class="card stat-card">
         <p class="stat-label" id="latencyLabel">Latency (p95)</p>
-        <p class="stat-value" id="latencyP95Value">--</p>
+        <p class="stat-value" id="latencyP95Value">${latencyP95 !== null ? new Intl.NumberFormat('en-US').format(Math.round(latencyP95)) + ' ms' : '--'}</p>
         <p class="stat-sub">Derived from real latency samples</p>
         <div class="stat-card-controls">
           <label for="latencyMetricSelect">Metric:</label>
@@ -1167,7 +1275,7 @@ router.get('/', async (req, res, next) => {
         </tr>
       </thead>
       <tbody>
-        ${rows || '<tr><td colspan="7">No lookups recorded yet.</td></tr>'}
+        ${rows}
       </tbody>
     </table>
 
@@ -2387,7 +2495,37 @@ router.get('/', async (req, res, next) => {
       
       function formatLatencyClient(latency) {
         if (latency === null || latency === undefined || Number.isNaN(latency) || latency < 0) return '--';
-        return \`\${latency.toLocaleString()} ms\`;
+        return \`\${new Intl.NumberFormat('en-US').format(latency)} ms\`;
+      }
+
+      function getEmptyStateForSearch(searchTerm) {
+        return \`
+            <tr>
+              <td colspan="7" class="empty-state">
+                <div class="empty-content">
+                  <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                  </svg>
+                  <p>No players found matching "<strong>\${escapeHtmlClient(searchTerm)}</strong>"</p>
+                  <a href="?" class="clear-search-btn">Clear Search</a>
+                </div>
+              </td>
+            </tr>\`;
+      }
+
+      function getEmptyStateForNoLookups() {
+        return \`
+            <tr>
+              <td colspan="7" class="empty-state">
+                <div class="empty-content">
+                  <svg aria-hidden="true" width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
+                  </svg>
+                  <p>No lookups recorded yet</p>
+                  <p class="sub-text">Search for a player to get started</p>
+                </div>
+              </td>
+            </tr>\`;
       }
       
       let autoRefreshEnabled = false;
@@ -2520,13 +2658,13 @@ router.get('/', async (req, res, next) => {
           : null;
         
         // Update Stat Cards
-        setMetric('totalLookupsValue', totalReqs.toLocaleString());
+        setMetric('totalLookupsValue', new Intl.NumberFormat('en-US').format(totalReqs));
         const totalLookupsSub = document.getElementById('totalLookupsSub');
         if (totalLookupsSub) {
           if (json.filters && json.filters.limit) {
-            totalLookupsSub.textContent = \`Showing \${totalReqs.toLocaleString()} of \${json.filters.limit} limit\`;
+            totalLookupsSub.textContent = \`Showing \${new Intl.NumberFormat('en-US').format(totalReqs)} of \${json.filters.limit} limit\`;
           } else {
-            totalLookupsSub.textContent = \`\${totalReqs.toLocaleString()} total lookups\`;
+            totalLookupsSub.textContent = \`\${new Intl.NumberFormat('en-US').format(totalReqs)} total lookups\`;
           }
         }
         
@@ -2749,7 +2887,18 @@ router.get('/', async (req, res, next) => {
               </tr>\`;
             }).join('\\n');
             
-            tbody.innerHTML = rowsHtml || '<tr><td colspan="7">No lookups recorded yet.</td></tr>';
+            if (rowsHtml) {
+              tbody.innerHTML = rowsHtml;
+            } else {
+              const urlParams = new URLSearchParams(window.location.search);
+              const currentSearch = (urlParams.get('q') || '').trim();
+
+              if (currentSearch.length > 0) {
+                tbody.innerHTML = getEmptyStateForSearch(currentSearch);
+              } else {
+                tbody.innerHTML = getEmptyStateForNoLookups();
+              }
+            }
           }
         }
         

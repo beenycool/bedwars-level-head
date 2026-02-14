@@ -23,7 +23,7 @@ import {
   stopDynamicRateLimitService,
 } from './services/dynamicRateLimit';
 import { startAdaptiveTtlRefresh, stopAdaptiveTtlRefresh } from './services/statsCache';
-import { getRedisClient, getRateLimitFallbackState } from './services/redis';
+import { getRedisClient, getRateLimitFallbackState, startKeyCountRefresher, stopKeyCountRefresher } from './services/redis';
 import {
   initializeResourceMetrics,
   stopResourceMetrics,
@@ -243,6 +243,7 @@ const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
   console.log(`Cache DB pool configured with min=${CACHE_DB_POOL_MIN} max=${CACHE_DB_POOL_MAX}.`);
 
   startAdaptiveTtlRefresh();
+  startKeyCountRefresher();
 
   void Promise.all([
     getRedisClient()?.ping().catch(() => {}),
@@ -274,6 +275,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   stopHistoryFlushInterval();
   stopDynamicRateLimitService();
   stopAdaptiveTtlRefresh();
+  stopKeyCountRefresher();
   stopResourceMetrics();
 
   const forcedShutdown = setTimeout(() => {
