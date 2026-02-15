@@ -35,18 +35,9 @@ import statsRouter from './routes/stats';
 import configRouter from './routes/config';
 import cronRouter from './routes/cron';
 import { securityHeaders } from './middleware/securityHeaders';
+import { sanitizeUrlForLogs } from './util/requestUtils';
 
 const app = express();
-
-function sanitizeUrlForLogs(target: string): string {
-  const queryIndex = target.indexOf('?');
-  if (queryIndex === -1) {
-    return target;
-  }
-
-  const path = target.slice(0, queryIndex);
-  return `${path}?<redacted>`;
-}
 
 app.disable('x-powered-by');
 app.use(securityHeaders);
