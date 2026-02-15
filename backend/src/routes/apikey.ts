@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { enforceRateLimit } from '../middleware/rateLimit';
+import { enforceAdminRateLimit } from '../middleware/rateLimit';
 import { enforceAdminAuth } from '../middleware/adminAuth';
 import { HttpError } from '../util/httpError';
 import {
@@ -32,7 +32,7 @@ function toApiKeyResponse(validation: ApiKeyValidation, includeTimeAgo: boolean 
  * POST /api/admin/apikey/validate
  * Validates an API key and stores it with validation metadata
  */
-router.post('/validate', enforceRateLimit, enforceAdminAuth, async (req, res, next) => {
+router.post('/validate', enforceAdminRateLimit, enforceAdminAuth, async (req, res, next) => {
   res.locals.metricsRoute = '/api/admin/apikey/validate';
   const { key } = req.body ?? {};
 
@@ -61,7 +61,7 @@ router.post('/validate', enforceRateLimit, enforceAdminAuth, async (req, res, ne
  * POST /api/admin/apikey/store
  * Stores an API key without immediate validation
  */
-router.post('/store', enforceRateLimit, enforceAdminAuth, async (req, res, next) => {
+router.post('/store', enforceAdminRateLimit, enforceAdminAuth, async (req, res, next) => {
   res.locals.metricsRoute = '/api/admin/apikey/store';
   const { key } = req.body ?? {};
 
@@ -90,7 +90,7 @@ router.post('/store', enforceRateLimit, enforceAdminAuth, async (req, res, next)
  * GET /api/admin/apikey/status/:keyHash
  * Get validation status for a specific API key by hash
  */
-router.get('/status/:keyHash', enforceRateLimit, enforceAdminAuth, async (req, res, next) => {
+router.get('/status/:keyHash', enforceAdminRateLimit, enforceAdminAuth, async (req, res, next) => {
   res.locals.metricsRoute = '/api/admin/apikey/status/:keyHash';
   const { keyHash } = req.params;
 
@@ -119,7 +119,7 @@ router.get('/status/:keyHash', enforceRateLimit, enforceAdminAuth, async (req, r
  * GET /api/admin/apikey/list
  * List all stored API keys with their validation status
  */
-router.get('/list', enforceRateLimit, enforceAdminAuth, async (req, res, next) => {
+router.get('/list', enforceAdminRateLimit, enforceAdminAuth, async (req, res, next) => {
   res.locals.metricsRoute = '/api/admin/apikey/list';
 
   try {
@@ -138,7 +138,7 @@ router.get('/list', enforceRateLimit, enforceAdminAuth, async (req, res, next) =
  * DELETE /api/admin/apikey/:keyHash
  * Delete an API key by hash
  */
-router.delete('/:keyHash', enforceRateLimit, enforceAdminAuth, async (req, res, next) => {
+router.delete('/:keyHash', enforceAdminRateLimit, enforceAdminAuth, async (req, res, next) => {
   res.locals.metricsRoute = '/api/admin/apikey/:keyHash';
   const { keyHash } = req.params;
 
@@ -172,7 +172,7 @@ router.delete('/:keyHash', enforceRateLimit, enforceAdminAuth, async (req, res, 
  * GET /api/admin/apikey/summary
  * Summarize validation status for all stored API keys
  */
-router.get('/summary', enforceRateLimit, enforceAdminAuth, async (req, res, next) => {
+router.get('/summary', enforceAdminRateLimit, enforceAdminAuth, async (req, res, next) => {
   res.locals.metricsRoute = '/api/admin/apikey/summary';
 
   try {
