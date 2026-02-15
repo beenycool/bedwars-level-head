@@ -840,7 +840,7 @@ function triggerBackgroundRefresh(
         recordCacheRefresh('success');
       }
     } catch (error) {
-      console.warn(`[statsCache] background refresh failed for ${uuid}`, error);
+      console.warn('[statsCache] background refresh failed for %s', uuid, error);
       recordCacheRefresh('fail');
     } finally {
       backgroundRefreshLocks.delete(key);

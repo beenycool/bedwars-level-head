@@ -69,7 +69,7 @@ function percentile(values: number[], p: number): number | null {
   return sorted[lower] * (1 - weight) + sorted[upper] * weight;
 }
 
-function getEmptyStateForSearch(searchTerm: string): string {
+function getEmptyStateForSearch(searchTerm: string, clearUrl: string): string {
   return `
     <tr>
       <td colspan="7" class="empty-state">
@@ -78,7 +78,7 @@ function getEmptyStateForSearch(searchTerm: string): string {
             <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
           </svg>
           <p>No players found matching "<strong>${escapeHtml(searchTerm)}</strong>"</p>
-          <a href="?" class="clear-search-btn">Clear Search</a>
+          <a href="${clearUrl}" class="clear-search-btn">Clear Search</a>
         </div>
       </td>
     </tr>`;
@@ -227,6 +227,14 @@ router.get('/', async (req, res, next) => {
     // But if time filters are present, use MAX_ALLOWED_LIMIT to show all data in range
     const effectiveLimit = validLimit ?? (hasTimeFilter ? MAX_ALLOWED_LIMIT : DEFAULT_CHART_LIMIT);
 
+    // Construct the clear search URL (preserve filters, remove q, page=1)
+    const clearParams = new URLSearchParams();
+    if (validStartDate) clearParams.append('from', validStartDate.toISOString());
+    if (validEndDate) clearParams.append('to', validEndDate.toISOString());
+    if (validLimit) clearParams.append('limit', String(validLimit));
+    // page defaults to 1 if omitted
+    const clearUrl = '?' + clearParams.toString();
+
     const totalCount = await getPlayerQueryCount({ search });
     const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
     const page = Math.min(safePage, totalPages);
@@ -323,7 +331,7 @@ router.get('/', async (req, res, next) => {
 
     if (!rows) {
       if (search) {
-        rows = getEmptyStateForSearch(search);
+        rows = getEmptyStateForSearch(search, clearUrl);
       } else {
         rows = getEmptyStateForNoLookups();
       }
@@ -571,8 +579,32 @@ router.get('/', async (req, res, next) => {
         display: flex;
         gap: 0.5rem;
       }
+      .search-wrapper {
+        position: relative;
+        display: flex;
+        align-items: center;
+      }
+      .search-shortcut {
+        position: absolute;
+        right: 0.75rem;
+        pointer-events: none;
+        background: rgba(30, 41, 59, 0.8);
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        border-radius: 4px;
+        padding: 0.1rem 0.4rem;
+        font-family: inherit;
+        font-size: 0.75rem;
+        color: #94a3b8;
+        line-height: 1;
+        transition: opacity 0.2s;
+      }
+      .search-wrapper input:focus + .search-shortcut,
+      .search-wrapper input:not(:placeholder-shown) + .search-shortcut {
+        opacity: 0;
+      }
       .search-box input {
         padding: 0.5rem 0.75rem;
+        padding-right: 2.5rem;
         border-radius: 8px;
         border: 1px solid rgba(148, 163, 184, 0.3);
         background: rgba(30, 41, 59, 0.5);
@@ -1237,16 +1269,24 @@ router.get('/', async (req, res, next) => {
     <p class="meta">${pageData.totalCount === 0 ? 'No lookups recorded yet.' : `Showing page ${page} of ${totalPages} (${pageData.totalCount} total lookups).`}</p>
     <div class="controls">
       <form class="search-box" method="GET">
-        <input
-          type="search"
-          name="q"
-          id="searchInput"
-          aria-label="Search players"
-          placeholder="Search by username or UUID (Press /)"
-          value="${escapeHtml(search)}"
-        />
+        <div class="search-wrapper">
+          <input
+            type="search"
+            name="q"
+            id="searchInput"
+            aria-label="Search players"
+            aria-keyshortcuts="/"
+            placeholder="Search by username or UUID"
+            value="${escapeHtml(search)}"
+          />
+          <kbd class="search-shortcut" aria-hidden="true">/</kbd>
+        </div>
         <input type="hidden" name="page" value="1" />
+        ${validStartDate ? `<input type="hidden" name="from" value="${validStartDate.toISOString()}" />` : ''}
+        ${validEndDate ? `<input type="hidden" name="to" value="${validEndDate.toISOString()}" />` : ''}
+        ${validLimit ? `<input type="hidden" name="limit" value="${validLimit}" />` : ''}
         <button type="submit">Search</button>
+        ${search ? `<a href="${clearUrl}" class="reset-btn" aria-label="Clear search">Clear</a>` : ''}
       </form>
       <div class="pager">
         <form method="GET">
@@ -2498,7 +2538,7 @@ router.get('/', async (req, res, next) => {
         return \`\${new Intl.NumberFormat('en-US').format(latency)} ms\`;
       }
 
-      function getEmptyStateForSearch(searchTerm) {
+      function getEmptyStateForSearch(searchTerm, clearUrl) {
         return \`
             <tr>
               <td colspan="7" class="empty-state">
@@ -2507,7 +2547,7 @@ router.get('/', async (req, res, next) => {
                     <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
                   </svg>
                   <p>No players found matching "<strong>\${escapeHtmlClient(searchTerm)}</strong>"</p>
-                  <a href="?" class="clear-search-btn">Clear Search</a>
+                  <a href="${clearUrl || '?'}" class="clear-search-btn">Clear Search</a>
                 </div>
               </td>
             </tr>\`;
@@ -2894,7 +2934,12 @@ router.get('/', async (req, res, next) => {
               const currentSearch = (urlParams.get('q') || '').trim();
 
               if (currentSearch.length > 0) {
-                tbody.innerHTML = getEmptyStateForSearch(currentSearch);
+                const clearParams = new URLSearchParams();
+                if (activeFilters.from) clearParams.append('from', activeFilters.from);
+                if (activeFilters.to) clearParams.append('to', activeFilters.to);
+                if (activeFilters.limit) clearParams.append('limit', String(activeFilters.limit));
+                const clearUrl = '?' + clearParams.toString();
+                tbody.innerHTML = getEmptyStateForSearch(currentSearch, clearUrl);
               } else {
                 tbody.innerHTML = getEmptyStateForNoLookups();
               }

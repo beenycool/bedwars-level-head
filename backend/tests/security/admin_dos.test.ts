@@ -15,6 +15,10 @@ jest.mock('../../src/middleware/rateLimit', () => ({
     executionOrder.push('rateLimit');
     next();
   },
+  enforceAdminRateLimit: (_req: unknown, _res: unknown, next: () => void) => {
+    executionOrder.push('adminRateLimit');
+    next();
+  },
   createRateLimitMiddleware: () => (_req: unknown, _res: unknown, next: () => void) => {
     executionOrder.push('rateLimit');
     next();
@@ -157,7 +161,7 @@ describe('Middleware order regression tests for CPU exhaustion protection', () =
     const response = await makeRequest(app, 'POST', '/api/admin/cache/purge', {});
 
     expect(response.status).toBe(202);
-    expect(executionOrder).toEqual(['rateLimit', 'apiKeyAuth']);
+    expect(executionOrder).toEqual(['adminRateLimit', 'apiKeyAuth']);
   });
 
   it('runs rate limiting before admin auth on /api/admin/apikey/validate', async () => {
@@ -166,7 +170,7 @@ describe('Middleware order regression tests for CPU exhaustion protection', () =
     });
 
     expect(response.status).toBe(200);
-    expect(executionOrder).toEqual(['rateLimit', 'apiKeyAuth']);
+    expect(executionOrder).toEqual(['adminRateLimit', 'apiKeyAuth']);
   });
 
   it('runs rate limiting before cron auth on /api/cron/ping', async () => {
