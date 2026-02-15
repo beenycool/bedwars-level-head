@@ -9,3 +9,7 @@
 ## 2024-05-25 - Accessible Canvas Charts
 **Learning:** Chart.js canvases in raw HTML templates are invisible to screen readers by default. They need explicit `role="img"` and `aria-label` to provide context.
 **Action:** Always add descriptive ARIA labels to canvas elements when generating HTML server-side, and update those labels client-side whenever chart data changes to keep them accurate.
+
+## 2024-05-26 - Filter Persistence in Forms
+**Learning:** Standard HTML forms reset URL parameters on submit, breaking user workflows when filters (like date ranges) are combined with search. Empty states rendered server-side and client-side (via hydration) can diverge.
+**Action:** Always inject active filters as hidden `<input>` fields in search forms to ensure smooth, context-aware navigation. When updating server-side empty state logic, mirror the logic in client-side scripts to prevent UI inconsistencies.
