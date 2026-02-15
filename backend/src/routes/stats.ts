@@ -2906,9 +2906,10 @@ router.get('/', async (req, res, next) => {
               const currentSearch = (urlParams.get('q') || '').trim();
 
               if (currentSearch.length > 0) {
-                const clearParams = new URLSearchParams(window.location.search);
-                clearParams.delete('q');
-                clearParams.delete('page');
+                const clearParams = new URLSearchParams();
+                if (activeFilters.from) clearParams.append('from', activeFilters.from);
+                if (activeFilters.to) clearParams.append('to', activeFilters.to);
+                if (activeFilters.limit) clearParams.append('limit', String(activeFilters.limit));
                 const clearUrl = '?' + clearParams.toString();
                 tbody.innerHTML = getEmptyStateForSearch(currentSearch, clearUrl);
               } else {
