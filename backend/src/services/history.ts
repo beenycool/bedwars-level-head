@@ -87,6 +87,7 @@ export interface TopPlayer {
 
 const DEFAULT_PLAYER_QUERIES_LIMIT = 200;
 const MAX_ALLOWED_LIMIT = 10000;
+const CONCURRENT_HISTORY_FETCHES = 5;
 
 // Add a buffer with mutex protection
 const bufferMutex = new Mutex();
@@ -200,7 +201,7 @@ async function flushHistoryBuffer(): Promise<void> {
     const maxRecordsPerChunk = Math.max(1, Math.floor(maxParams / 13));
     let flushed = 0;
 
-    const limit = pLimit(5);
+    const limit = pLimit(CONCURRENT_HISTORY_FETCHES);
     const promises = [];
 
     for (let offset = 0; offset < batch.length; offset += maxRecordsPerChunk) {
