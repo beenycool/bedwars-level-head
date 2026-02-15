@@ -579,8 +579,32 @@ router.get('/', async (req, res, next) => {
         display: flex;
         gap: 0.5rem;
       }
+      .search-wrapper {
+        position: relative;
+        display: flex;
+        align-items: center;
+      }
+      .search-shortcut {
+        position: absolute;
+        right: 0.75rem;
+        pointer-events: none;
+        background: rgba(30, 41, 59, 0.8);
+        border: 1px solid rgba(148, 163, 184, 0.4);
+        border-radius: 4px;
+        padding: 0.1rem 0.4rem;
+        font-family: inherit;
+        font-size: 0.75rem;
+        color: #94a3b8;
+        line-height: 1;
+        transition: opacity 0.2s;
+      }
+      .search-wrapper input:focus + .search-shortcut,
+      .search-wrapper input:not(:placeholder-shown) + .search-shortcut {
+        opacity: 0;
+      }
       .search-box input {
         padding: 0.5rem 0.75rem;
+        padding-right: 2.5rem;
         border-radius: 8px;
         border: 1px solid rgba(148, 163, 184, 0.3);
         background: rgba(30, 41, 59, 0.5);
@@ -1245,14 +1269,18 @@ router.get('/', async (req, res, next) => {
     <p class="meta">${pageData.totalCount === 0 ? 'No lookups recorded yet.' : `Showing page ${page} of ${totalPages} (${pageData.totalCount} total lookups).`}</p>
     <div class="controls">
       <form class="search-box" method="GET">
-        <input
-          type="search"
-          name="q"
-          id="searchInput"
-          aria-label="Search players"
-          placeholder="Search by username or UUID (Press /)"
-          value="${escapeHtml(search)}"
-        />
+        <div class="search-wrapper">
+          <input
+            type="search"
+            name="q"
+            id="searchInput"
+            aria-label="Search players"
+            aria-keyshortcuts="/"
+            placeholder="Search by username or UUID"
+            value="${escapeHtml(search)}"
+          />
+          <kbd class="search-shortcut" aria-hidden="true">/</kbd>
+        </div>
         <input type="hidden" name="page" value="1" />
         ${validStartDate ? `<input type="hidden" name="from" value="${validStartDate.toISOString()}" />` : ''}
         ${validEndDate ? `<input type="hidden" name="to" value="${validEndDate.toISOString()}" />` : ''}
