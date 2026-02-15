@@ -77,3 +77,19 @@ export function extractBedwarsExperience(payload: ResolvedPlayer['payload']): nu
 
     return numeric;
 }
+
+export function sanitizeUrlForLogs(target: string): string {
+  // Prevent Log Injection: Remove control characters (newlines, etc.)
+  // We replace control characters (ASCII 0-31 and 127) with their hex escape sequence (e.g. \x0a)
+  const sanitized = target.replace(/[\x00-\x1F\x7F]/g, (char) => {
+    return `\\x${char.charCodeAt(0).toString(16).padStart(2, '0')}`;
+  });
+
+  const queryIndex = sanitized.indexOf('?');
+  if (queryIndex === -1) {
+    return sanitized;
+  }
+
+  const path = sanitized.slice(0, queryIndex);
+  return `${path}?<redacted>`;
+}
