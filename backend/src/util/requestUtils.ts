@@ -81,7 +81,7 @@ export function extractBedwarsExperience(payload: ResolvedPlayer['payload']): nu
 export function sanitizeUrlForLogs(target: string): string {
   // Prevent Log Injection: Remove control characters (newlines, etc.)
   // We replace control characters (ASCII 0-31 and 127) with their hex escape sequence (e.g. \x0a)
-  const sanitized = target.replace(/[\x00-\x1F\x7F]/g, (char) => {
+  const sanitized = target.replace(/[\x00-\x1F\x7F-\x9F\u0085\u2028\u2029]/g, (char) => {
     return `\\x${char.charCodeAt(0).toString(16).padStart(2, '0')}`;
   });
 
