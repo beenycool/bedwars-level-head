@@ -244,7 +244,6 @@ export const enforceAdminRateLimit = createRateLimitMiddleware({
     return `admin:${getClientIpAddress(req)}`;
   },
   metricLabel: 'admin',
-  getDynamicMax: async () => Math.min(ADMIN_RATE_LIMIT_MAX, await resolveDynamicLimitValue()),
 });
 
 // Cost-based rate limiter for batch endpoint
