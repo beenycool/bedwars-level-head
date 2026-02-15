@@ -1258,7 +1258,7 @@ router.get('/', async (req, res, next) => {
         ${validEndDate ? `<input type="hidden" name="to" value="${validEndDate.toISOString()}" />` : ''}
         ${validLimit ? `<input type="hidden" name="limit" value="${validLimit}" />` : ''}
         <button type="submit">Search</button>
-        ${search ? `<a href="${clearUrl}" class="reset-btn" aria-label="Clear search" style="text-decoration: none; display: flex; align-items: center; justify-content: center;">Clear</a>` : ''}
+        ${search ? `<a href="${clearUrl}" class="reset-btn" aria-label="Clear search">Clear</a>` : ''}
       </form>
       <div class="pager">
         <form method="GET">
