@@ -5,10 +5,14 @@ import { HYPIXEL_API_CALL_WINDOW_MS } from '../config';
 const MAX_BUFFER_SIZE = 100;
 const MAX_HARD_CAP = 10_000;
 const FLUSH_INTERVAL_MS = 5000;
+const MAX_RETRIES = 3;
+const MAX_AGE_MS = 2 * HYPIXEL_API_CALL_WINDOW_MS;
 
 interface BufferedCall {
   uuid: string;
   calledAt: number;
+  retryCount: number;
+  createdAt: number;
 }
 
 const hypixelCallBuffer: BufferedCall[] = [];
@@ -61,7 +65,16 @@ async function flushHypixelCallBuffer(): Promise<void> {
     } finally {
       // If items remain (due to error), put them back in the buffer to retry later
       if (inflightBatch.length > 0) {
-        hypixelCallBuffer.unshift(...inflightBatch);
+        const now = Date.now();
+        const eligible = inflightBatch.filter(item => {
+           item.retryCount++;
+           const age = now - item.createdAt;
+           return item.retryCount <= MAX_RETRIES && age <= MAX_AGE_MS;
+        });
+
+        if (eligible.length > 0) {
+            hypixelCallBuffer.unshift(...eligible);
+        }
         inflightBatch.length = 0;
       }
       flushPromise = null;
@@ -81,7 +94,12 @@ export async function recordHypixelApiCall(uuid: string, calledAt: number = Date
     }
   }
 
-  hypixelCallBuffer.push({ uuid, calledAt });
+  hypixelCallBuffer.push({
+      uuid,
+      calledAt,
+      retryCount: 0,
+      createdAt: Date.now()
+  });
 
   if (hypixelCallBuffer.length >= MAX_BUFFER_SIZE) {
     void flushHypixelCallBuffer().catch((error) => {
@@ -127,26 +145,12 @@ export async function getHypixelCallCount(
 }
 
 // Graceful shutdown
-async function shutdown(): Promise<void> {
+export async function shutdown(): Promise<void> {
   if (flushInterval) {
     clearInterval(flushInterval);
     flushInterval = null;
   }
-  await flushHypixelCallBuffer();
+  if (hypixelCallBuffer.length > 0 || inflightBatch.length > 0) {
+      await flushHypixelCallBuffer();
+  }
 }
-
-let isShuttingDown = false;
-const handleShutdown = async (signal: string) => {
-  if (isShuttingDown) return;
-  isShuttingDown = true;
-  console.info(`[hypixelTracker] Received ${signal}, flushing buffer...`);
-  await shutdown();
-  process.exit(0);
-};
-
-// Register process signal handlers
-process.once('SIGTERM', () => handleShutdown('SIGTERM'));
-process.once('SIGINT', () => handleShutdown('SIGINT'));
-process.once('beforeExit', async () => {
-    await shutdown();
-});

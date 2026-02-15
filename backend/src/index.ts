@@ -17,6 +17,7 @@ import {
 import { purgeExpiredEntries, closeCache, pool as cachePool } from './services/cache';
 import { observeRequest, registry } from './services/metrics';
 import { checkHypixelReachability, getCircuitBreakerState } from './services/hypixel';
+import { shutdown as shutdownHypixelTracker } from './services/hypixelTracker';
 import { flushHistoryBuffer, startHistoryFlushInterval, stopHistoryFlushInterval } from './services/history';
 import {
   initializeDynamicRateLimitService,
@@ -299,6 +300,10 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
     // Flush history buffer before closing cache
     await flushHistoryBuffer().catch((error) => {
       console.error('Error flushing history buffer during shutdown', error);
+    });
+    // Flush hypixel tracker buffer before closing cache
+    await shutdownHypixelTracker().catch((error) => {
+      console.error('Error shutting down hypixel tracker during shutdown', error);
     });
     // Flush resource metrics before closing cache
     await flushResourceMetricsOnShutdown().catch(err => console.error('Failed to flush resource metrics on shutdown', err));
