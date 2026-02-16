@@ -325,7 +325,7 @@ router.get('/', async (req, res, next) => {
           <td>${escapeHtml(resolved)}</td>
           <td class="stars">${escapeHtml(formatStars(entry.stars))}</td>
           <td>${escapeHtml(cacheSource)}${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
-          <td><span class="status-badge ${statusClass}">${entry.responseStatus}</span></td>
+          <td><span class="status-badge ${statusClass}">${escapeHtml(String(entry.responseStatus))}</span></td>
           <td class="latency">${escapeHtml(formatLatency(entry.latencyMs))}</td>
         </tr>`;
       })
@@ -2924,7 +2924,7 @@ router.get('/', async (req, res, next) => {
                 ? \`https://namemc.com/profile/\${encodedIdentifier}\`
                 : \`https://namemc.com/search?q=\${encodedIdentifier}\`;
               
-              const statusClass = 'status-' + Math.floor(entry.responseStatus / 100) + 'xx';
+              const statusClass = \`status-\${Math.floor(entry.responseStatus / 100)}xx\`;
 
               return \`<tr>
                 <td title="\${escapeHtmlClient(formatDateClient(entry.requestedAt))}">\${escapeHtmlClient(timeAgoClient(entry.requestedAt))}</td>
