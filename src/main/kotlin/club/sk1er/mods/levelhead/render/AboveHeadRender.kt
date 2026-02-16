@@ -52,8 +52,8 @@ object AboveHeadRender {
                 return@forEachIndexed
             }
             val tag = display.cache[player.uniqueID]
+            val activeMode = club.sk1er.mods.levelhead.core.ModeManager.getActiveGameMode()
             if (display.loadOrRender(player) && tag != null) {
-                // Calculate base offset based on display position
                 var offset = when (displayPosition) {
                     MasterConfig.DisplayPosition.ABOVE -> 0.3
                     MasterConfig.DisplayPosition.BELOW -> -0.1
@@ -75,7 +75,7 @@ object AboveHeadRender {
                     MasterConfig.DisplayPosition.BELOW -> -(index * 0.3)
                 }
                 
-                renderName(tag, player, event.x, event.y + offset + indexOffset, event.z, displayPosition)
+                renderName(tag, player, event.x, event.y + offset + indexOffset, event.z)
             }
         }
     }
@@ -99,7 +99,7 @@ object AboveHeadRender {
     private val EntityPlayer.isSelf: Boolean
         get() = UPlayer.getUUID() == this.uniqueID
 
-    private fun renderName(tag: LevelheadTag, entityIn: EntityPlayer, x: Double, y: Double, z: Double, displayPosition: MasterConfig.DisplayPosition) {
+    private fun renderName(tag: LevelheadTag, entityIn: EntityPlayer, x: Double, y: Double, z: Double) {
         val fontrenderer = getFontRenderer()
         val textScale = TEXT_SCALE
         UGraphics.GL.pushMatrix()

@@ -9,7 +9,7 @@ import club.sk1er.mods.levelhead.skywars.SkyWarsModeDetector
  * Routes to the appropriate mode detector based on the current game state.
  */
 object ModeManager {
-    private const val TEMP_DEBUG = true
+    private const val TEMP_DEBUG = false
     private var lastLoggedMode: ActiveMode = ActiveMode.NONE
     private var lastLoggedAt: Long = 0L
     

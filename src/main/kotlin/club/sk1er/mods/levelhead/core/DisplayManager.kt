@@ -178,11 +178,15 @@ class DisplayManager(val file: File) {
 
     fun clearCachesWithoutRefetch(clearStats: Boolean = true) {
         if (TEMP_DEBUG) {
-            Levelhead.logger.info("[TEMP_DEBUG] clearCachesWithoutRefetch(clearStats=$clearStats)")
+            val activeMode = ModeManager.getActiveGameMode()
+            Levelhead.logger.info("[DISPLAY_DEBUG] clearCachesWithoutRefetch: clearStats=$clearStats, activeMode=$activeMode, cacheSizesBefore=${aboveHead.map { it.cache.size }}")
         }
         aboveHead.forEach { it.cache.clear() }
         if (clearStats) {
             Levelhead.clearCachedStats()
+        }
+        if (TEMP_DEBUG) {
+            Levelhead.logger.info("[DISPLAY_DEBUG] clearCachesWithoutRefetch: COMPLETED, cacheSizesAfter=${aboveHead.map { it.cache.size }}")
         }
     }
 
@@ -262,11 +266,17 @@ class DisplayManager(val file: File) {
      */
     @OptIn(ExperimentalStdlibApi::class)
     fun syncGameMode() {
-        val detectedMode = ModeManager.getActiveGameMode() ?: return
+        val detectedMode = ModeManager.getActiveGameMode() ?: run {
+            if (TEMP_DEBUG) Levelhead.logger.info("[DISPLAY_DEBUG] syncGameMode: no active game mode, skipping")
+            return
+        }
+
+        if (TEMP_DEBUG) Levelhead.logger.info("[DISPLAY_DEBUG] syncGameMode: detectedMode=$detectedMode, currentConfigGameMode=${primaryDisplay()?.config?.gameMode}, currentConfigType=${primaryDisplay()?.config?.type}")
 
         updatePrimaryDisplay { config ->
             if (config.gameMode != detectedMode) {
                 val previousMode = config.gameMode
+                val previousType = config.type
                 config.gameMode = detectedMode
                 if (config.type == previousMode.typeId) {
                     config.type = detectedMode.typeId
@@ -274,6 +284,7 @@ class DisplayManager(val file: File) {
                 if (config.headerString.isBlank() || matchesModeDefaultHeader(config.headerString, previousMode)) {
                     config.headerString = detectedMode.defaultHeader
                 }
+                if (TEMP_DEBUG) Levelhead.logger.info("[DISPLAY_DEBUG] syncGameMode: CHANGED gameMode=$previousMode->$detectedMode, type=$previousType->${config.type}, header=${config.headerString}")
                 true
             } else {
                 false
