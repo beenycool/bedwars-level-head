@@ -42,7 +42,7 @@ object DebugLogging {
      * @return The truncated string, or original if within limit
      */
     fun String.truncateForLogs(maxLength: Int): String {
-        if (maxLength <= 3) return "..."
+        if (maxLength <= 3) return ".".repeat(maxLength.coerceAtLeast(0))
         if (length <= maxLength) return this
 
         // Find a safe cutoff point that doesn't split special characters
