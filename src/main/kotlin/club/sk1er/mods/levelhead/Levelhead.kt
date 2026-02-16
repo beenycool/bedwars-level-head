@@ -6,6 +6,10 @@ import club.sk1er.mods.levelhead.bedwars.FetchResult
 import club.sk1er.mods.levelhead.commands.LevelheadCommand
 import club.sk1er.mods.levelhead.commands.WhoisCommand
 import club.sk1er.mods.levelhead.config.LevelheadConfig
+import club.sk1er.mods.levelhead.core.DebugLogging
+import club.sk1er.mods.levelhead.core.DebugLogging.formatAsHex
+import club.sk1er.mods.levelhead.core.DebugLogging.maskForLogs
+import club.sk1er.mods.levelhead.core.DebugLogging.truncateForLogs
 import club.sk1er.mods.levelhead.core.DisplayManager
 import club.sk1er.mods.levelhead.core.GameMode
 import club.sk1er.mods.levelhead.core.GameStats
@@ -15,13 +19,13 @@ import club.sk1er.mods.levelhead.core.RateLimiterMetrics
 import club.sk1er.mods.levelhead.core.StatsFetcher
 import club.sk1er.mods.levelhead.core.StatsFormatter
 import club.sk1er.mods.levelhead.core.dashUUID
-import club.sk1er.mods.levelhead.core.trimmed
 import club.sk1er.mods.levelhead.display.LevelheadDisplay
 import club.sk1er.mods.levelhead.duels.DuelsModeDetector
 import club.sk1er.mods.levelhead.render.AboveHeadRender
 import club.sk1er.mods.levelhead.skywars.SkyWarsModeDetector
 import com.google.gson.Gson
 import com.google.gson.JsonParser
+import java.awt.Color
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.CompletableDeferred
@@ -281,12 +285,20 @@ object Levelhead {
                     groupedRequests
                         .groupBy { resolveGameMode(it.type) }
                         .forEach { (gameMode, modeRequests) ->
+                            val debug = DebugLogging.isRequestDebugEnabled()
                             val displays = modeRequests.map { it.display }.toSet()
                             val cacheKey = StatsCacheKey(uuid, gameMode)
                             val cached = statsCache[cacheKey]
+                            val reasons = if (debug) modeRequests.map { it.reason }.toSet() else null
+                            val maskedUuid = if (debug) "****-${uuid.toString().takeLast(4)}" else null
+                            val trimmedMasked = if (debug) (if (trimmedUuid.length == 32) "****-${trimmedUuid.takeLast(4)}" else trimmedUuid) else null
+
                             when {
                                 cached == null -> {
                                     statsCacheMetrics.recordMiss(CacheMissReason.COLD)
+                                    DebugLogging.logRequestDebug {
+                                        "[LevelheadDebug][cache] COLD miss: uuid=$maskedUuid trimmed=$trimmedMasked mode=${gameMode.name} reasons=$reasons"
+                                    }
                                     pending += PendingStatsRequest(
                                         trimmedUuid,
                                         uuid,
@@ -296,11 +308,17 @@ object Levelhead {
                                         cached,
                                         false
                                     )
+                                    DebugLogging.logRequestDebug {
+                                        "[LevelheadDebug][request] fetch initiated: uuid=$maskedUuid trimmed=$trimmedMasked mode=${gameMode.name} reason=COLD_MISS"
+                                    }
                                 }
                                 cached.isExpired(LevelheadConfig.starCacheTtl, now) -> {
                                     statsCacheMetrics.recordMiss(CacheMissReason.EXPIRED)
                                     registerDisplaysForRefresh(cacheKey, displays)
                                     applyStatsToRequests(uuid, modeRequests, cached)
+                                    DebugLogging.logRequestDebug {
+                                        "[LevelheadDebug][cache] EXPIRED refresh: uuid=$maskedUuid trimmed=$trimmedMasked mode=${gameMode.name} reasons=$reasons"
+                                    }
                                     pending += PendingStatsRequest(
                                         trimmedUuid,
                                         uuid,
@@ -310,8 +328,16 @@ object Levelhead {
                                         cached,
                                         true
                                     )
+                                    DebugLogging.logRequestDebug {
+                                        "[LevelheadDebug][request] fetch initiated: uuid=$maskedUuid trimmed=$trimmedMasked mode=${gameMode.name} reason=EXPIRED_REFRESH"
+                                    }
                                 }
-                                else -> applyStatsToRequests(uuid, modeRequests, cached)
+                                else -> {
+                                    applyStatsToRequests(uuid, modeRequests, cached)
+                                    DebugLogging.logRequestDebug {
+                                        "[LevelheadDebug][cache] HIT: uuid=$maskedUuid trimmed=$trimmedMasked mode=${gameMode.name} reasons=$reasons"
+                                    }
+                                }
                             }
                         }
                 }
@@ -404,6 +430,9 @@ object Levelhead {
 
                                             if (shouldSkipFallback) {
                                                 remaining.remove(entry)
+                                                DebugLogging.logRequestDebug {
+                                                    "[LevelheadDebug][request] fallback skipped: uuid=****-${entry.uuid.toString().takeLast(4)} mode=${entry.gameMode.name} reason=$proxyErrorReason"
+                                                }
                                             }
                                             batchLocks[entry.cacheKey]?.complete(null)
                                             inFlightStatsRequests.remove(entry.cacheKey)
@@ -499,6 +528,9 @@ object Levelhead {
         if (existing != null) {
             if (registerForRefresh && displays.isNotEmpty()) {
                 registerDisplaysForRefresh(cacheKey, displays)
+            }
+            DebugLogging.logRequestDebug {
+                "[LevelheadDebug][request] in-flight dedupe reuse: uuid=****-${cacheKey.uuid.toString().takeLast(4)} mode=${cacheKey.gameMode.name}"
             }
             return existing
         }
@@ -664,6 +696,9 @@ object Levelhead {
             uuid, stats?.let { it::class.simpleName }, gameMode, display.config.type, display.config.gameMode, activeMode)
         val tag = StatsFormatter.formatTag(uuid, stats, display.config, gameMode)
         logger.debug("updateDisplayCache: writing tag='{}' to display.cache[{}]", tag.getString(), uuid)
+        DebugLogging.logRequestDebug {
+            "[LevelheadDebug][tag] uuid=${uuid.maskForLogs()}, gameMode=$gameMode, tag=${tag.getString().truncateForLogs(200)}, header=${tag.header.value.truncateForLogs(50)} (${tag.header.color.formatAsHex()}), footer=${tag.footer.value.truncateForLogs(50)} (${tag.footer.color.formatAsHex()})"
+        }
         display.cache[uuid] = tag
     }
 
@@ -691,7 +726,21 @@ object Levelhead {
         return String.format(Locale.ROOT, "%d:%02d", minutes, seconds)
     }
 
-    data class LevelheadRequest(val uuid: String, val display: LevelheadDisplay, val allowOverride: Boolean, val type: String = display.config.type)
+    data class LevelheadRequest(
+        val uuid: String,
+        val display: LevelheadDisplay,
+        val allowOverride: Boolean,
+        val type: String = display.config.type,
+        val reason: RequestReason = RequestReason.UNKNOWN
+    )
+
+    enum class RequestReason {
+        PLAYER_JOIN,        // Individual player joined world
+        REQUEST_ALL_DISPLAYS,  // Initial fetch for all visible players
+        REFRESH_VISIBLE_DISPLAYS, // Config change refresh
+        TAB_LIST,           // Tab list stats fetch
+        UNKNOWN             // Fallback for backward compatibility
+    }
 
     private data class StatsCacheKey(val uuid: UUID, val gameMode: GameMode)
 

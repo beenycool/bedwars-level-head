@@ -766,6 +766,28 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         }
 
     @Switch(
+        name = "Debug Requests",
+        description = "Log HTTP requests and responses to latest.log for troubleshooting API calls.",
+        category = "Advanced"
+    )
+    var debugRequests: Boolean = false
+        set(value) {
+            field = value
+            save()
+        }
+
+    @Switch(
+        name = "Debug Render Sampling",
+        description = "Log render timing and sampling decisions to latest.log for troubleshooting display issues.",
+        category = "Advanced"
+    )
+    var debugRenderSampling: Boolean = false
+        set(value) {
+            field = value
+            save()
+        }
+
+    @Switch(
         name = "Use Proxy",
         description = "Route requests through the Levelhead backend. Required for Community API mode.",
         category = "Advanced"
@@ -1480,6 +1502,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         footerColorHex = "#FFFF55"
         showAdvancedOptions = false
         debugConfigSync = false
+        debugRequests = false
+        debugRenderSampling = false
         save()
         BedwarsFetcher.resetWarnings()
         Levelhead.displayManager.resetToDefaults()

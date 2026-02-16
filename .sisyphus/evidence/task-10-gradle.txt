@@ -1,0 +1,53 @@
+
+> Configure project :1.8.9
+Architectury Loom: 0.10.0.5
+:could not find forge mod in modImplementation but forcing: universalcraft-1.8.9-forge-246.jar (cc.polyfrost:universalcraft-1.8.9-forge:246)
+:could not find forge mod in modImplementation but forcing: kotlin-reflect-1.9.10.jar (org.jetbrains.kotlin:kotlin-reflect:1.9.10)
+:could not find forge mod in modImplementation but forcing: kotlinx-coroutines-core-1.7.3.jar (org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3)
+:could not find forge mod in modImplementation but forcing: kotlinx-coroutines-jdk8-1.7.3.jar (org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:1.7.3)
+:could not find forge mod in modImplementation but forcing: kotlinx-coroutines-core-jvm-1.7.3.jar (org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.7.3)
+:could not find forge mod in modImplementation but forcing: kotlin-stdlib-jdk8-1.9.10.jar (org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.10)
+:could not find forge mod in modImplementation but forcing: kotlin-stdlib-jdk7-1.9.10.jar (org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.10)
+:could not find forge mod in modImplementation but forcing: kotlinx-serialization-json-jvm-1.6.0.jar (org.jetbrains.kotlinx:kotlinx-serialization-json-jvm:1.6.0)
+:could not find forge mod in modImplementation but forcing: kotlinx-serialization-cbor-jvm-1.6.0.jar (org.jetbrains.kotlinx:kotlinx-serialization-cbor-jvm:1.6.0)
+:could not find forge mod in modImplementation but forcing: kotlinx-serialization-core-jvm-1.6.0.jar (org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.6.0)
+:could not find forge mod in modImplementation but forcing: atomicfu-jvm-0.22.0.jar (org.jetbrains.kotlinx:atomicfu-jvm:0.22.0)
+:could not find forge mod in modImplementation but forcing: kotlin-stdlib-1.9.10.jar (org.jetbrains.kotlin:kotlin-stdlib:1.9.10)
+:could not find forge mod in modImplementation but forcing: DevAuth-forge-legacy-1.2.0.jar (me.djtheredstoner:DevAuth-forge-legacy:1.2.0)
+:could not find forge mod in modImplementation but forcing: kotlin-stdlib-common-1.9.10.jar (org.jetbrains.kotlin:kotlin-stdlib-common:1.9.10)
+:could not find forge mod in modImplementation but forcing: annotations-23.0.0.jar (org.jetbrains:annotations:23.0.0)
+:could not find forge mod in modCompileOnly but forcing: universalcraft-1.8.9-forge-246.jar (cc.polyfrost:universalcraft-1.8.9-forge:246)
+:could not find forge mod in modCompileOnly but forcing: kotlin-reflect-1.9.10.jar (org.jetbrains.kotlin:kotlin-reflect:1.9.10)
+:could not find forge mod in modCompileOnly but forcing: kotlinx-coroutines-core-1.7.3.jar (org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3)
+:could not find forge mod in modCompileOnly but forcing: kotlinx-coroutines-jdk8-1.7.3.jar (org.jetbrains.kotlinx:kotlinx-coroutines-jdk8:1.7.3)
+:could not find forge mod in modCompileOnly but forcing: kotlinx-coroutines-core-jvm-1.7.3.jar (org.jetbrains.kotlinx:kotlinx-coroutines-core-jvm:1.7.3)
+:could not find forge mod in modCompileOnly but forcing: kotlin-stdlib-jdk8-1.9.10.jar (org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.10)
+:could not find forge mod in modCompileOnly but forcing: kotlin-stdlib-jdk7-1.9.10.jar (org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.10)
+:could not find forge mod in modCompileOnly but forcing: kotlinx-serialization-json-jvm-1.6.0.jar (org.jetbrains.kotlinx:kotlinx-serialization-json-jvm:1.6.0)
+:could not find forge mod in modCompileOnly but forcing: kotlinx-serialization-cbor-jvm-1.6.0.jar (org.jetbrains.kotlinx:kotlinx-serialization-cbor-jvm:1.6.0)
+:could not find forge mod in modCompileOnly but forcing: kotlinx-serialization-core-jvm-1.6.0.jar (org.jetbrains.kotlinx:kotlinx-serialization-core-jvm:1.6.0)
+:could not find forge mod in modCompileOnly but forcing: atomicfu-jvm-0.22.0.jar (org.jetbrains.kotlinx:atomicfu-jvm:0.22.0)
+:could not find forge mod in modCompileOnly but forcing: kotlin-stdlib-1.9.10.jar (org.jetbrains.kotlin:kotlin-stdlib:1.9.10)
+:could not find forge mod in modCompileOnly but forcing: DevAuth-forge-legacy-1.2.0.jar (me.djtheredstoner:DevAuth-forge-legacy:1.2.0)
+:could not find forge mod in modCompileOnly but forcing: kotlin-stdlib-common-1.9.10.jar (org.jetbrains.kotlin:kotlin-stdlib-common:1.9.10)
+:could not find forge mod in modCompileOnly but forcing: annotations-23.0.0.jar (org.jetbrains:annotations:23.0.0)
+
+> Task :1.8.9:compileKotlin UP-TO-DATE
+> Task :1.8.9:compileJava UP-TO-DATE
+> Task :1.8.9:processResources UP-TO-DATE
+> Task :1.8.9:classes UP-TO-DATE
+> Task :1.8.9:jar
+> Task :1.8.9:shadowJar UP-TO-DATE
+> Task :1.8.9:remapJar
+> Task :1.8.9:assemble
+> Task :1.8.9:compileTestKotlin NO-SOURCE
+> Task :1.8.9:compileTestJava NO-SOURCE
+> Task :1.8.9:processTestResources NO-SOURCE
+> Task :1.8.9:testClasses UP-TO-DATE
+> Task :1.8.9:test NO-SOURCE
+> Task :1.8.9:validateAccessWidener NO-SOURCE
+> Task :1.8.9:check UP-TO-DATE
+> Task :1.8.9:build
+
+BUILD SUCCESSFUL in 4s
+6 actionable tasks: 2 executed, 4 up-to-date

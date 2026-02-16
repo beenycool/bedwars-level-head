@@ -143,7 +143,7 @@ class DisplayManager(val file: File) {
         val displays = aboveHead.filter { it.config.enabled }
         val requests = displays.filter { !it.cache.containsKey(player.uniqueID) }
             .map { display ->
-                Levelhead.LevelheadRequest(player.uniqueID.trimmed, display, display.bottomValue)
+                Levelhead.LevelheadRequest(player.uniqueID.trimmed, display, display.bottomValue, reason = Levelhead.RequestReason.PLAYER_JOIN)
             }
         
         if (requests.isNotEmpty()) {
@@ -206,7 +206,7 @@ class DisplayManager(val file: File) {
         Minecraft.getMinecraft().theWorld?.playerEntities
             ?.map { playerInfo ->
                 displays.map { display ->
-                    Levelhead.LevelheadRequest(playerInfo.uniqueID.trimmed, display, display.bottomValue)
+                    Levelhead.LevelheadRequest(playerInfo.uniqueID.trimmed, display, display.bottomValue, reason = Levelhead.RequestReason.REFRESH_VISIBLE_DISPLAYS)
                 }
             }
             ?.flatten()
@@ -313,7 +313,7 @@ class DisplayManager(val file: File) {
         Minecraft.getMinecraft().theWorld?.playerEntities
             ?.map { playerInfo ->
                 displays.map { display ->
-                    Levelhead.LevelheadRequest(playerInfo.uniqueID.trimmed, display, display.bottomValue)
+                    Levelhead.LevelheadRequest(playerInfo.uniqueID.trimmed, display, display.bottomValue, reason = Levelhead.RequestReason.REQUEST_ALL_DISPLAYS)
                 }
             }
             ?.flatten()

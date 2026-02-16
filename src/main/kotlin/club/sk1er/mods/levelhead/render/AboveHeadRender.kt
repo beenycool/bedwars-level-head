@@ -5,6 +5,11 @@ import club.sk1er.mods.levelhead.Levelhead.displayManager
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.config.MasterConfig
 import club.sk1er.mods.levelhead.display.LevelheadTag
+import club.sk1er.mods.levelhead.core.DebugLogging
+import club.sk1er.mods.levelhead.core.DebugLogging.formatAsHex
+import club.sk1er.mods.levelhead.core.DebugLogging.logRenderDebug
+import club.sk1er.mods.levelhead.core.DebugLogging.maskForLogs
+import club.sk1er.mods.levelhead.core.DebugLogging.truncateForLogs
 import club.sk1er.mods.levelhead.core.ModeManager
 import gg.essential.api.EssentialAPI
 import gg.essential.elementa.utils.withAlpha
@@ -22,11 +27,15 @@ import net.minecraft.entity.player.EntityPlayer
 import net.minecraftforge.client.event.RenderLivingEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import org.lwjgl.opengl.GL11
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 object AboveHeadRender {
     private var nextSelfSkipLogAt: Long = 0L
+    private val nextRenderDebugLogAt = ConcurrentHashMap<UUID, Long>()
 
     private const val TEXT_SCALE = 0.016666668f * 1.6f
+    private const val RENDER_LOG_INTERVAL_MS = 2000L
 
     @SubscribeEvent
     fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
@@ -73,7 +82,10 @@ object AboveHeadRender {
                     MasterConfig.DisplayPosition.ABOVE -> index * 0.3
                     MasterConfig.DisplayPosition.BELOW -> -(index * 0.3)
                 }
-                
+
+                // Render sampling debug logging (throttled per player)
+                logRenderSamplingIfEnabled(tag, player.uniqueID, player.name, displayPosition, offset + indexOffset)
+
                 renderName(tag, player, event.x, event.y + offset + indexOffset, event.z)
             }
         }
@@ -93,6 +105,39 @@ object AboveHeadRender {
             displayPosition,
             String.format(java.util.Locale.ROOT, "%.2f", displayManager.config.offset)
         )
+    }
+
+    private fun logRenderSamplingIfEnabled(
+        tag: LevelheadTag,
+        playerUuid: UUID,
+        playerName: String,
+        displayPosition: MasterConfig.DisplayPosition,
+        yOffset: Double
+    ) {
+        if (!DebugLogging.isRenderDebugEnabled()) {
+            return
+        }
+        val now = System.currentTimeMillis()
+        val nextLogAt = nextRenderDebugLogAt.getOrDefault(playerUuid, 0L)
+        if (now < nextLogAt) {
+            return
+        }
+        nextRenderDebugLogAt[playerUuid] = now + RENDER_LOG_INTERVAL_MS
+
+        DebugLogging.logRenderDebug {
+            val maskedUuid = playerUuid.maskForLogs()
+            val tagString = tag.getString().truncateForLogs(200)
+            val headerValue = tag.header.value.truncateForLogs(100)
+            val footerValue = tag.footer.value.truncateForLogs(100)
+            val headerColor = tag.header.color.formatAsHex()
+            val footerColor = tag.footer.color.formatAsHex()
+            val offsetFormatted = String.format(java.util.Locale.ROOT, "%.2f", yOffset)
+
+            "[LevelheadDebug][render] player=${playerName} uuid=${maskedUuid} tag=\"${tagString}\" " +
+                "header=\"${headerValue}\" headerColor=${headerColor} " +
+                "footer=\"${footerValue}\" footerColor=${footerColor} " +
+                "position=${displayPosition} yOffset=${offsetFormatted}"
+        }
     }
 
     private val EntityPlayer.isSelf: Boolean

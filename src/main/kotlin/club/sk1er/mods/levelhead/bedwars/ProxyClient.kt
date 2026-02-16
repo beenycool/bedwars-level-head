@@ -7,6 +7,7 @@ import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.parseRetryAfterMillis
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.sanitizeForLogs
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.toHttpDateString
 import club.sk1er.mods.levelhead.config.LevelheadConfig
+import club.sk1er.mods.levelhead.core.DebugLogging
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
 import com.google.gson.JsonPrimitive
@@ -97,6 +98,10 @@ object ProxyClient {
             .get()
             .build()
 
+        DebugLogging.logRequestDebug {
+            "[LevelheadDebug][network] proxy request: ${url.toString().sanitizeForLogs()}"
+        }
+
         return try {
             executeWithRetries(request, "proxy player").use { response ->
                 if (response.code() == 304) {
@@ -104,6 +109,11 @@ object ProxyClient {
                     invalidProxyTokenWarned.set(false)
                     val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
                     handleRetryAfterHint("proxy", retryAfterMillis, silent = true)
+                    DebugLogging.logRequestDebug {
+                        val etagVal = response.header("ETag")
+                        val cacheVal = response.header("X-Cache") ?: "<absent>"
+                        "[LevelheadDebug][network] proxy 304 Not Modified etag=$etagVal cache=$cacheVal"
+                    }
                     return FetchResult.NotModified
                 }
 
@@ -112,6 +122,13 @@ object ProxyClient {
                 val isCacheHit = cacheHeader?.equals("HIT", ignoreCase = true) == true ||
                         cacheHeader?.equals("PARTIAL", ignoreCase = true) == true
                 val body = response.body()?.string().orEmpty()
+
+                DebugLogging.logRequestDebug {
+                    val etagVal = response.header("ETag")
+                    val cacheVal = cacheHeader ?: "<absent>"
+                    val hasEtag = etagVal != null
+                    "[LevelheadDebug][network] proxy response status=${response.code()} etagPresent=$hasEtag etagValue=$etagVal cache=$cacheVal bodyLen=${body.length}"
+                }
 
                 if (!response.isSuccessful) {
                     return when (response.code()) {
@@ -130,9 +147,9 @@ object ProxyClient {
                         else -> {
                             handleRetryAfterHint("proxy", retryAfterMillis)
                             Levelhead.logger.error(
-                                "Proxy request failed with status {}: {}",
+                                "Proxy request failed with status {} (bodyLen={})",
                                 response.code(),
-                                body.sanitizeForLogs().take(200)
+                                body.length
                             )
                             FetchResult.TemporaryError("HTTP_${response.code()}")
                         }
@@ -147,7 +164,7 @@ object ProxyClient {
                 }
 
                 if (json.get("success")?.asBoolean == false) {
-                    Levelhead.logger.warn("Proxy response reported success=false: {}", body.sanitizeForLogs().take(200))
+                    Levelhead.logger.warn("Proxy response reported success=false (bodyLen={})", body.length)
                     return FetchResult.TemporaryError("PROXY_ERROR")
                 }
 
@@ -215,6 +232,10 @@ object ProxyClient {
             }
             .build()
 
+        DebugLogging.logRequestDebug {
+            "[LevelheadDebug][network] proxy batch request: ${url.toString().sanitizeForLogs()} count=${uuids.size}"
+        }
+
         return try {
             executeWithRetries(request, "proxy batch").use { response ->
                 val body = response.body()?.string().orEmpty()
@@ -222,6 +243,13 @@ object ProxyClient {
                 val cacheHeader = response.header("X-Cache")
                 val isCacheHit = cacheHeader?.equals("HIT", ignoreCase = true) == true ||
                         cacheHeader?.equals("PARTIAL", ignoreCase = true) == true
+
+                DebugLogging.logRequestDebug {
+                    val etag = response.header("ETag")
+                    val cacheDisplay = cacheHeader ?: "<absent>"
+                    val hasEtag = etag != null
+                    "[LevelheadDebug][network] proxy batch response status=${response.code()} etagPresent=$hasEtag cache=$cacheDisplay bodyLen=${body.length}"
+                }
 
                 if (!response.isSuccessful) {
                     return when (response.code()) {
@@ -240,9 +268,9 @@ object ProxyClient {
                         else -> {
                             handleRetryAfterHint("proxy", retryAfterMillis)
                             Levelhead.logger.error(
-                                "Proxy batch request failed with status {}: {}",
+                                "Proxy batch request failed with status {} (bodyLen={})",
                                 response.code(),
-                                body.sanitizeForLogs().take(200)
+                                body.length
                             )
                             identifierToUuid.values.associateWith { FetchResult.TemporaryError("HTTP_${response.code()}") }
                         }
@@ -257,13 +285,13 @@ object ProxyClient {
                 }
 
                 if (json.get("success")?.asBoolean == false) {
-                    Levelhead.logger.warn("Proxy batch response reported success=false: {}", body.sanitizeForLogs().take(200))
+                    Levelhead.logger.warn("Proxy batch response reported success=false (bodyLen={})", body.length)
                     return identifierToUuid.values.associateWith { FetchResult.TemporaryError("PROXY_ERROR") }
                 }
 
                 val data = json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
                 if (data == null) {
-                    Levelhead.logger.warn("Proxy batch response missing data object: {}", body.sanitizeForLogs().take(200))
+                    Levelhead.logger.warn("Proxy batch response missing data object (bodyLen={})", body.length)
                     return identifierToUuid.values.associateWith { FetchResult.TemporaryError("MISSING_DATA") }
                 }
 
@@ -279,6 +307,12 @@ object ProxyClient {
                         results[uuid] = FetchResult.TemporaryError("NOT_FOUND")
                     }
                 }
+
+                DebugLogging.logRequestDebug {
+                    val successCount = results.values.count { it is FetchResult.Success }
+                    "[LevelheadDebug][network] proxy batch processed chunkSize=${uuids.size} resultsReturned=${results.size} successCount=$successCount"
+                }
+
                 results
             }
         } catch (ex: IOException) {
@@ -332,10 +366,11 @@ object ProxyClient {
                 if (response.isSuccessful) {
                     Levelhead.logger.info("Contributed player data for {} to community database", uuid)
                 } else {
+                    val responseBodyLen = response.body()?.string()?.length ?: 0
                     Levelhead.logger.warn(
-                        "Failed to contribute player data: {} {}",
+                        "Failed to contribute player data: {} (bodyLen={})",
                         response.code(),
-                        response.body()?.string()?.take(100) ?: "no body"
+                        responseBodyLen
                     )
                 }
             }
@@ -357,9 +392,9 @@ object ProxyClient {
             Levelhead.sendChat("${ChatColor.RED}Proxy authentication failed. ${ChatColor.YELLOW}Update your proxy token in Levelhead settings.")
         }
         Levelhead.logger.warn(
-            "Proxy authentication failed with status {}: {}",
+            "Proxy authentication failed with status {} (bodyLen={})",
             status,
-            body.sanitizeForLogs().take(200)
+            body.length
         )
     }
 
