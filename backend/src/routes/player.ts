@@ -21,8 +21,14 @@ const batchLimit = pLimit(6);
 const router = Router();
 
 function buildSubmitterKeyId(ipAddress: string): string {
-  const salt = COMMUNITY_SUBMIT_SECRET || 'levelhead-submit';
-  return createHmac('sha256', salt).update(ipAddress).digest('hex');
+  if (!COMMUNITY_SUBMIT_SECRET || COMMUNITY_SUBMIT_SECRET.length === 0) {
+    throw new HttpError(
+      503,
+      'SERVICE_UNAVAILABLE',
+      'COMMUNITY_SUBMIT_SECRET must be set for player submissions. Configure it in your environment.',
+    );
+  }
+  return createHmac('sha256', COMMUNITY_SUBMIT_SECRET).update(ipAddress).digest('hex');
 }
 
 
