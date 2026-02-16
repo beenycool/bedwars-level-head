@@ -191,12 +191,22 @@ function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
   const winstreak = Number.isFinite(winstreakNumber) ? winstreakNumber : undefined;
   const fkdr = finalDeaths <= 0 ? finalKills : finalKills / finalDeaths;
 
-  const shapedStats: Record<string, unknown> = {
-    ...bedwarsStats,
-    ...(experience !== undefined ? { bedwars_experience: experience, Experience: experience } : {}),
-    ...(Number.isFinite(fkdr) ? { fkdr } : {}),
-    ...(winstreak !== undefined ? { winstreak } : {}),
-  };
+  // Bolt: Optimized to mutate object instead of spreading to avoid O(n) copy
+  // bedwarsStats is from the response object which is not used elsewhere
+  const mutableStats = bedwarsStats as Record<string, unknown>;
+
+  if (experience !== undefined) {
+    mutableStats.bedwars_experience = experience;
+    mutableStats.Experience = experience;
+  }
+  if (Number.isFinite(fkdr)) {
+    mutableStats.fkdr = fkdr;
+  }
+  if (winstreak !== undefined) {
+    mutableStats.winstreak = winstreak;
+  }
+
+  const shapedStats = mutableStats;
 
   const duelsStats = response.player?.stats?.Duels ?? {};
   const skywarsStats = response.player?.stats?.SkyWars ?? {};
