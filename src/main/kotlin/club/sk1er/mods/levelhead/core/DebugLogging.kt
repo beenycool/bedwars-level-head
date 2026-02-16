@@ -53,13 +53,8 @@ object DebugLogging {
 
         // Back up from the cutoff to avoid cutting special formatting codes
         // § is Minecraft color code, ✪ is custom star symbol
-        while (cutoff > 0) {
-            val char = this[cutoff]
-            if (char == '§' || char == '✪') {
-                cutoff--
-            } else {
-                break
-            }
+        while (cutoff > 0 && (this[cutoff - 1] == '§' || this[cutoff - 1] == '✪')) {
+            cutoff--
         }
 
         return if (cutoff > 0) {
@@ -79,18 +74,20 @@ object DebugLogging {
         return "****-$lastFour"
     }
 
+    private val UUID_REGEX = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+    private val TRIMMED_UUID_REGEX = Regex("^[0-9a-fA-F]{32}$")
+
     /**
      * Mask a string as UUID for privacy-safe logging.
      * Useful when you have a string that might be a UUID.
      * Returns original if not a valid UUID format.
      */
     fun String.maskIfUuid(): String {
-        return try {
-            val uuid = UUID.fromString(this)
-            uuid.maskForLogs()
-        } catch (e: IllegalArgumentException) {
-            this
+        if (UUID_REGEX.matches(this) || TRIMMED_UUID_REGEX.matches(this)) {
+            val lastFour = takeLast(4)
+            return "****-$lastFour"
         }
+        return this
     }
 
     /**
@@ -99,7 +96,7 @@ object DebugLogging {
      */
     fun logRequestDebug(message: () -> String) {
         if (isRequestDebugEnabled()) {
-            Levelhead.logger.info(message())
+            Levelhead.logger.info("[DEBUG-REQ] " + message())
         }
     }
 
@@ -109,7 +106,7 @@ object DebugLogging {
      */
     fun logRenderDebug(message: () -> String) {
         if (isRenderDebugEnabled()) {
-            Levelhead.logger.info(message())
+            Levelhead.logger.info("[DEBUG-RENDER] " + message())
         }
     }
 

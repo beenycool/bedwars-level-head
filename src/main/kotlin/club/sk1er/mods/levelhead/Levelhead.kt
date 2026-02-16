@@ -9,6 +9,7 @@ import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.DebugLogging
 import club.sk1er.mods.levelhead.core.DebugLogging.formatAsHex
 import club.sk1er.mods.levelhead.core.DebugLogging.maskForLogs
+import club.sk1er.mods.levelhead.core.DebugLogging.maskIfUuid
 import club.sk1er.mods.levelhead.core.DebugLogging.truncateForLogs
 import club.sk1er.mods.levelhead.core.DisplayManager
 import club.sk1er.mods.levelhead.core.GameMode
@@ -245,6 +246,7 @@ object Levelhead {
         resetWorldScope()
         rateLimiter.resetState()
         displayManager.clearCachesWithoutRefetch()
+        AboveHeadRender.clearRenderDebugState()
         resetFetchTimestamps()
         worldScope.launch { displayManager.requestAllDisplays() }
     }
@@ -290,8 +292,8 @@ object Levelhead {
                             val cacheKey = StatsCacheKey(uuid, gameMode)
                             val cached = statsCache[cacheKey]
                             val reasons = if (debug) modeRequests.map { it.reason }.toSet() else null
-                            val maskedUuid = if (debug) "****-${uuid.toString().takeLast(4)}" else null
-                            val trimmedMasked = if (debug) (if (trimmedUuid.length == 32) "****-${trimmedUuid.takeLast(4)}" else trimmedUuid) else null
+                            val maskedUuid = if (debug) uuid.maskForLogs() else null
+                            val trimmedMasked = if (debug) trimmedUuid.maskIfUuid() else null
 
                             when {
                                 cached == null -> {
@@ -431,7 +433,7 @@ object Levelhead {
                                             if (shouldSkipFallback) {
                                                 remaining.remove(entry)
                                                 DebugLogging.logRequestDebug {
-                                                    "[LevelheadDebug][request] fallback skipped: uuid=****-${entry.uuid.toString().takeLast(4)} mode=${entry.gameMode.name} reason=$proxyErrorReason"
+                                                    "[LevelheadDebug][request] fallback skipped: uuid=${entry.uuid.maskForLogs()} mode=${entry.gameMode.name} reason=$proxyErrorReason"
                                                 }
                                             }
                                             batchLocks[entry.cacheKey]?.complete(null)

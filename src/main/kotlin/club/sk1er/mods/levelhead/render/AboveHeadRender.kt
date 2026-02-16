@@ -140,6 +140,10 @@ object AboveHeadRender {
         }
     }
 
+    fun clearRenderDebugState() {
+        nextRenderDebugLogAt.clear()
+    }
+
     private val EntityPlayer.isSelf: Boolean
         get() = UPlayer.getUUID() == this.uniqueID
 
