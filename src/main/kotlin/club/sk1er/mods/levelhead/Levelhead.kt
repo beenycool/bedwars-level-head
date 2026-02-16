@@ -85,13 +85,6 @@ class LevelheadMod {
 
 object Levelhead {
     val logger: Logger = LogManager.getLogger()
-    private const val TEMP_DEBUG = false
-    
-    private fun debug(message: String) {
-        if (TEMP_DEBUG) {
-            logger.info("[CACHE_DEBUG] $message")
-        }
-    }
     
     private val ipv4OnlyDns = Dns { hostname ->
         val addresses = Dns.SYSTEM.lookup(hostname).filterIsInstance<Inet4Address>()
@@ -667,15 +660,16 @@ object Levelhead {
     private fun updateDisplayCache(display: LevelheadDisplay, uuid: UUID, stats: GameStats?, gameMode: GameMode) {
         if (!display.config.enabled) return
         val activeMode = ModeManager.getActiveGameMode()
-        debug("updateDisplayCache: uuid=$uuid, statsType=${stats?.let { it::class.simpleName }}, resolvedGameMode=$gameMode, displayConfigType=${display.config.type}, displayConfigGameMode=${display.config.gameMode}, activeMode=$activeMode")
+        logger.debug("updateDisplayCache: uuid={}, statsType={}, resolvedGameMode={}, displayConfigType={}, displayConfigGameMode={}, activeMode={}", 
+            uuid, stats?.let { it::class.simpleName }, gameMode, display.config.type, display.config.gameMode, activeMode)
         val tag = StatsFormatter.formatTag(uuid, stats, display.config, gameMode)
-        debug("updateDisplayCache: writing tag='${tag.getString()}' to display.cache[$uuid]")
+        logger.debug("updateDisplayCache: writing tag='{}' to display.cache[{}]", tag.getString(), uuid)
         display.cache[uuid] = tag
     }
 
     private fun resolveGameMode(typeId: String): GameMode {
         val resolved = GameMode.fromTypeId(typeId) ?: GameMode.BEDWARS
-        debug("resolveGameMode: typeId=$typeId -> $resolved")
+        logger.debug("resolveGameMode: typeId={} -> {}", typeId, resolved)
         return resolved
     }
 
@@ -685,7 +679,8 @@ object Levelhead {
             GameMode.DUELS -> stats as? GameStats.Duels
             GameMode.SKYWARS -> stats as? GameStats.SkyWars
         }
-        debug("statsForMode: inputStatsType=${stats?.let { it::class.simpleName }}, requestedGameMode=$gameMode -> resultType=${result?.let { it::class.simpleName }} (null means cast failed!)")
+        logger.debug("statsForMode: inputStatsType={}, requestedGameMode={} -> resultType={} (null means input was null or cast failed)", 
+            stats?.let { it::class.simpleName }, gameMode, result?.let { it::class.simpleName })
         return result
     }
 

@@ -18,10 +18,6 @@ import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.launch
 
 class DisplayManager(val file: File) {
-    private companion object {
-        private const val TEMP_DEBUG = false
-    }
-
     var config = MasterConfig()
     val aboveHead: MutableList<AboveHeadDisplay> = ArrayList()
     private var wasInGame: Boolean = false
@@ -177,17 +173,15 @@ class DisplayManager(val file: File) {
     }
 
     fun clearCachesWithoutRefetch(clearStats: Boolean = true) {
-        if (TEMP_DEBUG) {
-            val activeMode = ModeManager.getActiveGameMode()
-            Levelhead.logger.info("[DISPLAY_DEBUG] clearCachesWithoutRefetch: clearStats=$clearStats, activeMode=$activeMode, cacheSizesBefore=${aboveHead.map { it.cache.size }}")
-        }
+        val activeMode = ModeManager.getActiveGameMode()
+        Levelhead.logger.debug("clearCachesWithoutRefetch: clearStats={} activeMode={} cacheSizesBefore={}", 
+            clearStats, activeMode, aboveHead.map { it.cache.size })
+        
         aboveHead.forEach { it.cache.clear() }
         if (clearStats) {
             Levelhead.clearCachedStats()
         }
-        if (TEMP_DEBUG) {
-            Levelhead.logger.info("[DISPLAY_DEBUG] clearCachesWithoutRefetch: COMPLETED, cacheSizesAfter=${aboveHead.map { it.cache.size }}")
-        }
+        Levelhead.logger.debug("clearCachesWithoutRefetch: COMPLETED cacheSizesAfter={}", aboveHead.map { it.cache.size })
     }
 
     fun clearCache() {
@@ -267,11 +261,12 @@ class DisplayManager(val file: File) {
     @OptIn(ExperimentalStdlibApi::class)
     fun syncGameMode() {
         val detectedMode = ModeManager.getActiveGameMode() ?: run {
-            if (TEMP_DEBUG) Levelhead.logger.info("[DISPLAY_DEBUG] syncGameMode: no active game mode, skipping")
+            Levelhead.logger.debug("syncGameMode: no active game mode, skipping")
             return
         }
 
-        if (TEMP_DEBUG) Levelhead.logger.info("[DISPLAY_DEBUG] syncGameMode: detectedMode=$detectedMode, currentConfigGameMode=${primaryDisplay()?.config?.gameMode}, currentConfigType=${primaryDisplay()?.config?.type}")
+        Levelhead.logger.debug("syncGameMode: detectedMode={} currentConfigGameMode={} currentConfigType={}", 
+            detectedMode, primaryDisplay()?.config?.gameMode, primaryDisplay()?.config?.type)
 
         updatePrimaryDisplay { config ->
             if (config.gameMode != detectedMode) {
@@ -284,7 +279,8 @@ class DisplayManager(val file: File) {
                 if (config.headerString.isBlank() || matchesModeDefaultHeader(config.headerString, previousMode)) {
                     config.headerString = detectedMode.defaultHeader
                 }
-                if (TEMP_DEBUG) Levelhead.logger.info("[DISPLAY_DEBUG] syncGameMode: CHANGED gameMode=$previousMode->$detectedMode, type=$previousType->${config.type}, header=${config.headerString}")
+                Levelhead.logger.debug("syncGameMode: CHANGED gameMode={}->{} type={}->{} header={}", 
+                    previousMode, detectedMode, previousType, config.type, config.headerString)
                 true
             } else {
                 false

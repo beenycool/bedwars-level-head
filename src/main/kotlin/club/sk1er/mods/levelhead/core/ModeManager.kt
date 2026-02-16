@@ -9,7 +9,6 @@ import club.sk1er.mods.levelhead.skywars.SkyWarsModeDetector
  * Routes to the appropriate mode detector based on the current game state.
  */
 object ModeManager {
-    private const val TEMP_DEBUG = false
     private var lastLoggedMode: ActiveMode = ActiveMode.NONE
     private var lastLoggedAt: Long = 0L
     
@@ -39,22 +38,25 @@ object ModeManager {
         val skywars = skywarsMatch || SkyWarsModeDetector.isInSkyWars()
         
         val detected = when {
-            // Match contexts are stronger than lobby/chat context and should take priority.
-            bedwarsMatch || bedwars -> ActiveMode.BEDWARS
-            duelsMatch || duels -> ActiveMode.DUELS
-            skywarsMatch || skywars -> ActiveMode.SKYWARS
+            // Match contexts take priority over lobby/general detection.
+            bedwarsMatch -> ActiveMode.BEDWARS
+            duelsMatch -> ActiveMode.DUELS
+            skywarsMatch -> ActiveMode.SKYWARS
+            // Fall back to lobby/general detection.
+            bedwars -> ActiveMode.BEDWARS
+            duels -> ActiveMode.DUELS
+            skywars -> ActiveMode.SKYWARS
             else -> ActiveMode.NONE
         }
         
-        if (TEMP_DEBUG) {
-            val now = System.currentTimeMillis()
-            if (detected != lastLoggedMode || now - lastLoggedAt > 5_000L) {
-                Levelhead.logger.info(
-                    "[TEMP_DEBUG] detectActiveMode: bedwarsMatch=$bedwarsMatch duelsMatch=$duelsMatch skywarsMatch=$skywarsMatch bedwars=$bedwars duels=$duels skywars=$skywars -> $detected"
-                )
-                lastLoggedMode = detected
-                lastLoggedAt = now
-            }
+        val now = System.currentTimeMillis()
+        if (detected != lastLoggedMode || now - lastLoggedAt > 5_000L) {
+            Levelhead.logger.debug(
+                "detectActiveMode: bedwarsMatch={} duelsMatch={} skywarsMatch={} bedwars={} duels={} skywars={} -> {}",
+                bedwarsMatch, duelsMatch, skywarsMatch, bedwars, duels, skywars, detected
+            )
+            lastLoggedMode = detected
+            lastLoggedAt = now
         }
 
         return detected

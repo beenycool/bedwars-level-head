@@ -52,7 +52,6 @@ object AboveHeadRender {
                 return@forEachIndexed
             }
             val tag = display.cache[player.uniqueID]
-            val activeMode = club.sk1er.mods.levelhead.core.ModeManager.getActiveGameMode()
             if (display.loadOrRender(player) && tag != null) {
                 var offset = when (displayPosition) {
                     MasterConfig.DisplayPosition.ABOVE -> 0.3
