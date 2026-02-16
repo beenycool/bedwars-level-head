@@ -7,6 +7,7 @@ import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.parseRetryAfterMillis
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.sanitizeForLogs
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.DebugLogging
+import club.sk1er.mods.levelhead.core.DebugLogging.maskForLogs
 import net.minecraft.util.EnumChatFormatting as ChatColor
 import okhttp3.HttpUrl
 import okhttp3.Request
@@ -46,7 +47,7 @@ object HypixelClient {
             .build()
 
         val debugEnabled = DebugLogging.isRequestDebugEnabled()
-        val maskedUuid = if (debugEnabled) "****-${uuid.toString().takeLast(4)}" else null
+        val maskedUuid = if (debugEnabled) uuid.maskForLogs() else null
         DebugLogging.logRequestDebug {
             "[LevelheadDebug][network] request start: endpoint=${HYPIXEL_PLAYER_ENDPOINT}, uuid=$maskedUuid, hasApiKey=${key.isNotBlank()}"
         }

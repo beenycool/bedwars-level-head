@@ -51,8 +51,7 @@ object DebugLogging {
         val effectiveMax = maxLength - 3
         var cutoff = effectiveMax
 
-        // Back up from the cutoff to avoid cutting special formatting codes
-        // § is Minecraft color code, ✪ is custom star symbol
+        // Avoid leaving a dangling color code character at the end of the truncated string.
         while (cutoff > 0 && (this[cutoff - 1] == '§' || this[cutoff - 1] == '✪')) {
             cutoff--
         }

@@ -532,7 +532,7 @@ object Levelhead {
                 registerDisplaysForRefresh(cacheKey, displays)
             }
             DebugLogging.logRequestDebug {
-                "[LevelheadDebug][request] in-flight dedupe reuse: uuid=****-${cacheKey.uuid.toString().takeLast(4)} mode=${cacheKey.gameMode.name}"
+                "[LevelheadDebug][request] in-flight dedupe reuse: uuid=${cacheKey.uuid.maskForLogs()} mode=${cacheKey.gameMode.name}"
             }
             return existing
         }
