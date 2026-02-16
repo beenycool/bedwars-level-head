@@ -173,6 +173,12 @@ async function wait(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Shapes the Hypixel player response into the proxy payload format.
+ * **Mutates** the bedwars stats object in place (injects/overwrites bedwars_experience,
+ * Experience, fkdr, winstreak). Callers must not rely on the original response.player.stats
+ * after this call — clone first if the unmodified payload is needed.
+ */
 function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
   if (!response.success) {
     const cause = response.cause ?? 'UNKNOWN_HYPIXEL_ERROR';
@@ -191,12 +197,21 @@ function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
   const winstreak = Number.isFinite(winstreakNumber) ? winstreakNumber : undefined;
   const fkdr = finalDeaths <= 0 ? finalKills : finalKills / finalDeaths;
 
-  const shapedStats: Record<string, unknown> = {
-    ...bedwarsStats,
-    ...(experience !== undefined ? { bedwars_experience: experience, Experience: experience } : {}),
-    ...(Number.isFinite(fkdr) ? { fkdr } : {}),
-    ...(winstreak !== undefined ? { winstreak } : {}),
-  };
+  // Bolt: Optimized to mutate in place instead of spreading to avoid O(n) copy
+  const shapedStats = bedwarsStats as Record<string, unknown>;
+
+  if (experience !== undefined) {
+    shapedStats.bedwars_experience = experience;
+    shapedStats.Experience = experience;
+  }
+  if (Number.isFinite(fkdr)) {
+    shapedStats.fkdr = fkdr;
+  }
+  if (winstreak !== undefined) {
+    shapedStats.winstreak = winstreak;
+  } else if ('winstreak' in shapedStats) {
+    delete shapedStats.winstreak;
+  }
 
   const duelsStats = response.player?.stats?.Duels ?? {};
   const skywarsStats = response.player?.stats?.SkyWars ?? {};
