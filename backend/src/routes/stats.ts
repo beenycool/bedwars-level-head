@@ -310,6 +310,8 @@ router.get('/', async (req, res, next) => {
           ? `https://namemc.com/profile/${encodedIdentifier}`
           : `https://namemc.com/search?q=${encodedIdentifier}`;
 
+        const statusClass = `status-${Math.floor(entry.responseStatus / 100)}xx`;
+
         return `<tr>
           <td title="${escapeHtml(formatDate(entry.requestedAt))}">${escapeHtml(timeAgo(entry.requestedAt))}</td>
           <td>
@@ -323,7 +325,7 @@ router.get('/', async (req, res, next) => {
           <td>${escapeHtml(resolved)}</td>
           <td class="stars">${escapeHtml(formatStars(entry.stars))}</td>
           <td>${escapeHtml(cacheSource)}${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
-          <td>${entry.responseStatus}</td>
+          <td><span class="status-badge ${statusClass}">${escapeHtml(String(entry.responseStatus))}</span></td>
           <td class="latency">${escapeHtml(formatLatency(entry.latencyMs))}</td>
         </tr>`;
       })
@@ -948,6 +950,19 @@ router.get('/', async (req, res, next) => {
         color: #4ade80;
         opacity: 1;
       }
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.15rem 0.5rem;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.85rem;
+        line-height: 1;
+      }
+      .status-2xx { color: #4ade80; background: rgba(74, 222, 128, 0.15); }
+      .status-3xx { color: #67e8f9; background: rgba(103, 232, 249, 0.15); }
+      .status-4xx { color: #fde047; background: rgba(253, 224, 71, 0.15); }
+      .status-5xx { color: #f87171; background: rgba(248, 113, 113, 0.15); }
       ${dynamicStyles}
     </style>
   </head>
@@ -2909,6 +2924,8 @@ router.get('/', async (req, res, next) => {
                 ? \`https://namemc.com/profile/\${encodedIdentifier}\`
                 : \`https://namemc.com/search?q=\${encodedIdentifier}\`;
               
+              const statusClass = \`status-\${Math.floor(entry.responseStatus / 100)}xx\`;
+
               return \`<tr>
                 <td title="\${escapeHtmlClient(formatDateClient(entry.requestedAt))}">\${escapeHtmlClient(timeAgoClient(entry.requestedAt))}</td>
                 <td>
@@ -2922,7 +2939,7 @@ router.get('/', async (req, res, next) => {
                 <td>\${escapeHtmlClient(resolved)}</td>
                 <td class="stars">\${escapeHtmlClient(formatStarsClient(entry.stars))}</td>
                 <td>\${escapeHtmlClient(cacheSource)}\${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
-                <td>\${escapeHtmlClient(String(entry.responseStatus))}</td>
+                <td><span class="status-badge \${statusClass}">\${escapeHtmlClient(String(entry.responseStatus))}</span></td>
                 <td class="latency">\${escapeHtmlClient(formatLatencyClient(entry.latencyMs))}</td>
               </tr>\`;
             }).join('\\n');
