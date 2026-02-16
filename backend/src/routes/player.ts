@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import pLimit from 'p-limit';
-import { enforceRateLimit, enforceBatchRateLimit } from '../middleware/rateLimit';
+import { enforceRateLimit, enforceBatchRateLimit, getClientIpAddress } from '../middleware/rateLimit';
 import { resolvePlayer, ResolvedPlayer, warmupPlayerCache } from '../services/player';
 import { computeBedwarsStar } from '../util/bedwars';
 import { HttpError } from '../util/httpError';
@@ -20,10 +20,9 @@ const batchLimit = pLimit(6);
 
 const router = Router();
 
-function buildSubmitterKeyId(ipAddress: string | undefined): string {
-  const fallback = ipAddress && ipAddress.length > 0 ? ipAddress : 'unknown';
+function buildSubmitterKeyId(ipAddress: string): string {
   const salt = COMMUNITY_SUBMIT_SECRET || 'levelhead-submit';
-  return createHmac('sha256', salt).update(fallback).digest('hex');
+  return createHmac('sha256', salt).update(ipAddress).digest('hex');
 }
 
 
@@ -404,7 +403,7 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
   const normalizedUuid = uuid.trim().toLowerCase();
 
   // Use a stable submitter identifier for nonce tracking
-  const keyId = buildSubmitterKeyId(req.ip);
+  const keyId = buildSubmitterKeyId(getClientIpAddress(req));
 
   // Verify origin to prevent cache poisoning
   const verificationResult = await verifyHypixelOrigin(normalizedUuid, data, signature, keyId);
