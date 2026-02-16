@@ -85,6 +85,7 @@ class LevelheadMod {
 
 object Levelhead {
     val logger: Logger = LogManager.getLogger()
+    
     private val ipv4OnlyDns = Dns { hostname ->
         val addresses = Dns.SYSTEM.lookup(hostname).filterIsInstance<Inet4Address>()
         if (addresses.isEmpty()) {
@@ -344,6 +345,7 @@ object Levelhead {
                         .chunked(20)
                         .forEach { chunk ->
                             lastFetchAttemptAt = System.currentTimeMillis()
+                            rateLimiter.consume()
                             
                             val results = club.sk1er.mods.levelhead.bedwars.ProxyClient.fetchBatch(chunk)
                             
@@ -657,20 +659,29 @@ object Levelhead {
 
     private fun updateDisplayCache(display: LevelheadDisplay, uuid: UUID, stats: GameStats?, gameMode: GameMode) {
         if (!display.config.enabled) return
+        val activeMode = ModeManager.getActiveGameMode()
+        logger.debug("updateDisplayCache: uuid={}, statsType={}, resolvedGameMode={}, displayConfigType={}, displayConfigGameMode={}, activeMode={}", 
+            uuid, stats?.let { it::class.simpleName }, gameMode, display.config.type, display.config.gameMode, activeMode)
         val tag = StatsFormatter.formatTag(uuid, stats, display.config, gameMode)
+        logger.debug("updateDisplayCache: writing tag='{}' to display.cache[{}]", tag.getString(), uuid)
         display.cache[uuid] = tag
     }
 
     private fun resolveGameMode(typeId: String): GameMode {
-        return GameMode.fromTypeId(typeId) ?: GameMode.BEDWARS
+        val resolved = GameMode.fromTypeId(typeId) ?: GameMode.BEDWARS
+        logger.debug("resolveGameMode: typeId={} -> {}", typeId, resolved)
+        return resolved
     }
 
     private fun statsForMode(stats: GameStats?, gameMode: GameMode): GameStats? {
-        return when (gameMode) {
+        val result = when (gameMode) {
             GameMode.BEDWARS -> stats as? GameStats.Bedwars
             GameMode.DUELS -> stats as? GameStats.Duels
             GameMode.SKYWARS -> stats as? GameStats.SkyWars
         }
+        logger.debug("statsForMode: inputStatsType={}, requestedGameMode={} -> resultType={} (null means input was null or cast failed)", 
+            stats?.let { it::class.simpleName }, gameMode, result?.let { it::class.simpleName })
+        return result
     }
 
     private fun formatCooldownDuration(duration: Duration): String {

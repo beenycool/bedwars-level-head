@@ -18,10 +18,6 @@ import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.launch
 
 class DisplayManager(val file: File) {
-    private companion object {
-        private const val TEMP_DEBUG = false
-    }
-
     var config = MasterConfig()
     val aboveHead: MutableList<AboveHeadDisplay> = ArrayList()
     private var wasInGame: Boolean = false
@@ -177,13 +173,15 @@ class DisplayManager(val file: File) {
     }
 
     fun clearCachesWithoutRefetch(clearStats: Boolean = true) {
-        if (TEMP_DEBUG) {
-            Levelhead.logger.info("[TEMP_DEBUG] clearCachesWithoutRefetch(clearStats=$clearStats)")
-        }
+        val activeMode = ModeManager.getActiveGameMode()
+        Levelhead.logger.debug("clearCachesWithoutRefetch: clearStats={} activeMode={} cacheSizesBefore={}", 
+            clearStats, activeMode, aboveHead.map { it.cache.size })
+        
         aboveHead.forEach { it.cache.clear() }
         if (clearStats) {
             Levelhead.clearCachedStats()
         }
+        Levelhead.logger.debug("clearCachesWithoutRefetch: COMPLETED cacheSizesAfter={}", aboveHead.map { it.cache.size })
     }
 
     fun clearCache() {
@@ -262,11 +260,18 @@ class DisplayManager(val file: File) {
      */
     @OptIn(ExperimentalStdlibApi::class)
     fun syncGameMode() {
-        val detectedMode = ModeManager.getActiveGameMode() ?: return
+        val detectedMode = ModeManager.getActiveGameMode() ?: run {
+            Levelhead.logger.debug("syncGameMode: no active game mode, skipping")
+            return
+        }
+
+        Levelhead.logger.debug("syncGameMode: detectedMode={} currentConfigGameMode={} currentConfigType={}", 
+            detectedMode, primaryDisplay()?.config?.gameMode, primaryDisplay()?.config?.type)
 
         updatePrimaryDisplay { config ->
             if (config.gameMode != detectedMode) {
                 val previousMode = config.gameMode
+                val previousType = config.type
                 config.gameMode = detectedMode
                 if (config.type == previousMode.typeId) {
                     config.type = detectedMode.typeId
@@ -274,6 +279,8 @@ class DisplayManager(val file: File) {
                 if (config.headerString.isBlank() || matchesModeDefaultHeader(config.headerString, previousMode)) {
                     config.headerString = detectedMode.defaultHeader
                 }
+                Levelhead.logger.debug("syncGameMode: CHANGED gameMode={}->{} type={}->{} header={}", 
+                    previousMode, detectedMode, previousType, config.type, config.headerString)
                 true
             } else {
                 false

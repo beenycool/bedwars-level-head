@@ -74,7 +74,7 @@ object BedwarsHttpUtils {
     fun handleRetryAfterHint(source: String, retryAfterMillis: Long?, silent: Boolean = false) {
         val millis = retryAfterMillis ?: return
         if (millis <= 0) return
-        Levelhead.logger.info("Received Retry-After hint from {} for {} ms (silent=$silent)", source, millis)
+        Levelhead.logger.debug("Received Retry-After hint from {} for {} ms (silent=$silent)", source, millis)
         Levelhead.rateLimiter.registerServerCooldown(Duration.ofMillis(millis), silent)
     }
 
