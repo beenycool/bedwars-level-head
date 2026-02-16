@@ -112,7 +112,8 @@ public class MixinGuiPlayerTabOverlay {
             trimmedUuid,
             Levelhead.INSTANCE.getDisplayManager().primaryDisplay(),
             false,
-            GameMode.BEDWARS.getTypeId()
+            GameMode.BEDWARS.getTypeId(),
+            Levelhead.RequestReason.TAB_LIST
         );
         Levelhead.INSTANCE.fetchBatch(Collections.singletonList(request));
     }

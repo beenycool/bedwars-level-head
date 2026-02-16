@@ -29,6 +29,7 @@ run
 .DS_Store
 Thumbs.db
 .vscode
+.sisyphus/evidence/
 
 # environment configuration
 .env
