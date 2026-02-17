@@ -105,6 +105,7 @@ router.get('/csv', async (req, res) => {
     const fromParam = typeof req.query.from === 'string' ? req.query.from : undefined;
     const toParam = typeof req.query.to === 'string' ? req.query.to : undefined;
     const limitParam = typeof req.query.limit === 'string' ? req.query.limit : undefined;
+    const typeParam = typeof req.query.type === 'string' ? req.query.type : undefined;
 
     const startDate = fromParam ? new Date(fromParam) : undefined;
     const endDate = toParam ? new Date(toParam) : undefined;
@@ -112,6 +113,19 @@ router.get('/csv', async (req, res) => {
 
     const validStartDate = startDate && !Number.isNaN(startDate.getTime()) ? startDate : undefined;
     const validEndDate = endDate && !Number.isNaN(endDate.getTime()) ? endDate : undefined;
+    if (typeParam === 'memory') {
+      const data = await getResourceMetricsHistory({
+      startDate: validStartDate,
+      endDate: validEndDate,
+      });
+
+      const csv = toCSV(data);
+
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename="memory_stats.csv"');
+      res.send(csv);
+      return;
+    }
     const MAX_ALLOWED_LIMIT = 10000;
     const DEFAULT_CHART_LIMIT = 200;
     const validLimit = limit !== undefined && Number.isFinite(limit)
@@ -143,6 +157,7 @@ router.get('/data', async (req, res, next) => {
     const fromParam = typeof req.query.from === 'string' ? req.query.from : undefined;
     const toParam = typeof req.query.to === 'string' ? req.query.to : undefined;
     const limitParam = typeof req.query.limit === 'string' ? req.query.limit : undefined;
+    const typeParam = typeof req.query.type === 'string' ? req.query.type : undefined;
 
     const startDate = fromParam ? new Date(fromParam) : undefined;
     const endDate = toParam ? new Date(toParam) : undefined;
@@ -211,6 +226,7 @@ router.get('/', async (req, res, next) => {
     const fromParam = typeof req.query.from === 'string' ? req.query.from : undefined;
     const toParam = typeof req.query.to === 'string' ? req.query.to : undefined;
     const limitParam = typeof req.query.limit === 'string' ? req.query.limit : undefined;
+    const typeParam = typeof req.query.type === 'string' ? req.query.type : undefined;
 
     const startDate = fromParam ? new Date(fromParam) : undefined;
     const endDate = toParam ? new Date(toParam) : undefined;
@@ -337,7 +353,7 @@ router.get('/', async (req, res, next) => {
         rows = getEmptyStateForSearch(search, clearUrl);
       } else {
         rows = getEmptyStateForNoLookups();
-      }
+    }
     }
 
 
@@ -346,7 +362,7 @@ router.get('/', async (req, res, next) => {
       #redisMemBar {
         width: ${redisStats.memoryPercent.toFixed(1)}%;
         background: ${redisStats.memoryPercent > 80 ? 'linear-gradient(90deg, #f87171, #ef4444)' : 'linear-gradient(90deg, #22d3ee, #3b82f6)'};
-      }
+    }
       #localCacheBar { width: ${((redisStats.localCacheSize / redisStats.localCacheMaxSize) * 100).toFixed(1)}%; }
       #cacheHitProgress { width: ${Math.max(0, Math.min(100, cacheHitRate))}%; }
       #successRateProgress { width: ${Math.max(0, Math.min(100, successRate))}%; }
@@ -365,69 +381,69 @@ router.get('/', async (req, res, next) => {
         background: #0f172a;
         color: #e2e8f0;
         --chart-height: 320px;
-      }
+    }
 
       .empty-state {
         text-align: center;
         padding: 4rem 1rem;
         color: #94a3b8;
-      }
+    }
       .empty-content {
         display: flex;
         flex-direction: column;
         align-items: center;
         gap: 0.75rem;
-      }
+    }
       .empty-content svg {
         color: #475569;
         margin-bottom: 0.5rem;
-      }
+    }
       .empty-content p {
         margin: 0;
         font-size: 1rem;
-      }
+    }
       .empty-content .sub-text {
         font-size: 0.875rem;
         color: #64748b;
-      }
+    }
       .clear-search-btn {
         margin-top: 0.5rem;
         color: #38bdf8;
         text-decoration: none;
         font-weight: 500;
         font-size: 0.9rem;
-      }
+    }
       .clear-search-btn:hover {
         text-decoration: underline;
-      }
+    }
 
       body {
         padding: 1.5rem 1rem;
         margin: 0;
         max-width: none;
         width: 100%;
-      }
+    }
       h1 {
         font-size: 1.75rem;
         margin-bottom: 0.5rem;
-      }
+    }
       p.meta {
         margin-top: 0;
         color: #94a3b8;
         font-size: 0.9rem;
-      }
+    }
       p.meta.hero {
         font-size: 1rem;
         color: #cbd5f5;
         margin-bottom: 0.75rem;
-      }
+    }
 
       .stat-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         gap: 1rem;
         margin: 1rem 0 2rem;
-      }
+    }
       .stat-card {
         display: flex;
         flex-direction: column;
@@ -435,7 +451,7 @@ router.get('/', async (req, res, next) => {
         background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(34, 211, 238, 0.08));
         border: 1px solid rgba(148, 163, 184, 0.2);
         box-shadow: 0 10px 30px rgba(15, 23, 42, 0.35);
-      }
+    }
       .stat-label {
         color: #94a3b8;
         font-weight: 600;
@@ -443,30 +459,30 @@ router.get('/', async (req, res, next) => {
         letter-spacing: 0.08em;
         font-size: 0.75rem;
         margin: 0;
-      }
+    }
       .stat-value {
         font-size: 1.65rem;
         font-weight: 700;
         margin: 0;
-      }
+    }
       .stat-sub {
         margin: 0;
         color: #cbd5f5;
         font-size: 0.85rem;
-      }
+    }
       .progress {
         height: 6px;
         background: rgba(148, 163, 184, 0.2);
         border-radius: 999px;
         overflow: hidden;
-      }
+    }
       .progress span {
         display: block;
         height: 100%;
         background: linear-gradient(90deg, #22d3ee, #3b82f6);
         width: 0;
         transition: width 0.4s ease;
-      }
+    }
 
       /* NEW CSS FOR GRAPHS */
       .dashboard-grid {
@@ -474,7 +490,7 @@ router.get('/', async (req, res, next) => {
         grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
         gap: 1.5rem;
         margin-bottom: 2rem;
-      }
+    }
       .chart-toolbar {
         display: inline-flex;
         align-items: center;
@@ -484,34 +500,34 @@ router.get('/', async (req, res, next) => {
         border: 1px solid rgba(148, 163, 184, 0.2);
         border-radius: 10px;
         margin-bottom: 1rem;
-      }
+    }
       .chart-toolbar label {
         color: #cbd5f5;
         font-weight: 600;
-      }
+    }
       .chart-toolbar input[type="range"] {
         accent-color: #38bdf8;
-      }
+    }
       .chart-shell {
         position: relative;
         height: var(--chart-height);
-      }
+    }
       .chart-shell canvas {
         width: 100% !important;
         height: 100% !important;
-      }
+    }
       .card {
         background: rgba(30, 41, 59, 0.5);
         border: 1px solid rgba(148, 163, 184, 0.15);
         border-radius: 12px;
         padding: 1rem;
-      }
+    }
       h2 { font-size: 1rem; color: #94a3b8; margin-top: 0; }
 
       .lookup-link {
         color: #60a5fa;
         text-decoration: none;
-      }
+    }
 
       table {
         width: 100%;
@@ -521,36 +537,36 @@ router.get('/', async (req, res, next) => {
         border: 1px solid rgba(148, 163, 184, 0.15);
         border-radius: 12px;
         overflow: hidden;
-      }
+    }
       thead {
         background: rgba(30, 41, 59, 0.9);
-      }
+    }
       th, td {
         padding: 0.75rem 1rem;
         text-align: left;
         border-bottom: 1px solid rgba(148, 163, 184, 0.1);
-      }
+    }
       th {
         font-weight: 600;
         font-size: 0.85rem;
         text-transform: uppercase;
         letter-spacing: 0.05em;
         color: #cbd5f5;
-      }
+    }
       tr:last-child td {
         border-bottom: none;
-      }
+    }
       tr:nth-child(even) td {
         background: rgba(148, 163, 184, 0.05);
-      }
+    }
       .stars {
         font-weight: 600;
         font-variant-numeric: tabular-nums;
-      }
+    }
       .latency {
         font-variant-numeric: tabular-nums;
         color: #cbd5f5;
-      }
+    }
       .tag {
         display: inline-flex;
         align-items: center;
@@ -561,7 +577,7 @@ router.get('/', async (req, res, next) => {
         color: #93c5fd;
         font-size: 0.75rem;
         font-weight: 600;
-      }
+    }
       @media (max-width: 960px) {
         table {
           font-size: 0.85rem;
@@ -569,7 +585,7 @@ router.get('/', async (req, res, next) => {
         th, td {
           padding: 0.6rem 0.75rem;
         }
-      }
+    }
       .controls {
         display: flex;
         flex-wrap: wrap;
@@ -577,16 +593,16 @@ router.get('/', async (req, res, next) => {
         align-items: center;
         justify-content: space-between;
         margin-top: 0.75rem;
-      }
+    }
       .search-box {
         display: flex;
         gap: 0.5rem;
-      }
+    }
       .search-wrapper {
         position: relative;
         display: flex;
         align-items: center;
-      }
+    }
       .search-shortcut {
         position: absolute;
         right: 0.75rem;
@@ -600,11 +616,11 @@ router.get('/', async (req, res, next) => {
         color: #94a3b8;
         line-height: 1;
         transition: opacity 0.2s;
-      }
+    }
       .search-wrapper input:focus + .search-shortcut,
       .search-wrapper input:not(:placeholder-shown) + .search-shortcut {
         opacity: 0;
-      }
+    }
       .search-box input {
         padding: 0.5rem 0.75rem;
         padding-right: 2.5rem;
@@ -612,7 +628,7 @@ router.get('/', async (req, res, next) => {
         border: 1px solid rgba(148, 163, 184, 0.3);
         background: rgba(30, 41, 59, 0.5);
         color: #e2e8f0;
-      }
+    }
       .search-box button,
       .pager button {
         padding: 0.5rem 0.85rem;
@@ -622,44 +638,44 @@ router.get('/', async (req, res, next) => {
         color: #cbd5f5;
         font-weight: 600;
         cursor: pointer;
-      }
+    }
       .pager {
         display: flex;
         gap: 0.5rem;
         align-items: center;
-      }
+    }
       .pager button[disabled] {
         opacity: 0.4;
         cursor: not-allowed;
-      }
+    }
       .muted {
         color: #94a3b8;
         font-size: 0.9rem;
         margin: 0;
-      }
+    }
       .filter-controls {
         background: rgba(30, 41, 59, 0.6);
         border: 1px solid rgba(148, 163, 184, 0.2);
         border-radius: 12px;
         padding: 1.5rem;
         margin-bottom: 2rem;
-      }
+    }
       .filter-form {
         display: flex;
         flex-wrap: wrap;
         gap: 1rem;
         align-items: flex-end;
-      }
+    }
       .filter-group {
         display: flex;
         flex-direction: column;
         gap: 0.5rem;
-      }
+    }
       .filter-group label {
         color: #cbd5f5;
         font-weight: 600;
         font-size: 0.85rem;
-      }
+    }
       .filter-group input {
         padding: 0.5rem 0.75rem;
         border-radius: 8px;
@@ -667,15 +683,15 @@ router.get('/', async (req, res, next) => {
         background: rgba(15, 23, 42, 0.8);
         color: #e2e8f0;
         font-size: 0.9rem;
-      }
+    }
       .filter-group input[type="number"] {
         width: 120px;
-      }
+    }
       .filter-presets {
         display: flex;
         gap: 0.5rem;
         flex-wrap: wrap;
-      }
+    }
       .preset-btn, .apply-btn, .reset-btn {
         padding: 0.5rem 1rem;
         border-radius: 8px;
@@ -685,25 +701,25 @@ router.get('/', async (req, res, next) => {
         font-weight: 600;
         cursor: pointer;
         font-size: 0.9rem;
-      }
+    }
       .preset-btn:hover, .apply-btn:hover {
         background: rgba(59, 130, 246, 0.25);
-      }
+    }
       .reset-btn {
         background: rgba(239, 68, 68, 0.15);
-      }
+    }
       .reset-btn:hover {
         background: rgba(239, 68, 68, 0.25);
-      }
+    }
       .filter-actions {
         display: flex;
         gap: 0.5rem;
-      }
+    }
       .filter-summary {
         margin-top: 1rem;
         padding-top: 1rem;
         border-top: 1px solid rgba(148, 163, 184, 0.2);
-      }
+    }
       .refresh-controls {
         display: flex;
         align-items: center;
@@ -712,7 +728,7 @@ router.get('/', async (req, res, next) => {
         padding-top: 1rem;
         border-top: 1px solid rgba(148, 163, 184, 0.2);
         flex-wrap: wrap;
-      }
+    }
       .refresh-controls label {
         display: flex;
         align-items: center;
@@ -721,7 +737,7 @@ router.get('/', async (req, res, next) => {
         font-size: 0.9rem;
         font-weight: 600;
         cursor: pointer;
-      }
+    }
       .refresh-controls select {
         padding: 0.4rem 0.6rem;
         border-radius: 8px;
@@ -729,13 +745,13 @@ router.get('/', async (req, res, next) => {
         background: rgba(15, 23, 42, 0.8);
         color: #e2e8f0;
         font-size: 0.9rem;
-      }
+    }
       .refresh-controls .muted {
         margin-left: auto;
         font-variant-numeric: tabular-nums;
         color: #94a3b8;
         font-size: 0.85rem;
-      }
+    }
       .refresh-btn {
         padding: 0.4rem 0.8rem;
         border-radius: 8px;
@@ -749,30 +765,30 @@ router.get('/', async (req, res, next) => {
         gap: 0.4rem;
         font-size: 0.9rem;
         transition: background 0.2s;
-      }
+    }
       .refresh-btn:hover {
         background: rgba(16, 185, 129, 0.25);
-      }
+    }
       .refresh-btn svg {
          width: 14px;
          height: 14px;
          fill: currentColor;
-      }
+    }
       .refresh-btn.loading svg {
         animation: spin 1s linear infinite;
-      }
+    }
       @keyframes spin { 100% { transform: rotate(360deg); } }
 
       .card {
         position: relative;
-      }
+    }
 
       .latency-chart-controls {
         display: flex;
         align-items: center;
         gap: 0.75rem;
         margin-bottom: 0.75rem;
-      }
+    }
       .latency-chart-controls label {
         display: flex;
         align-items: center;
@@ -781,17 +797,17 @@ router.get('/', async (req, res, next) => {
         font-size: 0.85rem;
         font-weight: 600;
         cursor: pointer;
-      }
+    }
       .latency-chart-controls input[type="checkbox"] {
         accent-color: #38bdf8;
         cursor: pointer;
-      }
+    }
       .stat-card-controls {
         display: flex;
         align-items: center;
         gap: 0.5rem;
         margin-top: 0.5rem;
-      }
+    }
       .stat-card-controls select {
         padding: 0.35rem 0.5rem;
         border-radius: 6px;
@@ -800,16 +816,16 @@ router.get('/', async (req, res, next) => {
         color: #e2e8f0;
         font-size: 0.75rem;
         cursor: pointer;
-      }
+    }
       .card-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
         margin-bottom: 0.5rem;
-      }
+    }
       .card-header h2 {
         margin: 0;
-      }
+    }
       .expand-btn {
         background: rgba(59, 130, 246, 0.2);
         border: 1px solid rgba(148, 163, 184, 0.3);
@@ -822,11 +838,11 @@ router.get('/', async (req, res, next) => {
         display: flex;
         align-items: center;
         gap: 0.25rem;
-      }
+    }
       .expand-btn:hover {
         background: rgba(59, 130, 246, 0.4);
         transform: scale(1.05);
-      }
+    }
       .expand-btn:focus-visible,
       .refresh-btn:focus-visible,
       .preset-btn:focus-visible,
@@ -837,7 +853,7 @@ router.get('/', async (req, res, next) => {
       .copy-btn:focus-visible {
         outline: 2px solid #38bdf8;
         outline-offset: 2px;
-      }
+    }
 
       .fullscreen-overlay {
         position: fixed;
@@ -851,11 +867,11 @@ router.get('/', async (req, res, next) => {
         align-items: center;
         justify-content: center;
         animation: fadeIn 0.2s ease;
-      }
+    }
       @keyframes fadeIn {
         from { opacity: 0; }
         to { opacity: 1; }
-      }
+    }
       .fullscreen-modal {
         width: 90vw;
         height: 85vh;
@@ -866,7 +882,7 @@ router.get('/', async (req, res, next) => {
         display: flex;
         flex-direction: column;
         box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-      }
+    }
       .fullscreen-header {
         display: flex;
         justify-content: space-between;
@@ -874,13 +890,13 @@ router.get('/', async (req, res, next) => {
         margin-bottom: 1rem;
         padding-bottom: 1rem;
         border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-      }
+    }
       .fullscreen-title {
         font-size: 1.35rem;
         color: #e2e8f0;
         margin: 0;
         font-weight: 600;
-      }
+    }
       .fullscreen-close-btn {
         background: rgba(239, 68, 68, 0.2);
         border: 1px solid rgba(239, 68, 68, 0.4);
@@ -890,19 +906,19 @@ router.get('/', async (req, res, next) => {
         cursor: pointer;
         font-weight: 600;
         transition: background 0.2s;
-      }
+    }
       .fullscreen-close-btn:hover {
         background: rgba(239, 68, 68, 0.4);
-      }
+    }
       .fullscreen-chart-container {
         flex: 1;
         position: relative;
         min-height: 0;
-      }
+    }
       .fullscreen-chart-container canvas {
         width: 100% !important;
         height: 100% !important;
-      }
+    }
 
       .refresh-countdown { min-width: 120px; text-align: right; }
       .status-connected { color: #22c55e; }
@@ -918,12 +934,12 @@ router.get('/', async (req, res, next) => {
         background: rgba(59, 130, 246, 0.2);
         border-color: rgba(59, 130, 246, 0.4);
         color: #93c5fd;
-      }
+    }
       .lookup-cell {
         display: flex;
         align-items: center;
         gap: 0.5rem;
-      }
+    }
       .copy-btn {
         background: transparent;
         border: none;
@@ -936,21 +952,21 @@ router.get('/', async (req, res, next) => {
         justify-content: center;
         transition: color 0.2s, background 0.2s;
         opacity: 0.6;
-      }
+    }
       .copy-btn:hover {
         color: #cbd5f5;
         background: rgba(255, 255, 255, 0.1);
         opacity: 1;
-      }
+    }
       .copy-btn svg {
         width: 14px;
         height: 14px;
         fill: currentColor;
-      }
+    }
       .copy-btn.copied {
         color: #4ade80;
         opacity: 1;
-      }
+    }
       .status-badge {
         display: inline-flex;
         align-items: center;
@@ -959,7 +975,7 @@ router.get('/', async (req, res, next) => {
         font-weight: 600;
         font-size: 0.85rem;
         line-height: 1;
-      }
+    }
       .status-2xx { color: #4ade80; background: rgba(74, 222, 128, 0.15); }
       .status-3xx { color: #67e8f9; background: rgba(103, 232, 249, 0.15); }
       .status-4xx { color: #fde047; background: rgba(253, 224, 71, 0.15); }
@@ -1383,7 +1399,7 @@ router.get('/', async (req, res, next) => {
           const localDate = new Date(fromDate.getTime() - fromDate.getTimezoneOffset() * 60000);
           fromDateInput.value = localDate.toISOString().slice(0, 16);
         }
-      }
+    }
       if (filters.to && toDateInput) {
         const toDate = new Date(filters.to);
         if (!Number.isNaN(toDate.getTime())) {
@@ -1391,10 +1407,10 @@ router.get('/', async (req, res, next) => {
           const localDate = new Date(toDate.getTime() - toDate.getTimezoneOffset() * 60000);
           toDateInput.value = localDate.toISOString().slice(0, 16);
         }
-      }
+    }
       if (filters.limit && limitInput) {
         limitInput.value = filters.limit;
-      }
+    }
 
       // Update filter summary
       function updateFilterSummary() {
@@ -1412,7 +1428,7 @@ router.get('/', async (req, res, next) => {
         filterSummary.textContent = parts.length > 0
           ? \`Showing data: \${parts.join(', ')}\`
           : 'Showing all data (no filters applied)';
-      }
+    }
       updateFilterSummary();
 
       // Preset button handlers
@@ -1471,7 +1487,7 @@ router.get('/', async (req, res, next) => {
           url.searchParams.set('page', '1');
           window.location.href = url.toString();
         });
-      }
+    }
 
       const chartHeightControl = document.getElementById('chartHeightRange');
       const chartHeightValue = document.getElementById('chartHeightValue');
@@ -1499,7 +1515,7 @@ router.get('/', async (req, res, next) => {
           // ignore persistence errors
         }
         return clamped;
-      }
+    }
 
       const savedHeight = (() => {
         try {
@@ -1525,7 +1541,7 @@ router.get('/', async (req, res, next) => {
         if (lower === upper) return sorted[lower];
         const weight = rank - lower;
         return sorted[lower] * (1 - weight) + sorted[upper] * weight;
-      }
+    }
 
       // 1. Prepare Cache + traffic data
       const cacheHits = data.filter((d) => d.cacheHit).length;
@@ -1599,7 +1615,7 @@ router.get('/', async (req, res, next) => {
       function setMetric(id, value) {
         const el = document.getElementById(id);
         if (el) el.textContent = value;
-      }
+    }
 
       function setProgress(id, percentage) {
         let styleId = 'style-' + id;
@@ -1616,7 +1632,7 @@ router.get('/', async (req, res, next) => {
         if (barSpan && barSpan.parentElement && barSpan.parentElement.getAttribute('role') === 'progressbar') {
           barSpan.parentElement.setAttribute('aria-valuenow', Math.round(percentage));
         }
-      }
+    }
 
       const chartAriaBase = {
         cacheChart: 'Doughnut chart showing cache hit versus network fetch ratio',
@@ -1636,7 +1652,7 @@ router.get('/', async (req, res, next) => {
         if (canvas) {
           canvas.setAttribute('aria-label', label);
         }
-      }
+    }
 
       function buildFilterSummaryText(activeFilters) {
         if (!activeFilters) return '';
@@ -1645,13 +1661,13 @@ router.get('/', async (req, res, next) => {
         if (activeFilters.to) parts.push('to ' + new Date(activeFilters.to).toLocaleString());
         if (activeFilters.limit) parts.push('limit ' + activeFilters.limit);
         return parts.length ? ' Filters ' + parts.join(', ') + '.' : '';
-      }
+    }
 
       function buildLatencyAriaLabel(summary) {
         const count = Number(summary.latencySeriesCount ?? 0).toLocaleString();
         const inclusion = summary.includeCacheHits ? 'including cache hits' : 'excluding cache hits';
         return \`\${chartAriaBase.latencyChart}. \${count} data points, \${inclusion}.\${buildFilterSummaryText(summary.filters)}\`;
-      }
+    }
 
       let latestAriaSummary = null;
 
@@ -1721,7 +1737,7 @@ router.get('/', async (req, res, next) => {
             \`\${chartAriaBase.topPlayersChart}. No player data available.\${filterSummary}\`,
           );
         }
-      }
+    }
 
       setMetric('totalLookupsValue', totalLookups.toLocaleString());
       const totalLookupsSub = document.getElementById('totalLookupsSub');
@@ -1731,7 +1747,7 @@ router.get('/', async (req, res, next) => {
         } else {
           totalLookupsSub.textContent = \`\${totalLookups.toLocaleString()} total lookups\`;
         }
-      }
+    }
       setMetric('cacheHitRateValue', cacheHitRate.toFixed(1) + '%');
       setProgress('cacheHitProgress', cacheHitRate);
       setMetric('successRateValue', successRate.toFixed(1) + '%');
@@ -1759,7 +1775,7 @@ router.get('/', async (req, res, next) => {
         if (latencyLabel) {
           latencyLabel.textContent = metricLabels[selectedLatencyMetric] || 'Latency';
         }
-      }
+    }
       
       if (latencyMetricSelect) {
         // Load saved preference
@@ -1782,7 +1798,7 @@ router.get('/', async (req, res, next) => {
             // ignore
           }
         });
-      }
+    }
       
       updateLatencyDisplay();
 
@@ -1879,13 +1895,13 @@ router.get('/', async (req, res, next) => {
             includeCacheHits,
           });
         }
-      }
+    }
 
       function getLatencySeriesCount() {
         return includeCacheHits
           ? allLatencySeries.length
           : allLatencySeries.filter((point) => !point.cacheHit).length;
-      }
+    }
       
       const latencyLabels = sortedByRequestTime.map((d, index) => {
         const asDate = new Date(d.requestedAt);
@@ -1938,7 +1954,7 @@ router.get('/', async (req, res, next) => {
           includeCacheHits = e.target.checked;
           updateLatencyChart();
         });
-      }
+    }
 
       const statusChartConfig = {
         type: 'doughnut',
@@ -2016,7 +2032,7 @@ router.get('/', async (req, res, next) => {
         } else {
           return 24 * 60 * 60 * 1000; // 1 day
         }
-      }
+    }
 
       function formatTimeBucketLabel(key, interval) {
         const date = new Date(key);
@@ -2027,7 +2043,7 @@ router.get('/', async (req, res, next) => {
         } else {
           return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
         }
-      }
+    }
 
       function buildTimeBucketData(dataSet, activeFilters) {
         let timeStart, timeEnd;
@@ -2086,7 +2102,7 @@ router.get('/', async (req, res, next) => {
           cacheOverTimeLabels,
           cacheOverTimeData,
         };
-      }
+    }
 
       const {
         requestsOverTimeLabels,
@@ -2422,7 +2438,7 @@ router.get('/', async (req, res, next) => {
           options: JSON.parse(JSON.stringify(config.options || {})),
         };
         return cloned;
-      }
+    }
 
       function openFullscreen(chartId) {
         const overlay = document.getElementById('fullscreenOverlay');
@@ -2449,6 +2465,9 @@ router.get('/', async (req, res, next) => {
             if (filters.from) url.searchParams.set('from', filters.from);
             if (filters.to) url.searchParams.set('to', filters.to);
             if (filters.limit) url.searchParams.set('limit', filters.limit);
+            if (chartId === 'resourceMetricsChart') {
+              url.searchParams.set('type', 'memory');
+            }
             downloadBtn.href = url.toString();
         }
         
@@ -2457,7 +2476,7 @@ router.get('/', async (req, res, next) => {
         
         // Create new chart in fullscreen canvas
         fullscreenChartInstance = new Chart(canvas, clonedConfig);
-      }
+    }
 
       function closeFullscreen() {
         const overlay = document.getElementById('fullscreenOverlay');
@@ -2469,7 +2488,7 @@ router.get('/', async (req, res, next) => {
           overlay.classList.add('hidden');
         }
         document.body.classList.remove('overflow-hidden');
-      }
+    }
 
       // Attach event listeners to expand buttons
       document.querySelectorAll('.expand-btn').forEach((btn) => {
@@ -2483,7 +2502,7 @@ router.get('/', async (req, res, next) => {
       const closeBtn = document.getElementById('fullscreenCloseBtn');
       if (closeBtn) {
         closeBtn.addEventListener('click', closeFullscreen);
-      }
+    }
 
       // Click on overlay background to close
       const overlay = document.getElementById('fullscreenOverlay');
@@ -2493,7 +2512,7 @@ router.get('/', async (req, res, next) => {
             closeFullscreen();
           }
         });
-      }
+    }
 
       // Escape key to close
       document.addEventListener('keydown', (e) => {
@@ -2515,11 +2534,11 @@ router.get('/', async (req, res, next) => {
           .replace(/>/g, '&gt;')
           .replace(/"/g, '&quot;')
           .replace(/'/g, '&#039;');
-      }
+    }
       
       function formatDateClient(date) {
         return new Date(date).toISOString();
-      }
+    }
       
       function timeAgoClient(date) {
         const dateObj = date instanceof Date ? date : new Date(date);
@@ -2542,17 +2561,17 @@ router.get('/', async (req, res, next) => {
           }
         }
         return \`\${Math.floor(seconds)} second\${Math.floor(seconds) !== 1 ? 's' : ''} ago\`;
-      }
+    }
       
       function formatStarsClient(stars) {
         if (stars === null || stars === undefined || Number.isNaN(stars)) return '--';
         return String(stars);
-      }
+    }
       
       function formatLatencyClient(latency) {
         if (latency === null || latency === undefined || Number.isNaN(latency) || latency < 0) return '--';
         return \`\${new Intl.NumberFormat('en-US').format(latency)} ms\`;
-      }
+    }
 
       function getEmptyStateForSearch(searchTerm, clearUrl) {
         return \`
@@ -2567,7 +2586,7 @@ router.get('/', async (req, res, next) => {
                 </div>
               </td>
             </tr>\`;
-      }
+    }
 
       function getEmptyStateForNoLookups() {
         return \`
@@ -2582,7 +2601,7 @@ router.get('/', async (req, res, next) => {
                 </div>
               </td>
             </tr>\`;
-      }
+    }
       
       let autoRefreshEnabled = false;
       let refreshIntervalMs = 30000;
@@ -2611,7 +2630,7 @@ router.get('/', async (req, res, next) => {
         }
       } catch (e) {
         logger.warn('Failed to load refresh preferences', e);
-      }
+    }
 
       function updateCountdown() {
         if (!autoRefreshEnabled || !nextRefreshTime) {
@@ -2630,7 +2649,7 @@ router.get('/', async (req, res, next) => {
             refreshCountdownEl.textContent = \`Next update in \${seconds}s\`;
           }
         }
-      }
+    }
 
       function scheduleNextRefresh() {
         if (!autoRefreshEnabled) return;
@@ -2641,7 +2660,7 @@ router.get('/', async (req, res, next) => {
         if (countdownTimer) clearInterval(countdownTimer);
         countdownTimer = setInterval(updateCountdown, 1000);
         updateCountdown();
-      }
+    }
 
       function stopAutoRefreshLogic() {
         if (refreshTimer) clearTimeout(refreshTimer);
@@ -2650,7 +2669,7 @@ router.get('/', async (req, res, next) => {
         countdownTimer = null;
         nextRefreshTime = null;
         updateCountdown();
-      }
+    }
 
       async function fetchLatestData() {
         if (isRefreshing) return;
@@ -2686,7 +2705,7 @@ router.get('/', async (req, res, next) => {
             scheduleNextRefresh();
           }
         }
-      }
+    }
 
       function updateDashboard(json) {
         const { chartData, topPlayers, sysStats, redisStats, pageData } = json;
@@ -3012,7 +3031,7 @@ router.get('/', async (req, res, next) => {
 
         // Update "last refreshed" indicator
         if (refreshCountdownEl) refreshCountdownEl.textContent = 'Updated just now';
-      }
+    }
 
       // Event Listeners
       if (autoRefreshToggle) {
@@ -3028,7 +3047,7 @@ router.get('/', async (req, res, next) => {
             stopAutoRefreshLogic();
           }
         });
-      }
+    }
       
       if (refreshIntervalSelect) {
         refreshIntervalSelect.addEventListener('change', (e) => {
@@ -3042,13 +3061,13 @@ router.get('/', async (req, res, next) => {
             scheduleNextRefresh();
           }
         });
-      }
+    }
       
       if (refreshNowBtn) {
         refreshNowBtn.addEventListener('click', () => {
           fetchLatestData();
         });
-      }
+    }
       
       // Copy button handler
       // Note: This script runs in the browser, so it must be valid vanilla JS (no TypeScript syntax).
@@ -3103,7 +3122,7 @@ router.get('/', async (req, res, next) => {
       // Start auto-refresh if enabled from localStorage
       if (autoRefreshEnabled) {
         scheduleNextRefresh();
-      }
+    }
 
     </script>
   </body>
