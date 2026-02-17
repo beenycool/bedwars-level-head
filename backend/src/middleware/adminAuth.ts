@@ -18,7 +18,7 @@ const ALLOWED_KEY_HASHES = ADMIN_API_KEYS.map((key) =>
   crypto.pbkdf2Sync(key, SALT, ITERATIONS, KEYLEN, DIGEST)
 );
 
-export function extractAdminToken(req: Request): string | null {
+function extractAdminToken(req: Request): string | null {
   const header = req.get('authorization');
   if (typeof header === 'string') {
     const [scheme, ...rest] = header.split(' ');
@@ -42,7 +42,7 @@ export function extractAdminToken(req: Request): string | null {
  * Compares a provided token against a list of allowed keys in a timing-safe manner.
  * Using PBKDF2 ensures constant length comparison and cryptographic strength.
  */
-export function validateAdminToken(token: string): boolean {
+function secureCompare(token: string): boolean {
   if (!token) return false;
 
   // Hash the incoming token with the same salt and parameters
@@ -61,7 +61,7 @@ export function validateAdminToken(token: string): boolean {
 
 export const enforceAdminAuth: RequestHandler = (req: Request, _res: Response, next: NextFunction) => {
   const token = extractAdminToken(req);
-  if (!token || !validateAdminToken(token)) {
+  if (!token || !secureCompare(token)) {
     next(new HttpError(401, 'UNAUTHORIZED', 'Missing or invalid admin API token.'));
     return;
   }

@@ -1,45 +1,81 @@
 import {
-  IGN_L2_TTL_MS, PLAYER_L1_INFO_REFRESH_MS, PLAYER_L1_SAFETY_FACTOR, PLAYER_L1_TARGET_UTILIZATION, PLAYER_L1_TTL_FALLBACK_MS,
-  PLAYER_L1_TTL_MAX_MS, PLAYER_L1_TTL_MIN_MS, PLAYER_L2_TTL_MS, REDIS_CACHE_MAX_BYTES, SWR_ENABLED, SWR_STALE_TTL_MS,
+  IGN_L2_TTL_MS,
+  PLAYER_L1_INFO_REFRESH_MS,
+  PLAYER_L1_SAFETY_FACTOR,
+  PLAYER_L1_TARGET_UTILIZATION,
+  PLAYER_L1_TTL_FALLBACK_MS,
+  PLAYER_L1_TTL_MAX_MS,
+  PLAYER_L1_TTL_MIN_MS,
+  PLAYER_L2_TTL_MS,
+  REDIS_CACHE_MAX_BYTES,
+  SWR_ENABLED,
+  SWR_STALE_TTL_MS,
 } from '../config';
 import { CacheEntry, CacheMetadata, CacheSource, ensureInitialized, markDbAccess, pool, shouldReadFromDb } from './cache';
+import { DatabaseType } from './database/adapter';
 import { recordCacheHit, recordCacheMiss, recordCacheTierHit, recordCacheTierMiss, recordCacheSourceHit, recordCacheRefresh } from './metrics';
 import { fetchHypixelPlayer, HypixelFetchOptions, MinimalPlayerStats, extractMinimalStats } from './hypixel';
 import { getRedisClient, isRedisAvailable } from './redis';
 import { logger } from '../util/logger';
 
-const fLocks: Map<string, Promise<any>> = new Map(); const bgLocks: Map<string, Promise<void>> = new Map();
-const P_KEY = 'player:'; const IGN_KEY = 'ignmap:';
+// Single-flight pattern: dedupe concurrent upstream fetches for the same UUID
+// Prevents cache stampede (thundering herd) when multiple requests hit a cache miss
+const fetchingLocks: Map<string, Promise<FetchResult>> = new Map();
+const backgroundRefreshLocks: Map<string, Promise<void>> = new Map();
 
-export async function fetchWithDedupe(uuid: string, options?: HypixelFetchOptions): Promise<any> {
-  const norm = uuid.toLowerCase(); const ex = fLocks.get(norm); if (ex) return await ex;
-  const prom: Promise<any> = (async (): Promise<any> => {
-    const res = await fetchHypixelPlayer(norm, options);
-    if (res.notModified) throw new Error('Unexpected 304'); if (!res.payload) throw new Error('Empty payload');
-    return { stats: extractMinimalStats(res.payload), etag: res.etag, lastModified: res.lastModified };
+const PLAYER_KEY_PREFIX = 'player:';
+const IGN_MAPPING_PREFIX = 'ignmap:';
+
+/**
+ * Fetch result with stats and metadata for cache storage
+ */
+interface FetchResult {
+  stats: MinimalPlayerStats;
+  etag: string | null;
+  lastModified: number | null;
+}
+
+/**
+ * Fetch player stats from Hypixel with single-flight deduplication.
+ * Prevents cache stampede by ensuring only one upstream request is in flight
+ * for a given UUID at any time. All concurrent callers wait for the same promise.
+ */
+export async function fetchWithDedupe(
+  uuid: string,
+  options?: HypixelFetchOptions,
+): Promise<FetchResult> {
+  const normalizedUuid = uuid.toLowerCase();
+
+  // Check if already fetching for this UUID
+  const existing = fetchingLocks.get(normalizedUuid);
+  if (existing) {
+    // Return the existing promise - all waiters get the same result
+    return await existing;
+  }
+
+  // Create new fetch promise that includes the full result with metadata
+  const fetchPromise: Promise<FetchResult> = (async (): Promise<FetchResult> => {
+    const result = await fetchHypixelPlayer(normalizedUuid, options);
+
+    if (result.notModified) {
+      // Should not happen when called from cache miss, but handle gracefully
+      throw new Error('Unexpected 304 from Hypixel during cache miss');
+    }
+
+    if (!result.payload) {
+      throw new Error('Empty payload from Hypixel');
+    }
+
+    return {
+      stats: extractMinimalStats(result.payload),
+      etag: result.etag,
+      lastModified: result.lastModified,
+    };
   })();
-  fLocks.set(norm, prom); try { return await prom; } finally { fLocks.delete(norm); }
-}
 
-interface CacheRow { payload: unknown; expires_at: number | string; cached_at?: number | string | null; etag: string | null; last_modified: number | string | null; source: string | null; }
-interface IgnRow { uuid: string | null; nicked: boolean | number; expires_at: number | string; }
+  // Store the promise so concurrent callers can wait for it
+  fetchingLocks.set(normalizedUuid, fetchPromise);
 
-let lMem: any = null; let cAdpTtl = PLAYER_L1_TTL_FALLBACK_MS;
-export function buildPlayerCacheKey(uuid: string): string { return `${P_KEY}${uuid}`; }
-export function buildIgnMappingKey(ign: string): string { return `${IGN_KEY}${ign}`; }
-
-function parseRedisMem(info: string, ts: number): any {
-  const uMatch = info.match(/used_memory:(\d+)/); if (!uMatch) return null;
-  const mMatch = info.match(/maxmemory:(\d+)/); const eMatch = info.match(/evicted_keys:(\d+)/);
-  const uB = Number.parseInt(uMatch[1], 10); const mB = mMatch ? Number.parseInt(mMatch[1], 10) : REDIS_CACHE_MAX_BYTES;
-  const eK = eMatch ? Number.parseInt(eMatch[1], 10) : 0;
-  return { usedBytes: uB, maxBytes: mB > 0 ? mB : REDIS_CACHE_MAX_BYTES, evictedKeys: eK, sampledAt: ts };
-}
-
-function getAdpTtl(): number { return cAdpTtl; }
-
-async function refAdpTtl(): Promise<void> {
-  const cli = getRedisClient(); if (!cli || cli.status !== 'ready') { cAdpTtl = PLAYER_L1_TTL_FALLBACK_MS; return; }
   try {
     return await fetchPromise;
   } finally {
@@ -181,15 +217,18 @@ async function refreshAdaptiveTtl(): Promise<void> {
         ttlMs = timeToTargetMs * PLAYER_L1_SAFETY_FACTOR;
       }
     }
-    ttl = Math.min(Math.max(Math.floor(ttl), PLAYER_L1_TTL_MIN_MS), PLAYER_L1_TTL_MAX_MS);
-    if (lMem && sample.evictedKeys > lMem.evictedKeys) ttl = Math.max(PLAYER_L1_TTL_MIN_MS, Math.floor(ttl * 0.5));
-    lMem = sample; cAdpTtl = ttl;
-  } catch (e) { cAdpTtl = PLAYER_L1_TTL_FALLBACK_MS; }
+  }
+
+  ttlMs = clampTtl(ttlMs);
+  if (lastMemorySample && sample.evictedKeys > lastMemorySample.evictedKeys) {
+    ttlMs = Math.max(PLAYER_L1_TTL_MIN_MS, Math.floor(ttlMs * 0.5));
+  }
+
+  lastMemorySample = sample;
+  cachedAdaptiveTtlMs = ttlMs;
 }
 
-let adpInt: any = null;
-export function startAdaptiveTtlRefresh(): void { if (adpInt) return; void refAdpTtl(); adpInt = setInterval(refAdpTtl, PLAYER_L1_INFO_REFRESH_MS); }
-export function stopAdaptiveTtlRefresh(): void { if (adpInt) { clearInterval(adpInt); adpInt = null; } }
+let adaptiveTtlInterval: ReturnType<typeof setInterval> | null = null;
 
 export function startAdaptiveTtlRefresh(): void {
   if (adaptiveTtlInterval) {
@@ -205,15 +244,80 @@ export function startAdaptiveTtlRefresh(): void {
   }, PLAYER_L1_INFO_REFRESH_MS);
 }
 
-async function getManyPFromDb(keys: string[], incExp: boolean): Promise<Map<string, any>> {
-  await ensureInitialized(); const res = new Map<string, any>(); if (keys.length === 0) return res;
+export function stopAdaptiveTtlRefresh(): void {
+  if (adaptiveTtlInterval) {
+    clearInterval(adaptiveTtlInterval);
+    adaptiveTtlInterval = null;
+  }
+}
+
+function mapRow<T>(row: CacheRow): CacheEntryWithCachedAt<T> | null {
+  const expiresAtRaw = row.expires_at;
+  const expiresAt = typeof expiresAtRaw === 'string' ? Number.parseInt(expiresAtRaw, 10) : Number(expiresAtRaw);
+  const lastModifiedRaw = row.last_modified;
+  const lastModified =
+    lastModifiedRaw === null
+      ? null
+      : typeof lastModifiedRaw === 'string'
+      ? Number.parseInt(lastModifiedRaw, 10)
+      : Number(lastModifiedRaw);
+  const cachedAtRaw = row.cached_at;
+  const cachedAtParsed =
+    cachedAtRaw === null || cachedAtRaw === undefined
+      ? NaN
+      : typeof cachedAtRaw === 'string'
+        ? Number.parseInt(cachedAtRaw, 10)
+        : Number(cachedAtRaw);
+  const cachedAt = Number.isFinite(cachedAtParsed) ? cachedAtParsed : null;
+
+  let parsedPayload: unknown = row.payload;
+  if (typeof row.payload === 'string') {
+    try {
+      parsedPayload = JSON.parse(row.payload);
+    } catch {
+      return null;
+    }
+  }
+
+  const source = row.source as CacheSource | null;
+  const validSource =
+    source === 'hypixel' || source === 'community_verified' || source === 'community_unverified' ? source : null;
+
+  return {
+    value: parsedPayload as T,
+    expiresAt,
+    cachedAt,
+    etag: row.etag,
+    lastModified,
+    source: validSource,
+  };
+}
+
+async function getManyPlayerStatsFromDb(
+  keys: string[],
+  includeExpired: boolean,
+): Promise<Map<string, CacheEntryWithCachedAt<MinimalPlayerStats>>> {
+  await ensureInitialized();
+
+  const result = new Map<string, CacheEntryWithCachedAt<MinimalPlayerStats>>();
+  if (keys.length === 0) {
+    return result;
+  }
+
   try {
     let queryResult;
-    const { sql, params: inParams } = pool.formatInClause('cache_key', keys, 1);
-    queryResult = await pool.query<CacheRow & { cache_key: string }>(
-      `SELECT payload, expires_at, cached_at, etag, last_modified, source, cache_key FROM player_stats_cache WHERE ${sql}`,
-      inParams,
-    );
+    if (pool.type === DatabaseType.POSTGRESQL) {
+      queryResult = await pool.query<CacheRow & { cache_key: string }>(
+        'SELECT payload, expires_at, cached_at, etag, last_modified, source, cache_key FROM player_stats_cache WHERE cache_key = ANY($1)',
+        [keys],
+      );
+    } else {
+      const placeholders = keys.map((_, i) => `@p${i + 1}`).join(',');
+      queryResult = await pool.query<CacheRow & { cache_key: string }>(
+        `SELECT payload, expires_at, cached_at, etag, last_modified, source, cache_key FROM player_stats_cache WHERE cache_key IN (${placeholders})`,
+        keys,
+      );
+    }
     markDbAccess();
 
     for (const row of queryResult.rows) {
@@ -249,13 +353,39 @@ async function getManyPFromDb(keys: string[], incExp: boolean): Promise<Map<stri
   return result;
 }
 
-async function getPFromDb(key: string, incExp: boolean): Promise<any> {
+async function getPlayerStatsFromDb(
+  key: string,
+  includeExpired: boolean,
+): Promise<CacheEntryWithCachedAt<MinimalPlayerStats> | null> {
   await ensureInitialized();
+
   try {
-    const qRes = await pool.query<CacheRow>(`SELECT payload, expires_at, cached_at, etag, last_modified, source FROM player_stats_cache WHERE cache_key = ${pool.getPlaceholder(1)}`, [key]);
-    markDbAccess(); const row = qRes.rows[0]; if (!row) return null;
-    const entry = mapR<MinimalPlayerStats>(row); if (!entry) { if (!incExp) await pool.query(`DELETE FROM player_stats_cache WHERE cache_key = ${pool.getPlaceholder(1)}`, [key]); return null; }
-    if (entry.expiresAt <= Date.now()) { if (!incExp) await pool.query(`DELETE FROM player_stats_cache WHERE cache_key = ${pool.getPlaceholder(1)}`, [key]); return incExp ? entry : null; }
+    const result = await pool.query<CacheRow>(
+      'SELECT payload, expires_at, cached_at, etag, last_modified, source FROM player_stats_cache WHERE cache_key = $1',
+      [key],
+    );
+    markDbAccess();
+    const row = result.rows[0];
+    if (!row) {
+      return null;
+    }
+
+    const entry = mapRow<MinimalPlayerStats>(row);
+    if (!entry) {
+      if (!includeExpired) {
+        await pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [key]);
+      }
+      return null;
+    }
+
+    const now = Date.now();
+    if (Number.isNaN(entry.expiresAt) || entry.expiresAt <= now) {
+      if (!includeExpired) {
+        await pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [key]);
+      }
+    return includeExpired ? entry : null;
+    }
+
     return entry;
   } catch (error) {
     logger.error('[statsCache] failed to read L2 cache', error);
@@ -263,21 +393,59 @@ async function getPFromDb(key: string, incExp: boolean): Promise<any> {
   }
 }
 
-async function setPInDb(key: string, stats: MinimalPlayerStats, ttl: number, meta: CacheMetadata): Promise<void> {
-  await ensureInitialized(); const ca = Date.now(); const exp = ca + ttl; const p = JSON.stringify(stats);
+async function setPlayerStatsInDb(
+  key: string,
+  stats: MinimalPlayerStats,
+  ttlMs: number,
+  metadata: CacheMetadata,
+): Promise<void> {
+  await ensureInitialized();
+
+  const cachedAt = Date.now();
+  const expiresAt = cachedAt + ttlMs;
+  const payload = JSON.stringify(stats);
+
   try {
-    const columns = ['cache_key', 'payload', 'expires_at', 'cached_at', 'etag', 'last_modified', 'source'];
-    const updateColumns = ['payload', 'expires_at', 'cached_at', 'etag', 'last_modified', 'source'];
-    const sql = pool.getUpsertQuery('player_stats_cache', columns, 'cache_key', updateColumns);
-    await pool.query(sql, [key, payload, expiresAt, cachedAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null]);
+    if (pool.type === DatabaseType.POSTGRESQL) {
+      await pool.query(
+        `INSERT INTO player_stats_cache (cache_key, payload, expires_at, cached_at, etag, last_modified, source)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
+         ON CONFLICT (cache_key) DO UPDATE
+         SET payload = EXCLUDED.payload,
+             expires_at = EXCLUDED.expires_at,
+             cached_at = EXCLUDED.cached_at,
+             etag = EXCLUDED.etag,
+             last_modified = EXCLUDED.last_modified,
+             source = EXCLUDED.source`,
+        [key, payload, expiresAt, cachedAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
+      );
+    } else {
+      await pool.query(
+        `MERGE player_stats_cache AS target
+         USING (SELECT $1 AS cache_key, $2 AS payload, $3 AS expires_at, $4 AS cached_at, $5 AS etag, $6 AS last_modified, $7 AS source) AS source
+         ON (target.cache_key = source.cache_key)
+         WHEN MATCHED THEN
+           UPDATE SET payload = source.payload,
+                      expires_at = source.expires_at,
+                      cached_at = source.cached_at,
+                      etag = source.etag,
+                      last_modified = source.last_modified,
+                      source = source.source
+         WHEN NOT MATCHED THEN
+           INSERT (cache_key, payload, expires_at, cached_at, etag, last_modified, source)
+           VALUES (source.cache_key, source.payload, source.expires_at, source.cached_at, source.etag, source.last_modified, source.source);`,
+        [key, payload, expiresAt, cachedAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
+      );
+    }
     markDbAccess();
   } catch (error) {
     logger.error('[statsCache] failed to write L2 cache', error);
   }
 }
 
-async function getIMapFromDb(ign: string, incExp: boolean): Promise<any> {
+async function getIgnMappingFromDb(ign: string, includeExpired: boolean): Promise<IgnMappingEntry | null> {
   await ensureInitialized();
+
   try {
     const result = await pool.query<IgnCacheRow>(
       'SELECT uuid, nicked, expires_at FROM ign_uuid_cache WHERE ign = $1',
@@ -309,23 +477,52 @@ async function getIMapFromDb(ign: string, incExp: boolean): Promise<any> {
   }
 }
 
-async function setIMapInDb(ign: string, uuid: string | null, nicked: boolean, ttl: number): Promise<void> {
-  await ensureInitialized(); const exp = Date.now() + ttl;
+async function setIgnMappingInDb(ign: string, uuid: string | null, nicked: boolean, ttlMs: number): Promise<void> {
+  await ensureInitialized();
+
+  const expiresAt = Date.now() + ttlMs;
   try {
-    const columns = ['ign', 'uuid', 'nicked', 'expires_at'];
-    const updateColumns = ['uuid', 'nicked', 'expires_at'];
-    const sql = pool.getUpsertQuery('ign_uuid_cache', columns, 'ign', updateColumns);
-    await pool.query(sql, [ign, uuid, nicked, expiresAt]);
+    if (pool.type === DatabaseType.POSTGRESQL) {
+      await pool.query(
+        `INSERT INTO ign_uuid_cache (ign, uuid, nicked, expires_at)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (ign) DO UPDATE
+         SET uuid = EXCLUDED.uuid,
+             nicked = EXCLUDED.nicked,
+             expires_at = EXCLUDED.expires_at,
+             updated_at = NOW()`,
+        [ign, uuid, nicked, expiresAt],
+      );
+    } else {
+      await pool.query(
+        `MERGE ign_uuid_cache AS target
+         USING (SELECT $1 AS ign, $2 AS uuid, $3 AS nicked, $4 AS expires_at) AS source
+         ON (target.ign = source.ign)
+         WHEN MATCHED THEN
+           UPDATE SET uuid = source.uuid,
+                      nicked = source.nicked,
+                      expires_at = source.expires_at,
+                      updated_at = SYSUTCDATETIME()
+         WHEN NOT MATCHED THEN
+           INSERT (ign, uuid, nicked, expires_at)
+           VALUES (source.ign, source.uuid, source.nicked, source.expires_at);`,
+        [ign, uuid, nicked, expiresAt],
+      );
+    }
     markDbAccess();
   } catch (error) {
     logger.error('[statsCache] failed to write ign mapping', error);
   }
 }
 
-async function getIMapFromRedis(ign: string, incExp: boolean): Promise<any> {
-  const cli = getRedisClient(); if (!cli || cli.status !== 'ready') return null;
+async function getIgnMappingFromRedis(ign: string, includeExpired: boolean): Promise<IgnMappingEntry | null> {
+  const client = getRedisClient();
+  if (!client || client.status !== 'ready') {
+    return null;
+  }
+
   try {
-    const redisKey = getCacheKey(buildIgnMappingKey(ign));
+    const redisKey = `cache:${buildIgnMappingKey(ign)}`;
     const data = await client.get(redisKey);
     if (!data) {
       return null;
@@ -354,11 +551,15 @@ async function getIMapFromRedis(ign: string, incExp: boolean): Promise<any> {
   }
 }
 
-async function setIMapInRedis(ign: string, map: any, ttl: number): Promise<void> {
-  const cli = getRedisClient(); if (!cli || cli.status !== 'ready') return;
+async function setIgnMappingInRedis(ign: string, mapping: IgnMappingEntry, ttlMs: number): Promise<void> {
+  const client = getRedisClient();
+  if (!client || client.status !== 'ready') {
+    return;
+  }
+
   try {
     const expiresAt = Date.now() + ttlMs;
-    const redisKey = getCacheKey(buildIgnMappingKey(ign));
+    const redisKey = `cache:${buildIgnMappingKey(ign)}`;
     const data = JSON.stringify({
       uuid: mapping.uuid,
       nicked: mapping.nicked,
@@ -371,12 +572,18 @@ async function setIMapInRedis(ign: string, map: any, ttl: number): Promise<void>
   }
 }
 
-export async function getPlayerStatsFromCache(key: string, incExp = false): Promise<any> {
+export async function getPlayerStatsFromCache(
+  key: string,
+  includeExpired: boolean = false,
+): Promise<CacheEntry<MinimalPlayerStats> | null> {
+  let l1Attempted = false;
+  let l1Hit = false;
   if (isRedisAvailable()) {
+    l1Attempted = true;
     try {
       const client = getRedisClient();
       if (client && client.status === 'ready') {
-        const redisKey = getCacheKey(key);
+        const redisKey = `cache:${key}`;
         const data = await client.get(redisKey);
         if (data) {
           let row: CacheRow | undefined;
@@ -387,9 +594,18 @@ export async function getPlayerStatsFromCache(key: string, incExp = false): Prom
             // Skip processing this cache entry
           }
           if (row) {
-            const entry = mapR<MinimalPlayerStats>(row);
-            if (entry && entry.expiresAt > Date.now()) { recordCacheHit(); recordCacheTierHit('l1'); recordCacheSourceHit('redis'); return entry; }
-            await cli.del(k);
+            const entry = mapRow<MinimalPlayerStats>(row);
+            if (entry) {
+              const now = Date.now();
+              if (entry.expiresAt > now) {
+                recordCacheHit();
+                recordCacheTierHit('l1');
+                recordCacheSourceHit('redis');
+                l1Hit = true;
+                return entry;
+              }
+              await client.del(redisKey);
+            }
           }
         }
       }
@@ -398,12 +614,10 @@ export async function getPlayerStatsFromCache(key: string, incExp = false): Prom
       logger.error('[statsCache] L1 read failed', message);
     }
   }
-  if (!shouldReadFromDb()) return null;
-  const l2 = await getPFromDb(key, incExp);
-  if (l2) {
-    recordCacheHit(); recordCacheTierHit('l2'); recordCacheSourceHit('sql');
-    if (l2.expiresAt > Date.now()) void setPlayerStatsL1(key, l2.value, l2).catch(() => {});
-    return l2;
+
+  if (l1Attempted && !l1Hit) {
+    recordCacheTierMiss('l1', 'absent');
+    recordCacheMiss('absent');
   }
 
   if (!shouldReadFromDb()) {
@@ -433,13 +647,38 @@ export async function getPlayerStatsFromCache(key: string, incExp = false): Prom
   return null;
 }
 
-export async function getPlayerStatsFromCacheWithSWR(key: string, uuid: string): Promise<any> {
-  if (!SWR_ENABLED) return await getPlayerStatsFromCache(key, false);
+/**
+ * Get player stats from cache with Stale-While-Revalidate (SWR) support.
+ * 
+ * Returns stale data immediately if it's within the SWR window, while triggering
+ * a background refresh. This improves response times for cache misses by serving
+ * slightly outdated data rather than waiting for a fresh fetch.
+ * 
+ * @param key - The cache key
+ * @param uuid - The player UUID (for background refresh)
+ * @returns SWRCacheEntry with staleness information, or null if no usable data
+ */
+export async function getPlayerStatsFromCacheWithSWR(
+  key: string,
+  uuid: string,
+): Promise<SWRCacheEntry<MinimalPlayerStats> | null> {
+  if (!SWR_ENABLED) {
+    const entry = await getPlayerStatsFromCache(key, false);
+    if (!entry) return null;
+    return {
+      ...entry,
+      isStale: false,
+      staleAgeMs: 0,
+    };
+  }
+
+  // Try L1 (Redis) first
+  let l1MissReason = 'absent';
   if (isRedisAvailable()) {
     try {
       const client = getRedisClient();
       if (client && client.status === 'ready') {
-        const redisKey = getCacheKey(key);
+        const redisKey = `cache:${key}`;
         const data = await client.get(redisKey);
         if (data) {
           let row: CacheRow | undefined;
@@ -449,11 +688,44 @@ export async function getPlayerStatsFromCacheWithSWR(key: string, uuid: string):
             await client.del(redisKey);
           }
           if (row) {
-            const entry = mapR<MinimalPlayerStats>(row);
+            const entry = mapRow<MinimalPlayerStats>(row);
             if (entry) {
-              const now = Date.now(); if (entry.expiresAt > now) { recordCacheHit(); recordCacheTierHit('l1'); recordCacheSourceHit('redis'); return { ...entry, isStale: false, staleAgeMs: 0 }; }
-              if (now <= entry.expiresAt + SWR_STALE_TTL_MS) { recordCacheHit(); recordCacheTierHit('l1'); recordCacheSourceHit('redis'); triggerBGRefresh(key, uuid, entry); return { ...entry, isStale: true, staleAgeMs: now - (entry.cachedAt || (entry.expiresAt - getAdpTtl())) }; }
-              await cli.del(k);
+              const now = Date.now();
+              const isFresh = entry.expiresAt > now;
+              const cachedAt = entry.cachedAt ?? (entry.expiresAt - getAdaptiveL1TtlMs());
+              const ageMs = now - cachedAt;
+
+              if (isFresh) {
+                recordCacheHit();
+                recordCacheTierHit('l1');
+                recordCacheSourceHit('redis');
+                return {
+                  ...entry,
+                  isStale: false,
+                  staleAgeMs: 0,
+                };
+              }
+
+              // Check if within SWR window
+              const isWithinSWRWindow = now <= entry.expiresAt + SWR_STALE_TTL_MS;
+              if (isWithinSWRWindow) {
+                recordCacheHit();
+                recordCacheTierHit('l1');
+                recordCacheSourceHit('redis');
+                
+                // Trigger background refresh
+                triggerBackgroundRefresh(key, uuid, entry);
+                
+                return {
+                  ...entry,
+                  isStale: true,
+                  staleAgeMs: ageMs,
+                };
+              }
+
+              // Too old, delete from Redis
+              await client.del(redisKey);
+              l1MissReason = 'expired';
             }
           }
         }
@@ -463,9 +735,13 @@ export async function getPlayerStatsFromCacheWithSWR(key: string, uuid: string):
       logger.error('[statsCache] L1 SWR read failed', message);
     }
   }
+
+  recordCacheTierMiss('l1', l1MissReason);
+
+  // Try L2 (Database) with SWR
   if (shouldReadFromDb()) {
-    const l2 = await getPFromDb(key, true);
-    if (l2) {
+    const l2Entry = await getPlayerStatsFromDb(key, true);
+    if (l2Entry) {
       const now = Date.now();
       const normalTtl = PLAYER_L2_TTL_MS;
       const cachedAt = l2Entry.cachedAt ?? l2Entry.expiresAt - normalTtl;
@@ -513,13 +789,29 @@ export async function getPlayerStatsFromCacheWithSWR(key: string, uuid: string):
       recordCacheMiss('expired');
       return null;
     }
+  } else {
+    recordCacheTierMiss('l2', 'db_cold');
   }
+
+  recordCacheMiss('absent');
   return null;
 }
 
-function triggerBGRefresh(key: string, uuid: string, entry: CacheEntry<MinimalPlayerStats>): void {
-  if (bgLocks.has(key)) return;
-  const prom = (async () => {
+/**
+ * Trigger a background refresh of player stats from Hypixel.
+ * This function doesn't wait for the refresh to complete.
+ */
+function triggerBackgroundRefresh(
+  key: string,
+  uuid: string,
+  entry: CacheEntry<MinimalPlayerStats>,
+): void {
+  // Use single-flight pattern to prevent duplicate fetches
+  if (backgroundRefreshLocks.has(key)) {
+    return;
+  }
+
+  const fetchPromise = (async () => {
     try {
       const options: HypixelFetchOptions = {
         etag: entry.etag ?? undefined,
@@ -555,11 +847,28 @@ function triggerBGRefresh(key: string, uuid: string, entry: CacheEntry<MinimalPl
       backgroundRefreshLocks.delete(key);
     }
   })();
-  bgLocks.set(key, prom); void prom.catch(() => {});
+
+  backgroundRefreshLocks.set(key, fetchPromise);
+  
+  // Don't await - let it run in background
+  void fetchPromise.catch(() => {
+    // Error already logged in the try/catch above
+  });
 }
 
-export async function getManyPlayerStatsFromCacheWithSWR(ids: { key: string; uuid: string }[]): Promise<Map<string, any>> {
-  const res = new Map<string, any>(); if (ids.length === 0) return res;
+/**
+ * Fetch multiple player stats from L1 cache (Redis) with SWR support.
+ * Optimized using MGET to reduce network round-trips.
+ */
+export async function getManyPlayerStatsFromCacheWithSWR(
+  identifiers: { key: string; uuid: string }[]
+): Promise<Map<string, SWRCacheEntry<MinimalPlayerStats>>> {
+  const result = new Map<string, SWRCacheEntry<MinimalPlayerStats>>();
+
+  if (identifiers.length === 0) {
+    return result;
+  }
+
   if (!isRedisAvailable()) {
     return result;
   }
@@ -569,7 +878,7 @@ export async function getManyPlayerStatsFromCacheWithSWR(ids: { key: string; uui
     return result;
   }
 
-  const redisKeys = identifiers.map((i) => getCacheKey(i.key));
+  const redisKeys = identifiers.map((i) => `cache:${i.key}`);
 
   try {
     const values = await client.mget(...redisKeys);
@@ -585,26 +894,64 @@ export async function getManyPlayerStatsFromCacheWithSWR(ids: { key: string; uui
       } catch {
         continue;
       }
+
+      if (!row) continue;
+
+      const entry = mapRow<MinimalPlayerStats>(row);
+      if (!entry) continue;
+
+      const now = Date.now();
+      const isFresh = entry.expiresAt > now;
+      const cachedAt = entry.cachedAt ?? (entry.expiresAt - getAdaptiveL1TtlMs());
+      const ageMs = now - cachedAt;
+
+      if (isFresh) {
+        recordCacheHit();
+        recordCacheTierHit('l1');
+        recordCacheSourceHit('redis');
+        result.set(identifier.key, {
+          ...entry,
+          isStale: false,
+          staleAgeMs: 0,
+        });
+        continue;
+      }
+
+      if (SWR_ENABLED) {
+        const isWithinSWRWindow = now <= entry.expiresAt + SWR_STALE_TTL_MS;
+        if (isWithinSWRWindow) {
+          recordCacheHit();
+          recordCacheTierHit('l1');
+          recordCacheSourceHit('redis');
+
+          triggerBackgroundRefresh(identifier.key, identifier.uuid, entry);
+
+          result.set(identifier.key, {
+            ...entry,
+            isStale: true,
+            staleAgeMs: ageMs,
+          });
+          continue;
+        }
+      }
+
+      // Expired and not SWR-eligible, ignore.
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.error('[statsCache] L1 batch read failed', message);
   }
-  const cli = getRedisClient(); if (!cli || cli.status !== 'ready') return res;
-  try {
-    const vals = await cli.mget(...ids.map(i => `cache:${i.key}`));
-    for (let i = 0; i < vals.length; i++) {
-      if (!vals[i]) continue; let row: any; try { row = JSON.parse(vals[i]!); } catch { continue; }
-      const entry = mapR<MinimalPlayerStats>(row); if (!entry) continue;
-      const now = Date.now(); if (entry.expiresAt > now) { recordCacheHit(); recordCacheTierHit('l1'); recordCacheSourceHit('redis'); res.set(ids[i].key, { ...entry, isStale: false, staleAgeMs: 0 }); continue; }
-      if (SWR_ENABLED && now <= entry.expiresAt + SWR_STALE_TTL_MS) { recordCacheHit(); recordCacheTierHit('l1'); recordCacheSourceHit('redis'); triggerBGRefresh(ids[i].key, ids[i].uuid, entry); res.set(ids[i].key, { ...entry, isStale: true, staleAgeMs: now - (entry.cachedAt || (entry.expiresAt - getAdpTtl())) }); }
-    }
-  } catch (e) {}
-  const missing = ids.filter(i => !res.has(i.key));
+
+  const missing = identifiers.filter((i) => !result.has(i.key));
   if (missing.length > 0 && shouldReadFromDb()) {
-    const l2s = await getManyPFromDb(missing.map(m => m.key), true); const expK: string[] = [];
-    for (const [k, e] of l2s) {
-      const id = missing.find(m => m.key === k); if (!id) continue;
+    const missingKeys = missing.map((m) => m.key);
+    const l2Results = await getManyPlayerStatsFromDb(missingKeys, true);
+    const expiredKeys: string[] = [];
+
+    for (const [key, entry] of l2Results) {
+      const idObj = missing.find((m) => m.key === key);
+      if (!idObj) continue;
+
       const now = Date.now();
       const normalTtl = PLAYER_L2_TTL_MS;
       const cachedAt = entry.cachedAt ?? entry.expiresAt - normalTtl;
@@ -653,8 +1000,12 @@ export async function getManyPlayerStatsFromCacheWithSWR(ids: { key: string; uui
     if (expiredKeys.length > 0) {
       const doBatchDelete = async () => {
         try {
-          const { sql, params: delParams } = pool.formatInClause('cache_key', expiredKeys, 1);
-          await pool.query(`DELETE FROM player_stats_cache WHERE ${sql}`, delParams);
+          if (pool.type === DatabaseType.POSTGRESQL) {
+            await pool.query('DELETE FROM player_stats_cache WHERE cache_key = ANY($1)', [expiredKeys]);
+          } else {
+            const placeholders = expiredKeys.map((_, i) => `@p${i + 1}`).join(',');
+            await pool.query(`DELETE FROM player_stats_cache WHERE cache_key IN (${placeholders})`, expiredKeys);
+          }
         } catch (e) {
           logger.warn('[statsCache] failed to batch delete expired L2 entries', e);
         }
@@ -673,11 +1024,20 @@ export async function getManyPlayerStatsFromCacheWithSWR(ids: { key: string; uui
       recordCacheMiss('db_cold');
     }
   }
-  return res;
+
+  return result;
 }
 
-export async function setPlayerStatsL1(key: string, stats: MinimalPlayerStats, meta: CacheMetadata = {}): Promise<void> {
-  const cli = getRedisClient(); if (!cli || cli.status !== 'ready') return;
+export async function setPlayerStatsL1(
+  key: string,
+  stats: MinimalPlayerStats,
+  metadata: CacheMetadata = {},
+): Promise<void> {
+  const client = getRedisClient();
+  if (!client || client.status !== 'ready') {
+    return;
+  }
+
   try {
     const ttlMs = getAdaptiveL1TtlMs();
     const cachedAt = Date.now();
@@ -692,7 +1052,7 @@ export async function setPlayerStatsL1(key: string, stats: MinimalPlayerStats, m
       source: metadata.source ?? null,
     });
 
-    const redisKey = getCacheKey(key);
+    const redisKey = `cache:${key}`;
     await client.setex(redisKey, Math.ceil(ttlMs / 1000), data);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -700,8 +1060,15 @@ export async function setPlayerStatsL1(key: string, stats: MinimalPlayerStats, m
   }
 }
 
-export async function setPlayerStatsBoth(key: string, stats: MinimalPlayerStats, meta: CacheMetadata = {}): Promise<void> {
-  await Promise.all([ setPInDb(key, stats, PLAYER_L2_TTL_MS, meta), setPlayerStatsL1(key, stats, meta) ]);
+export async function setPlayerStatsBoth(
+  key: string,
+  stats: MinimalPlayerStats,
+  metadata: CacheMetadata = {},
+): Promise<void> {
+  await Promise.all([
+    setPlayerStatsInDb(key, stats, PLAYER_L2_TTL_MS, metadata),
+    setPlayerStatsL1(key, stats, metadata),
+  ]);
 }
 
 export async function getIgnMapping(
@@ -737,17 +1104,23 @@ export async function getIgnMapping(
 }
 
 export async function setIgnMapping(ign: string, uuid: string | null, nicked: boolean): Promise<void> {
-  const ttl = getAdpTtl();
-  await Promise.all([ setIMapInRedis(ign, { uuid, nicked }, ttl), setIMapInDb(ign, uuid, nicked, IGN_L2_TTL_MS) ]);
+  const ttlMs = getAdaptiveL1TtlMs();
+  await Promise.all([
+    setIgnMappingInRedis(ign, { uuid, nicked, expiresAt: Date.now() + ttlMs }, ttlMs),
+    setIgnMappingInDb(ign, uuid, nicked, IGN_L2_TTL_MS),
+  ]);
 }
 
 export async function deletePlayerStatsEntries(keys: string[]): Promise<number> {
-  if (keys.length === 0) return 0;
+  if (keys.length === 0) {
+    return 0;
+  }
+
   if (isRedisAvailable()) {
     const client = getRedisClient();
     if (client && client.status === 'ready') {
       try {
-        const redisKeys = keys.map((key) => getCacheKey(key));
+        const redisKeys = keys.map((key) => `cache:${key}`);
         await client.del(...redisKeys);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -755,10 +1128,18 @@ export async function deletePlayerStatsEntries(keys: string[]): Promise<number> 
       }
     }
   }
+
   await ensureInitialized();
+
   try {
-    const { sql, params: delParams } = pool.formatInClause('cache_key', keys, 1);
-    const result = await pool.query(`DELETE FROM player_stats_cache WHERE ${sql}`, delParams);
+    if (pool.type === DatabaseType.POSTGRESQL) {
+      const result = await pool.query('DELETE FROM player_stats_cache WHERE cache_key = ANY($1)', [keys]);
+      markDbAccess();
+      return result.rowCount;
+    }
+
+    const placeholders = keys.map((_, i) => `@p${i + 1}`).join(',');
+    const result = await pool.query(`DELETE FROM player_stats_cache WHERE cache_key IN (${placeholders})`, keys);
     markDbAccess();
     return result.rowCount;
   } catch (error) {
@@ -768,12 +1149,15 @@ export async function deletePlayerStatsEntries(keys: string[]): Promise<number> 
 }
 
 export async function deleteIgnMappings(igns: string[]): Promise<number> {
-  if (igns.length === 0) return 0;
+  if (igns.length === 0) {
+    return 0;
+  }
+
   if (isRedisAvailable()) {
     const client = getRedisClient();
     if (client && client.status === 'ready') {
       try {
-        const redisKeys = igns.map((ign) => getCacheKey(buildIgnMappingKey(ign)));
+        const redisKeys = igns.map((ign) => `cache:${buildIgnMappingKey(ign)}`);
         await client.del(...redisKeys);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -781,10 +1165,18 @@ export async function deleteIgnMappings(igns: string[]): Promise<number> {
       }
     }
   }
+
   await ensureInitialized();
+
   try {
-    const { sql, params: delParams } = pool.formatInClause('ign', igns, 1);
-    const result = await pool.query(`DELETE FROM ign_uuid_cache WHERE ${sql}`, delParams);
+    if (pool.type === DatabaseType.POSTGRESQL) {
+      const result = await pool.query('DELETE FROM ign_uuid_cache WHERE ign = ANY($1)', [igns]);
+      markDbAccess();
+      return result.rowCount;
+    }
+
+    const placeholders = igns.map((_, i) => `@p${i + 1}`).join(',');
+    const result = await pool.query(`DELETE FROM ign_uuid_cache WHERE ign IN (${placeholders})`, igns);
     markDbAccess();
     return result.rowCount;
   } catch (error) {
@@ -794,6 +1186,8 @@ export async function deleteIgnMappings(igns: string[]): Promise<number> {
 }
 
 export async function clearAllPlayerStatsCaches(): Promise<number> {
+  let deleted = 0;
+
   if (isRedisAvailable()) {
     const client = getRedisClient();
     if (client && client.status === 'ready') {
@@ -814,12 +1208,14 @@ export async function clearAllPlayerStatsCaches(): Promise<number> {
       }
     }
   }
+
   await ensureInitialized();
+
   try {
     const statsResult = await pool.query('DELETE FROM player_stats_cache');
     const ignResult = await pool.query('DELETE FROM ign_uuid_cache');
     markDbAccess();
-    return statsResult.rowCount + ignResult.rowCount;
+    return deleted + statsResult.rowCount + ignResult.rowCount;
   } catch (error) {
     logger.error('[statsCache] clear L2 caches failed', error);
     return deleted;

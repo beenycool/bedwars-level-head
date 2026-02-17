@@ -53,7 +53,7 @@ class RequestCoordinator(
                         .groupBy { resolveGameMode(it.type) }
                         .forEach { (gameMode, modeRequests) ->
                             val debug = DebugLogging.isRequestDebugEnabled()
-                            val displays = modeRequests.map { it.display }.toSet()
+                            val displays = modeRequests.flatMap { it.displays }.toSet()
                             val cacheKey = StatsCacheKey(uuid, gameMode)
                             val cached = repository.peek(uuid, gameMode)
                             val reasons = if (debug) modeRequests.map { it.reason }.toSet() else null
@@ -344,7 +344,9 @@ class RequestCoordinator(
         requests.forEach { req ->
             val gameMode = resolveGameMode(req.type)
             val matchingStats = statsForMode(stats, gameMode)
-            onTagUpdate(req.display, uuid, matchingStats, gameMode)
+            req.displays.forEach { display ->
+                onTagUpdate(display, uuid, matchingStats, gameMode)
+            }
         }
     }
 

@@ -1,7 +1,4 @@
 import { Router } from 'express';
-import { enforceMonitoringAuth } from '../middleware/monitoringAuth';
-import { enforceAdminRateLimit } from '../middleware/rateLimit';
-import { enforceCodeqlAdminRateLimit } from '../middleware/codeqlRateLimit';
 import {
   getPlayerQueryCount,
   getPlayerQueryPage,
@@ -103,7 +100,7 @@ function getEmptyStateForNoLookups(): string {
     </tr>`;
 }
 
-router.get('/csv', enforceCodeqlAdminRateLimit, enforceAdminRateLimit, enforceMonitoringAuth, async (req, res) => {
+router.get('/csv', async (req, res) => {
   try {
     const fromParam = typeof req.query.from === 'string' ? req.query.from : undefined;
     const toParam = typeof req.query.to === 'string' ? req.query.to : undefined;
@@ -141,7 +138,7 @@ router.get('/csv', enforceCodeqlAdminRateLimit, enforceAdminRateLimit, enforceMo
   }
 });
 
-router.get('/data', enforceCodeqlAdminRateLimit, enforceAdminRateLimit, enforceMonitoringAuth, async (req, res, next) => {
+router.get('/data', async (req, res, next) => {
   try {
     const fromParam = typeof req.query.from === 'string' ? req.query.from : undefined;
     const toParam = typeof req.query.to === 'string' ? req.query.to : undefined;
@@ -204,7 +201,7 @@ router.get('/data', enforceCodeqlAdminRateLimit, enforceAdminRateLimit, enforceM
   }
 });
 
-router.get('/', enforceCodeqlAdminRateLimit, enforceAdminRateLimit, enforceMonitoringAuth, async (req, res, next) => {
+router.get('/', async (req, res, next) => {
   try {
     const requestedPage = Number.parseInt((req.query.page as string) ?? '1', 10);
     const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';

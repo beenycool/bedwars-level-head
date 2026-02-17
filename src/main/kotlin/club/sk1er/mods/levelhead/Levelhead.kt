@@ -383,9 +383,8 @@ object Levelhead {
 
     data class LevelheadRequest(
         val uuid: String,
-        val display: LevelheadDisplay,
-        val allowOverride: Boolean,
-        val type: String = display.config.type,
+        val displays: Set<LevelheadDisplay>,
+        val type: String,
         val reason: RequestReason = RequestReason.UNKNOWN
     )
 

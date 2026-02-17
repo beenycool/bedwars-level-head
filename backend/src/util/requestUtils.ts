@@ -1,4 +1,3 @@
-import ipaddr from "ipaddr.js";
 
 import { recordPlayerQuery } from '../services/history';
 import { ResolvedPlayer } from '../services/player';
@@ -94,25 +93,4 @@ export function sanitizeUrlForLogs(target: string): string {
 
   const path = sanitized.slice(0, queryIndex);
   return `${path}?<redacted>`;
-}
-
-/**
- * Checks if an IP address is within a CIDR range.
- */
-export function isIPInCIDR(ip: string, cidr: string): boolean {
-  try {
-    const [network, prefix] = ipaddr.parseCIDR(cidr);
-    let parsedIp = ipaddr.parse(ip);
-    if (parsedIp.kind() === 'ipv6' && parsedIp.isIPv4MappedAddress()) {
-      parsedIp = parsedIp.toIPv4Address();
-    }
-
-    if (parsedIp.kind() !== network.kind()) {
-      return false;
-    }
-
-    return parsedIp.match([network, prefix]);
-  } catch {
-    return false;
-  }
 }

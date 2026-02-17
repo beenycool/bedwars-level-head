@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { enforcePublicRateLimit, enforceApiKeyStatusRateLimit } from '../middleware/rateLimitPublic';
+import { enforcePublicRateLimit } from '../middleware/rateLimitPublic';
 import { HttpError } from '../util/httpError';
 import {
   validateApiKey,
@@ -27,7 +27,7 @@ function formatValidationResponse(validation: Awaited<ReturnType<typeof validate
  * Public endpoint to check API key validation status
  * Users can submit their key to check if it's valid
  */
-router.post('/status', enforcePublicRateLimit, enforceApiKeyStatusRateLimit, async (req, res, next) => {
+router.post('/status', enforcePublicRateLimit, async (req, res, next) => {
   res.locals.metricsRoute = '/api/public/apikey/status';
   const { key, forceRefresh } = req.body ?? {};
 
@@ -75,7 +75,7 @@ router.post('/status', enforcePublicRateLimit, enforceApiKeyStatusRateLimit, asy
  * GET /api/public/apikey/status
  * Check status using x-api-key header (for client mods)
  */
-router.get('/status', enforcePublicRateLimit, enforceApiKeyStatusRateLimit, async (req, res, next) => {
+router.get('/status', enforcePublicRateLimit, async (req, res, next) => {
   res.locals.metricsRoute = '/api/public/apikey/status';
   const apiKey = req.get('x-api-key');
 
