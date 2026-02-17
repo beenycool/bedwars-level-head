@@ -26,7 +26,6 @@ export function getRedisClient(): Redis | null {
         try {
             redis = new Redis(redisUrl, {
                 commandTimeout: REDIS_COMMAND_TIMEOUT,
-                enableOfflineQueue: false,
                 maxRetriesPerRequest: 1,
                 retryStrategy: (times) => {
                     const delay = Math.min(times * 100, 3000);
@@ -75,24 +74,23 @@ export function isRedisAvailable(): boolean {
  */
 const INCREMENT_SCRIPT = `
 local reqKey = ARGV[1]
-local ttlMs = tonumber(ARGV[2])
+local ttl = tonumber(ARGV[2])
 local cost = tonumber(ARGV[3])
 local ipHash = ARGV[4]
 local hllKey = ARGV[5]
 
 local current = redis.call("INCRBY", reqKey, cost)
 if current == cost then
-  redis.call("PEXPIRE", reqKey, ttlMs)
+  redis.call("PEXPIRE", reqKey, ttl)
 end
 
 local hllExists = redis.call("EXISTS", hllKey)
 redis.call("PFADD", hllKey, ipHash)
 if hllExists == 0 then
-  redis.call("PEXPIRE", hllKey, ttlMs)
+  redis.call("PEXPIRE", hllKey, ttl)
 end
 
-local ttl = redis.call("PTTL", reqKey)
-return {current, ttl}
+return 1
 `;
 
 // Scan keyspace and count prefixes in one pass
@@ -223,7 +221,7 @@ export async function incrementRateLimit(
         const hllKey = `stats:hll:${statsBucket}`;
 
         // Single-trip execution using Lua
-        const result = await client.eval(
+        await client.eval(
             INCREMENT_SCRIPT,
             0,
             redisKey,
@@ -231,11 +229,16 @@ export async function incrementRateLimit(
             String(cost),
             ipHash,
             hllKey,
-        ) as [number, number];
+        );
+
+        const [count, ttl] = await Promise.all([
+            client.get(redisKey),
+            client.pttl(redisKey),
+        ]);
 
         return {
-            count: result[0],
-            ttl: Math.max(0, result[1]),
+            count: parseInt(count || '0', 10),
+            ttl: Math.max(0, ttl),
         };
     } catch (err) {
         console.error('[redis] incrementRateLimit failed', err);
@@ -264,54 +267,6 @@ export async function trackGlobalStats(clientIp: string): Promise<void> {
         await client.pexpire(hllKey, 24 * 60 * 60 * 1000); // 24h retention
     } catch (err) {
         // Silent fail for stats
-    }
-}
-
-export async function getGlobalStats(windowMs: number): Promise<{ requestCount: number; activeUsers: number }> {
-    const client = getRedisClient();
-    if (!client || client.status !== 'ready') {
-        return { requestCount: 0, activeUsers: 0 };
-    }
-
-    try {
-        let cursor = '0';
-        const rateLimitKeys: string[] = [];
-
-        do {
-            const result = await client.scan(cursor, 'MATCH', 'rl:*', 'COUNT', REDIS_SCAN_BATCH_SIZE) as [string, string[]];
-            cursor = result[0];
-            if (result[1].length > 0) {
-                rateLimitKeys.push(...result[1]);
-            }
-        } while (cursor !== '0');
-
-        let requestCount = 0;
-        if (rateLimitKeys.length > 0) {
-            const values = await client.mget(...rateLimitKeys);
-            for (const value of values) {
-                if (value !== null) {
-                    const parsed = parseInt(value, 10);
-                    if (!isNaN(parsed)) {
-                        requestCount += parsed;
-                    }
-                }
-            }
-        }
-
-        const currentBucket = Math.floor(Date.now() / REDIS_STATS_BUCKET_SIZE_MS) * REDIS_STATS_BUCKET_SIZE_MS;
-        const bucketsNeeded = Math.ceil(windowMs / REDIS_STATS_BUCKET_SIZE_MS);
-        const hllKeys: string[] = [];
-
-        for (let i = 0; i < bucketsNeeded; i++) {
-            hllKeys.push(`stats:hll:${currentBucket - i * REDIS_STATS_BUCKET_SIZE_MS}`);
-        }
-
-        const activeUsers = hllKeys.length > 0 ? await client.pfcount(...hllKeys) : 0;
-        return { requestCount, activeUsers };
-    } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error('[redis] getGlobalStats failed', message);
-        return { requestCount: 0, activeUsers: 0 };
     }
 }
 
@@ -478,7 +433,7 @@ function getKeyCounts(): KeyCounts {
 
 export async function getRedisStats(): Promise<RedisStats> {
     const client = getRedisClient();
-    const localCache = { size: memoryRateLimitBuckets.size, maxSize: -1 };
+    const localCache = (client as any)?.localCache as { size: number; maxSize: number } ?? { size: 0, maxSize: 0 };
     const defaultStats: RedisStats = {
         connected: false,
         memoryUsed: 'N/A',
@@ -676,8 +631,8 @@ export async function clearPlayerCacheEntry(key: string): Promise<void> {
 
 export async function clearAllPlayerCacheEntries(): Promise<number> {
     // Mass invalidation using namespace versioning (O(1))
-    await incrementCacheVersion();
-    return 0;
+    const newVersion = await incrementCacheVersion();
+    return newVersion > 0 ? -1 : 0; // Return -1 to indicate "all" invalidated without counting
 }
 
 export async function deletePlayerCacheEntries(keys: string[]): Promise<number> {

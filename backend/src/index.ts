@@ -12,7 +12,6 @@ import {
   CACHE_DB_POOL_MAX,
   CACHE_DB_POOL_MIN,
   TRUST_PROXY_CIDRS,
-  TRUST_PROXY_ENABLED,
   CRON_API_KEYS,
 } from './config';
 import { purgeExpiredEntries, closeCache, pool as cachePool } from './services/cache';
@@ -48,26 +47,15 @@ function isIPInCIDR(ip: string, cidr: string): boolean {
   try {
     const [network, prefix] = ipaddr.parseCIDR(cidr);
     let parsedIp = ipaddr.parse(ip);
-    if (parsedIp.kind() === 'ipv6') {
-      const ipv6 = parsedIp as any;
-      if (ipv6.isIPv4MappedAddress()) {
-        parsedIp = ipv6.toIPv4Address();
-      }
+    if (parsedIp.kind() === 'ipv6' && parsedIp.isIPv4MappedAddress()) {
+      parsedIp = parsedIp.toIPv4Address();
     }
 
     if (parsedIp.kind() !== network.kind()) {
       return false;
     }
 
-    if (parsedIp.kind() === 'ipv4' && network.kind() === 'ipv4') {
-      return (parsedIp as any).match([network, prefix]);
-    }
-
-    if (parsedIp.kind() === 'ipv6' && network.kind() === 'ipv6') {
-      return (parsedIp as any).match([network, prefix]);
-    }
-
-    return false;
+    return parsedIp.match([network, prefix]);
   } catch {
     return false;
   }
@@ -241,9 +229,9 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   res.status(500).json({ success: false, cause: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
 });
 
-if (process.env.NODE_ENV === 'production' && !TRUST_PROXY_ENABLED) {
-  console.warn('[startup] WARNING: Production environment detected but TRUST_PROXY_CIDRS is empty.');
-  console.warn('[startup] If this application is behind a proxy (e.g., Nginx, Cloudflare, Render), rate limiting may not work correctly as all clients will appear to have the same IP address.');
+if (process.env.NODE_ENV === "production" && !TRUST_PROXY_ENABLED) {
+  console.warn("[startup] WARNING: Production environment detected but TRUST_PROXY_CIDRS is empty.");
+  console.warn("[startup] If this application is behind a proxy (e.g., Nginx, Cloudflare, Render), rate limiting may not work correctly as all clients will appear to have the same IP address.");
 }
 
 const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
