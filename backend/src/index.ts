@@ -35,13 +35,76 @@ import apikeyRouter from './routes/apikey';
 import statsRouter from './routes/stats';
 import configRouter from './routes/config';
 import cronRouter from './routes/cron';
-import { securityHeaders } from './middleware/securityHeaders';
+import helmet from 'helmet';
+import pinoHttp from 'pino-http';
+import crypto from 'crypto';
+import { requestId } from './middleware/requestId';
+import { logger } from './util/logger';
 import { sanitizeUrlForLogs } from './util/requestUtils';
 
 const app = express();
 
-app.disable('x-powered-by');
-app.use(securityHeaders);
+app.use(requestId);
+app.use((req, res, next) => {
+  res.locals.nonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", (_req, res) => `'nonce-${(res as any).locals.nonce}'`, "'strict-dynamic'"],
+      styleSrc: ["'self'", (_req, res) => `'nonce-${(res as any).locals.nonce}'`],
+      imgSrc: ["'self'", "data:"],
+      connectSrc: ["'self'", "https://cdn.jsdelivr.net"],
+      objectSrc: ["'none'"],
+      baseUri: ["'none'"],
+      formAction: ["'self'"],
+      frameAncestors: ["'none'"],
+      upgradeInsecureRequests: [],
+    },
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  },
+  referrerPolicy: {
+    policy: 'strict-origin-when-cross-origin',
+  },
+  frameguard: {
+    action: 'deny',
+  },
+}));
+
+app.use((_req, res, next) => {
+  res.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=(), interest-cohort=()');
+  next();
+});
+
+app.use(pinoHttp({
+  logger,
+  genReqId: (req) => req.id,
+  customLogLevel: (_req, res, err) => {
+    if (res.statusCode >= 500 || err) return 'error';
+    if (res.statusCode >= 400) return 'warn';
+    return 'info';
+  },
+  serializers: {
+    req: (req) => ({
+      id: req.id,
+      method: req.method,
+      url: sanitizeUrlForLogs(req.url),
+    }),
+  },
+  customSuccessMessage: (req, res, responseTime) => {
+    return `[request] ${req.method} ${sanitizeUrlForLogs(req.url)} -> ${res.statusCode} (${responseTime.toFixed(2)} ms)`;
+  },
+  customErrorMessage: (req, res, err) => {
+    return `[request] ${req.method} ${sanitizeUrlForLogs(req.url)} -> ${res.statusCode} (${err.message})`;
+  },
+}));
 
 function isIPInCIDR(ip: string, cidr: string): boolean {
   try {
@@ -75,7 +138,6 @@ app.use((req, res, next) => {
   res.on('finish', () => {
     const end = process.hrtime.bigint();
     const durationSeconds = Number(end - start) / 1_000_000_000;
-    const durationMs = durationSeconds * 1000;
     const routeLabel =
       typeof res.locals.metricsRoute === 'string'
         ? res.locals.metricsRoute
@@ -83,20 +145,6 @@ app.use((req, res, next) => {
           ? `${req.baseUrl}${req.route?.path ?? ''}`
           : req.route?.path ?? req.path;
     observeRequest(req.method, routeLabel, res.statusCode, durationSeconds);
-
-    const rawTarget = req.originalUrl ?? req.url ?? routeLabel;
-    const target = sanitizeUrlForLogs(rawTarget);
-    const message = `[request] ${req.method} ${target} -> ${res.statusCode} (${durationMs.toFixed(2)} ms)`;
-    if (res.statusCode >= 500) {
-      console.error(message);
-    } else if (res.statusCode === 429) {
-      // Rate limit blocks are logged separately by the rate limit middleware
-      // Skip duplicate logging here
-    } else if (res.statusCode >= 400) {
-      console.warn(message);
-    } else {
-      console.info(message);
-    }
   });
   next();
 });
@@ -119,7 +167,7 @@ app.get('/healthz', async (_req, res) => {
       .query('SELECT 1')
       .then(() => true)
       .catch((error) => {
-        console.error('Database health check failed', error);
+        logger.error('Database health check failed', error);
         return false;
       }),
     checkHypixelReachability(),
@@ -173,16 +221,16 @@ app.get('/metrics', async (_req, res) => {
 });
 
 void purgeExpiredEntries().catch((error) => {
-  console.error('Failed to purge expired cache entries', error);
+  logger.error('Failed to purge expired cache entries', error);
 });
 
 void initializeDynamicRateLimitService().catch((error) => {
-  console.error('Failed initializing dynamic rate limit service', error);
+  logger.error('Failed initializing dynamic rate limit service', error);
   process.exit(1);
 });
 
 void initializeResourceMetrics().catch((error) => {
-  console.error('Failed initializing resource metrics', error);
+  logger.error('Failed initializing resource metrics', error);
   process.exit(1);
 });
 
@@ -191,7 +239,7 @@ startHistoryFlushInterval();
 
 const purgeInterval = setInterval(() => {
   void purgeExpiredEntries().catch((error) => {
-    console.error('Failed to purge expired cache entries', error);
+    logger.error('Failed to purge expired cache entries', error);
   });
 }, 60 * 60 * 1000);
 
@@ -219,20 +267,20 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   }
 
   if (err instanceof Error) {
-    console.error('Unexpected error:', err.message);
+    logger.error('Unexpected error:', err.message);
     if (err.stack) {
-      console.error(err.stack);
+      logger.error(err.stack);
     }
   } else {
-    console.error('Unexpected error (non-Error object):', String(err));
+    logger.error('Unexpected error (non-Error object):', String(err));
   }
   res.status(500).json({ success: false, cause: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
 });
 
 const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
   const location = CLOUD_FLARE_TUNNEL || `http://${SERVER_HOST}:${SERVER_PORT}`;
-  console.log(`Levelhead proxy listening at ${location}`);
-  console.log(`Cache DB pool configured with min=${CACHE_DB_POOL_MIN} max=${CACHE_DB_POOL_MAX}.`);
+  logger.info(`Levelhead proxy listening at ${location}`);
+  logger.info(`Cache DB pool configured with min=${CACHE_DB_POOL_MIN} max=${CACHE_DB_POOL_MAX}.`);
 
   startAdaptiveTtlRefresh();
   startKeyCountRefresher();
@@ -240,7 +288,7 @@ const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
   void Promise.all([
     getRedisClient()?.ping().catch(() => {}),
     cachePool.query('SELECT 1').catch(() => {}),
-  ]).then(() => console.info('[startup] connections warmed'));
+  ]).then(() => logger.info('[startup] connections warmed'));
 });
 
 let shuttingDown = false;
@@ -249,7 +297,7 @@ let cacheClosePromise: Promise<void> | null = null;
 function safeCloseCache(): Promise<void> {
   if (!cacheClosePromise) {
     cacheClosePromise = closeCache().catch((error) => {
-      console.error('Error closing cache database', error);
+      logger.error('Error closing cache database', error);
     });
   }
 
@@ -262,7 +310,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   }
 
   shuttingDown = true;
-  console.log(`Received ${signal}. Shutting down gracefully...`);
+  logger.info(`Received ${signal}. Shutting down gracefully...`);
   clearInterval(purgeInterval);
   stopHistoryFlushInterval();
   stopDynamicRateLimitService();
@@ -271,7 +319,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
   stopResourceMetrics();
 
   const forcedShutdown = setTimeout(() => {
-    console.error('Forcing shutdown.');
+    logger.error('Forcing shutdown.');
     void safeCloseCache();
     process.exit(1);
   }, 15000);
@@ -281,7 +329,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
     await new Promise<void>((resolve) => {
       server.close((err?: Error) => {
         if (err) {
-          console.error('Error closing HTTP server', err);
+          logger.error('Error closing HTTP server', err);
           process.exitCode = 1;
         }
 
@@ -290,14 +338,14 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
     });
     // Flush history buffer before closing cache
     await flushHistoryBuffer().catch((error) => {
-      console.error('Error flushing history buffer during shutdown', error);
+      logger.error('Error flushing history buffer during shutdown', error);
     });
     // Flush hypixel tracker buffer before closing cache
     await shutdownHypixelTracker().catch((error) => {
-      console.error('Error shutting down hypixel tracker during shutdown', error);
+      logger.error('Error shutting down hypixel tracker during shutdown', error);
     });
     // Flush resource metrics before closing cache
-    await flushResourceMetricsOnShutdown().catch(err => console.error('Failed to flush resource metrics on shutdown', err));
+    await flushResourceMetricsOnShutdown().catch(err => logger.error('Failed to flush resource metrics on shutdown', err));
   } finally {
     safeCloseCache().finally(() => {
       clearTimeout(forcedShutdown);

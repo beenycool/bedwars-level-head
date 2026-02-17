@@ -5,6 +5,7 @@ import { fetchHypixelPlayer, HypixelFetchOptions, extractMinimalStats, MinimalPl
 import { lookupProfileByUsername } from './mojang';
 import { recordCacheMiss, recordCacheRefresh, recordCacheSourceHit } from './metrics';
 import {
+import { logger } from '../util/logger';
   buildPlayerCacheKey,
   fetchWithDedupe,
   getIgnMapping,
@@ -66,7 +67,7 @@ function setMemoized(prefix: string, value: string, resolved: ResolvedPlayer): v
 }
 
 function logBackgroundRefreshFailure(message: string, error: unknown): void {
-  console.warn(message, error);
+  logger.warn(message, error);
 }
 
 function scheduleBackgroundRefresh(task: () => Promise<void>, errorMessage: string): void {
@@ -170,12 +171,12 @@ async function refreshUuidCache(
         etag: cacheMetadata.etag ?? undefined,
         lastModified: cacheMetadata.lastModified ?? undefined,
         source: cacheEntry.source ?? 'hypixel',
-      }).catch((e) => console.warn('[player] L1 revalidation write failed', e));
+      }).catch((e) => logger.warn('[player] L1 revalidation write failed', e));
 
       const displayname = normalizeDisplayName(cacheEntry.value.displayname);
       if (displayname) {
         void setIgnMapping(displayname.toLowerCase(), normalizedUuid, false)
-          .catch((e) => console.warn('[player] ign mapping revalidation write failed', e));
+          .catch((e) => logger.warn('[player] ign mapping revalidation write failed', e));
       }
 
       const resolved = buildResolvedFromStats(
@@ -208,12 +209,12 @@ async function refreshUuidCache(
   recordCacheSourceHit('upstream');
 
   void setPlayerStatsBoth(cacheKey, stats, { etag, lastModified, source: 'hypixel' })
-    .catch((e) => console.warn('[player] cache write failed', e));
+    .catch((e) => logger.warn('[player] cache write failed', e));
 
   const displayname = normalizeDisplayName(stats.displayname);
   if (displayname) {
     void setIgnMapping(displayname.toLowerCase(), normalizedUuid, false)
-      .catch((e) => console.warn('[player] ign mapping write failed', e));
+      .catch((e) => logger.warn('[player] ign mapping write failed', e));
   }
 
   const resolved = buildResolvedFromStats(
@@ -408,7 +409,7 @@ export async function warmupPlayerCache(identifiers: string[]): Promise<void> {
       setMemoized('player', uuid, resolved);
     }
   } catch (error) {
-    console.warn('[player] warmupPlayerCache failed', error);
+    logger.warn('[player] warmupPlayerCache failed', error);
   }
 }
 

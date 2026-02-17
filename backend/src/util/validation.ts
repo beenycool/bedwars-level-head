@@ -6,6 +6,7 @@
 import { isNonArrayObject } from './typeChecks';
 import { getRedisClient } from '../services/redis';
 import { SUBMISSION_TTL_MS } from '../config';
+import { logger } from './logger';
 
 export interface NonceValidationResult {
     valid: boolean;
@@ -347,7 +348,7 @@ export async function validateTimestampAndNonce(
     const redis = getRedisClient();
     if (!redis) {
         // Redis unavailable - fail closed for security (reject submission)
-        console.warn('[nonce-validation] Redis unavailable, rejecting submission for replay protection');
+        logger.warn('[nonce-validation] Redis unavailable, rejecting submission for replay protection');
         return {
             valid: false,
             error: 'Replay protection service temporarily unavailable. Please retry.',
@@ -375,7 +376,7 @@ export async function validateTimestampAndNonce(
         return { valid: true, statusCode: 200 };
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.error('[nonce-validation] Redis operation failed:', message);
+        logger.error('[nonce-validation] Redis operation failed:', message);
         
         // Redis error - fail closed for security
         return {

@@ -16,6 +16,7 @@ import { DatabaseType } from './database/adapter';
 import { recordCacheHit, recordCacheMiss, recordCacheTierHit, recordCacheTierMiss, recordCacheSourceHit, recordCacheRefresh } from './metrics';
 import { fetchHypixelPlayer, HypixelFetchOptions, MinimalPlayerStats, extractMinimalStats } from './hypixel';
 import { getRedisClient, isRedisAvailable } from './redis';
+import { logger } from '../util/logger';
 
 // Single-flight pattern: dedupe concurrent upstream fetches for the same UUID
 // Prevents cache stampede (thundering herd) when multiple requests hit a cache miss
@@ -190,7 +191,7 @@ async function refreshAdaptiveTtl(): Promise<void> {
     info = await client.info('memory');
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.warn('[statsCache] redis memory info failed', message);
+    logger.warn('[statsCache] redis memory info failed', message);
     cachedAdaptiveTtlMs = PLAYER_L1_TTL_FALLBACK_MS;
     return;
   }
@@ -234,11 +235,11 @@ export function startAdaptiveTtlRefresh(): void {
     return;
   }
   void refreshAdaptiveTtl().catch((e) =>
-    console.warn('[statsCache] initial adaptive TTL refresh failed', e),
+    logger.warn('[statsCache] initial adaptive TTL refresh failed', e),
   );
   adaptiveTtlInterval = setInterval(() => {
     void refreshAdaptiveTtl().catch((e) =>
-      console.warn('[statsCache] adaptive TTL refresh failed', e),
+      logger.warn('[statsCache] adaptive TTL refresh failed', e),
     );
   }, PLAYER_L1_INFO_REFRESH_MS);
 }
@@ -326,7 +327,7 @@ async function getManyPlayerStatsFromDb(
       if (!entry) {
         if (!includeExpired) {
           void pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [cacheKey])
-            .catch((e) => console.warn('[statsCache] failed to delete invalid L2 entry', e));
+            .catch((e) => logger.warn('[statsCache] failed to delete invalid L2 entry', e));
         }
         continue;
       }
@@ -335,7 +336,7 @@ async function getManyPlayerStatsFromDb(
       if (Number.isNaN(entry.expiresAt) || entry.expiresAt <= now) {
         if (!includeExpired) {
           void pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [cacheKey])
-            .catch((e) => console.warn('[statsCache] failed to delete expired L2 entry', e));
+            .catch((e) => logger.warn('[statsCache] failed to delete expired L2 entry', e));
         }
         if (includeExpired) {
           result.set(cacheKey, entry);
@@ -346,7 +347,7 @@ async function getManyPlayerStatsFromDb(
       result.set(cacheKey, entry);
     }
   } catch (error) {
-    console.error('[statsCache] failed to batch read L2 cache', error);
+    logger.error('[statsCache] failed to batch read L2 cache', error);
   }
 
   return result;
@@ -387,7 +388,7 @@ async function getPlayerStatsFromDb(
 
     return entry;
   } catch (error) {
-    console.error('[statsCache] failed to read L2 cache', error);
+    logger.error('[statsCache] failed to read L2 cache', error);
     return null;
   }
 }
@@ -438,7 +439,7 @@ async function setPlayerStatsInDb(
     }
     markDbAccess();
   } catch (error) {
-    console.error('[statsCache] failed to write L2 cache', error);
+    logger.error('[statsCache] failed to write L2 cache', error);
   }
 }
 
@@ -471,7 +472,7 @@ async function getIgnMappingFromDb(ign: string, includeExpired: boolean): Promis
 
     return { uuid: row.uuid, nicked: Boolean(row.nicked), expiresAt };
   } catch (error) {
-    console.error('[statsCache] failed to read ign mapping', error);
+    logger.error('[statsCache] failed to read ign mapping', error);
     return null;
   }
 }
@@ -510,7 +511,7 @@ async function setIgnMappingInDb(ign: string, uuid: string | null, nicked: boole
     }
     markDbAccess();
   } catch (error) {
-    console.error('[statsCache] failed to write ign mapping', error);
+    logger.error('[statsCache] failed to write ign mapping', error);
   }
 }
 
@@ -545,7 +546,7 @@ async function getIgnMappingFromRedis(ign: string, includeExpired: boolean): Pro
     return { uuid: parsed.uuid, nicked: parsed.nicked, expiresAt };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error('[statsCache] getIgnMapping failed', message);
+    logger.error('[statsCache] getIgnMapping failed', message);
     return null;
   }
 }
@@ -567,7 +568,7 @@ async function setIgnMappingInRedis(ign: string, mapping: IgnMappingEntry, ttlMs
     await client.setex(redisKey, Math.ceil(ttlMs / 1000), data);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error('[statsCache] setIgnMapping failed', message);
+    logger.error('[statsCache] setIgnMapping failed', message);
   }
 }
 
@@ -610,7 +611,7 @@ export async function getPlayerStatsFromCache(
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error('[statsCache] L1 read failed', message);
+      logger.error('[statsCache] L1 read failed', message);
     }
   }
 
@@ -636,7 +637,7 @@ export async function getPlayerStatsFromCache(
         etag: l2Entry.etag ?? undefined,
         lastModified: l2Entry.lastModified ?? undefined,
         source: l2Entry.source ?? undefined,
-      }).catch((e) => console.warn('[statsCache] L1 backfill failed', e));
+      }).catch((e) => logger.warn('[statsCache] L1 backfill failed', e));
     }
     return l2Entry;
   }
@@ -731,7 +732,7 @@ export async function getPlayerStatsFromCacheWithSWR(
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      console.error('[statsCache] L1 SWR read failed', message);
+      logger.error('[statsCache] L1 SWR read failed', message);
     }
   }
 
@@ -758,7 +759,7 @@ export async function getPlayerStatsFromCacheWithSWR(
           etag: l2Entry.etag ?? undefined,
           lastModified: l2Entry.lastModified ?? undefined,
           source: l2Entry.source ?? undefined,
-        }).catch((e) => console.warn('[statsCache] L1 backfill failed', e));
+        }).catch((e) => logger.warn('[statsCache] L1 backfill failed', e));
         
         return {
           ...l2Entry,
@@ -840,7 +841,7 @@ function triggerBackgroundRefresh(
         recordCacheRefresh('success');
       }
     } catch (error) {
-      console.warn('[statsCache] background refresh failed for %s', uuid, error);
+      logger.warn('[statsCache] background refresh failed for %s', uuid, error);
       recordCacheRefresh('fail');
     } finally {
       backgroundRefreshLocks.delete(key);
@@ -938,7 +939,7 @@ export async function getManyPlayerStatsFromCacheWithSWR(
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error('[statsCache] L1 batch read failed', message);
+    logger.error('[statsCache] L1 batch read failed', message);
   }
 
   const missing = identifiers.filter((i) => !result.has(i.key));
@@ -967,7 +968,7 @@ export async function getManyPlayerStatsFromCacheWithSWR(
           etag: entry.etag ?? undefined,
           lastModified: entry.lastModified ?? undefined,
           source: entry.source ?? undefined,
-        }).catch((e) => console.warn('[statsCache] L1 backfill failed', e));
+        }).catch((e) => logger.warn('[statsCache] L1 backfill failed', e));
 
         result.set(key, {
           ...entry,
@@ -1006,7 +1007,7 @@ export async function getManyPlayerStatsFromCacheWithSWR(
             await pool.query(`DELETE FROM player_stats_cache WHERE cache_key IN (${placeholders})`, expiredKeys);
           }
         } catch (e) {
-          console.warn('[statsCache] failed to batch delete expired L2 entries', e);
+          logger.warn('[statsCache] failed to batch delete expired L2 entries', e);
         }
       };
       void doBatchDelete();
@@ -1055,7 +1056,7 @@ export async function setPlayerStatsL1(
     await client.setex(redisKey, Math.ceil(ttlMs / 1000), data);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    console.error('[statsCache] setPlayerStatsL1 failed', message);
+    logger.error('[statsCache] setPlayerStatsL1 failed', message);
   }
 }
 
@@ -1092,7 +1093,7 @@ export async function getIgnMapping(
     if (l2Entry.expiresAt > now) {
       const ttlMs = getAdaptiveL1TtlMs();
       void setIgnMappingInRedis(ign, l2Entry, ttlMs).catch((e) =>
-        console.warn('[statsCache] IGN L1 backfill failed', e),
+        logger.warn('[statsCache] IGN L1 backfill failed', e),
       );
     }
     return l2Entry;
@@ -1123,7 +1124,7 @@ export async function deletePlayerStatsEntries(keys: string[]): Promise<number> 
         await client.del(...redisKeys);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error('[statsCache] delete L1 stats failed', message);
+        logger.error('[statsCache] delete L1 stats failed', message);
       }
     }
   }
@@ -1142,7 +1143,7 @@ export async function deletePlayerStatsEntries(keys: string[]): Promise<number> 
     markDbAccess();
     return result.rowCount;
   } catch (error) {
-    console.error('[statsCache] delete L2 stats failed', error);
+    logger.error('[statsCache] delete L2 stats failed', error);
     return 0;
   }
 }
@@ -1160,7 +1161,7 @@ export async function deleteIgnMappings(igns: string[]): Promise<number> {
         await client.del(...redisKeys);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error('[statsCache] delete L1 ign mappings failed', message);
+        logger.error('[statsCache] delete L1 ign mappings failed', message);
       }
     }
   }
@@ -1179,7 +1180,7 @@ export async function deleteIgnMappings(igns: string[]): Promise<number> {
     markDbAccess();
     return result.rowCount;
   } catch (error) {
-    console.error('[statsCache] delete L2 ign mappings failed', error);
+    logger.error('[statsCache] delete L2 ign mappings failed', error);
     return 0;
   }
 }
@@ -1203,7 +1204,7 @@ export async function clearAllPlayerStatsCaches(): Promise<number> {
         } while (cursor !== '0');
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
-        console.error('[statsCache] clear L1 caches failed', message);
+        logger.error('[statsCache] clear L1 caches failed', message);
       }
     }
   }
@@ -1216,7 +1217,7 @@ export async function clearAllPlayerStatsCaches(): Promise<number> {
     markDbAccess();
     return deleted + statsResult.rowCount + ignResult.rowCount;
   } catch (error) {
-    console.error('[statsCache] clear L2 caches failed', error);
+    logger.error('[statsCache] clear L2 caches failed', error);
     return deleted;
   }
 }

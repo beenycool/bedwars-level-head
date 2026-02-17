@@ -2,6 +2,7 @@ import { Mutex } from 'async-mutex';
 import { pool } from './cache';
 import { DatabaseType } from './database/adapter';
 import os from 'os';
+import { logger } from '../util/logger';
 
 interface MemorySample {
   timestamp: number;
@@ -255,7 +256,7 @@ async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
       }
     }
   } catch (err) {
-    console.error('[resourceMetrics] failed to persist aggregate', err);
+    logger.error('[resourceMetrics] failed to persist aggregate', err);
     throw err;
   }
 }
@@ -278,9 +279,9 @@ async function flushBuffer(): Promise<void> {
       const retainedSamples = memoryBuffer.filter(sample => sample.timestamp > maxPersistedTimestamp);
       memoryBuffer.splice(0, memoryBuffer.length, ...retainedSamples);
       const uniqueBuckets = aggregates.length;
-      console.info(`[resourceMetrics] flushed ${samples.length} samples across ${uniqueBuckets} bucket${uniqueBuckets > 1 ? 's' : ''}`);
+      logger.info(`[resourceMetrics] flushed ${samples.length} samples across ${uniqueBuckets} bucket${uniqueBuckets > 1 ? 's' : ''}`);
     } catch (error) {
-      console.warn('Failed to flush resource metrics buffer, retaining for retry:', error);
+      logger.warn('Failed to flush resource metrics buffer, retaining for retry:', error);
     }
   } finally {
     release();
@@ -295,16 +296,16 @@ async function pruneOldData(): Promise<void> {
     if (pool.type === DatabaseType.POSTGRESQL) {
       const result = await pool.query('DELETE FROM resource_metrics WHERE bucket_start < $1', [cutoff]);
       if (result.rowCount > 0) {
-        console.info(`[resourceMetrics] pruned ${result.rowCount} old records`);
+        logger.info(`[resourceMetrics] pruned ${result.rowCount} old records`);
       }
     } else {
       const result = await pool.query('DELETE FROM resource_metrics WHERE bucket_start < @p1', [cutoff]);
       if (result.rowCount > 0) {
-        console.info(`[resourceMetrics] pruned ${result.rowCount} old records`);
+        logger.info(`[resourceMetrics] pruned ${result.rowCount} old records`);
       }
     }
   } catch (err) {
-    console.error('[resourceMetrics] failed to prune old data', err);
+    logger.error('[resourceMetrics] failed to prune old data', err);
   }
 }
 
@@ -411,16 +412,16 @@ export async function initializeResourceMetrics(): Promise<void> {
         CREATE UNIQUE INDEX idx_resource_metrics_bucket ON resource_metrics (bucket_start)
       `);
     }
-    console.info('[resourceMetrics] table is ready');
+    logger.info('[resourceMetrics] table is ready');
   } catch (err) {
-    console.error('[resourceMetrics] failed to initialize table', err);
+    logger.error('[resourceMetrics] failed to initialize table', err);
     throw err;
   }
 
   getCpuPercent();
 
   sampleInterval = setInterval(() => {
-    void takeSample().catch(err => console.error('[resourceMetrics] sample error', err));
+    void takeSample().catch(err => logger.error('[resourceMetrics] sample error', err));
   }, SAMPLE_INTERVAL_MS);
 
   const now = new Date();
@@ -428,15 +429,15 @@ export async function initializeResourceMetrics(): Promise<void> {
   const msUntilNextBucket = nextBucket.getTime() - now.getTime();
 
   alignmentTimeout = setTimeout(() => {
-    void flushBuffer().catch(err => console.error('[resourceMetrics] flush error', err));
-    void pruneOldData().catch(err => console.error('[resourceMetrics] prune error', err));
+    void flushBuffer().catch(err => logger.error('[resourceMetrics] flush error', err));
+    void pruneOldData().catch(err => logger.error('[resourceMetrics] prune error', err));
     flushInterval = setInterval(() => {
-      void flushBuffer().catch(err => console.error('[resourceMetrics] flush error', err));
-      void pruneOldData().catch(err => console.error('[resourceMetrics] prune error', err));
+      void flushBuffer().catch(err => logger.error('[resourceMetrics] flush error', err));
+      void pruneOldData().catch(err => logger.error('[resourceMetrics] prune error', err));
     }, FLUSH_INTERVAL_MS);
   }, msUntilNextBucket);
 
-  console.info('[resourceMetrics] initialized');
+  logger.info('[resourceMetrics] initialized');
 }
 
 export function stopResourceMetrics(): void {
@@ -604,7 +605,7 @@ export async function getResourceMetricsHistory(
       .filter(r => r.bucketStart >= cutoff && (!endDate || r.bucketStart <= endDate))
       .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime());
   } catch (err) {
-    console.error('[resourceMetrics] failed to get history', err);
+    logger.error('[resourceMetrics] failed to get history', err);
     return [];
   }
 }

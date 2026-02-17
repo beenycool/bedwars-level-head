@@ -3,6 +3,7 @@ import { recordCacheHit, recordCacheMiss } from './metrics';
 import { database as pool } from './database/factory';
 import { DatabaseType } from './database/adapter';
 import {
+import { logger } from '../util/logger';
     getPlayerCacheEntry,
     setPlayerCacheEntry,
     clearAllPlayerCacheEntries,
@@ -99,7 +100,7 @@ async function ensureRateLimitTable(): Promise<void> {
     const dataType = columnInfo.rows[0]?.data_type;
     if (dataType && dataType.toLowerCase() !== 'bigint') {
       await pool.query('ALTER TABLE rate_limits ALTER COLUMN count TYPE BIGINT USING count::BIGINT');
-      console.info('[cache] migrated rate_limits.count column to BIGINT');
+      logger.info('[cache] migrated rate_limits.count column to BIGINT');
     }
   }
 }
@@ -174,13 +175,13 @@ async function ensurePlayerStatsTables(): Promise<void> {
 }
 
 const initialization = (async () => {
-  console.info('[cache] player cache: Redis L1 + SQL L2');
+  logger.info('[cache] player cache: Redis L1 + SQL L2');
 
   await ensureRateLimitTable();
-  console.info('[cache] rate_limits table is ready');
+  logger.info('[cache] rate_limits table is ready');
 
   await ensurePlayerStatsTables();
-  console.info('[cache] player_stats_cache tables are ready');
+  logger.info('[cache] player_stats_cache tables are ready');
 
   if (pool.type === DatabaseType.POSTGRESQL) {
     await pool.query(
@@ -205,7 +206,7 @@ const initialization = (async () => {
     await pool.query("IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_rate_limits_window') CREATE INDEX idx_rate_limits_window ON rate_limits (window_start)");
   }
 
-  console.info('[cache] hypixel_api_calls table is ready');
+  logger.info('[cache] hypixel_api_calls table is ready');
 })();
 
 export async function ensureInitialized(): Promise<void> {
@@ -219,13 +220,13 @@ export async function purgeExpiredEntries(now: number = Date.now()): Promise<voi
   const statsResult = await pool.query('DELETE FROM player_stats_cache WHERE expires_at <= $1', [now]);
   const purgedStats = statsResult.rowCount;
   if (purgedStats > 0) {
-    console.info(`[cache] purged ${purgedStats} expired player_stats_cache entries`);
+    logger.info(`[cache] purged ${purgedStats} expired player_stats_cache entries`);
   }
 
   const ignResult = await pool.query('DELETE FROM ign_uuid_cache WHERE expires_at <= $1', [now]);
   const purgedIgn = ignResult.rowCount;
   if (purgedIgn > 0) {
-    console.info(`[cache] purged ${purgedIgn} expired ign_uuid_cache entries`);
+    logger.info(`[cache] purged ${purgedIgn} expired ign_uuid_cache entries`);
   }
   markDbAccess();
 
@@ -236,7 +237,7 @@ export async function purgeExpiredEntries(now: number = Date.now()): Promise<voi
   const historyResult = await pool.query(historyQuery);
   const purgedHistory = historyResult.rowCount;
   if (purgedHistory > 0) {
-    console.info(`[cache] purged ${purgedHistory} historical query entries older than 30 days`);
+    logger.info(`[cache] purged ${purgedHistory} historical query entries older than 30 days`);
   }
 
   const staleRateLimitThreshold = now - 60 * 60 * 1000;
@@ -245,7 +246,7 @@ export async function purgeExpiredEntries(now: number = Date.now()): Promise<voi
   ]);
   const purgedBuckets = rateLimitResult.rowCount;
   if (purgedBuckets > 0) {
-    console.info(`[cache] purged ${purgedBuckets} expired rate limit entries`);
+    logger.info(`[cache] purged ${purgedBuckets} expired rate limit entries`);
   }
   const hypixelCutoff = now - HYPIXEL_API_CALL_WINDOW_MS;
   const hypixelResult = await pool.query('DELETE FROM hypixel_api_calls WHERE called_at <= $1', [
@@ -253,7 +254,7 @@ export async function purgeExpiredEntries(now: number = Date.now()): Promise<voi
   ]);
   const purgedCalls = hypixelResult.rowCount;
   if (purgedCalls > 0) {
-    console.info(`[cache] purged ${purgedCalls} expired hypixel_api_calls entries`);
+    logger.info(`[cache] purged ${purgedCalls} expired hypixel_api_calls entries`);
   }
 }
 
@@ -427,7 +428,7 @@ export async function deleteCacheEntries(keys: string[]): Promise<number> {
 
 export async function closeCache(): Promise<void> {
   await pool.close();
-  console.info('[cache] database closed');
+  logger.info('[cache] database closed');
 }
 
 export async function getActivePrivateUserCount(since: number): Promise<number> {

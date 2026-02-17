@@ -2,6 +2,7 @@ import { config as loadEnv } from 'dotenv';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import ipaddr from 'ipaddr.js';
+import { logger } from './util/logger';
 
 loadEnv();
 
@@ -137,7 +138,7 @@ function parseCIDRListEnv(value: string | undefined): string[] {
   // Validate each CIDR and filter out invalid ones
   const validCidrs = cidrs.filter((cidr) => {
     if (!isValidCIDR(cidr)) {
-      console.warn(`[config] Invalid CIDR in TRUST_PROXY_CIDRS: "${cidr}" — skipping`);
+      logger.warn(`[config] Invalid CIDR in TRUST_PROXY_CIDRS: "${cidr}" — skipping`);
       return false;
     }
     return true;
@@ -146,7 +147,7 @@ function parseCIDRListEnv(value: string | undefined): string[] {
   // Warn about too permissive CIDRs
   for (const cidr of validCidrs) {
     if (isTooPermissiveCIDR(cidr)) {
-      console.warn(`[config] WARNING: TRUST_PROXY_CIDRS includes ${cidr} which is too permissive and may allow IP spoofing`);
+      logger.warn(`[config] WARNING: TRUST_PROXY_CIDRS includes ${cidr} which is too permissive and may allow IP spoofing`);
     }
   }
 
@@ -324,7 +325,7 @@ function readPackageVersion(): string {
       return parsed.version.trim();
     }
   } catch (error) {
-    console.warn('Unable to read backend package version for user-agent metadata', error);
+    logger.warn('Unable to read backend package version for user-agent metadata', error);
   }
 
   return 'dev';
@@ -378,7 +379,7 @@ function parseFallbackModeEnv(name: string, defaultValue: FallbackMode): Fallbac
   if (validFallbackModes.includes(normalized as FallbackMode)) {
     return normalized as FallbackMode;
   }
-  console.warn(`[config] Invalid ${name}: "${raw}". Using default: ${defaultValue}`);
+  logger.warn(`[config] Invalid ${name}: "${raw}". Using default: ${defaultValue}`);
   return defaultValue;
 }
 export const RATE_LIMIT_FALLBACK_MODE: FallbackMode = parseFallbackModeEnv('RATE_LIMIT_FALLBACK_MODE', 'memory');
