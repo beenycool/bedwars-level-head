@@ -133,7 +133,7 @@ function getObjectDepth(obj: unknown, currentDepth = 0): number {
     let maxDepth = currentDepth;
     for (const key in obj) {
         if (Object.prototype.hasOwnProperty.call(obj, key)) {
-            const value = (obj as any)[key];
+            const value = (obj as Record<string, unknown>)[key];
             const depth = getObjectDepth(value, currentDepth + 1);
             maxDepth = Math.max(maxDepth, depth);
             if (maxDepth > MAX_OBJECT_DEPTH) {

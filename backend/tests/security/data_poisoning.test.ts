@@ -17,7 +17,41 @@ describe('Data Poisoning Vulnerability', () => {
             final_deaths_bedwars: 5
         };
 
-        // This currently returns true (vulnerable), but SHOULD return false
+        expect(matchesCriticalFields(source, submitted)).toBe(false);
+    });
+
+    it('should pass when all critical fields match', () => {
+        const source = {
+            bedwars_experience: 1000,
+            kills_bedwars: 100,
+            wins_bedwars: 10,
+            final_kills_bedwars: 50,
+            final_deaths_bedwars: 5
+        };
+        const submitted = {
+            bedwars_experience: 1000,
+            kills_bedwars: 100,
+            wins_bedwars: 10,
+            final_kills_bedwars: 50,
+            final_deaths_bedwars: 5
+        };
+
+        expect(matchesCriticalFields(source, submitted)).toBe(true);
+    });
+
+    it('should fail if submitted omits a critical field present in source', () => {
+        const source = {
+            bedwars_experience: 1000,
+            kills_bedwars: 100,
+            wins_bedwars: 10,
+            final_kills_bedwars: 50
+        };
+        const submitted = {
+            bedwars_experience: 1000,
+            kills_bedwars: 100,
+            wins_bedwars: 10
+        };
+
         expect(matchesCriticalFields(source, submitted)).toBe(false);
     });
 
