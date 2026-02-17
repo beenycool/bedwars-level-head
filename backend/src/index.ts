@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 import express from 'express';
 import compression from 'compression';
 import playerRouter from './routes/player';
@@ -371,3 +372,6 @@ process.on('exit', () => {
   clearInterval(purgeInterval);
   void safeCloseCache();
 });
+=======
+import './server';
+>>>>>>> Stashed changes
