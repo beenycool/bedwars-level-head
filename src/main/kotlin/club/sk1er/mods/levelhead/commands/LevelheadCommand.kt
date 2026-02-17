@@ -403,6 +403,22 @@ class LevelheadCommand {
         sendMessage("${ChatColor.YELLOW}Render sampling debug logging: ${formatToggle(LevelheadConfig.debugRenderSampling)}${ChatColor.YELLOW}")
         sendMessage("${ChatColor.YELLOW}Cache size: ${ChatColor.GOLD}${snapshot.cacheSize}${ChatColor.YELLOW}, display cache entries: ${ChatColor.GOLD}$displayCache")
         sendMessage("${ChatColor.YELLOW}Rate limiter remaining: ${ChatColor.GOLD}${snapshot.rateLimitRemaining}${ChatColor.YELLOW}, proxy: ${if (snapshot.proxyEnabled) ChatColor.GREEN else ChatColor.GRAY}${if (snapshot.proxyEnabled) "enabled" else "disabled"}${ChatColor.YELLOW}")
+        sendMessage("${ChatColor.GRAY}Toggle: ${ChatColor.GOLD}/levelhead debugrender [on|off]${ChatColor.GRAY} to enable/disable render debug (logs header/footer above nametags to latest.log)")
+    }
+
+    @SubCommand(aliases = ["debugrender"])
+    fun debugRender(onOff: String = "") {
+        val arg = onOff.trim().lowercase(Locale.ROOT)
+        val newState = when (arg) {
+            "on", "1", "true" -> true
+            "off", "0", "false" -> false
+            else -> !LevelheadConfig.debugRenderSampling
+        }
+        LevelheadConfig.debugRenderSampling = newState
+        sendMessage(
+            "${ChatColor.GREEN}Render debug logging: ${formatToggle(newState)}${ChatColor.YELLOW}. " +
+                "Check ${ChatColor.GOLD}latest.log${ChatColor.YELLOW} for [LevelheadDebug][render] entries (header/footer per player)."
+        )
     }
 
     @SubCommand

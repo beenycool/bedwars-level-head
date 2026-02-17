@@ -95,6 +95,8 @@ The backend uses environment variables for all secrets and tunables. The `.env.e
 | `TRUST_PROXY` | ❌ | Express [trust proxy](https://expressjs.com/en/guide/behind-proxies.html) setting. Defaults to `false` to ignore forwarded IP headers. |
 | `BACKEND_VERSION` | ❌ | Overrides the version string used in outbound `User-Agent` headers and Prometheus build metrics. Defaults to `package.json` version. |
 | `BUILD_SHA` | ❌ | Optional revision/Git SHA included in outbound `User-Agent` headers and Prometheus build metrics. |
+| `RATE_LIMIT_REQUIRE_REDIS` | ❌ | If true, Redis is mandatory for rate limiting. Defaults to `true` in production, `false` otherwise. |
+| `RATE_LIMIT_FALLBACK_MODE` | ❌ | Fallback behavior when Redis is unavailable (`deny`, `allow`, or `memory`). Defaults to `deny` in production, `memory` otherwise. |
 
 Set these variables in your deployment environment or `.env` file.
 

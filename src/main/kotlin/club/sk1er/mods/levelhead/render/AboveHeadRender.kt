@@ -71,6 +71,7 @@ object AboveHeadRender {
                 null
             }
             if (display.loadOrRender(player) && tag != null) {
+                tag.lastSeen = System.currentTimeMillis()
                 var offset = when (displayPosition) {
                     MasterConfig.DisplayPosition.ABOVE -> 0.3
                     MasterConfig.DisplayPosition.BELOW -> -0.1

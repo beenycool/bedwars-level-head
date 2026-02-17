@@ -40,6 +40,7 @@ const BEDWARS_STATS_SCHEMA: Record<string, 'number' | 'string' | 'boolean' | 'ob
     // Core experience and level fields
     bedwars_experience: 'number',
     Experience: 'number',
+    experience: 'number',
 
     // Kill/Death stats
     kills_bedwars: 'number',
@@ -132,7 +133,7 @@ function getObjectDepth(obj: unknown, currentDepth = 0): number {
     let maxDepth = currentDepth;
     for (const key in obj) {
         if (Object.prototype.hasOwnProperty.call(obj, key)) {
-            const value = obj[key];
+            const value = (obj as Record<string, unknown>)[key];
             const depth = getObjectDepth(value, currentDepth + 1);
             maxDepth = Math.max(maxDepth, depth);
             if (maxDepth > MAX_OBJECT_DEPTH) {
@@ -231,12 +232,13 @@ export function validateBedwarsStats(data: unknown): ValidationResult {
     // Require at least one of the core experience fields
     const hasExperience =
         (typeof record.bedwars_experience === 'number' && Number.isFinite(record.bedwars_experience)) ||
-        (typeof record.Experience === 'number' && Number.isFinite(record.Experience));
+        (typeof record.Experience === 'number' && Number.isFinite(record.Experience)) ||
+        (typeof record.experience === 'number' && Number.isFinite(record.experience));
 
     if (!hasExperience) {
         errors.push({
             field: 'bedwars_experience',
-            message: 'At least one of bedwars_experience or Experience must be present and valid',
+            message: 'At least one of bedwars_experience, Experience or experience must be present and valid',
         });
     }
 
@@ -274,7 +276,15 @@ export function validatePlayerSubmission(
     return { valid: true, errors: [] };
 }
 
-export const criticalFields = ['bedwars_experience', 'Experience', 'kills_bedwars', 'wins_bedwars'];
+export const criticalFields = [
+    'bedwars_experience',
+    'Experience',
+    'experience',
+    'kills_bedwars',
+    'wins_bedwars',
+    'final_kills_bedwars',
+    'final_deaths_bedwars',
+];
 
 export function matchesCriticalFields(source: Record<string, unknown>, submitted: Record<string, unknown>): boolean {
     let hasMatchedAnyField = false;
