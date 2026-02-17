@@ -137,23 +137,11 @@ async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
   try {
     for (const aggregate of aggregates) {
       let existing;
-      if (pool.type === DatabaseType.POSTGRESQL) {
-        const res = await pool.query<{ sample_count: number, avg_rss_mb: number, max_rss_mb: number, min_rss_mb: number, p95_rss_mb: number, p99_rss_mb: number, avg_heap_mb: number, max_heap_mb: number, min_heap_mb: number, p95_heap_mb: number, p99_heap_mb: number, avg_cpu_percent: number, max_cpu_percent: number, min_cpu_percent: number, p95_cpu_percent: number, p99_cpu_percent: number }>(
-          'SELECT * FROM resource_metrics WHERE bucket_start = $1',
-          [aggregate.bucketStart]
-        );
-        existing = res.rows[0];
-      } else {
-        const res = await pool.query<any>(
-          'SELECT * FROM resource_metrics WHERE bucket_start = @p1',
-          [aggregate.bucketStart]
-        );
-        existing = res.rows[0];
-      }
+      const res = await pool.query<any>('SELECT * FROM resource_metrics WHERE bucket_start = $1', [aggregate.bucketStart]);
+      existing = res.rows[0];
 
       if (!existing) {
-        if (pool.type === DatabaseType.POSTGRESQL) {
-          await pool.query(
+        await pool.query(
             `INSERT INTO resource_metrics (
               bucket_start, avg_rss_mb, max_rss_mb, min_rss_mb, p95_rss_mb, p99_rss_mb,
               avg_heap_mb, max_heap_mb, min_heap_mb, p95_heap_mb, p99_heap_mb,
@@ -167,22 +155,6 @@ async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
               aggregate.sampleCount,
             ]
           );
-        } else {
-          await pool.query(
-            `INSERT INTO resource_metrics (
-              bucket_start, avg_rss_mb, max_rss_mb, min_rss_mb, p95_rss_mb, p99_rss_mb,
-              avg_heap_mb, max_heap_mb, min_heap_mb, p95_heap_mb, p99_heap_mb,
-              avg_cpu_percent, max_cpu_percent, min_cpu_percent, p95_cpu_percent, p99_cpu_percent,
-              sample_count
-            ) VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16, @p17)`,
-            [
-              aggregate.bucketStart, aggregate.avgRssMB, aggregate.maxRssMB, aggregate.minRssMB, aggregate.p95RssMB, aggregate.p99RssMB,
-              aggregate.avgHeapMB, aggregate.maxHeapMB, aggregate.minHeapMB, aggregate.p95HeapMB, aggregate.p99HeapMB,
-              aggregate.avgCpuPercent, aggregate.maxCpuPercent, aggregate.minCpuPercent, aggregate.p95CpuPercent, aggregate.p99CpuPercent,
-              aggregate.sampleCount,
-            ]
-          );
-        }
       } else {
         const existingSampleCount = existing.sample_count;
         const newTotalCount = existingSampleCount + aggregate.sampleCount;
@@ -208,8 +180,7 @@ async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
         const mergedP95CpuPercent = aggregate.p95CpuPercent;
         const mergedP99CpuPercent = aggregate.p99CpuPercent;
 
-        if (pool.type === DatabaseType.POSTGRESQL) {
-          await pool.query(
+        await pool.query(
             `UPDATE resource_metrics SET
               avg_rss_mb = $1, max_rss_mb = $2, min_rss_mb = $3,
               p95_rss_mb = $4, p99_rss_mb = $5,
@@ -230,29 +201,6 @@ async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
               aggregate.bucketStart,
             ]
           );
-        } else {
-          await pool.query(
-            `UPDATE resource_metrics SET
-              avg_rss_mb = @p1, max_rss_mb = @p2, min_rss_mb = @p3,
-              p95_rss_mb = @p4, p99_rss_mb = @p5,
-              avg_heap_mb = @p6, max_heap_mb = @p7, min_heap_mb = @p8,
-              p95_heap_mb = @p9, p99_heap_mb = @p10,
-              avg_cpu_percent = @p11, max_cpu_percent = @p12, min_cpu_percent = @p13,
-              p95_cpu_percent = @p14, p99_cpu_percent = @p15,
-              sample_count = @p16
-            WHERE bucket_start = @p17`,
-            [
-              mergedAvgRssMB, mergedMaxRssMB, mergedMinRssMB,
-              mergedP95RssMB, mergedP99RssMB,
-              mergedAvgHeapMB, mergedMaxHeapMB, mergedMinHeapMB,
-              mergedP95HeapMB, mergedP99HeapMB,
-              mergedAvgCpuPercent, mergedMaxCpuPercent, mergedMinCpuPercent,
-              mergedP95CpuPercent, mergedP99CpuPercent,
-              newTotalCount,
-              aggregate.bucketStart,
-            ]
-          );
-        }
       }
     }
   } catch (err) {
@@ -514,8 +462,7 @@ export async function getResourceMetricsHistory(
     })();
 
     let dbRows: ResourceMetricsHistoryRow[] = [];
-    if (pool.type === DatabaseType.POSTGRESQL) {
-      const query = `
+    const query = `
         SELECT 
           bucket_start as "bucketStart",
           avg_rss_mb as "avgRssMB",
@@ -534,27 +481,6 @@ export async function getResourceMetricsHistory(
       if (endDate) params.push(endDate);
       const result = await pool.query<any>(query, params);
       dbRows = result.rows;
-    } else {
-      const query = `
-        SELECT 
-          bucket_start as bucketStart,
-          avg_rss_mb as avgRssMB,
-          max_rss_mb as maxRssMB,
-          avg_heap_mb as avgHeapMB,
-          max_heap_mb as maxHeapMB,
-          avg_cpu_percent as avgCpuPercent,
-          max_cpu_percent as maxCpuPercent,
-          sample_count as sampleCount
-        FROM resource_metrics
-        WHERE bucket_start >= @p1
-        ${endDate ? 'AND bucket_start <= @p2' : ''}
-        ORDER BY bucket_start ASC
-      `;
-      const params: any[] = [cutoff];
-      if (endDate) params.push(endDate);
-      const result = await pool.query<any>(query, params);
-      dbRows = result.rows;
-    }
 
     // Include current buffer
     const release = await bufferMutex.acquire();

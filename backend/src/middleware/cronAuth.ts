@@ -17,7 +17,7 @@ const ALLOWED_KEY_HASHES = CRON_API_KEYS.map((key) =>
   crypto.pbkdf2Sync(key, SALT, ITERATIONS, KEYLEN, DIGEST)
 );
 
-function extractCronToken(req: Request): string | null {
+export function extractCronToken(req: Request): string | null {
   const header = req.get('authorization');
   if (typeof header === 'string') {
     const [scheme, ...rest] = header.split(' ');
@@ -41,7 +41,7 @@ function extractCronToken(req: Request): string | null {
  * Compares a provided token against a list of allowed keys in a timing-safe manner.
  * Using PBKDF2 ensures constant length comparison and cryptographic strength.
  */
-function secureCompare(token: string): boolean {
+export function validateCronToken(token: string): boolean {
   if (!token) return false;
 
   // Hash the incoming token with the same salt and parameters
@@ -58,7 +58,7 @@ function secureCompare(token: string): boolean {
 
 export const enforceCronAuth: RequestHandler = (req: Request, _res: Response, next: NextFunction) => {
   const token = extractCronToken(req);
-  if (!token || !secureCompare(token)) {
+  if (!token || !validateCronToken(token)) {
     next(new HttpError(401, 'UNAUTHORIZED', 'Missing or invalid cron API token.'));
     return;
   }

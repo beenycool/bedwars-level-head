@@ -12,20 +12,8 @@ import {
   ADMIN_RATE_LIMIT_MAX,
 } from '../config';
 import { HttpError } from '../util/httpError';
+import { isIPInCIDR } from '../util/requestUtils';
 
-function isIPInCIDR(ip: string, cidr: string): boolean {
-  try {
-    const [network, prefix] = ipaddr.parseCIDR(cidr);
-    let parsedIp = ipaddr.parse(ip);
-    if (parsedIp.kind() === 'ipv6' && parsedIp.isIPv4MappedAddress()) {
-      parsedIp = parsedIp.toIPv4Address();
-    }
-    if (parsedIp.kind() !== network.kind()) return false;
-    return parsedIp.match([network, prefix]);
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Extracts the client IP from X-Forwarded-For when the direct connection

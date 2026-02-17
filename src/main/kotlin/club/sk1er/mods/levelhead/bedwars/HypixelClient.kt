@@ -1,5 +1,7 @@
 package club.sk1er.mods.levelhead.bedwars
 
+import com.google.gson.JsonParser
+
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.executeWithRetries
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.handleRetryAfterHint
@@ -65,7 +67,7 @@ object HypixelClient {
                 }
 
                 if (!response.isSuccessful) {
-                    val json = kotlin.runCatching { Levelhead.jsonParser.parse(body).asJsonObject }.getOrNull()
+                    val json = kotlin.runCatching { JsonParser.parseString(body).asJsonObject }.getOrNull()
                     if (response.code() == 403 && json != null) {
                         val cause = json.get("cause")?.asString ?: "Unknown"
                         notifyInvalidKey(cause.sanitizeForLogs())
@@ -85,7 +87,7 @@ object HypixelClient {
 
                 invalidKeyWarned.set(false)
                 networkIssueWarned.set(false)
-                val parseResult = kotlin.runCatching { Levelhead.jsonParser.parse(body).asJsonObject }
+                val parseResult = kotlin.runCatching { JsonParser.parseString(body).asJsonObject }
                 val json = parseResult.getOrElse {
                     DebugLogging.logRequestDebug {
                         "[LevelheadDebug][network] parse: success=false, error=${it::class.simpleName}"

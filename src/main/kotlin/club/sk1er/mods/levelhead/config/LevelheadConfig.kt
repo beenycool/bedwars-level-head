@@ -16,8 +16,8 @@ import cc.polyfrost.oneconfig.config.annotations.Text
 import cc.polyfrost.oneconfig.config.data.InfoType
 import cc.polyfrost.oneconfig.config.data.Mod
 import cc.polyfrost.oneconfig.config.data.ModType
-import club.sk1er.mods.levelhead.Levelhead.jsonParser
 import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import net.minecraft.client.Minecraft
 import org.apache.commons.io.FileUtils
 import java.awt.Desktop
@@ -1425,7 +1425,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             if (!configFile.exists()) return
 
             val jsonContent = FileUtils.readFileToString(configFile, StandardCharsets.UTF_8)
-            val json = jsonParser.parse(jsonContent)
+            val json = JsonParser.parseString(jsonContent)
             if (!json.isJsonObject) return
 
             val jsonObj = json.asJsonObject
