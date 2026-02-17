@@ -433,6 +433,7 @@ object ProxyClient {
                 json.get("status")?.asString == "ok"
             }
         } catch (ex: Exception) {
+            Levelhead.logger.warn("Failed to check backend health", ex)
             false
         }
     }
