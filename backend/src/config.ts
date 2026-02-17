@@ -4,6 +4,8 @@ import path from 'node:path';
 import ipaddr from 'ipaddr.js';
 
 loadEnv();
+const isProduction = process.env.NODE_ENV === 'production';
+export const CLOUD_FLARE_TUNNEL = process.env.CLOUDFLARE_TUNNEL?.trim() ?? '';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -177,6 +179,17 @@ const REDIS_KEY_SALT_VALUE = isProduction
   : process.env.REDIS_KEY_SALT ?? '';
 
 // Validate all required fields together and throw comprehensive error if any are missing
+
+// Require TRUST_PROXY_CIDRS in production or when explicitly behind a proxy (e.g., Cloudflare Tunnel)
+if (isProduction || CLOUD_FLARE_TUNNEL.length > 0) {
+  if (!process.env.TRUST_PROXY_CIDRS?.trim()) {
+    missingFields.push({
+      name: 'TRUST_PROXY_CIDRS',
+      description: 'Allowed CIDR ranges for trusted reverse proxies (required in production for IP security)',
+      format: 'Comma-separated list of CIDRs (e.g., 127.0.0.1/32,10.0.0.0/8,172.16.0.0/12)',
+    });
+  }
+}
 if (missingFields.length > 0) {
   throw new Error(buildMissingFieldsError());
 }
@@ -276,7 +289,6 @@ export const TRUST_PROXY_ENABLED = TRUST_PROXY_CIDRS.length > 0;
 
 export const HYPIXEL_API_BASE_URL = process.env.HYPIXEL_API_BASE_URL ?? 'https://api.hypixel.net';
 
-export const CLOUD_FLARE_TUNNEL = process.env.CLOUDFLARE_TUNNEL ?? '';
 export const COMMUNITY_SUBMIT_SECRET = process.env.COMMUNITY_SUBMIT_SECRET?.trim() ?? '';
 
 const HOURS = 60 * 60 * 1000;
