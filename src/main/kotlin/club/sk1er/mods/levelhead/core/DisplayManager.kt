@@ -140,8 +140,9 @@ class DisplayManager(val file: File) {
         if (player.isNPC) return
         if (!ModeManager.shouldRequestData()) return
         syncGameMode()
+        val activeMode = ModeManager.getActiveGameMode() ?: return
         val displays = aboveHead.filter { it.config.enabled }
-        val requests = displays.filter { !it.cache.containsKey(player.uniqueID) }
+        val requests = displays.filter { !it.cache.containsKey(Levelhead.DisplayCacheKey(player.uniqueID, activeMode)) }
             .map { display ->
                 Levelhead.LevelheadRequest(player.uniqueID.trimmed, display, display.bottomValue, reason = Levelhead.RequestReason.PLAYER_JOIN)
             }

@@ -60,7 +60,13 @@ object AboveHeadRender {
                 maybeLogSelfHidden(displayPosition)
                 return@forEachIndexed
             }
-            val tag = display.cache[player.uniqueID]
+            // Look up tag by (uuid, activeMode) to ensure mode-specific tags are served
+            val activeMode = ModeManager.getActiveGameMode()
+            val tag = if (activeMode != null) {
+                display.cache[Levelhead.DisplayCacheKey(player.uniqueID, activeMode)]
+            } else {
+                null
+            }
             if (display.loadOrRender(player) && tag != null) {
                 var offset = when (displayPosition) {
                     MasterConfig.DisplayPosition.ABOVE -> 0.3

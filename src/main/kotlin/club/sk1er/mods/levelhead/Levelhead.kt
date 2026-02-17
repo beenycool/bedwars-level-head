@@ -654,8 +654,9 @@ object Levelhead {
         }
         val listeners = pendingDisplayRefreshes.remove(cacheKey) ?: return
         if (entry != null) {
+            val displayCacheKey = DisplayCacheKey(cacheKey.uuid, cacheKey.gameMode)
             listeners
-                .filter { it.config.enabled && it.cache.containsKey(cacheKey.uuid) }
+                .filter { it.config.enabled && it.cache.containsKey(displayCacheKey) }
                 .forEach { display -> updateDisplayCache(display, cacheKey.uuid, entry, cacheKey.gameMode) }
         }
     }
@@ -697,11 +698,12 @@ object Levelhead {
         logger.debug("updateDisplayCache: uuid={}, statsType={}, resolvedGameMode={}, displayConfigType={}, displayConfigGameMode={}, activeMode={}", 
             uuid, stats?.let { it::class.simpleName }, gameMode, display.config.type, display.config.gameMode, activeMode)
         val tag = StatsFormatter.formatTag(uuid, stats, display.config, gameMode)
-        logger.debug("updateDisplayCache: writing tag='{}' to display.cache[{}]", tag.getString(), uuid)
+        val cacheKey = DisplayCacheKey(uuid, gameMode)
+        logger.debug("updateDisplayCache: writing tag='{}' to display.cache[{}]", tag.getString(), cacheKey)
         DebugLogging.logRequestDebug {
             "[LevelheadDebug][tag] uuid=${uuid.maskForLogs()}, gameMode=$gameMode, tag=${tag.getString().truncateForLogs(200)}, header=${tag.header.value.truncateForLogs(50)} (${tag.header.color.formatAsHex()}), footer=${tag.footer.value.truncateForLogs(50)} (${tag.footer.color.formatAsHex()})"
         }
-        display.cache[uuid] = tag
+        display.cache[cacheKey] = tag
     }
 
     private fun resolveGameMode(typeId: String): GameMode {
@@ -745,6 +747,12 @@ object Levelhead {
     }
 
     private data class StatsCacheKey(val uuid: UUID, val gameMode: GameMode)
+
+    /**
+     * Cache key for display tags, combining UUID and game mode.
+     * This ensures that tags cached for one game mode are not served for a different mode.
+     */
+    data class DisplayCacheKey(val uuid: UUID, val gameMode: GameMode)
 
     private data class PendingStatsRequest(
         val trimmedUuid: String,
