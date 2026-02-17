@@ -175,11 +175,9 @@ async function wait(ms: number): Promise<void> {
 
 /**
  * Shapes the Hypixel player response into the proxy payload format.
- * **Mutates** the bedwars stats object in place (injects/overwrites bedwars_experience,
- * Experience, fkdr, winstreak). Callers must not rely on the original response.player.stats
- * after this call — clone first if the unmodified payload is needed.
+ * This function returns a new object and does not mutate the input response.
  */
-function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
+export function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
   if (!response.success) {
     const cause = response.cause ?? 'UNKNOWN_HYPIXEL_ERROR';
     throw new HttpError(502, cause, 'Hypixel returned an error response.');
@@ -197,8 +195,8 @@ function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
   const winstreak = Number.isFinite(winstreakNumber) ? winstreakNumber : undefined;
   const fkdr = finalDeaths <= 0 ? finalKills : finalKills / finalDeaths;
 
-  // Bolt: Optimized to mutate in place instead of spreading to avoid O(n) copy
-  const shapedStats = bedwarsStats as Record<string, unknown>;
+  // Clone to avoid hidden mutation of the original response object
+  const shapedStats: Record<string, unknown> = { ...bedwarsStats };
 
   if (experience !== undefined) {
     shapedStats.bedwars_experience = experience;
