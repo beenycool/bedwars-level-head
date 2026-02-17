@@ -22,7 +22,6 @@ jest.mock('../../src/services/hypixelTracker.ts', () => ({
   recordHypixelApiCall: jest.fn().mockResolvedValue(undefined),
 }));
 
-// @ts-ignore - shapePayload might not be exported yet
 import { shapePayload } from '../../src/services/hypixel';
 
 describe('shapePayload mutation', () => {
@@ -49,7 +48,6 @@ describe('shapePayload mutation', () => {
     // Deep clone for comparison
     const clonedOriginal = JSON.parse(JSON.stringify(originalResponse));
 
-    // @ts-ignore
     shapePayload(originalResponse);
 
     // If it mutates, originalResponse will be different from clonedOriginal
