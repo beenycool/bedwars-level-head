@@ -2,8 +2,8 @@ import { CACHE_DB_ALLOW_COLD_READS, CACHE_DB_WARM_WINDOW_MS, HYPIXEL_API_CALL_WI
 import { recordCacheHit, recordCacheMiss } from './metrics';
 import { database as pool } from './database/factory';
 import { DatabaseType } from './database/adapter';
-import {
 import { logger } from '../util/logger';
+import {
     getPlayerCacheEntry,
     setPlayerCacheEntry,
     clearAllPlayerCacheEntries,

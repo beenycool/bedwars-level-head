@@ -4,8 +4,8 @@ import { CacheEntry, CacheMetadata } from './cache';
 import { fetchHypixelPlayer, HypixelFetchOptions, extractMinimalStats, MinimalPlayerStats } from './hypixel';
 import { lookupProfileByUsername } from './mojang';
 import { recordCacheMiss, recordCacheRefresh, recordCacheSourceHit } from './metrics';
-import {
 import { logger } from '../util/logger';
+import {
   buildPlayerCacheKey,
   fetchWithDedupe,
   getIgnMapping,
@@ -67,7 +67,7 @@ function setMemoized(prefix: string, value: string, resolved: ResolvedPlayer): v
 }
 
 function logBackgroundRefreshFailure(message: string, error: unknown): void {
-  logger.warn(message, error);
+  logger.warn({ error }, message);
 }
 
 function scheduleBackgroundRefresh(task: () => Promise<void>, errorMessage: string): void {
@@ -409,7 +409,7 @@ export async function warmupPlayerCache(identifiers: string[]): Promise<void> {
       setMemoized('player', uuid, resolved);
     }
   } catch (error) {
-    logger.warn('[player] warmupPlayerCache failed', error);
+    logger.warn({ error }, '[player] warmupPlayerCache failed');
   }
 }
 
