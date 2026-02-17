@@ -62,9 +62,8 @@ export function isRedisAvailable(): boolean {
 // IP Hashing
 // ---------------------------------------------------------------------------
 
-function hashIp(ip: string): string {
-    const key = REDIS_KEY_SALT || 'levelhead-default-salt';
-    const hash = createHmac('sha256', key).update(ip).digest('hex');
+export function hashIp(ip: string): string {
+    const hash = createHmac('sha256', REDIS_KEY_SALT).update(ip).digest('hex');
     // Use first 32 chars (128 bits) for collision resistance while keeping keys short
     return hash.slice(0, 32);
 }

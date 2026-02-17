@@ -5,6 +5,8 @@ import ipaddr from 'ipaddr.js';
 
 loadEnv();
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 interface MissingField {
   name: string;
   description: string;
@@ -166,9 +168,25 @@ const ADMIN_API_KEYS_VALUE = checkRequiredEnv(
   'Comma-separated list of secure random tokens (e.g., tok1,tok2,tok3)'
 );
 
+const REDIS_KEY_SALT_VALUE = isProduction
+  ? checkRequiredEnv(
+      'REDIS_KEY_SALT',
+      'Secure random salt for hashing IP addresses in Redis keys (minimum 32 characters)',
+      'A secure random string of 32+ characters'
+    )
+  : process.env.REDIS_KEY_SALT ?? '';
+
 // Validate all required fields together and throw comprehensive error if any are missing
 if (missingFields.length > 0) {
   throw new Error(buildMissingFieldsError());
+}
+
+if (isProduction && REDIS_KEY_SALT_VALUE && REDIS_KEY_SALT_VALUE.length < 32) {
+  throw new Error(
+    'REDIS_KEY_SALT must be at least 32 characters long in production.\n' +
+    'Current length: ' + REDIS_KEY_SALT_VALUE.length + '\n' +
+    'To fix: Set REDIS_KEY_SALT to a secure random string (e.g., openssl rand -hex 32)'
+  );
 }
 
 // Now we can safely export these since we've validated they exist
@@ -184,6 +202,7 @@ if (ADMIN_API_KEYS.length === 0) {
   );
 }
 export const CACHE_DB_URL = CACHE_DB_URL_VALUE!;
+export const REDIS_KEY_SALT = REDIS_KEY_SALT_VALUE ?? '';
 
 export const CRON_API_KEYS = optionalStringListEnv('CRON_API_KEYS');
 
@@ -353,7 +372,6 @@ export const OUTBOUND_USER_AGENT = buildUserAgent(BACKEND_VERSION, BUILD_REVISIO
 // Redis configuration for rate limiting
 export const REDIS_URL = process.env.REDIS_URL ?? '';
 export const REDIS_COMMAND_TIMEOUT = parseIntEnv('REDIS_COMMAND_TIMEOUT', 2000);
-export const REDIS_KEY_SALT = process.env.REDIS_KEY_SALT ?? '';
 export const REDIS_STATS_BUCKET_SIZE_MS = parseIntEnv('REDIS_STATS_BUCKET_SIZE_MS', 60 * 1000);
 export const REDIS_STATS_CACHE_TTL_MS = parseIntEnv('REDIS_STATS_CACHE_TTL_MS', 2000);
 
@@ -362,7 +380,6 @@ export const REDIS_STATS_CACHE_TTL_MS = parseIntEnv('REDIS_STATS_CACHE_TTL_MS', 
 // consistent rate limiting across all instances. Without Redis, each instance
 // maintains its own rate limits, allowing attackers to bypass limits by hitting
 // different instances.
-const isProduction = process.env.NODE_ENV === 'production';
 export const RATE_LIMIT_REQUIRE_REDIS = parseBooleanEnv('RATE_LIMIT_REQUIRE_REDIS', isProduction);
 
 // Fallback mode when Redis is unavailable and RATE_LIMIT_REQUIRE_REDIS=true:
