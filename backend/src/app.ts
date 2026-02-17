@@ -1,6 +1,5 @@
 import express from 'express';
 import compression from 'compression';
-import ipaddr from 'ipaddr.js';
 import playerRouter from './routes/player';
 import playerPublicRouter from './routes/playerPublic';
 import apikeyPublicRouter from './routes/apikeyPublic';
@@ -15,32 +14,46 @@ import apikeyRouter from './routes/apikey';
 import statsRouter from './routes/stats';
 import configRouter from './routes/config';
 import cronRouter from './routes/cron';
-import { securityHeaders } from './middleware/securityHeaders';
-import { sanitizeUrlForLogs } from './util/requestUtils';
-
-function isIPInCIDR(ip: string, cidr: string): boolean {
-  try {
-    const [network, prefix] = ipaddr.parseCIDR(cidr);
-    let parsedIp = ipaddr.parse(ip);
-    if (parsedIp.kind() === 'ipv6' && parsedIp.isIPv4MappedAddress()) {
-      parsedIp = parsedIp.toIPv4Address();
-    }
-
-    if (parsedIp.kind() !== network.kind()) {
-      return false;
-    }
-
-    return parsedIp.match([network, prefix]);
-  } catch {
-    return false;
-  }
-}
+import helmet from 'helmet';
+import crypto from 'crypto';
+import { enforceAdminRateLimit } from './middleware/rateLimit';
+import { sanitizeUrlForLogs, isIPInCIDR } from './util/requestUtils';
 
 export function createApp(): express.Express {
   const app = express();
 
-  app.disable('x-powered-by');
-  app.use(securityHeaders);
+  app.use((_req, res, next) => {
+    res.locals.nonce = crypto.randomBytes(16).toString('base64');
+    next();
+  });
+
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", (_req, res) => `'nonce-${(res as express.Response).locals.nonce}'`, "'strict-dynamic'"],
+        styleSrc: ["'self'", (_req, res) => `'nonce-${(res as express.Response).locals.nonce}'`],
+        imgSrc: ["'self'", "data:"],
+        connectSrc: ["'self'", "https://cdn.jsdelivr.net"],
+        objectSrc: ["'none'"],
+        baseUri: ["'none'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+        upgradeInsecureRequests: [],
+      },
+    },
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
+    referrerPolicy: {
+      policy: 'strict-origin-when-cross-origin',
+    },
+    frameguard: {
+      action: 'deny',
+    },
+  }));
 
   app.set('trust proxy', (ip: string) => {
     return TRUST_PROXY_CIDRS.some((cidr) => isIPInCIDR(ip, cidr));
@@ -90,7 +103,7 @@ export function createApp(): express.Express {
   }
   app.use('/stats', statsRouter);
 
-  app.get('/healthz', async (_req, res) => {
+  app.get('/healthz', enforceAdminRateLimit, async (_req, res) => {
     res.locals.metricsRoute = '/healthz';
     const [dbHealthy, hypixelHealthy] = await Promise.all([
       cachePool
@@ -141,7 +154,7 @@ export function createApp(): express.Express {
     });
   });
 
-  app.get('/metrics', async (_req, res) => {
+  app.get('/metrics', enforceAdminRateLimit, async (_req, res) => {
     res.locals.metricsRoute = '/metrics';
     res.set('Content-Type', registry.contentType);
     res.send(await registry.metrics());

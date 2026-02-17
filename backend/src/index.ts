@@ -25,6 +25,7 @@ import {
 } from './services/dynamicRateLimit';
 import { startAdaptiveTtlRefresh, stopAdaptiveTtlRefresh } from './services/statsCache';
 import { getRedisClient, getRateLimitFallbackState, startKeyCountRefresher, stopKeyCountRefresher } from './services/redis';
+import { enforceAdminRateLimit } from './middleware/rateLimit';
 import {
   initializeResourceMetrics,
   stopResourceMetrics,
@@ -164,7 +165,7 @@ if (CRON_API_KEYS.length > 0) {
 }
 app.use('/stats', statsRouter);
 
-app.get('/healthz', async (_req, res) => {
+app.get('/healthz', enforceAdminRateLimit, async (_req, res) => {
   res.locals.metricsRoute = '/healthz';
   const [dbHealthy, hypixelHealthy] = await Promise.all([
     cachePool
@@ -218,7 +219,7 @@ app.get('/healthz', async (_req, res) => {
   });
 });
 
-app.get('/metrics', async (_req, res) => {
+app.get('/metrics', enforceAdminRateLimit, async (_req, res) => {
   res.locals.metricsRoute = '/metrics';
   res.set('Content-Type', registry.contentType);
   res.send(await registry.metrics());
