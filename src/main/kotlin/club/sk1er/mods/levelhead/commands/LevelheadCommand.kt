@@ -486,13 +486,9 @@ class LevelheadCommand {
                     return
                 }
                 val sanitized = text.take(48)
-                val changed = Levelhead.displayManager.updatePrimaryDisplay { config ->
-                    if (config.headerString == sanitized) return@updatePrimaryDisplay false
-                    config.headerString = sanitized
-                    true
-                }
-                if (changed) {
-                    Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
+                val previous = LevelheadConfig.headerText
+                LevelheadConfig.headerText = sanitized
+                if (previous != sanitized) {
                     sendMessage("${ChatColor.GREEN}Updated header text to ${ChatColor.GOLD}$sanitized${ChatColor.GREEN}.")
                 } else {
                     sendMessage("${ChatColor.YELLOW}Header text is already set to ${ChatColor.GOLD}$sanitized${ChatColor.YELLOW}.")
@@ -511,16 +507,13 @@ class LevelheadCommand {
                     )
                     return
                 }
-                val changed = Levelhead.displayManager.updatePrimaryDisplay { config ->
-                    if (config.headerColor == color) return@updatePrimaryDisplay false
-                    config.headerColor = color
-                    true
-                }
-                if (changed) {
-                    Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
-                    sendMessage("${ChatColor.GREEN}Updated header color to ${ChatColor.GOLD}${formatColor(color)}${ChatColor.GREEN}.")
+                val hexColor = formatColor(color)
+                val previous = LevelheadConfig.headerColorHex
+                LevelheadConfig.headerColorHex = hexColor
+                if (previous != hexColor) {
+                    sendMessage("${ChatColor.GREEN}Updated header color to ${ChatColor.GOLD}$hexColor${ChatColor.GREEN}.")
                 } else {
-                    sendMessage("${ChatColor.YELLOW}Header color is already ${ChatColor.GOLD}${formatColor(color)}${ChatColor.YELLOW}.")
+                    sendMessage("${ChatColor.YELLOW}Header color is already $hexColor${ChatColor.YELLOW}.")
                 }
             }
             else -> {
@@ -532,6 +525,7 @@ class LevelheadCommand {
         }
     }
 
+
     private fun handleDisplayOffset(args: List<String>) {
         val valueRaw = args.getOrNull(0)?.trim()
         val parsed = valueRaw?.toDoubleOrNull()
@@ -540,15 +534,15 @@ class LevelheadCommand {
             return
         }
         val clamped = parsed.coerceIn(MIN_DISPLAY_OFFSET, MAX_DISPLAY_OFFSET)
-        val previous = Levelhead.displayManager.config.offset
+        val previous = LevelheadConfig.verticalOffset
+        LevelheadConfig.verticalOffset = clamped.toFloat()
         if (abs(previous - clamped) < 0.0001) {
             sendMessage("${ChatColor.YELLOW}Offset already set to ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", clamped)}${ChatColor.YELLOW}.")
-            return
+        } else {
+            sendMessage("${ChatColor.GREEN}Updated display offset to ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", clamped)}${ChatColor.GREEN}.")
         }
-        Levelhead.displayManager.config.offset = clamped
-        Levelhead.displayManager.saveConfig()
-        sendMessage("${ChatColor.GREEN}Updated display offset to ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", clamped)}${ChatColor.GREEN}.")
     }
+
 
     private fun handleDisplayShowSelf(args: List<String>) {
         if (args.isEmpty()) {
@@ -562,17 +556,15 @@ class LevelheadCommand {
             )
             return
         }
-        val changed = Levelhead.displayManager.updatePrimaryDisplay { config ->
-            if (config.showSelf == toggle) return@updatePrimaryDisplay false
-            config.showSelf = toggle
-            true
-        }
-        if (changed) {
-            sendMessage("${ChatColor.GREEN}Updated self display visibility to ${formatToggle(toggle)}${ChatColor.GREEN}.")
+        val previous = LevelheadConfig.showSelf
+        LevelheadConfig.showSelf = toggle
+        if (previous != toggle) {
+            sendMessage("${ChatColor.GREEN}Self display is now ${formatToggle(toggle)}${ChatColor.GREEN}.")
         } else {
-            sendMessage("${ChatColor.YELLOW}Self display visibility already ${formatToggle(toggle)}${ChatColor.YELLOW}.")
+            sendMessage("${ChatColor.YELLOW}Self display is already ${formatToggle(toggle)}${ChatColor.YELLOW}.")
         }
     }
+
 
     private fun handleAdminPurgeCache(args: List<String>) {
         if (!isProxyFullyConfigured()) {

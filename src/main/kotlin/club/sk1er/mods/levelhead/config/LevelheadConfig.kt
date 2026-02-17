@@ -995,6 +995,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     @Transient
     private var configSyncTickCounter: Int = 0
+    private var syncRequested: Boolean = false
 
     data class ConfigSyncSnapshot(
         val uiEnabled: Boolean,
@@ -1111,10 +1112,17 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     }
 
     fun syncUiAndRuntimeConfig() {
-        configSyncTickCounter = (configSyncTickCounter + 1) % 5
-        if (configSyncTickCounter != 0) {
+        val mc = Minecraft.getMinecraft()
+        val isGuiOpen = mc.currentScreen != null
+
+        configSyncTickCounter++
+        val interval = if (isGuiOpen || syncRequested) 5 else 100
+
+        if (configSyncTickCounter % interval != 0 && !syncRequested) {
             return
         }
+
+        syncRequested = false
 
         val primaryDisplay = Levelhead.displayManager.primaryDisplay() ?: return
         val runtimeEnabled = Levelhead.displayManager.config.enabled
@@ -1426,6 +1434,10 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             installId = UUID.randomUUID().toString().replace("-", "").lowercase(Locale.ROOT)
             save()
         }
+    }
+
+    fun requestSync() {
+        syncRequested = true
     }
 
     fun markWelcomeMessageShown() {
