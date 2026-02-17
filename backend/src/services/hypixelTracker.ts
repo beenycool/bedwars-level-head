@@ -1,5 +1,5 @@
 import { pool, ensureInitialized } from './cache';
-import { DatabaseType } from './database/adapter';
+
 import { HYPIXEL_API_CALL_WINDOW_MS } from '../config';
 import { logger } from '../util/logger';
 
@@ -40,7 +40,7 @@ async function flushHypixelCallBuffer(): Promise<void> {
 
       await ensureInitialized();
 
-      const maxParams = pool.type === DatabaseType.POSTGRESQL ? 65000 : 2000;
+      const maxParams = pool.getMaxParameters();
       const maxRecordsPerChunk = Math.floor(maxParams / 2);
 
       // Process chunks from inflightBatch
