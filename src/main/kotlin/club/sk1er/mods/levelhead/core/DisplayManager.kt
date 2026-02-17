@@ -1,6 +1,7 @@
 package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.Levelhead
+import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.Levelhead.gson
 import club.sk1er.mods.levelhead.Levelhead.jsonParser
 import club.sk1er.mods.levelhead.config.DisplayConfig
@@ -271,6 +272,7 @@ class DisplayManager(val file: File) {
             return false
         }
         saveConfig()
+        LevelheadConfig.requestSync()
         return true
     }
 
