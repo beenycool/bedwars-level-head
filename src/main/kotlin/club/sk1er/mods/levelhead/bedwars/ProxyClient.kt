@@ -7,6 +7,7 @@ import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.parseRetryAfterMillis
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.sanitizeForLogs
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.toHttpDateString
 import club.sk1er.mods.levelhead.config.LevelheadConfig
+import club.sk1er.mods.levelhead.core.await
 import club.sk1er.mods.levelhead.core.DebugLogging
 import com.google.gson.JsonArray
 import com.google.gson.JsonObject
@@ -364,7 +365,7 @@ object ProxyClient {
             .build()
 
         try {
-            Levelhead.okHttpClient.newCall(request).execute().use { response ->
+            Levelhead.okHttpClient.newCall(request).await().use { response ->
                 if (response.isSuccessful) {
                     Levelhead.logger.info("Contributed player data for {} to community database", uuid)
                 } else {

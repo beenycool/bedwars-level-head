@@ -4,6 +4,7 @@ import { pool } from './cache';
 import { DatabaseType } from './database/adapter';
 import { getRedisCacheStats } from './redis';
 import { getCurrentResourceMetrics, CurrentResourceMetrics } from './resourceMetrics';
+import { logger } from '../util/logger';
 
 interface PlayerQueryHistoryRow {
   id: string | number;
@@ -142,7 +143,7 @@ const initialization = (async () => {
         supportsPgTotalRelationSize = true;
       } catch (err) {
         supportsPgTotalRelationSize = false;
-        console.info('[history] pg_total_relation_size not available; DB size queries will be skipped');
+        logger.info('[history] pg_total_relation_size not available; DB size queries will be skipped');
       }
     } else {
       await pool.query(`
@@ -173,7 +174,7 @@ const initialization = (async () => {
       supportsPgTotalRelationSize = false;
     }
   } catch (error) {
-    console.error('Failed to initialize player_query_history table', error);
+    logger.error('Failed to initialize player_query_history table', error);
     throw error;
   }
 })();
@@ -235,9 +236,9 @@ async function flushHistoryBuffer(): Promise<void> {
 
     await Promise.all(promises);
 
-    console.info(`[history] Flushed ${flushed} records in batch`);
+    logger.info(`[history] Flushed ${flushed} records in batch`);
   } catch (err) {
-    console.error('[history] Failed to flush batch', err);
+    logger.error('[history] Failed to flush batch', err);
     await bufferMutex.runExclusive(() => {
       historyBuffer.unshift(...batch);
     });
@@ -248,7 +249,7 @@ export async function recordPlayerQuery(record: PlayerQueryRecord): Promise<void
   await bufferMutex.runExclusive(() => {
     if (historyBuffer.length >= MAX_HISTORY_BUFFER) {
       historyBuffer.shift();
-      console.warn(`[history] buffer at capacity (${MAX_HISTORY_BUFFER}); dropping oldest entry`);
+      logger.warn(`[history] buffer at capacity (${MAX_HISTORY_BUFFER}); dropping oldest entry`);
     }
     historyBuffer.push(record);
   });
@@ -258,7 +259,7 @@ export function startHistoryFlushInterval(): void {
   if (flushInterval !== null) return;
   flushInterval = setInterval(() => {
     void flushHistoryBuffer().catch((error) => {
-      console.error('[history] Unhandled error in flush interval', error);
+      logger.error('[history] Unhandled error in flush interval', error);
     });
   }, BATCH_FLUSH_INTERVAL);
 }

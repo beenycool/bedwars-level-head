@@ -6,6 +6,7 @@ import club.sk1er.mods.levelhead.core.StatsFetcher
 import club.sk1er.mods.levelhead.core.GameMode
 import club.sk1er.mods.levelhead.core.GameStats
 import club.sk1er.mods.levelhead.core.ModeManager
+import club.sk1er.mods.levelhead.core.await
 import club.sk1er.mods.levelhead.core.dashUUID
 import club.sk1er.mods.levelhead.duels.DuelsStats
 import club.sk1er.mods.levelhead.skywars.SkyWarsStats
@@ -151,7 +152,7 @@ object WhoisService {
             .get()
             .build()
 
-        Levelhead.okHttpClient.newCall(request).execute().use { response ->
+        Levelhead.okHttpClient.newCall(request).await().use { response ->
             if (!response.isSuccessful) {
                 if (response.code() == 204 || response.code() == 404) {
                     return@withContext null

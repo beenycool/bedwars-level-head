@@ -13,6 +13,7 @@ import {
 } from '../config';
 import { HttpError } from '../util/httpError';
 import { recordHypixelApiCall } from './hypixelTracker';
+import { logger } from '../util/logger';
 
 const dnsCache = new CacheableLookup({ maxTtl: 300, fallbackDuration: 0 });
 
@@ -175,11 +176,10 @@ async function wait(ms: number): Promise<void> {
 
 /**
  * Shapes the Hypixel player response into the proxy payload format.
- * **Mutates** the bedwars stats object in place (injects/overwrites bedwars_experience,
- * Experience, fkdr, winstreak). Callers must not rely on the original response.player.stats
- * after this call — clone first if the unmodified payload is needed.
+ * **Does NOT mutate** the input response object. It clones the bedwars stats
+ * and injects/overwrites bedwars_experience, Experience, fkdr, and winstreak.
  */
-function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
+export function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
   if (!response.success) {
     const cause = response.cause ?? 'UNKNOWN_HYPIXEL_ERROR';
     throw new HttpError(502, cause, 'Hypixel returned an error response.');
@@ -197,8 +197,8 @@ function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
   const winstreak = Number.isFinite(winstreakNumber) ? winstreakNumber : undefined;
   const fkdr = finalDeaths <= 0 ? finalKills : finalKills / finalDeaths;
 
-  // Bolt: Optimized to mutate in place instead of spreading to avoid O(n) copy
-  const shapedStats = bedwarsStats as Record<string, unknown>;
+  // Clone to avoid hidden mutation
+  const shapedStats = { ...bedwarsStats } as Record<string, unknown>;
 
   if (experience !== undefined) {
     shapedStats.bedwars_experience = experience;
@@ -306,7 +306,7 @@ export async function fetchHypixelPlayer(
       const etag = response.headers['etag'] ?? null;
       const lastModified = parseLastModified(response.headers['last-modified']);
       void recordHypixelApiCall(uuid).catch((error) => {
-        console.error('Failed to record Hypixel API call', error);
+        logger.error('Failed to record Hypixel API call', error);
       });
 
       circuitBreakerSuccess();
@@ -373,7 +373,7 @@ export async function checkHypixelReachability(): Promise<boolean> {
     });
     return response.status < 500;
   } catch (error) {
-    console.error('Hypixel reachability check failed', error);
+    logger.error('Hypixel reachability check failed', error);
     return false;
   }
 }

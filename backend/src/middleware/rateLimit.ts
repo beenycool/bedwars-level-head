@@ -68,6 +68,7 @@ import {
   type RateLimitResult,
 } from '../services/redis';
 import { calculateDynamicRateLimit } from '../services/dynamicRateLimit';
+import { logger } from '../util/logger';
 
 interface DynamicLimitCacheEntry {
   value: number | null;
@@ -111,7 +112,7 @@ async function resolveDynamicLimitValue(): Promise<number> {
     })
     .catch((error) => {
       dynamicLimitCache.pendingPromise = undefined;
-      console.error('Dynamic rate limit calculation failed:', error);
+      logger.error('Dynamic rate limit calculation failed:', error);
       // Fallback to static max on error to prevent unhandled rejections
       return RATE_LIMIT_MAX;
     });
@@ -186,7 +187,7 @@ export function createRateLimitMiddleware({
             effectiveMax = Math.max(1, Math.floor(dynamicValue));
           }
         } catch (dynamicError) {
-          console.error('Failed to compute dynamic rate limit; falling back to static value', dynamicError);
+          logger.error('Failed to compute dynamic rate limit; falling back to static value', dynamicError);
         }
       }
 
@@ -210,7 +211,7 @@ export function createRateLimitMiddleware({
         // Fail open dangerously - Redis unavailable and RATE_LIMIT_FALLBACK_MODE=allow
         // Fire-and-forget stats tracking
         void trackGlobalStats(clientIp).catch((err) => {
-          console.error('[rate-limit] trackGlobalStats failed', err);
+          logger.error('[rate-limit] trackGlobalStats failed', err);
         });
         next();
         return;
@@ -218,9 +219,9 @@ export function createRateLimitMiddleware({
 
       if (result === null) {
         // Unexpected null result - respect RATE_LIMIT_REQUIRE_REDIS
-        console.warn('[rate-limit] Unexpected null result from incrementRateLimit');
+        logger.warn('[rate-limit] Unexpected null result from incrementRateLimit');
         void trackGlobalStats(clientIp).catch((err) => {
-          console.error('[rate-limit] trackGlobalStats failed', err);
+          logger.error('[rate-limit] trackGlobalStats failed', err);
         });
         if (RATE_LIMIT_REQUIRE_REDIS) {
           next(
@@ -244,7 +245,7 @@ export function createRateLimitMiddleware({
 
       // Fire-and-forget stats tracking with raw client IP (not prefixed bucket key)
       void trackGlobalStats(clientIp).catch((err) => {
-        console.error('[rate-limit] trackGlobalStats failed', err);
+        logger.error('[rate-limit] trackGlobalStats failed', err);
       });
 
       if (count > effectiveMax) {
@@ -256,7 +257,7 @@ export function createRateLimitMiddleware({
         // Compact single-line log for rate limit hits
         const retryMins = Math.ceil(retryAfterSeconds / 60);
         const retryStr = retryMins >= 60 ? `${Math.ceil(retryMins / 60)}h` : `${retryMins}m`;
-        console.warn(
+        logger.warn(
           `[rate-limit] 429 ${bucketKey.substring(0, 12)}... ` +
             `(count: ${count}/${effectiveMax}, retry: ${retryStr}` +
             `${fallbackState.isInFallbackMode ? ', fallback' : ''})`
@@ -275,7 +276,7 @@ export function createRateLimitMiddleware({
 
       next();
     } catch (error) {
-      console.error('[rate-limit] unexpected error', error);
+      logger.error('[rate-limit] unexpected error', error);
       if (RATE_LIMIT_REQUIRE_REDIS) {
         next(
           new HttpError(

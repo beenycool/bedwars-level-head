@@ -11,6 +11,7 @@ import { getRedisStats } from '../services/redis';
 import { getResourceMetricsHistory } from '../services/resourceMetrics';
 import { escapeHtml } from '../util/html';
 import { toCSV } from '../util/csv';
+import { logger } from '../util/logger';
 
 const router = Router();
 const PAGE_SIZE = 25;
@@ -132,7 +133,7 @@ router.get('/csv', async (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename="stats.csv"');
     res.send(csv);
   } catch (error) {
-    console.error('Failed to generate CSV', error);
+    logger.error('Failed to generate CSV', error);
     res.status(500).send('Internal Server Error');
   }
 });
@@ -2609,7 +2610,7 @@ router.get('/', async (req, res, next) => {
           if (refreshIntervalSelect) refreshIntervalSelect.value = savedInterval;
         }
       } catch (e) {
-        console.warn('Failed to load refresh preferences', e);
+        logger.warn('Failed to load refresh preferences', e);
       }
 
       function updateCountdown() {
@@ -2675,7 +2676,7 @@ router.get('/', async (req, res, next) => {
           updateDashboard(json);
           
         } catch (error) {
-          console.error('Failed to refresh data', error);
+          logger.error('Failed to refresh data', error);
           if (refreshCountdownEl) refreshCountdownEl.textContent = 'Update failed';
         } finally {
           isRefreshing = false;
@@ -3094,7 +3095,7 @@ router.get('/', async (req, res, next) => {
             delete btn.dataset.copying;
           }, 2000);
         } catch (err) {
-          console.error('Failed to copy', err);
+          logger.error('Failed to copy', err);
           delete btn.dataset.copying;
         }
       });

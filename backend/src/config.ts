@@ -2,8 +2,11 @@ import { config as loadEnv } from 'dotenv';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import ipaddr from 'ipaddr.js';
+import { logger } from './util/logger';
 
 loadEnv();
+const isProduction = process.env.NODE_ENV === 'production';
+export const CLOUD_FLARE_TUNNEL = process.env.CLOUDFLARE_TUNNEL?.trim() ?? '';
 
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -139,7 +142,7 @@ function parseCIDRListEnv(value: string | undefined): string[] {
   // Validate each CIDR and filter out invalid ones
   const validCidrs = cidrs.filter((cidr) => {
     if (!isValidCIDR(cidr)) {
-      console.warn(`[config] Invalid CIDR in TRUST_PROXY_CIDRS: "${cidr}" — skipping`);
+      logger.warn(`[config] Invalid CIDR in TRUST_PROXY_CIDRS: "${cidr}" — skipping`);
       return false;
     }
     return true;
@@ -148,7 +151,7 @@ function parseCIDRListEnv(value: string | undefined): string[] {
   // Warn about too permissive CIDRs
   for (const cidr of validCidrs) {
     if (isTooPermissiveCIDR(cidr)) {
-      console.warn(`[config] WARNING: TRUST_PROXY_CIDRS includes ${cidr} which is too permissive and may allow IP spoofing`);
+      logger.warn(`[config] WARNING: TRUST_PROXY_CIDRS includes ${cidr} which is too permissive and may allow IP spoofing`);
     }
   }
 
@@ -177,6 +180,17 @@ const REDIS_KEY_SALT_VALUE = isProduction
   : process.env.REDIS_KEY_SALT ?? '';
 
 // Validate all required fields together and throw comprehensive error if any are missing
+
+// Require TRUST_PROXY_CIDRS in production or when explicitly behind a proxy (e.g., Cloudflare Tunnel)
+if (isProduction || CLOUD_FLARE_TUNNEL.length > 0) {
+  if (!process.env.TRUST_PROXY_CIDRS?.trim()) {
+    missingFields.push({
+      name: 'TRUST_PROXY_CIDRS',
+      description: 'Allowed CIDR ranges for trusted reverse proxies (required in production for IP security)',
+      format: 'Comma-separated list of CIDRs (e.g., 127.0.0.1/32,10.0.0.0/8,172.16.0.0/12)',
+    });
+  }
+}
 if (missingFields.length > 0) {
   throw new Error(buildMissingFieldsError());
 }
@@ -276,7 +290,6 @@ export const TRUST_PROXY_ENABLED = TRUST_PROXY_CIDRS.length > 0;
 
 export const HYPIXEL_API_BASE_URL = process.env.HYPIXEL_API_BASE_URL ?? 'https://api.hypixel.net';
 
-export const CLOUD_FLARE_TUNNEL = process.env.CLOUDFLARE_TUNNEL ?? '';
 export const COMMUNITY_SUBMIT_SECRET = process.env.COMMUNITY_SUBMIT_SECRET?.trim() ?? '';
 
 const HOURS = 60 * 60 * 1000;
@@ -343,7 +356,7 @@ function readPackageVersion(): string {
       return parsed.version.trim();
     }
   } catch (error) {
-    console.warn('Unable to read backend package version for user-agent metadata', error);
+    logger.warn('Unable to read backend package version for user-agent metadata', error);
   }
 
   return 'dev';
@@ -395,7 +408,7 @@ function parseFallbackModeEnv(name: string, defaultValue: FallbackMode): Fallbac
   if (validFallbackModes.includes(normalized as FallbackMode)) {
     return normalized as FallbackMode;
   }
-  console.warn(`[config] Invalid ${name}: "${raw}". Using default: ${defaultValue}`);
+  logger.warn(`[config] Invalid ${name}: "${raw}". Using default: ${defaultValue}`);
   return defaultValue;
 }
 const defaultFallbackMode = isProduction ? 'deny' : 'memory';

@@ -18,6 +18,7 @@ import {
   hypixelRemainingQuotaGauge,
 } from './metrics';
 import { getHypixelCallCount } from './hypixelTracker';
+import { logger } from '../util/logger';
 
 function clamp(value: number, minValue: number, maxValue: number): number {
   return Math.min(Math.max(value, minValue), maxValue);
@@ -76,7 +77,7 @@ async function refreshDynamicRateLimit(): Promise<void> {
   try {
     await calculateDynamicRateLimit();
   } catch (error) {
-    console.error('Failed to refresh dynamic rate limit', error);
+    logger.error('Failed to refresh dynamic rate limit', error);
   }
 }
 

@@ -3,6 +3,7 @@ package club.sk1er.mods.levelhead.bedwars
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import okhttp3.Request
+import club.sk1er.mods.levelhead.core.await
 import okhttp3.Response
 import java.io.IOException
 import java.io.InterruptedIOException
@@ -43,7 +44,7 @@ object BedwarsHttpUtils {
         var lastException: IOException? = null
         repeat(attempts) { index ->
             try {
-                return Levelhead.okHttpClient.newCall(request).execute()
+                return Levelhead.okHttpClient.newCall(request).await()
             } catch (ex: IOException) {
                 if (!isTimeout(ex)) {
                     throw ex

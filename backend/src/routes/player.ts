@@ -15,6 +15,7 @@ import { COMMUNITY_SUBMIT_SECRET } from '../config';
 import { MinimalPlayerStats } from '../services/hypixel';
 import { getPlayerStatsFromCache, setIgnMapping, setPlayerStatsBoth } from '../services/statsCache';
 import { getCircuitBreakerState } from '../services/hypixel';
+import { logger } from '../util/logger';
 
 const batchLimit = pLimit(6);
 
@@ -249,7 +250,7 @@ function verifySignedSubmission(uuid: string, data: SignedData, signature?: stri
     }
     return timingSafeEqual(provided, digest);
   } catch (error) {
-    console.warn('Failed to verify signed submission', error);
+    logger.warn('Failed to verify signed submission', error);
     return false;
   }
 }
@@ -325,7 +326,7 @@ async function verifyHypixelOrigin(
 
     return { valid: false, source: null };
   } catch (error) {
-    console.error('Failed to verify Hypixel origin:', error);
+    logger.error('Failed to verify Hypixel origin:', error);
     return { valid: false, source: null };
   }
 }
@@ -466,7 +467,7 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
       await setIgnMapping(mergedStats.displayname.toLowerCase(), normalizedUuid, false);
     }
 
-    console.info(`[player/submit] Accepted contribution for uuid=${normalizedUuid} source=${verificationResult.source}`);
+    logger.info(`[player/submit] Accepted contribution for uuid=${normalizedUuid} source=${verificationResult.source}`);
     res.status(202).json({ success: true, message: 'Contribution accepted.' });
   } catch (error) {
     next(error);
