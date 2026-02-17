@@ -220,14 +220,18 @@ class DisplayManager(val file: File) {
     }
     fun clearCachesWithoutRefetch(clearStats: Boolean = true) {
         val activeMode = ModeManager.getActiveGameMode()
-        Levelhead.logger.debug("clearCachesWithoutRefetch: clearStats={} activeMode={} cacheSizesBefore={}", 
-            clearStats, activeMode, aboveHead.map { it.cache.size })
+        if (Levelhead.logger.isDebugEnabled) {
+            Levelhead.logger.debug("clearCachesWithoutRefetch: clearStats={} activeMode={} cacheSizesBefore={}",
+                clearStats, activeMode, aboveHead.map { it.cache.size })
+        }
         
         aboveHead.forEach { it.cache.clear() }
         if (clearStats) {
             Levelhead.clearCachedStats()
         }
-        Levelhead.logger.debug("clearCachesWithoutRefetch: COMPLETED cacheSizesAfter={}", aboveHead.map { it.cache.size })
+        if (Levelhead.logger.isDebugEnabled) {
+            Levelhead.logger.debug("clearCachesWithoutRefetch: COMPLETED cacheSizesAfter={}", aboveHead.map { it.cache.size })
+        }
     }
 
     fun clearCache() {

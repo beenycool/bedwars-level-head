@@ -189,7 +189,9 @@ object DuelsModeDetector {
             .filter { it.isNotBlank() }
             .toList()
 
-        Levelhead.logger.debug("detectScoreboardContext: lines={} content={}", lines.size, lines.take(10).joinToString(" | "))
+        if (Levelhead.logger.isDebugEnabled) {
+            Levelhead.logger.debug("detectScoreboardContext: lines={} content={}", lines.size, lines.take(10).joinToString(" | "))
+        }
 
         val normalizedLines = lines.map { it.uppercase(Locale.ROOT) }
         val isBedwarsDuels = normalizedLines.any { line ->
