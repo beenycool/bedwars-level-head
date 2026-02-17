@@ -92,20 +92,22 @@ object DebugLogging {
     /**
      * Conditionally log a request debug message.
      * Only builds the message string if debug is enabled.
+     * The message should already include the [LevelheadDebug] prefix.
      */
     fun logRequestDebug(message: () -> String) {
         if (isRequestDebugEnabled()) {
-            Levelhead.logger.info("[DEBUG-REQ] " + message())
+            Levelhead.logger.info(message())
         }
     }
 
     /**
      * Conditionally log a render debug message.
      * Only builds the message string if debug is enabled.
+     * The message should already include the [LevelheadDebug] prefix.
      */
     fun logRenderDebug(message: () -> String) {
         if (isRenderDebugEnabled()) {
-            Levelhead.logger.info("[DEBUG-RENDER] " + message())
+            Levelhead.logger.info(message())
         }
     }
 

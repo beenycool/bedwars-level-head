@@ -139,7 +139,7 @@ Wave 3 (verification + polish)
 
 ## TODOs
 
-- [ ] 1. Add debug toggles to config and expose in `/levelhead debug`
+- [x] 1. Add debug toggles to config and expose in `/levelhead debug`
 
   What to do:
   - Add new OneConfig switches under Advanced in `src/main/kotlin/club/sk1er/mods/levelhead/config/LevelheadConfig.kt`.
@@ -175,7 +175,7 @@ Wave 3 (verification + polish)
     Expected Result: Exit code 0
   ```
 
-- [ ] 2. Add shared debug logging helpers (format + redaction-safe summary)
+- [x] 2. Add shared debug logging helpers (format + redaction-safe summary)
 
   What to do:
   - Create a small helper (new Kotlin file) to:
@@ -212,7 +212,7 @@ Wave 3 (verification + polish)
     Expected Result: At least one match in a helper file and at least one match in a call site.
   ```
 
-- [ ] 3. Add request-origin plumbing so logs can answer "why"
+- [x] 3. Add request-origin plumbing so logs can answer "why"
 
   What to do:
   - Add a `reason` field (string or enum) to `Levelhead.LevelheadRequest` in `src/main/kotlin/club/sk1er/mods/levelhead/Levelhead.kt`.
@@ -250,7 +250,7 @@ Wave 3 (verification + polish)
     Expected Result: Request constructors include the reason parameter and the data class contains it.
   ```
 
-- [ ] 4. Log local cache decisions and request batching in `fetchBatch` / `ensureStatsFetch`
+- [x] 4. Log local cache decisions and request batching in `fetchBatch` / `ensureStatsFetch`
 
   What to do:
   - In `src/main/kotlin/club/sk1er/mods/levelhead/Levelhead.kt`:
@@ -287,7 +287,7 @@ Wave 3 (verification + polish)
     Expected Result: Build passes; grep finds new markers.
   ```
 
-- [ ] 5. Add proxy request/response debug logs (include `X-Cache`)
+- [x] 5. Add proxy request/response debug logs (include `X-Cache`)
 
   What to do:
   - In `src/main/kotlin/club/sk1er/mods/levelhead/bedwars/ProxyClient.kt`:
@@ -320,7 +320,7 @@ Wave 3 (verification + polish)
     Expected Result: No matches (empty file) because auth headers/tokens are never printed.
   ```
 
-- [ ] 6. Add Hypixel request/response debug logs
+- [x] 6. Add Hypixel request/response debug logs
 
   What to do:
   - In `src/main/kotlin/club/sk1er/mods/levelhead/bedwars/HypixelClient.kt`:
@@ -350,7 +350,7 @@ Wave 3 (verification + polish)
     Expected Result: No matches (empty file) because API key values are never printed.
   ```
 
-- [ ] 7. Add tag-write logs (what is currently shown + colors)
+- [x] 7. Add tag-write logs (what is currently shown + colors)
 
   What to do:
   - In `src/main/kotlin/club/sk1er/mods/levelhead/Levelhead.kt` `updateDisplayCache()`:
@@ -385,7 +385,7 @@ Wave 3 (verification + polish)
     Expected Result: At least one match.
   ```
 
-- [ ] 8. Add render sampling logs (throttled)
+- [x] 8. Add render sampling logs (throttled)
 
   What to do:
   - In `src/main/kotlin/club/sk1er/mods/levelhead/render/AboveHeadRender.kt`:
@@ -421,7 +421,7 @@ Wave 3 (verification + polish)
     Expected Result: Both matches exist.
   ```
 
-- [ ] 9. Hardening pass: ensure gating + redaction + stable prefixes everywhere
+- [x] 9. Hardening pass: ensure gating + redaction + stable prefixes everywhere
 
   What to do:
   - Verify every new log line is behind the correct toggle.
@@ -452,7 +452,7 @@ Wave 3 (verification + polish)
     Expected Result: Debug lines exist; sensitive-scan output shows no lines that print header values.
   ```
 
-- [ ] 10. Verification commands + evidence
+- [x] 10. Verification commands + evidence
 
   What to do:
   - Build and capture outputs.
@@ -482,17 +482,17 @@ Wave 3 (verification + polish)
 
 ## Final Verification Wave (parallel)
 
-- [ ] F1. Plan Compliance Audit (oracle)
+- [x] F1. Plan Compliance Audit (oracle)
   - Verify new log lines exist only in the intended client/mod files.
   - Verify no backend (`backend/`) files are modified.
 
-- [ ] F2. Safety Review (unspecified-high)
+- [x] F2. Safety Review (unspecified-high)
   - Search for any logging of secret-bearing fields and reject if found.
 
-- [ ] F3. Performance/Spam Review (unspecified-high)
+- [x] F3. Performance/Spam Review (unspecified-high)
   - Confirm render sampling is throttled and not on a hot path when disabled.
 
-- [ ] F4. Scope Fidelity Check (deep)
+- [x] F4. Scope Fidelity Check (deep)
   - Ensure changes are strictly logging + config toggles, no behavior changes.
 
 ---
@@ -506,7 +506,7 @@ grep -R "\[LevelheadDebug\]" -n src/main/kotlin/club/sk1er/mods/levelhead
 ```
 
 ### Final Checklist
-- [ ] Debug toggles exist and default OFF
-- [ ] Debug logs answer: when/why/requested, local cache warm/hit vs miss/expired, network response summary with proxy `X-Cache`, and tag text + colors
-- [ ] Render sampling logs are throttled and gated
-- [ ] No secrets are logged
+- [x] Debug toggles exist and default OFF
+- [x] Debug logs answer: when/why/requested, local cache warm/hit vs miss/expired, network response summary with proxy `X-Cache`, and tag text + colors
+- [x] Render sampling logs are throttled and gated
+- [x] No secrets are logged

@@ -105,13 +105,13 @@ object HypixelClient {
                 "[LevelheadDebug][network] error: ${ex::class.simpleName}"
             }
             notifyNetworkIssue(ex)
-            FetchResult.TemporaryError(ex.message)
+            FetchResult.TemporaryError(ex.message?.sanitizeForLogs())
         } catch (ex: Exception) {
             DebugLogging.logRequestDebug {
                 "[LevelheadDebug][network] error: ${ex::class.simpleName}"
             }
             Levelhead.logger.error("Failed to fetch Hypixel BedWars data", ex)
-            FetchResult.TemporaryError(ex.message)
+            FetchResult.TemporaryError(ex.message?.sanitizeForLogs())
         }
     }
 

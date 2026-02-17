@@ -175,10 +175,10 @@ object ProxyClient {
             }
         } catch (ex: IOException) {
             notifyNetworkIssue(ex)
-            FetchResult.TemporaryError(ex.message)
+            FetchResult.TemporaryError(ex.message?.sanitizeForLogs())
         } catch (ex: Exception) {
             Levelhead.logger.error("Failed to fetch proxy BedWars data", ex)
-            FetchResult.TemporaryError(ex.message)
+            FetchResult.TemporaryError(ex.message?.sanitizeForLogs())
         }
     }
 
@@ -317,10 +317,10 @@ object ProxyClient {
             }
         } catch (ex: IOException) {
             notifyNetworkIssue(ex)
-            identifierToUuid.values.associateWith { FetchResult.TemporaryError(ex.message) }
+            identifierToUuid.values.associateWith { FetchResult.TemporaryError(ex.message?.sanitizeForLogs()) }
         } catch (ex: Exception) {
             Levelhead.logger.error("Failed to fetch proxy BedWars batch data", ex)
-            identifierToUuid.values.associateWith { FetchResult.TemporaryError(ex.message) }
+            identifierToUuid.values.associateWith { FetchResult.TemporaryError(ex.message?.sanitizeForLogs()) }
         }
     }
 
@@ -375,7 +375,7 @@ object ProxyClient {
                 }
             }
         } catch (ex: IOException) {
-            Levelhead.logger.warn("Network error contributing player data: {}", ex.message)
+            Levelhead.logger.warn("Network error contributing player data: {}", ex.message?.sanitizeForLogs())
         } catch (ex: Exception) {
             Levelhead.logger.error("Error contributing player data", ex)
         }
