@@ -37,11 +37,15 @@ abstract class LevelheadDisplay(val displayPosition: DisplayPosition, val config
 
         // If still over max after timed purge, perform a hard purge of the oldest entries.
         if (cache.size > max) {
-            val toRemoveCount = cache.size - max
-            cache.entries
-                .sortedBy { it.value.lastSeen }
-                .take(toRemoveCount)
-                .forEach { cache.remove(it.key) }
+            val world = Minecraft.getMinecraft().theWorld ?: return
+            val uuids = world.playerEntities.mapTo(HashSet<UUID>(world.playerEntities.size)) { it.uniqueID }
+            val activeMode = ModeManager.getActiveGameMode()
+
+            // Use removeIf to avoid creating intermediate maps and clearing/re-populating the cache.
+            // This retains only entries for players in the current world and matching the active game mode.
+            cache.entries.removeIf { entry ->
+                !uuids.contains(entry.key.uuid) || (activeMode != null && entry.key.gameMode != activeMode)
+            }
         }
     }
     open fun loadOrRender(player: EntityPlayer?): Boolean {
