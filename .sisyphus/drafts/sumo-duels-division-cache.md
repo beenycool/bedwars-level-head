@@ -28,10 +28,10 @@
 - Display config is synced to detected mode via `src/main/kotlin/club/sk1er/mods/levelhead/core/DisplayManager.kt` `syncGameMode()`.
 - Above-nametag rendering uses mode-specific stats formatting in `src/main/kotlin/club/sk1er/mods/levelhead/core/StatsFormatter.kt`.
 - Stats are fetched + shaped per mode in `src/main/kotlin/club/sk1er/mods/levelhead/core/StatsFetcher.kt`.
-- Client-side stats cache key includes BOTH uuid + game mode: `StatsCacheKey(val uuid: UUID, val gameMode: GameMode)` in `src/main/kotlin/club/sk1er/mods/levelhead/Levelhead.kt`.
+- Client-side stats cache key includes BOTH uuid + game mode: `StatsCacheKey(val uuid: UUID, val gameMode: GameMode)` in `src/main/kotlin/club/sk1er/mods/levelhead/core/StatsRepository.kt`.
 
 ## Leading Hypothesis (based on code)
-- The cached stats are separated by mode correctly, but the *mode used for cache lookup / display* can come from a stale `display.config.type` (resolved via `resolveGameMode(req.type)` in `src/main/kotlin/club/sk1er/mods/levelhead/Levelhead.kt`).
+- The cached stats are separated by mode correctly, but the *mode used for cache lookup / display* can come from a stale `display.config.type` (resolved via `resolveGameMode(req.type)` in `src/main/kotlin/club/sk1er/mods/levelhead/core/RequestCoordinator.kt`).
 - If `syncGameMode()` doesn’t run at the right time (or detectors briefly return NONE), the display config can effectively default to Bedwars, causing the above-nametag line to show Bedwars stars during a Duels/Sumo context.
 
 ## Test Infra (FYI)
