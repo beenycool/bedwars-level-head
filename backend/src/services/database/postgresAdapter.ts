@@ -20,10 +20,7 @@ export class PostgresAdapter implements DatabaseAdapter {
 
   async query<T>(sql: string, params?: any[]): Promise<QueryResult<T>> {
     const result = await this.pool.query(sql, params);
-    return {
-      rows: result.rows,
-      rowCount: result.rowCount ?? 0,
-    };
+    return { rows: result.rows, rowCount: result.rowCount ?? 0 };
   }
 
   async connect(): Promise<void> {
@@ -34,9 +31,11 @@ export class PostgresAdapter implements DatabaseAdapter {
     await this.pool.end();
     logger.info('[database] PostgreSQL pool closed');
   }
-
-  getPool(): Pool {
-    return this.pool;
+  getTopSql(_limit: number): string { return ''; }
+  getIlikeSql(column: string, placeholder: string): string { return `${column} ILIKE ${placeholder}`; }
+  getNowSql(): string { return 'NOW()'; }
+  getDateMinusIntervalSql(amount: number, unit: 'day' | 'hour' | 'minute'): string {
+    return `NOW() - INTERVAL '${amount} ${unit}s'`;
   }
 
   getPaginationFragment(limit: number | string, offset?: number | string): string {

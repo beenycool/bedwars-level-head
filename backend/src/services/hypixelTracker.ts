@@ -10,53 +10,27 @@ const FLUSH_INTERVAL_MS = 5000;
 const MAX_RETRIES = 3;
 const MAX_AGE_MS = 2 * HYPIXEL_API_CALL_WINDOW_MS;
 
-interface BufferedCall {
-  uuid: string;
-  calledAt: number;
-  retryCount: number;
-  createdAt: number;
-}
-
+interface BufferedCall { uuid: string; calledAt: number; retryCount: number; createdAt: number; }
 const hypixelCallBuffer: BufferedCall[] = [];
-// inflightBatch is module-level so getHypixelCallCount can include it
 const inflightBatch: BufferedCall[] = [];
 let flushPromise: Promise<void> | null = null;
 let flushInterval: NodeJS.Timeout | null = null;
 
 async function flushHypixelCallBuffer(): Promise<void> {
-  if (flushPromise) {
-    return flushPromise;
-  }
-
-  if (hypixelCallBuffer.length === 0) {
-    return;
-  }
-
+  if (flushPromise) return flushPromise; if (hypixelCallBuffer.length === 0) return;
   flushPromise = (async () => {
     try {
-      // Move buffer to inflight
-      inflightBatch.push(...hypixelCallBuffer);
-      hypixelCallBuffer.length = 0;
-
+      inflightBatch.push(...hypixelCallBuffer); hypixelCallBuffer.length = 0;
       await ensureInitialized();
 
       const maxParams = pool.getMaxParameters();
       const maxRecordsPerChunk = Math.floor(maxParams / 2);
-
-      // Process chunks from inflightBatch
-      // We slice from the beginning and splice on success to avoid double counting
       while (inflightBatch.length > 0) {
         const chunk = inflightBatch.slice(0, maxRecordsPerChunk);
         const params = chunk.flatMap((r) => [r.calledAt, r.uuid]);
-        const values = chunk.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ');
-
+        const values = chunk.map((_, i) => `(${pool.getPlaceholder(i * 2 + 1)}, ${pool.getPlaceholder(i * 2 + 2)})`).join(', ');
         try {
-          await pool.query(
-            `INSERT INTO hypixel_api_calls (called_at, uuid) VALUES ${values}`,
-            params,
-          );
-          // Success: remove these items from inflightBatch immediately
-          // This ensures getHypixelCallCount doesn't count them twice (once in DB, once here)
+          await pool.query(`INSERT INTO hypixel_api_calls (called_at, uuid) VALUES ${values}`, params);
           inflightBatch.splice(0, chunk.length);
         } catch (error) {
           logger.error('[hypixelTracker] Failed to flush chunk, re-queueing remaining items', error);
@@ -65,35 +39,23 @@ async function flushHypixelCallBuffer(): Promise<void> {
         }
       }
     } finally {
-      // If items remain (due to error), put them back in the buffer to retry later
       if (inflightBatch.length > 0) {
         const now = Date.now();
         const eligible = inflightBatch.filter(item => {
-           item.retryCount++;
-           const age = now - item.createdAt;
-           return item.retryCount <= MAX_RETRIES && age <= MAX_AGE_MS;
+           item.retryCount++; return item.retryCount <= MAX_RETRIES && (now - item.createdAt) <= MAX_AGE_MS;
         });
-
-        if (eligible.length > 0) {
-            hypixelCallBuffer.unshift(...eligible);
-        }
+        if (eligible.length > 0) hypixelCallBuffer.unshift(...eligible);
         inflightBatch.length = 0;
       }
       flushPromise = null;
     }
   })();
-
   return flushPromise;
 }
 
 export async function recordHypixelApiCall(uuid: string, calledAt: number = Date.now()): Promise<void> {
-  // Backpressure: If buffer is full, wait for current flush
   if (hypixelCallBuffer.length >= MAX_HARD_CAP) {
-    if (flushPromise) {
-      await flushPromise;
-    } else {
-      await flushHypixelCallBuffer();
-    }
+    if (flushPromise) await flushPromise; else await flushHypixelCallBuffer();
   }
 
   hypixelCallBuffer.push({
@@ -121,7 +83,6 @@ export async function recordHypixelApiCall(uuid: string, calledAt: number = Date
       logger.error('[hypixelTracker] Flush failed', error);
     });
   }
-
   if (!flushInterval) {
     flushInterval = setInterval(() => {
       void flushHypixelCallBuffer().catch((error) => {
@@ -156,34 +117,15 @@ export async function getHypixelCallCount(
   // Fallback to DB + local buffers (under-counts in multi-instance setup)
   await ensureInitialized();
   const cutoff = now - windowMs;
-
-  const result = await pool.query<{ count: string | number }>(
-    `
-    SELECT COUNT(*) AS count
-    FROM hypixel_api_calls
-    WHERE called_at >= $1
-    `,
-    [cutoff],
-  );
-
-  const bufferCount = hypixelCallBuffer.filter((item) => item.calledAt >= cutoff).length;
-  // inflightBatch contains items currently being flushed but not yet confirmed written (or failed)
-  const inflightCount = inflightBatch.filter((item) => item.calledAt >= cutoff).length;
-
-  const rawValue = result.rows[0]?.count ?? '0';
-  const parsed = typeof rawValue === 'string' ? Number.parseInt(rawValue, 10) : Number(rawValue);
-  const dbCount = Number.isFinite(parsed) ? parsed : 0;
-
-  return dbCount + bufferCount + inflightCount;
+  const res = await pool.query<{ count: string | number }>(`SELECT COUNT(*) AS count FROM hypixel_api_calls WHERE called_at >= ${pool.getPlaceholder(1)}`, [cutoff]);
+  const bCount = hypixelCallBuffer.filter((item) => item.calledAt >= cutoff).length;
+  const iCount = inflightBatch.filter((item) => item.calledAt >= cutoff).length;
+  const raw = res.rows[0]?.count ?? '0';
+  const dbCount = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number(raw);
+  return dbCount + bCount + iCount;
 }
 
-// Graceful shutdown
 export async function shutdown(): Promise<void> {
-  if (flushInterval) {
-    clearInterval(flushInterval);
-    flushInterval = null;
-  }
-  if (hypixelCallBuffer.length > 0 || inflightBatch.length > 0) {
-      await flushHypixelCallBuffer();
-  }
+  if (flushInterval) { clearInterval(flushInterval); flushInterval = null; }
+  if (hypixelCallBuffer.length > 0 || inflightBatch.length > 0) await flushHypixelCallBuffer();
 }

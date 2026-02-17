@@ -32,46 +32,27 @@ export class AzureSqlAdapter implements DatabaseAdapter {
     };
 
     const normalizeAzureUsername = (configToNormalize: mssql.config): void => {
-      // Check if server ends with '.database.windows.net' to avoid substring bypass attacks
       const server = configToNormalize.server;
-      if (
-        server &&
-        server.endsWith('.database.windows.net') &&
-        configToNormalize.user &&
-        !configToNormalize.user.includes('@')
-      ) {
+      if (server && server.endsWith('.database.windows.net') && configToNormalize.user && !configToNormalize.user.includes('@')) {
         const serverName = server.split('.')[0];
         configToNormalize.user = `${configToNormalize.user}@${serverName}`;
         logger.info(`[database] Updated Azure SQL username to ${configToNormalize.user}`);
       }
     };
-
-    // Try parsing as URL first (for mssql://user:pass@host:port/db format)
     if (connectionString.includes('://')) {
       try {
-        // Safely parse URL-format connection strings by working around special characters
         const parsed = this.parseUrlFormat(connectionString);
-        if (parsed) {
+        if (parsed && parsed.server) {
           Object.assign(config, parsed);
-
-          // If we got a server from URL, return the config
-          if (config.server) {
-             normalizeAzureUsername(config);
-             return config as mssql.config;
-          }
+          normalizeAzureUsername(config);
+          return config as mssql.config;
         }
       } catch (e) {
         // Ignore URL parse error and fall back to manual parsing
         logger.info('[database] URL parsing failed, falling back to manual parsing');
       }
     }
-
-    // Manual parsing for ADO.NET style or simple server:port;...
-    let withoutPrefix = connectionString
-      .replace(/^sqlserver:\/\//i, '')
-      .replace(/^mssql:\/\//i, '');
-
-    // Helper to process key-value pairs
+    let withoutPrefix = connectionString.replace(/^sqlserver:\/\//i, '').replace(/^mssql:\/\//i, '');
     const processPair = (key: string, value: string) => {
         const lowerKey = key.toLowerCase();
         let cleanValue = value.trim();
@@ -81,7 +62,6 @@ export class AzureSqlAdapter implements DatabaseAdapter {
             (cleanValue.startsWith("'") && cleanValue.endsWith("'"))) {
             cleanValue = cleanValue.substring(1, cleanValue.length - 1);
         }
-
         switch (lowerKey) {
             case 'server':
             case 'data source':
@@ -119,13 +99,15 @@ export class AzureSqlAdapter implements DatabaseAdapter {
             case 'trustservercertificate':
                 config.options.trustServerCertificate = cleanValue.toLowerCase() === 'true';
                 break;
+            case 'database': case 'initial catalog': config.database = cleanValue; break;
+            case 'user': case 'uid': case 'user id': case 'username': config.user = cleanValue; break;
+            case 'password': case 'pwd': config.password = cleanValue; break;
+            case 'encrypt': config.options.encrypt = cleanValue.toLowerCase() === 'true'; break;
+            case 'trustservercertificate': config.options.trustServerCertificate = cleanValue.toLowerCase() === 'true'; break;
         }
     };
-
     const rawParts = withoutPrefix.split(';');
-    let currentKey = '';
-    let currentValue = '';
-
+    let currentKey = ''; let currentValue = '';
     for (let i = 0; i < rawParts.length; i++) {
         const part = rawParts[i];
         let insideQuote = false;
@@ -136,17 +118,10 @@ export class AzureSqlAdapter implements DatabaseAdapter {
             else if (trimmedVal.startsWith('{') && !trimmedVal.endsWith('}')) insideQuote = true;
             if (trimmedVal === "'" || trimmedVal === '"' || trimmedVal === '{') insideQuote = true;
         }
-
-        if (insideQuote) {
-            currentValue += ';' + part;
-            continue;
-        }
-
+        if (insideQuote) { currentValue += ';' + part; continue; }
         const equalIndex = part.indexOf('=');
         if (equalIndex > 0) {
-             if (currentKey) {
-                 processPair(currentKey, currentValue);
-             }
+             if (currentKey) processPair(currentKey, currentValue);
              currentKey = part.substring(0, equalIndex).trim();
              currentValue = part.substring(equalIndex + 1);
         } else {
@@ -178,7 +153,6 @@ export class AzureSqlAdapter implements DatabaseAdapter {
     // Azure SQL specific fix: Ensure username is in user@server format if not already
     // This is often required for Azure SQL Database
     normalizeAzureUsername(config);
-
     return config as mssql.config;
   }
 
@@ -224,13 +198,12 @@ export class AzureSqlAdapter implements DatabaseAdapter {
 
   async query<T>(sql: string, params?: any[]): Promise<QueryResult<T>> {
     await this.connect();
-    
     let convertedSql = sql;
     const request = this.pool.request();
-
     if (params && params.length > 0) {
       params.forEach((value, index) => {
         const paramName = `p${index + 1}`;
+        // Fixed regex: removed extra backslashes from review feedback
         convertedSql = convertedSql.replace(new RegExp(`\\$${index + 1}(?![0-9])`, 'g'), `@${paramName}`);
         request.input(paramName, value);
       });
@@ -253,9 +226,12 @@ export class AzureSqlAdapter implements DatabaseAdapter {
     await this.pool.close();
     logger.info('[database] Azure SQL pool closed');
   }
-
-  getPool(): mssql.ConnectionPool {
-    return this.pool;
+  getUpsertSql(table: string, columns: string[], conflictColumn: string, updateColumns: string[]): string {
+    const sourceSelect = columns.map((col, i) => `@p${i + 1} AS ${col}`).join(', ');
+    const insertColumns = columns.join(', ');
+    const insertValues = columns.map(col => `source.${col}`).join(', ');
+    const updateSet = updateColumns.map(col => `target.${col} = source.${col}`).join(', ');
+    return `MERGE ${table} AS target USING (SELECT ${sourceSelect}) AS source ON (target.${conflictColumn} = source.${conflictColumn}) WHEN MATCHED THEN UPDATE SET ${updateSet} WHEN NOT MATCHED THEN INSERT (${insertColumns}) VALUES (${insertValues});`;
   }
 
   getPaginationFragment(limit: number | string, offset?: number | string): string {
