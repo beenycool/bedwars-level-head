@@ -1,4 +1,4 @@
-import { shapePayload } from '../../src/services/hypixel';
+import { type HypixelPlayerResponse, shapePayload } from '../../src/services/hypixel';
 
 jest.mock('../../src/services/hypixelTracker', () => ({
   recordHypixelApiCall: jest.fn().mockResolvedValue(undefined),
@@ -12,7 +12,7 @@ jest.mock('cacheable-lookup', () => {
 
 describe('shapePayload mutation', () => {
   it('should not mutate the input response object', () => {
-    const response: any = {
+    const response: HypixelPlayerResponse = {
       success: true,
       player: {
         uuid: 'test-uuid',
@@ -31,7 +31,7 @@ describe('shapePayload mutation', () => {
     };
 
     // Deep copy to compare later
-    const originalBedwarsStats = { ...response.player.stats.Bedwars };
+    const originalBedwarsStats = JSON.parse(JSON.stringify(response.player?.stats?.Bedwars ?? {}));
 
     shapePayload(response);
 
