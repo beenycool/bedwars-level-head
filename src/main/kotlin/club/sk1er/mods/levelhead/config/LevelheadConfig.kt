@@ -828,7 +828,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var dnsModeIndex: Int = 1 // Default to IPv4 First
         set(value) {
-            field = value.coerceIn(0, 2)
+            field = value.coerceIn(0, DnsMode.entries.size - 1)
             save()
         }
 

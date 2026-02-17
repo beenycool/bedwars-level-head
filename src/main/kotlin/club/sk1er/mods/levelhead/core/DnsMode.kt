@@ -39,9 +39,5 @@ enum class DnsMode(
             return entries.getOrNull(index) ?: IPV4_FIRST
         }
 
-        /**
-         * Get all display names as a list.
-         */
-        fun displayNames(): List<String> = entries.map { it.displayName }
     }
 }
