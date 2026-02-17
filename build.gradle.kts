@@ -72,6 +72,7 @@ dependencies {
     embed(kotlin("stdlib"))
     embed("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     embed("com.squareup.okhttp3:okhttp:3.14.9")
+    embed("com.google.code.gson:gson:2.10.1")
     compileOnly("org.spongepowered:mixin:0.8.5-SNAPSHOT")
 }
 

@@ -10,6 +10,7 @@ import club.sk1er.mods.levelhead.bedwars.FetchResult
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.BackendMode
 import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
@@ -141,7 +142,7 @@ object SkyWarsFetcher {
                     return FetchResult.TemporaryError("HYPIXEL_${response.code()}")
                 }
 
-                val json = runCatching { Levelhead.jsonParser.parse(body).asJsonObject }.getOrElse {
+                val json = runCatching { JsonParser.parseString(body).asJsonObject }.getOrElse {
                     Levelhead.logger.error("Failed to parse Hypixel SkyWars response", it)
                     return FetchResult.TemporaryError("PARSE_ERROR")
                 }

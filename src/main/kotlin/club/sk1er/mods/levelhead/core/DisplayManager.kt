@@ -3,11 +3,11 @@ package club.sk1er.mods.levelhead.core
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.Levelhead.gson
-import club.sk1er.mods.levelhead.Levelhead.jsonParser
 import club.sk1er.mods.levelhead.config.DisplayConfig
 import club.sk1er.mods.levelhead.config.MasterConfig
 import club.sk1er.mods.levelhead.display.AboveHeadDisplay
 import com.google.gson.JsonArray
+import com.google.gson.JsonParser
 import com.google.gson.JsonObject
 import net.minecraft.client.Minecraft
 import net.minecraft.entity.player.EntityPlayer
@@ -45,7 +45,7 @@ class DisplayManager(val file: File) {
                 shouldSaveCopyNow = true
             }
             val source = runCatching {
-                jsonParser.parse(FileUtils.readFileToString(file, StandardCharsets.UTF_8)).asJsonObject
+                JsonParser.parseString(FileUtils.readFileToString(file, StandardCharsets.UTF_8)).asJsonObject
             }.getOrElse { JsonObject() }
             if (source.has("master")) {
                 config = gson.fromJson(source["master"].asJsonObject, MasterConfig::class.java)

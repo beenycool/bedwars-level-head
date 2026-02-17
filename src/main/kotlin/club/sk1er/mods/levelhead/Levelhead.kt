@@ -107,7 +107,6 @@ object Levelhead {
         .callTimeout(15, TimeUnit.SECONDS)
         .build()
     val gson = Gson()
-    val jsonParser = JsonParser()
 
     private val configFile by lazy { File(File(minecraft.mcDataDir, "config"), "levelhead.json") }
     val displayManager: DisplayManager by lazy { DisplayManager(configFile) }
@@ -177,7 +176,7 @@ object Levelhead {
                         return@use
                     }
                     val body = response.body()?.string()?.takeIf { it.isNotBlank() } ?: return@use
-                    val json = kotlin.runCatching { jsonParser.parse(body) }.getOrNull() ?: return@use
+                    val json = kotlin.runCatching { JsonParser.parseString(body) }.getOrNull() ?: return@use
                     if (!json.isJsonArray) {
                         logger.debug("Unexpected Modrinth response: not an array")
                         return@use
@@ -273,6 +272,118 @@ object Levelhead {
 
     fun fetchBatch(requests: List<LevelheadRequest>): Job {
         return requestCoordinator.fetchBatch(requests)
+    }
+
+            val remaining = pending.toMutableList()
+
+            if (LevelheadConfig.proxyEnabled) {
+                val proxyCandidates = remaining
+                    .filter { inFlightStatsRequests.containsKey(it.cacheKey).not() }
+                if (proxyCandidates.isNotEmpty()) {
+                    val batchLocks = proxyCandidates.mapNotNull { entry ->
+                        val deferred = CompletableDeferred<GameStats?>()
+                        val existing = inFlightStatsRequests.putIfAbsent(entry.cacheKey, deferred)
+
+                        if (entry.registerForRefresh && entry.displays.isNotEmpty()) {
+                            registerDisplaysForRefresh(entry.cacheKey, entry.displays)
+                        }
+
+                        if (existing == null) entry.cacheKey to deferred else null
+                    }.toMap()
+
+                    val lockedEligible = proxyCandidates.filter { batchLocks.containsKey(it.cacheKey) }
+                    val entriesByUuid = lockedEligible.groupBy { it.uuid }
+
+                    lockedEligible
+                        .map { it.uuid }
+                        .distinct()
+                        .chunked(20)
+                        .forEach { chunk ->
+                            lastFetchAttemptAt = System.currentTimeMillis()
+                            rateLimiter.consume()
+                            
+                            val results = club.sk1er.mods.levelhead.bedwars.ProxyClient.fetchBatch(chunk)
+                            
+                            chunk.forEach uuidLoop@{ uuid ->
+                                val result = results[uuid]
+                                val entries = entriesByUuid[uuid].orEmpty()
+
+                                if (entries.isEmpty() || result == null) {
+                                    entries.forEach { entry ->
+                                        batchLocks[entry.cacheKey]?.complete(null)
+                                        inFlightStatsRequests.remove(entry.cacheKey)
+                                    }
+                                    return@uuidLoop
+                                }
+
+                                when (result) {
+                                    is FetchResult.Success -> {
+                                        lastFetchSuccessAt = System.currentTimeMillis()
+                                        entries.forEach { entry ->
+                                            val cachedEntry = StatsFetcher.buildGameStats(
+                                                result.payload,
+                                                entry.gameMode,
+                                                result.etag
+                                            )
+                                            
+                                            if (cachedEntry != null) {
+                                                handleStatsUpdate(entry.cacheKey, cachedEntry)
+                                                applyStatsToRequests(uuid, entry.requests, cachedEntry)
+                                                remaining.remove(entry)
+                                                batchLocks[entry.cacheKey]?.complete(cachedEntry)
+                                                inFlightStatsRequests.remove(entry.cacheKey)
+                                            } else {
+                                                // Data missing for this mode in the proxy response.
+                                                // Complete the lock with null so it can fall back to individual fetch (Hypixel)
+                                                batchLocks[entry.cacheKey]?.complete(null)
+                                                inFlightStatsRequests.remove(entry.cacheKey)
+                                            }
+                                        }
+                                    }
+                                    else -> {
+                                        val proxyErrorReason = when (result) {
+                                            is FetchResult.TemporaryError -> result.reason
+                                            is FetchResult.PermanentError -> result.reason
+                                            else -> null
+                                        }
+
+                                        entries.forEach { entry ->
+                                            if (entry.registerForRefresh && entry.displays.isNotEmpty()) {
+                                                registerDisplaysForRefresh(entry.cacheKey, entry.displays)
+                                            }
+
+                                            val shouldSkipFallback = LevelheadConfig.proxyEnabled &&
+                                                    entry.cached != null &&
+                                                    proxyErrorReason != null &&
+                                                    (proxyErrorReason.startsWith("PROXY_") || proxyErrorReason.startsWith("HTTP_"))
+
+                                            if (shouldSkipFallback) {
+                                                remaining.remove(entry)
+                                                DebugLogging.logRequestDebug {
+                                                    "[LevelheadDebug][request] fallback skipped: uuid=${entry.uuid.maskForLogs()} mode=${entry.gameMode.name} reason=$proxyErrorReason"
+                                                }
+                                            }
+                                            batchLocks[entry.cacheKey]?.complete(null)
+                                            inFlightStatsRequests.remove(entry.cacheKey)
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                }
+            }
+
+            remaining.forEach { entry ->
+                val fetched = ensureStatsFetch(
+                    entry.cacheKey,
+                    entry.cached,
+                    entry.displays,
+                    entry.registerForRefresh
+                ).await()
+                applyStatsToRequests(entry.uuid, entry.requests, fetched)
+            }
+        }
+>>>>>>> origin/cleanup/null-safety-and-gson-modernization-9572016379926488654
     }
 
     fun getCachedStats(uuid: UUID): GameStats? {
