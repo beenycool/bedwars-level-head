@@ -255,6 +255,11 @@ export const SERVER_HOST = process.env.HOST ?? '0.0.0.0';
 export const TRUST_PROXY_CIDRS: string[] = parseCIDRListEnv(process.env.TRUST_PROXY_CIDRS);
 export const TRUST_PROXY_ENABLED = TRUST_PROXY_CIDRS.length > 0;
 
+// CIDRs allowed to access operational metrics and health details without a token
+export const MONITORING_ALLOWED_CIDRS: string[] = parseCIDRListEnv(
+  process.env.MONITORING_ALLOWED_CIDRS || "127.0.0.1/32,::1/128"
+);
+
 export const HYPIXEL_API_BASE_URL = process.env.HYPIXEL_API_BASE_URL ?? 'https://api.hypixel.net';
 
 export const CLOUD_FLARE_TUNNEL = process.env.CLOUDFLARE_TUNNEL ?? '';

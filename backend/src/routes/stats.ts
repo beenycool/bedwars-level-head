@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { enforceMonitoringAuth } from '../middleware/monitoringAuth';
 import {
   getPlayerQueryCount,
   getPlayerQueryPage,
@@ -13,6 +14,7 @@ import { escapeHtml } from '../util/html';
 import { toCSV } from '../util/csv';
 
 const router = Router();
+router.use(enforceMonitoringAuth);
 const PAGE_SIZE = 25;
 
 function formatDate(date: Date): string {

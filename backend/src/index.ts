@@ -36,30 +36,14 @@ import statsRouter from './routes/stats';
 import configRouter from './routes/config';
 import cronRouter from './routes/cron';
 import { securityHeaders } from './middleware/securityHeaders';
-import { sanitizeUrlForLogs } from './util/requestUtils';
+import { isAuthorizedMonitoring, enforceMonitoringAuth } from './middleware/monitoringAuth';
+import { sanitizeUrlForLogs, isIPInCIDR } from './util/requestUtils';
 
 const app = express();
 
 app.disable('x-powered-by');
 app.use(securityHeaders);
 
-function isIPInCIDR(ip: string, cidr: string): boolean {
-  try {
-    const [network, prefix] = ipaddr.parseCIDR(cidr);
-    let parsedIp = ipaddr.parse(ip);
-    if (parsedIp.kind() === 'ipv6' && parsedIp.isIPv4MappedAddress()) {
-      parsedIp = parsedIp.toIPv4Address();
-    }
-
-    if (parsedIp.kind() !== network.kind()) {
-      return false;
-    }
-
-    return parsedIp.match([network, prefix]);
-  } catch {
-    return false;
-  }
-}
 
 // Configure trust proxy with CIDR allowlist
 app.set('trust proxy', (ip: string) => {
@@ -144,29 +128,34 @@ app.get('/healthz', async (_req, res) => {
     }
   }
 
-  res.status(healthy ? 200 : 503).json({
+  const response: Record<string, any> = {
     status,
-    circuitBreaker: {
+    timestamp: new Date().toISOString(),
+  };
+
+  if (isAuthorizedMonitoring(_req)) {
+    response.circuitBreaker = {
       state: circuitBreaker.state,
       failureCount: circuitBreaker.failureCount,
       ...(circuitBreaker.lastFailureAt ? { lastFailureAt: new Date(circuitBreaker.lastFailureAt).toISOString() } : {}),
       ...(circuitBreaker.nextRetryAt ? { nextRetryAt: new Date(circuitBreaker.nextRetryAt).toISOString() } : {}),
-    },
-    rateLimit: {
+    };
+    response.rateLimit = {
       requireRedis: fallbackState.requireRedis,
       fallbackMode: fallbackState.fallbackMode,
       isInFallbackMode: fallbackState.isInFallbackMode,
       ...(fallbackState.activatedAt ? { activatedAt: fallbackState.activatedAt } : {}),
-    },
-    checks: {
+    };
+    response.checks = {
       database: dbHealthy,
       hypixel: hypixelHealthy,
-    },
-    timestamp: new Date().toISOString(),
-  });
+    };
+  }
+
+  res.status(healthy ? 200 : 503).json(response);
 });
 
-app.get('/metrics', async (_req, res) => {
+app.get('/metrics', enforceMonitoringAuth, async (_req, res) => {
   res.locals.metricsRoute = '/metrics';
   res.set('Content-Type', registry.contentType);
   res.send(await registry.metrics());
