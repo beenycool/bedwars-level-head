@@ -16,8 +16,11 @@ import cc.polyfrost.oneconfig.utils.commands.annotations.Main
 import cc.polyfrost.oneconfig.utils.commands.annotations.SubCommand
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiScreen
+import net.minecraft.event.ClickEvent
+import net.minecraft.event.HoverEvent
 import net.minecraft.util.ChatComponentText
 import net.minecraft.util.EnumChatFormatting as ChatColor
+import net.minecraft.util.IChatComponent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -437,7 +440,13 @@ class LevelheadCommand {
             "list" -> {
                 sendMessage("${ChatColor.GREEN}Available presets:")
                 ConfigProfiles.Preset.entries.forEach { preset ->
-                    sendMessage("${ChatColor.YELLOW}- ${ChatColor.GOLD}${preset.displayName}${ChatColor.YELLOW}: ${ChatColor.GRAY}${preset.description}")
+                    val line = ChatComponentText("${ChatColor.YELLOW}- ")
+                    val clickableName = ChatComponentText("${ChatColor.GOLD}${preset.displayName}")
+                    clickableName.chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead profile apply ${preset.name}")
+                    clickableName.chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to apply ${preset.displayName}"))
+                    line.appendSibling(clickableName)
+                    line.appendSibling(ChatComponentText("${ChatColor.YELLOW}: ${ChatColor.GRAY}${preset.description}"))
+                    sendMessage(line)
                 }
             }
             "apply" -> {
@@ -680,6 +689,15 @@ class LevelheadCommand {
         val formatted = "${ChatColor.AQUA}[Levelhead] ${ChatColor.RESET}$message"
         minecraft.addScheduledTask {
             minecraft.thePlayer?.addChatMessage(ChatComponentText(formatted))
+        }
+    }
+
+    private fun sendMessage(component: IChatComponent) {
+        val minecraft = Minecraft.getMinecraft()
+        val formatted = ChatComponentText("${ChatColor.AQUA}[Levelhead] ${ChatColor.RESET}")
+        formatted.appendSibling(component)
+        minecraft.addScheduledTask {
+            minecraft.thePlayer?.addChatMessage(formatted)
         }
     }
 
