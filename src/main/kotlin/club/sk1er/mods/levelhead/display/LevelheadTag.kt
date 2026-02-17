@@ -6,6 +6,7 @@ import java.awt.Color
 import java.util.*
 
 class LevelheadTag(val owner: UUID) {
+    var lastSeen: Long = System.currentTimeMillis()
     var header: LevelheadComponent = LevelheadComponent()
     var footer: LevelheadComponent = LevelheadComponent()
 

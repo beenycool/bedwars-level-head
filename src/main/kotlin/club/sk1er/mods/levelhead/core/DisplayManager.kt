@@ -12,15 +12,24 @@ import net.minecraft.client.Minecraft
 import net.minecraft.entity.player.EntityPlayer
 import org.apache.commons.io.FileUtils
 import java.awt.Color
+import java.util.*
 import java.io.File
 import java.io.IOException
 import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.launch
 
 class DisplayManager(val file: File) {
+    companion object {
+        private const val LAST_SEEN_UPDATE_INTERVAL_MS = 5000L
+        private const val CACHE_CHECK_INTERVAL_MS = 10000L
+    }
+
     var config = MasterConfig()
     val aboveHead: MutableList<AboveHeadDisplay> = ArrayList()
     private var wasInGame: Boolean = false
+    private var lastCacheCheckAt: Long = 0L
+    private var lastSeenUpdateAt: Long = 0L
+    private val reusableUuidSet = HashSet<UUID>()
 
     init {
         readConfig()
@@ -154,7 +163,23 @@ class DisplayManager(val file: File) {
 
     private val pendingRequests = java.util.concurrent.ConcurrentLinkedQueue<Levelhead.LevelheadRequest>()
 
+
     fun tick() {
+        val now = System.currentTimeMillis()
+
+        // Periodically update lastSeen for all players in the world to keep their cache entries alive.
+        // This ensures that present but non-rendered players (e.g., behind the player) aren't purged.
+        if (now - lastSeenUpdateAt > LAST_SEEN_UPDATE_INTERVAL_MS) {
+            updateLastSeen()
+            lastSeenUpdateAt = now
+        }
+
+        // Periodically purge old or excessive cache entries.
+        if (now - lastCacheCheckAt > CACHE_CHECK_INTERVAL_MS) {
+            checkCacheSizes()
+            lastCacheCheckAt = now
+        }
+
         if (pendingRequests.isEmpty()) return
         val batch = ArrayList<Levelhead.LevelheadRequest>()
         var req = pendingRequests.poll()
@@ -167,12 +192,31 @@ class DisplayManager(val file: File) {
         }
     }
 
+    private fun updateLastSeen() {
+        val world = Minecraft.getMinecraft().theWorld ?: return
+        val now = System.currentTimeMillis()
+        val activeMode = ModeManager.getActiveGameMode() ?: return
+
+        // Scan world players and refresh their lastSeen timestamp in the display caches.
+        // Using a reusable set avoids the GC factory problem of allocating a new set every check.
+        reusableUuidSet.clear()
+        world.playerEntities.forEach { reusableUuidSet.add(it.uniqueID) }
+
+        aboveHead.forEach { display ->
+            if (!display.config.enabled) return@forEach
+            display.cache.forEach { (key, tag) ->
+                if (key.gameMode == activeMode && key.uuid in reusableUuidSet) {
+                    tag.lastSeen = now
+                }
+            }
+        }
+    }
+
     fun checkCacheSizes() {
         aboveHead.filter { it.config.enabled }.forEach { display ->
             display.checkCacheSize()
         }
     }
-
     fun clearCachesWithoutRefetch(clearStats: Boolean = true) {
         val activeMode = ModeManager.getActiveGameMode()
         Levelhead.logger.debug("clearCachesWithoutRefetch: clearStats={} activeMode={} cacheSizesBefore={}", 
