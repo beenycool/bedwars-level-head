@@ -1,5 +1,6 @@
 import { Pool, PoolConfig } from 'pg';
 import { DatabaseAdapter, DatabaseType, QueryResult } from './adapter';
+import { logger } from '../../util/logger';
 
 export class PostgresAdapter implements DatabaseAdapter {
   readonly type = DatabaseType.POSTGRESQL;
@@ -9,11 +10,11 @@ export class PostgresAdapter implements DatabaseAdapter {
     this.pool = new Pool(config);
 
     this.pool.on('connect', () => {
-      console.info('[database] connected to PostgreSQL');
+      logger.info('[database] connected to PostgreSQL');
     });
 
     this.pool.on('error', (error: unknown) => {
-      console.error('[database] unexpected PostgreSQL error', error);
+      logger.error('[database] unexpected PostgreSQL error', error);
     });
   }
 
@@ -32,7 +33,7 @@ export class PostgresAdapter implements DatabaseAdapter {
 
   async close(): Promise<void> {
     await this.pool.end();
-    console.info('[database] PostgreSQL pool closed');
+    logger.info('[database] PostgreSQL pool closed');
   }
 
   getPool(): Pool {

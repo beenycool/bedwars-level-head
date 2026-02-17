@@ -2,6 +2,7 @@ import { getRedisClient } from './redis';
 import axios from 'axios';
 import { createHash, pbkdf2Sync } from 'node:crypto';
 import { HYPIXEL_API_BASE_URL, OUTBOUND_USER_AGENT } from '../config';
+import { logger } from '../util/logger';
 
 export type ApiKeyStatus = 'valid' | 'invalid' | 'unknown' | 'pending';
 
@@ -123,7 +124,7 @@ export async function validateApiKey(key: string): Promise<ApiKeyValidation> {
       JSON.stringify(updatedData)
     );
   } else {
-    console.warn(`[apikey] redis not ready, skipped setex for ${getRedisKey(keyHash)}`);
+    logger.warn(`[apikey] redis not ready, skipped setex for ${getRedisKey(keyHash)}`);
   }
 
   return {
@@ -203,7 +204,7 @@ export async function getApiKeyValidation(key: string): Promise<ApiKeyValidation
       errorMessage: stored.errorMessage,
     };
   } catch (error) {
-    console.error('[apikey] get failed', error);
+    logger.error('[apikey] get failed', error);
     return null;
   }
 }
@@ -231,7 +232,7 @@ export async function getApiKeyValidationByHash(keyHash: string): Promise<ApiKey
       errorMessage: stored.errorMessage,
     };
   } catch (error) {
-    console.error('[apikey] getByHash failed', error);
+    logger.error('[apikey] getByHash failed', error);
     return null;
   }
 }
@@ -293,7 +294,7 @@ export async function deleteApiKey(keyHash: string): Promise<boolean> {
     const result = await redis.del(getRedisKey(keyHash));
     return result > 0;
   } catch (error) {
-    console.error('[apikey] delete failed', error);
+    logger.error('[apikey] delete failed', error);
     return false;
   }
 }

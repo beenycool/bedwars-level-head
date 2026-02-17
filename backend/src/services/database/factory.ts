@@ -2,6 +2,7 @@ import { CACHE_DB_URL, CACHE_DB_POOL_MIN, CACHE_DB_POOL_MAX } from '../../config
 import { DatabaseAdapter, DatabaseType } from './adapter';
 import { PostgresAdapter } from './postgresAdapter';
 import { AzureSqlAdapter } from './azureSqlAdapter';
+import { logger } from '../../util/logger';
 
 export function getDatabaseType(connectionString: string): DatabaseType {
   const normalized = connectionString.trim();
@@ -15,7 +16,7 @@ export function getDatabaseType(connectionString: string): DatabaseType {
     return DatabaseType.AZURE_SQL;
   }
   // Default to PostgreSQL if unsure, but log a warning
-  console.warn(`[database] Unknown database type in connection string, defaulting to PostgreSQL: ${normalized.split(':')[0]}...`);
+  logger.warn(`[database] Unknown database type in connection string, defaulting to PostgreSQL: ${normalized.split(':')[0]}...`);
   return DatabaseType.POSTGRESQL;
 }
 

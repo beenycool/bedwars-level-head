@@ -2,6 +2,7 @@
 import { recordPlayerQuery } from '../services/history';
 import { ResolvedPlayer } from '../services/player';
 import { isValidBedwarsObject } from './typeChecks';
+import { logger } from './logger';
 
 /**
  * Parses the If-Modified-Since header string into a timestamp number.
@@ -23,7 +24,7 @@ export async function recordQuerySafely(payload: Parameters<typeof recordPlayerQ
     try {
         await recordPlayerQuery(payload);
     } catch (error) {
-        console.error('Failed to record player query', {
+        logger.error('Failed to record player query', {
             error,
             identifier: payload.identifier,
             lookupType: payload.lookupType,

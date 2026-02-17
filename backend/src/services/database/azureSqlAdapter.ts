@@ -1,5 +1,6 @@
 import * as mssql from 'mssql';
 import { DatabaseAdapter, DatabaseType, QueryResult } from './adapter';
+import { logger } from '../../util/logger';
 
 export class AzureSqlAdapter implements DatabaseAdapter {
   readonly type = DatabaseType.AZURE_SQL;
@@ -8,7 +9,7 @@ export class AzureSqlAdapter implements DatabaseAdapter {
   constructor(connectionString: string) {
     // Parse the connection string manually for Azure SQL
     const config = this.parseConnectionString(connectionString);
-    console.log('[database] Azure SQL config parsed:', {
+    logger.info('[database] Azure SQL config parsed:', {
       server: config.server,
       port: config.port,
       database: config.database,
@@ -48,7 +49,7 @@ export class AzureSqlAdapter implements DatabaseAdapter {
       ) {
         const serverName = server.split('.')[0];
         configToNormalize.user = `${configToNormalize.user}@${serverName}`;
-        console.log(`[database] Updated Azure SQL username to ${configToNormalize.user}`);
+        logger.info(`[database] Updated Azure SQL username to ${configToNormalize.user}`);
       }
     };
 
@@ -68,7 +69,7 @@ export class AzureSqlAdapter implements DatabaseAdapter {
         }
       } catch (e) {
         // Ignore URL parse error and fall back to manual parsing
-        console.log('[database] URL parsing failed, falling back to manual parsing');
+        logger.info('[database] URL parsing failed, falling back to manual parsing');
       }
     }
 
@@ -198,7 +199,7 @@ export class AzureSqlAdapter implements DatabaseAdapter {
         config.server = config.server.substring(4);
     }
 
-    console.log(`[database] Password provided: ${!!config.password}`);
+    logger.info(`[database] Password provided: ${!!config.password}`);
 
     // Azure SQL specific fix: Ensure username is in user@server format if not already
     // This is often required for Azure SQL Database
@@ -297,7 +298,7 @@ export class AzureSqlAdapter implements DatabaseAdapter {
   async connect(): Promise<void> {
     if (!this.pool.connected) {
       await this.pool.connect();
-      console.info('[database] connected to Azure SQL');
+      logger.info('[database] connected to Azure SQL');
     }
   }
 
@@ -337,15 +338,15 @@ export class AzureSqlAdapter implements DatabaseAdapter {
         rowCount: result.rowsAffected[0] || 0,
       };
     } catch (error) {
-      console.error('[database] Azure SQL query error:', error);
-      console.error('SQL:', convertedSql);
+      logger.error('[database] Azure SQL query error:', error);
+      logger.error('SQL:', convertedSql);
       throw error;
     }
   }
 
   async close(): Promise<void> {
     await this.pool.close();
-    console.info('[database] Azure SQL pool closed');
+    logger.info('[database] Azure SQL pool closed');
   }
 
   getPool(): mssql.ConnectionPool {

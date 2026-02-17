@@ -13,6 +13,7 @@ import {
 } from '../config';
 import { HttpError } from '../util/httpError';
 import { recordHypixelApiCall } from './hypixelTracker';
+import { logger } from '../util/logger';
 
 const dnsCache = new CacheableLookup({ maxTtl: 300, fallbackDuration: 0 });
 
@@ -305,7 +306,7 @@ export async function fetchHypixelPlayer(
       const etag = response.headers['etag'] ?? null;
       const lastModified = parseLastModified(response.headers['last-modified']);
       void recordHypixelApiCall(uuid).catch((error) => {
-        console.error('Failed to record Hypixel API call', error);
+        logger.error('Failed to record Hypixel API call', error);
       });
 
       circuitBreakerSuccess();
@@ -372,7 +373,7 @@ export async function checkHypixelReachability(): Promise<boolean> {
     });
     return response.status < 500;
   } catch (error) {
-    console.error('Hypixel reachability check failed', error);
+    logger.error('Hypixel reachability check failed', error);
     return false;
   }
 }

@@ -1,6 +1,7 @@
 import { pool, ensureInitialized } from './cache';
 import { DatabaseType } from './database/adapter';
 import { HYPIXEL_API_CALL_WINDOW_MS } from '../config';
+import { logger } from '../util/logger';
 
 const MAX_BUFFER_SIZE = 100;
 const MAX_HARD_CAP = 10_000;
@@ -57,7 +58,7 @@ async function flushHypixelCallBuffer(): Promise<void> {
           // This ensures getHypixelCallCount doesn't count them twice (once in DB, once here)
           inflightBatch.splice(0, chunk.length);
         } catch (error) {
-          console.error('[hypixelTracker] Failed to flush chunk, re-queueing remaining items', error);
+          logger.error('[hypixelTracker] Failed to flush chunk, re-queueing remaining items', error);
           // Stop processing further chunks on error to preserve order/integrity
           break;
         }
@@ -103,14 +104,14 @@ export async function recordHypixelApiCall(uuid: string, calledAt: number = Date
 
   if (hypixelCallBuffer.length >= MAX_BUFFER_SIZE) {
     void flushHypixelCallBuffer().catch((error) => {
-      console.error('[hypixelTracker] Flush failed', error);
+      logger.error('[hypixelTracker] Flush failed', error);
     });
   }
 
   if (!flushInterval) {
     flushInterval = setInterval(() => {
       void flushHypixelCallBuffer().catch((error) => {
-        console.error('[hypixelTracker] Flush interval failed', error);
+        logger.error('[hypixelTracker] Flush interval failed', error);
       });
     }, FLUSH_INTERVAL_MS);
     flushInterval.unref();
