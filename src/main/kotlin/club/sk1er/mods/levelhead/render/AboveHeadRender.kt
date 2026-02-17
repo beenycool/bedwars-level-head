@@ -51,6 +51,9 @@ object AboveHeadRender {
         val displayPosition = displayManager.config.displayPosition
         val isInventoryScreen = getMinecraft().currentScreen is GuiInventory
 
+        // Hoist activeMode lookup outside the loop to avoid redundant calls
+        val activeMode = ModeManager.getActiveGameMode()
+
         displayManager.aboveHead.forEachIndexed { index, display ->
             if (!display.config.enabled) return@forEachIndexed
             if (isInventoryScreen && player.isSelf && !LevelheadConfig.showInInventory) {
@@ -61,7 +64,7 @@ object AboveHeadRender {
                 return@forEachIndexed
             }
             // Look up tag by (uuid, activeMode) to ensure mode-specific tags are served
-            val activeMode = ModeManager.getActiveGameMode()
+            // When activeMode is null, tags are not rendered (intentional behavior)
             val tag = if (activeMode != null) {
                 display.cache[Levelhead.DisplayCacheKey(player.uniqueID, activeMode)]
             } else {
