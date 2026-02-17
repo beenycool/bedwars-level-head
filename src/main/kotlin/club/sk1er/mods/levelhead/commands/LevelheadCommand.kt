@@ -7,6 +7,7 @@ import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.config.MasterConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import club.sk1er.mods.levelhead.core.GameMode
+import club.sk1er.mods.levelhead.core.await
 import club.sk1er.mods.levelhead.core.ModeManager
 import club.sk1er.mods.levelhead.commands.WhoisService.CommandException
 import cc.polyfrost.oneconfig.utils.commands.annotations.Command
@@ -783,7 +784,7 @@ class LevelheadCommand {
             .build()
 
         runCatching {
-            Levelhead.okHttpClient.newCall(request).execute().use { response ->
+            Levelhead.okHttpClient.newCall(request).await().use { response ->
                 response.isSuccessful
             }
         }.getOrDefault(false)
@@ -817,7 +818,7 @@ class LevelheadCommand {
             .post(requestBody)
             .build()
 
-        Levelhead.okHttpClient.newCall(request).execute().use { response ->
+        Levelhead.okHttpClient.newCall(request).await().use { response ->
             val body = response.body()?.string().orEmpty()
             if (!response.isSuccessful) {
                 val message = runCatching {
