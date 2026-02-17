@@ -11,6 +11,10 @@ import java.util.concurrent.ConcurrentHashMap
 import kotlin.math.max
 
 abstract class LevelheadDisplay(val displayPosition: DisplayPosition, val config: DisplayConfig) {
+    companion object {
+        private const val CACHE_ENTRY_TTL_MS = 300_000L
+    }
+
     // Cache is keyed by (UUID, GameMode) to ensure mode-specific tags are served correctly
     val cache: ConcurrentHashMap<Levelhead.DisplayCacheKey, LevelheadTag> = ConcurrentHashMap()
 
@@ -26,18 +30,18 @@ abstract class LevelheadDisplay(val displayPosition: DisplayPosition, val config
         // This in-place removal avoids the GC pressure of creating intermediate maps.
         cache.entries.removeIf { (key, tag) ->
             val isStaleMode = activeMode != null && key.gameMode != activeMode
-            val isOld = now - tag.lastSeen > 300_000L // 5 minute TTL
+            val isOld = now - tag.lastSeen > CACHE_ENTRY_TTL_MS
 
             isStaleMode || isOld
         }
 
         // If still over max after timed purge, perform a hard purge of the oldest entries.
         if (cache.size > max) {
-            val sortedEntries = cache.entries.sortedBy { it.value.lastSeen }
-            val toRemove = cache.size - max
-            for (i in 0 until toRemove) {
-                cache.remove(sortedEntries[i].key)
-            }
+            val toRemoveCount = cache.size - max
+            cache.entries
+                .sortedBy { it.value.lastSeen }
+                .take(toRemoveCount)
+                .forEach { cache.remove(it.key) }
         }
     }
     open fun loadOrRender(player: EntityPlayer?) = !player!!.displayName.formattedText.contains("§k", true)

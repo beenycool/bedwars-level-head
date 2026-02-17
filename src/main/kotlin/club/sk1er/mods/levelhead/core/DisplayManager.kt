@@ -19,6 +19,11 @@ import java.nio.charset.StandardCharsets
 import kotlinx.coroutines.launch
 
 class DisplayManager(val file: File) {
+    companion object {
+        private const val LAST_SEEN_UPDATE_INTERVAL_MS = 5000L
+        private const val CACHE_CHECK_INTERVAL_MS = 10000L
+    }
+
     var config = MasterConfig()
     val aboveHead: MutableList<AboveHeadDisplay> = ArrayList()
     private var wasInGame: Boolean = false
@@ -164,13 +169,13 @@ class DisplayManager(val file: File) {
 
         // Periodically update lastSeen for all players in the world to keep their cache entries alive.
         // This ensures that present but non-rendered players (e.g., behind the player) aren't purged.
-        if (now - lastSeenUpdateAt > 5000L) {
+        if (now - lastSeenUpdateAt > LAST_SEEN_UPDATE_INTERVAL_MS) {
             updateLastSeen()
             lastSeenUpdateAt = now
         }
 
         // Periodically purge old or excessive cache entries.
-        if (now - lastCacheCheckAt > 10000L) {
+        if (now - lastCacheCheckAt > CACHE_CHECK_INTERVAL_MS) {
             checkCacheSizes()
             lastCacheCheckAt = now
         }
