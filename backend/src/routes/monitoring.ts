@@ -8,6 +8,29 @@ import { enforceMonitoringAuth, isAuthorizedMonitoring } from '../middleware/mon
 
 const router = Router();
 
+type HealthStatus = 'ok' | 'degraded' | 'unhealthy';
+
+interface HealthCheckResponse {
+  status: HealthStatus;
+  timestamp: string;
+  circuitBreaker?: {
+    state: string;
+    failureCount: number;
+    lastFailureAt?: string;
+    nextRetryAt?: string;
+  };
+  rateLimit?: {
+    requireRedis: boolean;
+    fallbackMode: string;
+    isInFallbackMode: boolean;
+    activatedAt?: string;
+  };
+  checks?: {
+    database: boolean;
+    hypixel: boolean;
+  };
+}
+
 router.get('/healthz', enforceAdminRateLimit, async (req, res) => {
   res.locals.metricsRoute = '/healthz';
   const [dbHealthy, hypixelHealthy] = await Promise.all([
@@ -24,7 +47,7 @@ router.get('/healthz', enforceAdminRateLimit, async (req, res) => {
   const circuitBreaker = getCircuitBreakerState();
   const fallbackState = getRateLimitFallbackState();
   const healthy = dbHealthy;
-  let status: 'ok' | 'degraded' | 'unhealthy' = healthy
+  let status: HealthStatus = healthy
     ? (hypixelHealthy ? 'ok' : 'degraded')
     : 'unhealthy';
 
@@ -38,7 +61,7 @@ router.get('/healthz', enforceAdminRateLimit, async (req, res) => {
     }
   }
 
-  const response: Record<string, any> = {
+  const response: HealthCheckResponse = {
     status,
     timestamp: new Date().toISOString(),
   };

@@ -123,7 +123,7 @@ function isTooPermissiveCIDR(cidr: string): boolean {
   return cidr === '0.0.0.0/0' || cidr === '::/0';
 }
 
-function parseCIDRListEnv(value: string | undefined): string[] {
+function parseCIDRListEnv(value: string | undefined, envName: string): string[] {
   if (value === undefined || value.trim().length === 0) {
     // Default to loopback only
     return ['127.0.0.1/32', '::1/128'];
@@ -137,7 +137,7 @@ function parseCIDRListEnv(value: string | undefined): string[] {
   // Validate each CIDR and filter out invalid ones
   const validCidrs = cidrs.filter((cidr) => {
     if (!isValidCIDR(cidr)) {
-      console.warn(`[config] Invalid CIDR in TRUST_PROXY_CIDRS: "${cidr}" — skipping`);
+      console.warn(`[config] Invalid CIDR in ${envName}: "${cidr}" — skipping`);
       return false;
     }
     return true;
@@ -146,7 +146,7 @@ function parseCIDRListEnv(value: string | undefined): string[] {
   // Warn about too permissive CIDRs
   for (const cidr of validCidrs) {
     if (isTooPermissiveCIDR(cidr)) {
-      console.warn(`[config] WARNING: TRUST_PROXY_CIDRS includes ${cidr} which is too permissive and may allow IP spoofing`);
+      console.warn(`[config] WARNING: ${envName} includes ${cidr} which is too permissive and may allow IP spoofing`);
     }
   }
 
@@ -252,12 +252,13 @@ export const HYPIXEL_API_QUOTA = parseIntEnv('HYPIXEL_API_QUOTA', 120);
 
 export const SERVER_PORT = parseIntEnv('PORT', 3000);
 export const SERVER_HOST = process.env.HOST ?? '0.0.0.0';
-export const TRUST_PROXY_CIDRS: string[] = parseCIDRListEnv(process.env.TRUST_PROXY_CIDRS);
+export const TRUST_PROXY_CIDRS: string[] = parseCIDRListEnv(process.env.TRUST_PROXY_CIDRS, 'TRUST_PROXY_CIDRS');
 export const TRUST_PROXY_ENABLED = TRUST_PROXY_CIDRS.length > 0;
 
 // CIDRs allowed to access operational metrics and health details without a token
 export const MONITORING_ALLOWED_CIDRS: string[] = parseCIDRListEnv(
-  process.env.MONITORING_ALLOWED_CIDRS || "127.0.0.1/32,::1/128"
+  process.env.MONITORING_ALLOWED_CIDRS || '127.0.0.1/32,::1/128',
+  'MONITORING_ALLOWED_CIDRS',
 );
 
 export const HYPIXEL_API_BASE_URL = process.env.HYPIXEL_API_BASE_URL ?? 'https://api.hypixel.net';

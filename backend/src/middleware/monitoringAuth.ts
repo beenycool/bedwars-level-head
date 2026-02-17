@@ -14,6 +14,7 @@ export function isInternalRequest(req: Request): boolean {
     const ip = getClientIpAddress(req);
     return MONITORING_ALLOWED_CIDRS.some((cidr) => isIPInCIDR(ip, cidr));
   } catch (error) {
+    console.warn('[monitoring-auth] failed to resolve client IP for monitoring allowlist check', error);
     return false;
   }
 }
