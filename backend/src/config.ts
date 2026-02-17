@@ -5,7 +5,7 @@ import ipaddr from 'ipaddr.js';
 
 loadEnv();
 const isProduction = process.env.NODE_ENV === 'production';
-export const CLOUD_FLARE_TUNNEL = process.env.CLOUDFLARE_TUNNEL ?? '';
+export const CLOUD_FLARE_TUNNEL = process.env.CLOUDFLARE_TUNNEL?.trim() ?? '';
 
 interface MissingField {
   name: string;
@@ -172,11 +172,13 @@ const ADMIN_API_KEYS_VALUE = checkRequiredEnv(
 
 // Require TRUST_PROXY_CIDRS in production or when explicitly behind a proxy (e.g., Cloudflare Tunnel)
 if (isProduction || CLOUD_FLARE_TUNNEL.length > 0) {
-  checkRequiredEnv(
-    'TRUST_PROXY_CIDRS',
-    'Allowed CIDR ranges for trusted reverse proxies (required in production for IP security)',
-    'Comma-separated list of CIDRs (e.g., 127.0.0.1/32,10.0.0.0/8,172.16.0.0/12)'
-  );
+  if (!process.env.TRUST_PROXY_CIDRS?.trim()) {
+    missingFields.push({
+      name: 'TRUST_PROXY_CIDRS',
+      description: 'Allowed CIDR ranges for trusted reverse proxies (required in production for IP security)',
+      format: 'Comma-separated list of CIDRs (e.g., 127.0.0.1/32,10.0.0.0/8,172.16.0.0/12)',
+    });
+  }
 }
 if (missingFields.length > 0) {
   throw new Error(buildMissingFieldsError());
