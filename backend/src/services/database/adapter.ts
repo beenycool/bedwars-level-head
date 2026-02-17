@@ -18,7 +18,7 @@ export interface DatabaseAdapter {
   // Dialect-specific SQL helpers
   getPaginationFragment(limit: number | string, offset?: number | string): string;
   getIlikeFragment(column: string, placeholder: string): string;
-  formatInClause(column: string, values: any[], startIndex: number): { sql: string; params: any[] };
+  formatInClause(column: string, values: any[], startIndex: number): { sql: string; params: any[]; nextIndex: number };
   getUpsertQuery(table: string, columns: string[], conflictColumn: string, updateColumns: string[]): string;
   getMaxParameters(): number;
 

@@ -303,9 +303,8 @@ async function getManyPlayerStatsFromDb(
   }
 
   try {
-    let queryResult;
     const { sql, params: inParams } = pool.formatInClause('cache_key', keys, 1);
-    queryResult = await pool.query<CacheRow & { cache_key: string }>(
+    const queryResult = await pool.query<CacheRow & { cache_key: string }>(
       `SELECT payload, expires_at, cached_at, etag, last_modified, source, cache_key FROM player_stats_cache WHERE ${sql}`,
       inParams,
     );
@@ -446,10 +445,11 @@ async function setIgnMappingInDb(ign: string, uuid: string | null, nicked: boole
 
   const expiresAt = Date.now() + ttlMs;
   try {
-    const columns = ['ign', 'uuid', 'nicked', 'expires_at'];
-    const updateColumns = ['uuid', 'nicked', 'expires_at'];
+    const updatedAt = new Date();
+    const columns = ['ign', 'uuid', 'nicked', 'expires_at', 'updated_at'];
+    const updateColumns = ['uuid', 'nicked', 'expires_at', 'updated_at'];
     const sql = pool.getUpsertQuery('ign_uuid_cache', columns, 'ign', updateColumns);
-    await pool.query(sql, [ign, uuid, nicked, expiresAt]);
+    await pool.query(sql, [ign, uuid, nicked, expiresAt, updatedAt]);
     markDbAccess();
   } catch (error) {
     console.error('[statsCache] failed to write ign mapping', error);
