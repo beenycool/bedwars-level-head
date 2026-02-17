@@ -15,6 +15,10 @@ jest.mock('../../src/middleware/rateLimit', () => ({
     executionOrder.push('rateLimit');
     next();
   },
+  enforceMonitoringRateLimit: (_req: unknown, _res: unknown, next: () => void) => {
+    executionOrder.push('monitoringRateLimit');
+    next();
+  },
   enforceAdminRateLimit: (_req: unknown, _res: unknown, next: () => void) => {
     executionOrder.push('adminRateLimit');
     next();

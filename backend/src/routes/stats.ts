@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { enforceMonitoringAuth } from '../middleware/monitoringAuth';
+import { enforceMonitoringRateLimit } from '../middleware/rateLimit';
 import {
   getPlayerQueryCount,
   getPlayerQueryPage,
@@ -14,6 +15,7 @@ import { escapeHtml } from '../util/html';
 import { toCSV } from '../util/csv';
 
 const router = Router();
+router.use(enforceMonitoringRateLimit);
 router.use(enforceMonitoringAuth);
 const PAGE_SIZE = 25;
 

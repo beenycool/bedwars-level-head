@@ -10,6 +10,8 @@ import {
   TRUST_PROXY_CIDRS,
   ADMIN_RATE_LIMIT_WINDOW_MS,
   ADMIN_RATE_LIMIT_MAX,
+  PUBLIC_RATE_LIMIT_MAX,
+  PUBLIC_RATE_LIMIT_WINDOW_MS,
 } from '../config';
 import { HttpError } from '../util/httpError';
 import { isIPInCIDR } from '../util/requestUtils';
@@ -294,6 +296,8 @@ export const enforceRateLimit = createRateLimitMiddleware({
 export const enforceAdminRateLimit = createRateLimitMiddleware({
   windowMs: ADMIN_RATE_LIMIT_WINDOW_MS,
   max: ADMIN_RATE_LIMIT_MAX,
+  PUBLIC_RATE_LIMIT_MAX,
+  PUBLIC_RATE_LIMIT_WINDOW_MS,
   getBucketKey(req: Request) {
     return `admin:${getClientIpAddress(req)}`;
   },
@@ -328,4 +332,14 @@ export const enforceBatchRateLimit = createRateLimitMiddleware({
   },
   metricLabel: 'batch',
   getDynamicMax: resolveDynamicLimitValue,
+});
+
+// Rate limiter for monitoring and operational endpoints
+export const enforceMonitoringRateLimit = createRateLimitMiddleware({
+  windowMs: PUBLIC_RATE_LIMIT_WINDOW_MS,
+  max: PUBLIC_RATE_LIMIT_MAX,
+  getBucketKey(req: Request) {
+    return `monitoring:${getClientIpAddress(req)}`;
+  },
+  metricLabel: 'monitoring',
 });

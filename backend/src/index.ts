@@ -37,6 +37,7 @@ import configRouter from './routes/config';
 import cronRouter from './routes/cron';
 import { securityHeaders } from './middleware/securityHeaders';
 import { isAuthorizedMonitoring, enforceMonitoringAuth } from './middleware/monitoringAuth';
+import { enforceMonitoringRateLimit } from './middleware/rateLimit';
 import { sanitizeUrlForLogs, isIPInCIDR } from './util/requestUtils';
 
 const app = express();
@@ -96,7 +97,7 @@ if (CRON_API_KEYS.length > 0) {
 }
 app.use('/stats', statsRouter);
 
-app.get('/healthz', async (_req, res) => {
+app.get('/healthz', enforceMonitoringRateLimit, async (_req, res) => {
   res.locals.metricsRoute = '/healthz';
   const [dbHealthy, hypixelHealthy] = await Promise.all([
     cachePool
@@ -155,7 +156,7 @@ app.get('/healthz', async (_req, res) => {
   res.status(healthy ? 200 : 503).json(response);
 });
 
-app.get('/metrics', enforceMonitoringAuth, async (_req, res) => {
+app.get('/metrics', enforceMonitoringRateLimit, enforceMonitoringAuth, async (_req, res) => {
   res.locals.metricsRoute = '/metrics';
   res.set('Content-Type', registry.contentType);
   res.send(await registry.metrics());
