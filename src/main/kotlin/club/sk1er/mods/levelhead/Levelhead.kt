@@ -101,8 +101,8 @@ object Levelhead {
                 ipv4
             }
             DnsMode.IPV4_FIRST -> {
-                val ipv4 = addresses.filterIsInstance<Inet4Address>()
-                if (ipv4.isNotEmpty()) ipv4 else addresses
+                val (ipv4, other) = addresses.partition { it is Inet4Address }
+                ipv4 + other
             }
             DnsMode.SYSTEM_DEFAULT -> addresses
         }
