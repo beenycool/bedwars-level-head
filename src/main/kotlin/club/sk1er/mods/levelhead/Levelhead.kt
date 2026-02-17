@@ -5,6 +5,7 @@ import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import club.sk1er.mods.levelhead.commands.LevelheadCommand
 import club.sk1er.mods.levelhead.commands.WhoisCommand
 import club.sk1er.mods.levelhead.config.LevelheadConfig
+import club.sk1er.mods.levelhead.core.DnsMode
 import club.sk1er.mods.levelhead.core.DebugLogging
 import club.sk1er.mods.levelhead.core.DebugLogging.formatAsHex
 import club.sk1er.mods.levelhead.core.DebugLogging.maskForLogs
@@ -80,16 +81,24 @@ class LevelheadMod {
 object Levelhead {
     val logger: Logger = LogManager.getLogger()
     
-    private val ipv4OnlyDns = Dns { hostname ->
-        val addresses = Dns.SYSTEM.lookup(hostname).filterIsInstance<Inet4Address>()
-        if (addresses.isEmpty()) {
-            throw UnknownHostException("No IPv4 addresses for $hostname")
+    private val configurableDns = Dns { hostname ->
+        val addresses = Dns.SYSTEM.lookup(hostname)
+        when (LevelheadConfig.dnsMode) {
+            DnsMode.IPV4_ONLY -> {
+                val ipv4 = addresses.filterIsInstance<Inet4Address>()
+                if (ipv4.isEmpty()) throw UnknownHostException("No IPv4 addresses for $hostname")
+                ipv4
+            }
+            DnsMode.IPV4_FIRST -> {
+                val (ipv4, other) = addresses.partition { it is Inet4Address }
+                ipv4 + other
+            }
+            DnsMode.SYSTEM_DEFAULT -> addresses
         }
-        addresses
     }
 
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .dns(ipv4OnlyDns)
+        .dns(configurableDns)
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .writeTimeout(10, TimeUnit.SECONDS)

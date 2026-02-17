@@ -1,6 +1,7 @@
 package club.sk1er.mods.levelhead.config
 
 import club.sk1er.mods.levelhead.Levelhead
+import club.sk1er.mods.levelhead.core.DnsMode
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import club.sk1er.mods.levelhead.core.BackendMode
 import club.sk1er.mods.levelhead.core.GameMode
@@ -819,6 +820,18 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             save()
             BedwarsFetcher.resetWarnings()
         }
+    @Dropdown(
+        name = "DNS Resolution Mode",
+        description = "Choose how to resolve domain names. IPv4 First is recommended for most users.",
+        category = "Advanced",
+        options = ["IPv4 Only", "IPv4 First", "System Default"]
+    )
+    var dnsModeIndex: Int = 1 // Default to IPv4 First
+        set(value) {
+            field = value.coerceIn(0, DnsMode.entries.size - 1)
+            save()
+        }
+
 
     @Info(
         text = "Proxy Auth Token is recommended when using a private backend.",
@@ -984,6 +997,9 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     /**
      * Get the current BackendMode based on the dropdown selection.
      */
+    val dnsMode: DnsMode
+        get() = DnsMode.fromIndex(dnsModeIndex)
+
     val backendMode: BackendMode
         get() = BackendMode.fromIndex(backendModeIndex)
 
@@ -1340,6 +1356,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         hideIf("customDatabaseUrl") { !showAdvancedOptions }
         hideIf("proxyUrlWarning") { !showAdvancedOptions || !proxyEnabled || proxyBaseUrl.isNotBlank() }
         hideIf("proxyAuthInfo") { !showAdvancedOptions }
+        hideIf("dnsModeIndex") { !showAdvancedOptions }
 
         hideIf("bedwarsCustomFooterFormat") {
             bedwarsStatMode != BedwarsStatMode.CUSTOM
@@ -1474,6 +1491,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         showTabStats = true
         proxyEnabled = true
         proxyBaseUrl = DEFAULT_PROXY_URL
+        dnsModeIndex = 1
         proxyAuthToken = ""
         communitySubmitSecret = ""
         customDatabaseUrl = ""
