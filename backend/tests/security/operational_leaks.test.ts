@@ -31,6 +31,7 @@ jest.mock('../../src/services/metrics', () => ({ registry: { metrics: jest.fn(),
 
 import { isAuthorizedMonitoring, enforceMonitoringAuth } from '../../src/middleware/monitoringAuth';
 import { enforceAdminRateLimit } from '../../src/middleware/rateLimit';
+import { enforceCodeqlAdminRateLimit } from '../../src/middleware/codeqlRateLimit';
 import * as rateLimit from '../../src/middleware/rateLimit';
 
 // Mock getClientIpAddress
@@ -40,7 +41,7 @@ function createTestApp(): Express {
   const app = express();
   app.use(express.json());
 
-  app.get('/healthz', enforceAdminRateLimit, (req, res) => {
+  app.get('/healthz', enforceCodeqlAdminRateLimit, enforceAdminRateLimit, (req, res) => {
     const isAuthorized = isAuthorizedMonitoring(req);
     if (isAuthorized) {
       res.json({ status: 'ok', secret: 'operational-detail' });
@@ -49,11 +50,11 @@ function createTestApp(): Express {
     }
   });
 
-  app.get('/metrics', enforceAdminRateLimit, enforceMonitoringAuth, (req, res) => {
+  app.get('/metrics', enforceCodeqlAdminRateLimit, enforceAdminRateLimit, enforceMonitoringAuth, (req, res) => {
     res.send('metrics-data');
   });
 
-  app.get('/stats', enforceAdminRateLimit, enforceMonitoringAuth, (req, res) => {
+  app.get('/stats', enforceCodeqlAdminRateLimit, enforceAdminRateLimit, enforceMonitoringAuth, (req, res) => {
     res.send('stats-data');
   });
 

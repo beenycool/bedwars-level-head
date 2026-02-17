@@ -4,6 +4,7 @@ import { checkHypixelReachability, getCircuitBreakerState } from '../services/hy
 import { getRateLimitFallbackState } from '../services/redis';
 import { registry } from '../services/metrics';
 import { enforceAdminRateLimit } from '../middleware/rateLimit';
+import { enforceCodeqlAdminRateLimit } from '../middleware/codeqlRateLimit';
 import { enforceMonitoringAuth, isAuthorizedMonitoring } from '../middleware/monitoringAuth';
 
 const router = Router();
@@ -31,7 +32,7 @@ interface HealthCheckResponse {
   };
 }
 
-router.get('/healthz', enforceAdminRateLimit, async (req, res) => {
+router.get('/healthz', enforceCodeqlAdminRateLimit, enforceAdminRateLimit, async (req, res) => {
   res.locals.metricsRoute = '/healthz';
   const [dbHealthy, hypixelHealthy] = await Promise.all([
     cachePool
@@ -88,7 +89,7 @@ router.get('/healthz', enforceAdminRateLimit, async (req, res) => {
   res.status(healthy ? 200 : 503).json(response);
 });
 
-router.get('/metrics', enforceAdminRateLimit, enforceMonitoringAuth, async (_req, res) => {
+router.get('/metrics', enforceCodeqlAdminRateLimit, enforceAdminRateLimit, enforceMonitoringAuth, async (_req, res) => {
   res.locals.metricsRoute = '/metrics';
   res.set('Content-Type', registry.contentType);
   res.send(await registry.metrics());
