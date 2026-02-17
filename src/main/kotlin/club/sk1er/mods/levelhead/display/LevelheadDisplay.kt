@@ -18,19 +18,14 @@ abstract class LevelheadDisplay(val displayPosition: DisplayPosition, val config
         val max = max(150, Levelhead.displayManager.config.purgeSize)
         if (cache.size > max) {
             val world = Minecraft.getMinecraft().theWorld ?: return
-            val uuids = world.playerEntities.mapTo(mutableSetOf<UUID>()) { it.uniqueID }
-            // Get the current active mode to filter cache entries
+            val uuids = world.playerEntities.mapTo(HashSet<UUID>(world.playerEntities.size)) { it.uniqueID }
             val activeMode = ModeManager.getActiveGameMode()
-            // Retain entries where the key's UUID is in the current world's player set
-            // AND the key's gameMode matches the current active mode (prevents stale mode entries)
-            val cache2ElectricBoogaloo = if (activeMode != null) {
-                cache.filter { uuids.contains(it.key.uuid) && it.key.gameMode == activeMode }
-            } else {
-                // If no active mode, only filter by UUID (existing behavior)
-                cache.filter { uuids.contains(it.key.uuid) }
+
+            // Use removeIf to avoid creating intermediate maps and clearing/re-populating the cache.
+            // This retains only entries for players in the current world and matching the active game mode.
+            cache.entries.removeIf { entry ->
+                !uuids.contains(entry.key.uuid) || (activeMode != null && entry.key.gameMode != activeMode)
             }
-            this.cache.clear()
-            this.cache.putAll(cache2ElectricBoogaloo)
         }
     }
 

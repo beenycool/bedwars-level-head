@@ -39,6 +39,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 import net.minecraft.client.Minecraft
+import java.util.PriorityQueue
 import net.minecraft.client.entity.EntityPlayerSP
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.util.ChatComponentText
@@ -265,11 +266,18 @@ object Levelhead {
         }
     }
 
+    private var tickCounter = 0
+
     @SubscribeEvent
     fun onClientTick(event: TickEvent.ClientTickEvent) {
         if (event.phase != TickEvent.Phase.END) return
         LevelheadConfig.syncUiAndRuntimeConfig()
         displayManager.tick()
+
+        if (++tickCounter >= 100) {
+            tickCounter = 0
+            displayManager.checkCacheSizes()
+        }
     }
 
     fun fetchBatch(requests: List<LevelheadRequest>): Job {
@@ -662,22 +670,33 @@ object Levelhead {
     }
 
     private fun trimStatsCache(now: Long = System.currentTimeMillis()) {
-        val expiredKeys = statsCache
-            .filterValues { it.isExpired(LevelheadConfig.starCacheTtl, now) }
-            .keys
-        expiredKeys.forEach { statsCache.remove(it) }
+        // Use removeIf to avoid creating intermediate collections for expired entries
+        statsCache.values.removeIf { it.isExpired(LevelheadConfig.starCacheTtl, now) }
 
         val maxCacheSize = displayManager.config.purgeSize
-        if (statsCache.size <= maxCacheSize) return
+        val currentSize = statsCache.size
+        if (currentSize <= maxCacheSize) return
 
-        val entriesSnapshot = statsCache.entries.toList()
-        val overflow = entriesSnapshot.size - maxCacheSize
+        val overflow = currentSize - maxCacheSize
         if (overflow <= 0) return
 
-        entriesSnapshot
-            .sortedBy { it.value.fetchedAt }
-            .take(overflow)
-            .forEach { statsCache.remove(it.key) }
+        // Use a PriorityQueue (Max-Heap of oldest items) to find the 'overflow' oldest entries
+        // in O(n log overflow) time, avoiding sorting the entire cache and reducing allocations.
+        val oldestEntries = PriorityQueue<MutableMap.MutableEntry<StatsCacheKey, GameStats>>(
+            overflow + 1,
+            compareByDescending { it.value.fetchedAt }
+        )
+
+        for (entry in statsCache.entries) {
+            oldestEntries.add(entry)
+            if (oldestEntries.size > overflow) {
+                oldestEntries.poll()
+            }
+        }
+
+        while (oldestEntries.isNotEmpty()) {
+            oldestEntries.poll()?.let { statsCache.remove(it.key) }
+        }
     }
 
     private fun applyStatsToRequests(
