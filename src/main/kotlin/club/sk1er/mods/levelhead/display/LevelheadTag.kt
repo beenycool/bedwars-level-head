@@ -13,7 +13,12 @@ class LevelheadTag(val owner: UUID) {
 
     override fun toString(): String = "LevelheadTag{header=$header, footer=$footer, owner=$owner}"
 
-    fun clone(): LevelheadTag = Levelhead.gson.fromJson(Levelhead.gson.toJson(this), LevelheadTag::class.java)
+    fun clone(): LevelheadTag {
+        val tag = LevelheadTag(owner)
+        tag.header = header.clone()
+        tag.footer = footer.clone()
+        return tag
+    }
 
     companion object {
         fun build(owner: UUID, block: LevelheadTagBuilder.() -> Unit) =
@@ -64,5 +69,13 @@ class LevelheadTag(val owner: UUID) {
         }
 
         override fun toString(): String = "LevelheadComponent{value='$value', color='${color}', chroma=$chroma}"
+
+        fun clone(): LevelheadComponent {
+            val component = LevelheadComponent()
+            component.value = this.value
+            component.color = this.color
+            component.chroma = this.chroma
+            return component
+        }
     }
 }
