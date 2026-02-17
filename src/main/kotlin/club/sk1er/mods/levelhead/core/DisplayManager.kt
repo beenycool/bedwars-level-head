@@ -164,7 +164,10 @@ class DisplayManager(val file: File) {
         synchronized(pendingRequests) {
             val existing = pendingRequests[key]
             if (existing != null) {
-                pendingRequests[key] = existing.copy(displays = existing.displays + display)
+                pendingRequests[key] = existing.copy(
+                    displays = existing.displays + display,
+                    reason = if (existing.reason == reason) existing.reason else Levelhead.RequestReason.UNKNOWN
+                )
             } else {
                 pendingRequests[key] = Levelhead.LevelheadRequest(uuid, setOf(display), type, reason)
             }
