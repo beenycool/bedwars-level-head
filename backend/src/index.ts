@@ -45,7 +45,7 @@ import { sanitizeUrlForLogs } from './util/requestUtils';
 const app = express();
 
 app.use(requestId);
-app.use((req, res, next) => {
+app.use((_req, res, next) => {
   res.locals.nonce = crypto.randomBytes(16).toString('base64');
   next();
 });
@@ -54,8 +54,8 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", (_req, res) => `'nonce-${(res as any).locals.nonce}'`, "'strict-dynamic'"],
-      styleSrc: ["'self'", (_req, res) => `'nonce-${(res as any).locals.nonce}'`],
+      scriptSrc: ["'self'", (_req, res) => `'nonce-${(res as express.Response).locals.nonce}'`, "'strict-dynamic'"],
+      styleSrc: ["'self'", (_req, res) => `'nonce-${(res as express.Response).locals.nonce}'`],
       imgSrc: ["'self'", "data:"],
       connectSrc: ["'self'", "https://cdn.jsdelivr.net"],
       objectSrc: ["'none'"],
@@ -114,11 +114,15 @@ function isIPInCIDR(ip: string, cidr: string): boolean {
       parsedIp = parsedIp.toIPv4Address();
     }
 
-    if (parsedIp.kind() !== network.kind()) {
-      return false;
+    if (parsedIp.kind() === 'ipv4' && network.kind() === 'ipv4') {
+      return parsedIp.match(network, prefix);
     }
 
-    return parsedIp.match([network, prefix]);
+    if (parsedIp.kind() === 'ipv6' && network.kind() === 'ipv6') {
+      return parsedIp.match(network, prefix);
+    }
+
+    return false;
   } catch {
     return false;
   }
@@ -267,12 +271,12 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   }
 
   if (err instanceof Error) {
-    logger.error('Unexpected error:', err.message);
+    logger.error({ err }, 'Unexpected error');
     if (err.stack) {
       logger.error(err.stack);
     }
   } else {
-    logger.error('Unexpected error (non-Error object):', String(err));
+    logger.error({ err: String(err) }, 'Unexpected error (non-Error object)');
   }
   res.status(500).json({ success: false, cause: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
 });
@@ -329,7 +333,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
     await new Promise<void>((resolve) => {
       server.close((err?: Error) => {
         if (err) {
-          logger.error('Error closing HTTP server', err);
+          logger.error({ err }, 'Error closing HTTP server');
           process.exitCode = 1;
         }
 

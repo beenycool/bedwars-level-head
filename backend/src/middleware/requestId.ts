@@ -3,8 +3,8 @@ import { randomUUID } from 'crypto';
 
 export const requestId = (req: Request, res: Response, next: NextFunction): void => {
   const headerName = 'X-Request-ID';
-  // Use existing request ID if present (e.g., from upstream proxy), otherwise generate new one
-  const id = (req.header(headerName) || randomUUID()) as string;
+  const incomingId = req.header(headerName);
+  const id = Array.isArray(incomingId) ? incomingId[0] : incomingId || randomUUID();
 
   // Add to request object for easy access
   req.id = id;
