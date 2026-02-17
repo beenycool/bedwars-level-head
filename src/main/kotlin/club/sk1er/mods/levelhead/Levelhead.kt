@@ -19,6 +19,7 @@ import club.sk1er.mods.levelhead.core.RateLimiter
 import club.sk1er.mods.levelhead.core.RateLimiterMetrics
 import club.sk1er.mods.levelhead.core.StatsFetcher
 import club.sk1er.mods.levelhead.core.StatsFormatter
+import club.sk1er.mods.levelhead.core.await
 import club.sk1er.mods.levelhead.core.dashUUID
 import club.sk1er.mods.levelhead.display.LevelheadDisplay
 import club.sk1er.mods.levelhead.duels.DuelsModeDetector
@@ -171,7 +172,7 @@ object Levelhead {
                     .url(buildModrinthVersionUrl())
                     .header("User-Agent", "Levelhead/$VERSION")
                     .build()
-                okHttpClient.newCall(request).execute().use { response ->
+                okHttpClient.newCall(request).await().use { response ->
                     if (!response.isSuccessful) {
                         logger.debug("Modrinth update check failed with status {}", response.code())
                         return@use

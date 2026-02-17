@@ -2,9 +2,16 @@ package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.display.LevelheadDisplay
+import kotlinx.coroutines.suspendCancellableCoroutine
 import net.minecraft.client.Minecraft
 import net.minecraft.entity.player.EntityPlayer
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
+import java.io.IOException
 import java.util.*
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 
 fun LevelheadDisplay.update() {
@@ -37,3 +44,20 @@ val UUID.trimmed: String
 
 val EntityPlayer.isNPC: Boolean
     get() = this.uniqueID.version() == 2
+
+suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation ->
+    continuation.invokeOnCancellation {
+        cancel()
+    }
+    enqueue(object : Callback {
+        override fun onResponse(call: Call, response: Response) {
+            continuation.resume(response)
+        }
+
+        override fun onFailure(call: Call, e: IOException) {
+            if (!continuation.isCancelled) {
+                continuation.resumeWithException(e)
+            }
+        }
+    })
+}
