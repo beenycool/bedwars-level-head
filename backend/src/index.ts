@@ -25,6 +25,8 @@ import {
 } from './services/dynamicRateLimit';
 import { startAdaptiveTtlRefresh, stopAdaptiveTtlRefresh } from './services/statsCache';
 import { getRedisClient, getRateLimitFallbackState, startKeyCountRefresher, stopKeyCountRefresher } from './services/redis';
+import { enforceAdminRateLimit } from './middleware/rateLimit';
+import { enforceMonitoringAuth, isAuthorizedMonitoring } from './middleware/monitoringAuth';
 import {
   initializeResourceMetrics,
   stopResourceMetrics,
@@ -164,7 +166,8 @@ if (CRON_API_KEYS.length > 0) {
 }
 app.use('/stats', statsRouter);
 
-app.get('/healthz', async (_req, res) => {
+// lgtm[js/missing-rate-limiting]
+app.get('/healthz', enforceAdminRateLimit, async (req, res) => {
   res.locals.metricsRoute = '/healthz';
   const [dbHealthy, hypixelHealthy] = await Promise.all([
     cachePool
@@ -196,29 +199,35 @@ app.get('/healthz', async (_req, res) => {
     }
   }
 
-  res.status(healthy ? 200 : 503).json({
+  const response: Record<string, unknown> = {
     status,
-    circuitBreaker: {
+    timestamp: new Date().toISOString(),
+  };
+
+  if (isAuthorizedMonitoring(req)) {
+    response.circuitBreaker = {
       state: circuitBreaker.state,
       failureCount: circuitBreaker.failureCount,
       ...(circuitBreaker.lastFailureAt ? { lastFailureAt: new Date(circuitBreaker.lastFailureAt).toISOString() } : {}),
       ...(circuitBreaker.nextRetryAt ? { nextRetryAt: new Date(circuitBreaker.nextRetryAt).toISOString() } : {}),
-    },
-    rateLimit: {
+    };
+    response.rateLimit = {
       requireRedis: fallbackState.requireRedis,
       fallbackMode: fallbackState.fallbackMode,
       isInFallbackMode: fallbackState.isInFallbackMode,
       ...(fallbackState.activatedAt ? { activatedAt: fallbackState.activatedAt } : {}),
-    },
-    checks: {
+    };
+    response.checks = {
       database: dbHealthy,
       hypixel: hypixelHealthy,
-    },
-    timestamp: new Date().toISOString(),
-  });
+    };
+  }
+
+  res.status(healthy ? 200 : 503).json(response);
 });
 
-app.get('/metrics', async (_req, res) => {
+// lgtm[js/missing-rate-limiting]
+app.get('/metrics', enforceAdminRateLimit, enforceMonitoringAuth, async (_req, res) => {
   res.locals.metricsRoute = '/metrics';
   res.set('Content-Type', registry.contentType);
   res.send(await registry.metrics());

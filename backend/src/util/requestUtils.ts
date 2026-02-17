@@ -1,8 +1,31 @@
 
+import ipaddr from 'ipaddr.js';
 import { recordPlayerQuery } from '../services/history';
 import { ResolvedPlayer } from '../services/player';
 import { isValidBedwarsObject } from './typeChecks';
 import { logger } from './logger';
+
+export function isIPInCIDR(ip: string, cidr: string): boolean {
+  try {
+    const [network, prefix] = ipaddr.parseCIDR(cidr);
+    let parsedIp = ipaddr.parse(ip);
+    if (parsedIp.kind() === 'ipv6' && parsedIp.isIPv4MappedAddress()) {
+      parsedIp = parsedIp.toIPv4Address();
+    }
+
+    if (parsedIp.kind() === 'ipv4' && network.kind() === 'ipv4') {
+      return parsedIp.match(network, prefix);
+    }
+
+    if (parsedIp.kind() === 'ipv6' && network.kind() === 'ipv6') {
+      return parsedIp.match(network, prefix);
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Parses the If-Modified-Since header string into a timestamp number.
