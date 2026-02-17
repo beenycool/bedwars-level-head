@@ -128,7 +128,7 @@ function isTooPermissiveCIDR(cidr: string): boolean {
   return cidr === '0.0.0.0/0' || cidr === '::/0';
 }
 
-function parseCIDRListEnv(value: string | undefined): string[] {
+function parseCIDRListEnv(value: string | undefined, envName: string): string[] {
   if (value === undefined || value.trim().length === 0) {
     // Default to loopback only
     return ['127.0.0.1/32', '::1/128'];
@@ -273,7 +273,7 @@ export const PUBLIC_RATE_LIMIT_MAX = parseIntEnv('PUBLIC_RATE_LIMIT_MAX', 60);
 export const CRON_RATE_LIMIT_WINDOW_MS = parseIntEnv('CRON_RATE_LIMIT_WINDOW_MS', 60 * 60 * 1000);
 export const CRON_RATE_LIMIT_MAX = parseIntEnv('CRON_RATE_LIMIT_MAX', 10);
 export const ADMIN_RATE_LIMIT_WINDOW_MS = parseIntEnv('ADMIN_RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000);
-export const ADMIN_RATE_LIMIT_MAX = parseIntEnv('ADMIN_RATE_LIMIT_MAX', 50);
+export const ADMIN_RATE_LIMIT_MAX = parseIntEnv('ADMIN_RATE_LIMIT_MAX', 100);
 export const DYNAMIC_RATE_LIMIT_ENABLED = parseBooleanEnv('DYNAMIC_RATE_LIMIT_ENABLED', true);
 export const DYNAMIC_RATE_LIMIT_MIN = Math.max(1, parseIntEnv('DYNAMIC_RATE_LIMIT_MIN', 10));
 export const DYNAMIC_RATE_LIMIT_MAX = Math.max(
@@ -285,8 +285,14 @@ export const HYPIXEL_API_QUOTA = parseIntEnv('HYPIXEL_API_QUOTA', 120);
 
 export const SERVER_PORT = parseIntEnv('PORT', 3000);
 export const SERVER_HOST = process.env.HOST ?? '0.0.0.0';
-export const TRUST_PROXY_CIDRS: string[] = parseCIDRListEnv(process.env.TRUST_PROXY_CIDRS);
+export const TRUST_PROXY_CIDRS: string[] = parseCIDRListEnv(process.env.TRUST_PROXY_CIDRS, 'TRUST_PROXY_CIDRS');
 export const TRUST_PROXY_ENABLED = TRUST_PROXY_CIDRS.length > 0;
+
+// CIDRs allowed to access operational metrics and health details without a token
+export const MONITORING_ALLOWED_CIDRS: string[] = parseCIDRListEnv(
+  process.env.MONITORING_ALLOWED_CIDRS || '127.0.0.1/32,::1/128',
+  'MONITORING_ALLOWED_CIDRS',
+);
 
 export const HYPIXEL_API_BASE_URL = process.env.HYPIXEL_API_BASE_URL ?? 'https://api.hypixel.net';
 

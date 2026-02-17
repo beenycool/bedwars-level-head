@@ -1,6 +1,5 @@
 import express from 'express';
 import compression from 'compression';
-import ipaddr from 'ipaddr.js';
 import playerRouter from './routes/player';
 import playerPublicRouter from './routes/playerPublic';
 import apikeyPublicRouter from './routes/apikeyPublic';
@@ -15,8 +14,7 @@ import {
   CRON_API_KEYS,
 } from './config';
 import { purgeExpiredEntries, closeCache, pool as cachePool } from './services/cache';
-import { observeRequest, registry } from './services/metrics';
-import { checkHypixelReachability, getCircuitBreakerState } from './services/hypixel';
+import { observeRequest } from './services/metrics';
 import { shutdown as shutdownHypixelTracker } from './services/hypixelTracker';
 import { flushHistoryBuffer, startHistoryFlushInterval, stopHistoryFlushInterval } from './services/history';
 import {
@@ -24,7 +22,7 @@ import {
   stopDynamicRateLimitService,
 } from './services/dynamicRateLimit';
 import { startAdaptiveTtlRefresh, stopAdaptiveTtlRefresh } from './services/statsCache';
-import { getRedisClient, getRateLimitFallbackState, startKeyCountRefresher, stopKeyCountRefresher } from './services/redis';
+import { getRedisClient, startKeyCountRefresher, stopKeyCountRefresher } from './services/redis';
 import {
   initializeResourceMetrics,
   stopResourceMetrics,
@@ -132,8 +130,8 @@ function isIPInCIDR(ip: string, cidr: string): boolean {
 app.set('trust proxy', (ip: string) => {
   return TRUST_PROXY_CIDRS.some((cidr) => isIPInCIDR(ip, cidr));
 });
+
 // Enable gzip compression for all responses (clients should send Accept-Encoding: gzip)
-// Large Hypixel JSON payloads compress very well (often 80-90% reduction)
 app.use(compression());
 app.use(express.json({ limit: '64kb' }));
 
@@ -238,7 +236,6 @@ void initializeResourceMetrics().catch((error) => {
   process.exit(1);
 });
 
-// Start history flush interval
 startHistoryFlushInterval();
 
 const purgeInterval = setInterval(() => {
@@ -256,7 +253,6 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
         }
       });
     }
-    // Build response body with retry info for rate limit errors
     const responseBody: Record<string, unknown> = { success: false, cause: err.causeCode, message: err.message };
     if (err.status === 429 && err.headers?.['Retry-After']) {
       const retryAfterSeconds = parseInt(err.headers['Retry-After'], 10);
@@ -345,11 +341,9 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
         resolve();
       });
     });
-    // Flush history buffer before closing cache
     await flushHistoryBuffer().catch((error) => {
       logger.error('Error flushing history buffer during shutdown', error);
     });
-    // Flush hypixel tracker buffer before closing cache
     await shutdownHypixelTracker().catch((error) => {
       logger.error('Error shutting down hypixel tracker during shutdown', error);
     });
