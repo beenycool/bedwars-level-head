@@ -1,6 +1,5 @@
 import express from 'express';
 import compression from 'compression';
-import ipaddr from 'ipaddr.js';
 import playerRouter from './routes/player';
 import playerPublicRouter from './routes/playerPublic';
 import apikeyPublicRouter from './routes/apikeyPublic';
@@ -15,8 +14,7 @@ import {
   CRON_API_KEYS,
 } from './config';
 import { purgeExpiredEntries, closeCache, pool as cachePool } from './services/cache';
-import { observeRequest, registry } from './services/metrics';
-import { checkHypixelReachability, getCircuitBreakerState } from './services/hypixel';
+import { observeRequest } from './services/metrics';
 import { shutdown as shutdownHypixelTracker } from './services/hypixelTracker';
 import { flushHistoryBuffer, startHistoryFlushInterval, stopHistoryFlushInterval } from './services/history';
 import {
@@ -24,7 +22,7 @@ import {
   stopDynamicRateLimitService,
 } from './services/dynamicRateLimit';
 import { startAdaptiveTtlRefresh, stopAdaptiveTtlRefresh } from './services/statsCache';
-import { getRedisClient, getRateLimitFallbackState, startKeyCountRefresher, stopKeyCountRefresher } from './services/redis';
+import { getRedisClient, startKeyCountRefresher, stopKeyCountRefresher } from './services/redis';
 import {
   initializeResourceMetrics,
   stopResourceMetrics,
@@ -35,9 +33,8 @@ import apikeyRouter from './routes/apikey';
 import statsRouter from './routes/stats';
 import configRouter from './routes/config';
 import cronRouter from './routes/cron';
+import monitoringRouter from './routes/monitoring';
 import { securityHeaders } from './middleware/securityHeaders';
-import { isAuthorizedMonitoring, enforceMonitoringAuth } from './middleware/monitoringAuth';
-import { enforceAdminRateLimit } from './middleware/rateLimit';
 import { sanitizeUrlForLogs, isIPInCIDR } from './util/requestUtils';
 
 const app = express();
@@ -45,13 +42,12 @@ const app = express();
 app.disable('x-powered-by');
 app.use(securityHeaders);
 
-
 // Configure trust proxy with CIDR allowlist
 app.set('trust proxy', (ip: string) => {
   return TRUST_PROXY_CIDRS.some((cidr) => isIPInCIDR(ip, cidr));
 });
+
 // Enable gzip compression for all responses (clients should send Accept-Encoding: gzip)
-// Large Hypixel JSON payloads compress very well (often 80-90% reduction)
 app.use(compression());
 app.use(express.json({ limit: '64kb' }));
 
@@ -75,8 +71,7 @@ app.use((req, res, next) => {
     if (res.statusCode >= 500) {
       console.error(message);
     } else if (res.statusCode === 429) {
-      // Rate limit blocks are logged separately by the rate limit middleware
-      // Skip duplicate logging here
+      // Rate limit blocks are logged separately
     } else if (res.statusCode >= 400) {
       console.warn(message);
     } else {
@@ -96,71 +91,7 @@ if (CRON_API_KEYS.length > 0) {
   app.use('/api/cron', cronRouter);
 }
 app.use('/stats', statsRouter);
-
-app.get('/healthz', enforceAdminRateLimit, async (_req, res) => {
-  res.locals.metricsRoute = '/healthz';
-  const [dbHealthy, hypixelHealthy] = await Promise.all([
-    cachePool
-      .query('SELECT 1')
-      .then(() => true)
-      .catch((error) => {
-        console.error('Database health check failed', error);
-        return false;
-      }),
-    checkHypixelReachability(),
-  ]);
-
-  const circuitBreaker = getCircuitBreakerState();
-  const fallbackState = getRateLimitFallbackState();
-  const healthy = dbHealthy;
-  let status: 'ok' | 'degraded' | 'unhealthy' = healthy
-    ? (hypixelHealthy ? 'ok' : 'degraded')
-    : 'unhealthy';
-
-  if (status === 'ok') {
-    // If circuit breaker is open, consider it degraded
-    if (circuitBreaker.state === 'open') {
-      status = 'degraded';
-    }
-
-    // If rate limiting is in fallback mode and requireRedis is true, mark as degraded
-    if (fallbackState.isInFallbackMode && fallbackState.requireRedis) {
-      status = 'degraded';
-    }
-  }
-
-  const response: Record<string, any> = {
-    status,
-    timestamp: new Date().toISOString(),
-  };
-
-  if (isAuthorizedMonitoring(_req)) {
-    response.circuitBreaker = {
-      state: circuitBreaker.state,
-      failureCount: circuitBreaker.failureCount,
-      ...(circuitBreaker.lastFailureAt ? { lastFailureAt: new Date(circuitBreaker.lastFailureAt).toISOString() } : {}),
-      ...(circuitBreaker.nextRetryAt ? { nextRetryAt: new Date(circuitBreaker.nextRetryAt).toISOString() } : {}),
-    };
-    response.rateLimit = {
-      requireRedis: fallbackState.requireRedis,
-      fallbackMode: fallbackState.fallbackMode,
-      isInFallbackMode: fallbackState.isInFallbackMode,
-      ...(fallbackState.activatedAt ? { activatedAt: fallbackState.activatedAt } : {}),
-    };
-    response.checks = {
-      database: dbHealthy,
-      hypixel: hypixelHealthy,
-    };
-  }
-
-  res.status(healthy ? 200 : 503).json(response);
-});
-
-app.get('/metrics', enforceAdminRateLimit, enforceMonitoringAuth, async (_req, res) => {
-  res.locals.metricsRoute = '/metrics';
-  res.set('Content-Type', registry.contentType);
-  res.send(await registry.metrics());
-});
+app.use('/', monitoringRouter);
 
 void purgeExpiredEntries().catch((error) => {
   console.error('Failed to purge expired cache entries', error);
@@ -176,7 +107,6 @@ void initializeResourceMetrics().catch((error) => {
   process.exit(1);
 });
 
-// Start history flush interval
 startHistoryFlushInterval();
 
 const purgeInterval = setInterval(() => {
@@ -194,7 +124,6 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
         }
       });
     }
-    // Build response body with retry info for rate limit errors
     const responseBody: Record<string, unknown> = { success: false, cause: err.causeCode, message: err.message };
     if (err.status === 429 && err.headers?.['Retry-After']) {
       const retryAfterSeconds = parseInt(err.headers['Retry-After'], 10);
@@ -278,15 +207,12 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
         resolve();
       });
     });
-    // Flush history buffer before closing cache
     await flushHistoryBuffer().catch((error) => {
       console.error('Error flushing history buffer during shutdown', error);
     });
-    // Flush hypixel tracker buffer before closing cache
     await shutdownHypixelTracker().catch((error) => {
       console.error('Error shutting down hypixel tracker during shutdown', error);
     });
-    // Flush resource metrics before closing cache
     await flushResourceMetricsOnShutdown().catch(err => console.error('Failed to flush resource metrics on shutdown', err));
   } finally {
     safeCloseCache().finally(() => {

@@ -15,8 +15,6 @@ import { escapeHtml } from '../util/html';
 import { toCSV } from '../util/csv';
 
 const router = Router();
-router.use(enforceAdminRateLimit);
-router.use(enforceMonitoringAuth);
 const PAGE_SIZE = 25;
 
 function formatDate(date: Date): string {
@@ -103,7 +101,7 @@ function getEmptyStateForNoLookups(): string {
     </tr>`;
 }
 
-router.get('/csv', async (req, res) => {
+router.get('/csv', enforceAdminRateLimit, enforceMonitoringAuth, async (req, res) => {
   try {
     const fromParam = typeof req.query.from === 'string' ? req.query.from : undefined;
     const toParam = typeof req.query.to === 'string' ? req.query.to : undefined;
@@ -141,7 +139,7 @@ router.get('/csv', async (req, res) => {
   }
 });
 
-router.get('/data', async (req, res, next) => {
+router.get('/data', enforceAdminRateLimit, enforceMonitoringAuth, async (req, res, next) => {
   try {
     const fromParam = typeof req.query.from === 'string' ? req.query.from : undefined;
     const toParam = typeof req.query.to === 'string' ? req.query.to : undefined;
@@ -204,7 +202,7 @@ router.get('/data', async (req, res, next) => {
   }
 });
 
-router.get('/', async (req, res, next) => {
+router.get('/', enforceAdminRateLimit, enforceMonitoringAuth, async (req, res, next) => {
   try {
     const requestedPage = Number.parseInt((req.query.page as string) ?? '1', 10);
     const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
