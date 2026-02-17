@@ -9,6 +9,7 @@ import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.toHttpDateString
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.DebugLogging
 import com.google.gson.JsonArray
+import com.google.gson.JsonParser
 import com.google.gson.JsonObject
 import com.google.gson.JsonPrimitive
 import net.minecraft.util.EnumChatFormatting as ChatColor
@@ -158,7 +159,7 @@ object ProxyClient {
 
                 invalidProxyTokenWarned.set(false)
 
-                val json = kotlin.runCatching { Levelhead.jsonParser.parse(body).asJsonObject }.getOrElse {
+                val json = kotlin.runCatching { JsonParser.parseString(body).asJsonObject }.getOrElse {
                     Levelhead.logger.error("Failed to parse proxy response body", it)
                     return FetchResult.TemporaryError("PARSE_ERROR")
                 }
@@ -279,7 +280,7 @@ object ProxyClient {
 
                 invalidProxyTokenWarned.set(false)
 
-                val json = kotlin.runCatching { Levelhead.jsonParser.parse(body).asJsonObject }.getOrElse {
+                val json = kotlin.runCatching { JsonParser.parseString(body).asJsonObject }.getOrElse {
                     Levelhead.logger.error("Failed to parse proxy batch response body", it)
                     return identifierToUuid.values.associateWith { FetchResult.TemporaryError("PARSE_ERROR") }
                 }

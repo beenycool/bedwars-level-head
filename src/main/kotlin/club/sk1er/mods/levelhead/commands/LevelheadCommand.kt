@@ -28,6 +28,7 @@ import okhttp3.RequestBody
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import club.sk1er.mods.levelhead.commands.PlayerIdentifiers
 import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import java.awt.Color
 import java.util.Locale
 import java.util.UUID
@@ -813,12 +814,12 @@ class LevelheadCommand {
             val body = response.body()?.string().orEmpty()
             if (!response.isSuccessful) {
                 val message = runCatching {
-                    Levelhead.jsonParser.parse(body).asJsonObject.get("message")?.asString
+                    JsonParser.parseString(body).asJsonObject.get("message")?.asString
                 }.getOrNull()
                 throw CommandException(message ?: "Proxy returned HTTP ${response.code()} while purging cache.")
             }
 
-            val json = runCatching { Levelhead.jsonParser.parse(body).asJsonObject }.getOrElse {
+            val json = runCatching { JsonParser.parseString(body).asJsonObject }.getOrElse {
                 throw CommandException("Proxy responded with unexpected body.")
             }
             json.get("purged")?.asInt ?: 0

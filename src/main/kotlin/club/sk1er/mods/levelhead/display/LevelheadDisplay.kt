@@ -34,7 +34,10 @@ abstract class LevelheadDisplay(val displayPosition: DisplayPosition, val config
         }
     }
 
-    open fun loadOrRender(player: EntityPlayer?) = !player!!.displayName.formattedText.contains("§k", true)
+    open fun loadOrRender(player: EntityPlayer?): Boolean {
+        player ?: return false
+        return !player.displayName.formattedText.contains("§k", true)
+    }
 
     enum class DisplayPosition {
         ABOVE_HEAD

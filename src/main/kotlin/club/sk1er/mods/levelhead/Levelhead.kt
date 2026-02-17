@@ -107,7 +107,6 @@ object Levelhead {
         .callTimeout(15, TimeUnit.SECONDS)
         .build()
     val gson = Gson()
-    val jsonParser = JsonParser()
 
     private val configFile by lazy { File(File(minecraft.mcDataDir, "config"), "levelhead.json") }
     val displayManager: DisplayManager by lazy { DisplayManager(configFile) }
@@ -177,7 +176,7 @@ object Levelhead {
                         return@use
                     }
                     val body = response.body()?.string()?.takeIf { it.isNotBlank() } ?: return@use
-                    val json = kotlin.runCatching { jsonParser.parse(body) }.getOrNull() ?: return@use
+                    val json = kotlin.runCatching { JsonParser.parseString(body) }.getOrNull() ?: return@use
                     if (!json.isJsonArray) {
                         logger.debug("Unexpected Modrinth response: not an array")
                         return@use
@@ -353,7 +352,7 @@ object Levelhead {
                 val proxyCandidates = remaining
                     .filter { inFlightStatsRequests.containsKey(it.cacheKey).not() }
                 if (proxyCandidates.isNotEmpty()) {
-                    val batchLocks = proxyCandidates.associate { entry ->
+                    val batchLocks = proxyCandidates.mapNotNull { entry ->
                         val deferred = CompletableDeferred<GameStats?>()
                         val existing = inFlightStatsRequests.putIfAbsent(entry.cacheKey, deferred)
 
@@ -361,8 +360,8 @@ object Levelhead {
                             registerDisplaysForRefresh(entry.cacheKey, entry.displays)
                         }
 
-                        entry.cacheKey to (if (existing == null) deferred else null)
-                    }.filterValues { it != null }.mapValues { it.value!! }
+                        if (existing == null) entry.cacheKey to deferred else null
+                    }.toMap()
 
                     val lockedEligible = proxyCandidates.filter { batchLocks.containsKey(it.cacheKey) }
                     val entriesByUuid = lockedEligible.groupBy { it.uuid }

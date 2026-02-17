@@ -10,6 +10,7 @@ import club.sk1er.mods.levelhead.core.dashUUID
 import club.sk1er.mods.levelhead.duels.DuelsStats
 import club.sk1er.mods.levelhead.skywars.SkyWarsStats
 import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -162,7 +163,7 @@ object WhoisService {
             if (body.isEmpty()) {
                 return@withContext null
             }
-            val json = runCatching { Levelhead.jsonParser.parse(body).asJsonObject }.getOrNull() ?: return@withContext null
+            val json = runCatching { JsonParser.parseString(body).asJsonObject }.getOrNull() ?: return@withContext null
             val id = json.get("id")?.asString ?: return@withContext null
             val uuid = id.dashUUID ?: return@withContext null
             val name = json.get("name")?.asString ?: ign
