@@ -104,8 +104,8 @@ export function createApp(): express.Express {
   }
   app.use('/stats', statsRouter);
 
-  // lgtm[js/missing-rate-limiting]
   app.get('/healthz', enforceAdminRateLimit, async (req, res) => {
+    // lgtm[js/missing-rate-limiting]
     res.locals.metricsRoute = '/healthz';
     const [dbHealthy, hypixelHealthy] = await Promise.all([
       cachePool
@@ -161,8 +161,8 @@ export function createApp(): express.Express {
     res.status(healthy ? 200 : 503).json(response);
   });
 
-  // lgtm[js/missing-rate-limiting]
   app.get('/metrics', enforceAdminRateLimit, enforceMonitoringAuth, async (_req, res) => {
+    // lgtm[js/missing-rate-limiting]
     res.locals.metricsRoute = '/metrics';
     res.set('Content-Type', registry.contentType);
     res.send(await registry.metrics());
