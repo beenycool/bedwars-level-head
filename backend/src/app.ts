@@ -9,6 +9,7 @@ import { pool as cachePool } from './services/cache';
 import { observeRequest, registry } from './services/metrics';
 import { checkHypixelReachability, getCircuitBreakerState } from './services/hypixel';
 import { getRateLimitFallbackState } from './services/redis';
+import { enforceMonitoringAuth, isAuthorizedMonitoring } from './middleware/monitoringAuth';
 import adminRouter from './routes/admin';
 import apikeyRouter from './routes/apikey';
 import statsRouter from './routes/stats';
@@ -103,7 +104,8 @@ export function createApp(): express.Express {
   }
   app.use('/stats', statsRouter);
 
-  app.get('/healthz', enforceAdminRateLimit, async (_req, res) => {
+  // lgtm[js/missing-rate-limiting]
+  app.get('/healthz', enforceAdminRateLimit, async (req, res) => {
     res.locals.metricsRoute = '/healthz';
     const [dbHealthy, hypixelHealthy] = await Promise.all([
       cachePool
@@ -132,29 +134,35 @@ export function createApp(): express.Express {
       }
     }
 
-    res.status(healthy ? 200 : 503).json({
+    const response: Record<string, unknown> = {
       status,
-      circuitBreaker: {
+      timestamp: new Date().toISOString(),
+    };
+
+    if (isAuthorizedMonitoring(req)) {
+      response.circuitBreaker = {
         state: circuitBreaker.state,
         failureCount: circuitBreaker.failureCount,
         ...(circuitBreaker.lastFailureAt ? { lastFailureAt: new Date(circuitBreaker.lastFailureAt).toISOString() } : {}),
         ...(circuitBreaker.nextRetryAt ? { nextRetryAt: new Date(circuitBreaker.nextRetryAt).toISOString() } : {}),
-      },
-      rateLimit: {
+      };
+      response.rateLimit = {
         requireRedis: fallbackState.requireRedis,
         fallbackMode: fallbackState.fallbackMode,
         isInFallbackMode: fallbackState.isInFallbackMode,
         ...(fallbackState.activatedAt ? { activatedAt: fallbackState.activatedAt } : {}),
-      },
-      checks: {
+      };
+      response.checks = {
         database: dbHealthy,
         hypixel: hypixelHealthy,
-      },
-      timestamp: new Date().toISOString(),
-    });
+      };
+    }
+
+    res.status(healthy ? 200 : 503).json(response);
   });
 
-  app.get('/metrics', enforceAdminRateLimit, async (_req, res) => {
+  // lgtm[js/missing-rate-limiting]
+  app.get('/metrics', enforceAdminRateLimit, enforceMonitoringAuth, async (_req, res) => {
     res.locals.metricsRoute = '/metrics';
     res.set('Content-Type', registry.contentType);
     res.send(await registry.metrics());

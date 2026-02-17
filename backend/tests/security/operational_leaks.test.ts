@@ -40,7 +40,7 @@ function createTestApp(): Express {
   const app = express();
   app.use(express.json());
 
-  app.get('/healthz', enforceAdminRateLimit, (req, res) => {
+  app.get('/healthz', enforceAdminRateLimit, (req, res) => { // lgtm[js/missing-rate-limiting]
     const isAuthorized = isAuthorizedMonitoring(req);
     if (isAuthorized) {
       res.json({ status: 'ok', secret: 'operational-detail' });
@@ -49,11 +49,11 @@ function createTestApp(): Express {
     }
   });
 
-  app.get('/metrics', enforceAdminRateLimit, enforceMonitoringAuth, (req, res) => {
+  app.get('/metrics', enforceAdminRateLimit, enforceMonitoringAuth, (req, res) => { // lgtm[js/missing-rate-limiting]
     res.send('metrics-data');
   });
 
-  app.get('/stats', enforceAdminRateLimit, enforceMonitoringAuth, (req, res) => {
+  app.get('/stats', enforceAdminRateLimit, enforceMonitoringAuth, (req, res) => { // lgtm[js/missing-rate-limiting]
     res.send('stats-data');
   });
 
