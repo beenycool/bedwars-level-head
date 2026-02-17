@@ -356,7 +356,6 @@ export async function setCachedPayload<T>(
   const sql = pool.getUpsertQuery('player_stats_cache', columns, 'cache_key', updateColumns);
 
   await pool.query(sql, [key, payload, expiresAt, cachedAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null]);
-  markDbAccess();
 }
 
 export async function clearAllCacheEntries(): Promise<number> {
@@ -386,7 +385,7 @@ export async function deleteCacheEntries(keys: string[]): Promise<number> {
   }
 
   const { sql, params: delParams } = pool.formatInClause('cache_key', keys, 1);
-  const result = await pool.query(`DELETE FROM player_stats_cache WHERE ${sql}`, delParams);
+  result = await pool.query(`DELETE FROM player_stats_cache WHERE ${sql}`, delParams);
   markDbAccess();
   return deleted + result.rowCount;
 }

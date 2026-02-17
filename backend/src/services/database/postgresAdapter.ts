@@ -48,11 +48,10 @@ export class PostgresAdapter implements DatabaseAdapter {
     return `${column} ILIKE ${placeholder}`;
   }
 
-  formatInClause(column: string, values: any[], startIndex: number): { sql: string; params: any[]; nextIndex: number } {
+  formatInClause(column: string, values: any[], startIndex: number): { sql: string; params: any[] } {
     return {
       sql: `${column} = ANY($${startIndex})`,
       params: [values],
-      nextIndex: startIndex + 1,
     };
   }
 

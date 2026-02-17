@@ -352,6 +352,7 @@ export async function getPlayerQueriesWithFilters(params: {
   
   const queryParams = [...dateParams, requestedLimit];
 
+  let sql;
   const limitPlaceholder = `$${dateParams.length + 1}`;
   const sql = `
     SELECT identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
@@ -360,7 +361,6 @@ export async function getPlayerQueriesWithFilters(params: {
     ORDER BY requested_at DESC
     ${pool.getPaginationFragment(limitPlaceholder)}
   `;
-  const result = await pool.query<PlayerQueryHistoryRow>(sql, queryParams);
   return result.rows.map(mapRowToSummary);
 }
 
@@ -384,6 +384,7 @@ export async function getPlayerQueriesStats(params: {
 
   const queryParams = [...dateParams, requestedLimit];
 
+  let sql;
   const limitPlaceholder = `$${dateParams.length + 1}`;
   const sql = `
     SELECT lookup_type, stars, cache_hit, response_status, latency_ms, requested_at
@@ -392,7 +393,6 @@ export async function getPlayerQueriesStats(params: {
     ORDER BY requested_at DESC
     ${pool.getPaginationFragment(limitPlaceholder)}
   `;
-  const result = await pool.query<PlayerQueryStatsRow>(sql, queryParams);
   return result.rows.map(mapRowToStatsSummary);
 }
 
@@ -426,6 +426,7 @@ export async function getTopPlayersByQueryCount(params: {
   const limit = params.limit ?? 20;
   const queryParams = [...dateParams, limit];
 
+  let sql;
   const limitPlaceholder = `$${dateParams.length + 1}`;
   const sql = `
     SELECT normalized_identifier, MAX(resolved_username) as resolved_username, COUNT(*) as query_count
@@ -461,7 +462,11 @@ export function buildSearchClause(searchTerm: string | undefined, startIndex: nu
   const cond2 = pool.getIlikeFragment('resolved_username', placeholder);
   const cond3 = pool.getIlikeFragment('resolved_uuid', placeholder);
 
-  const clause = `WHERE ${cond1} ESCAPE '\\' OR ${cond2} ESCAPE '\\' OR ${cond3} ESCAPE '\\'`;
+  const clause = `WHERE ${cond1} ESCAPE '\' OR ${cond2} ESCAPE '\' OR ${cond3} ESCAPE '\'`; else {
+    // SQL Server is usually case-insensitive by default with its default collation.
+    // We use [key] notation for identifier if it's a reserved word, but here they aren't.
+    clause = `WHERE normalized_identifier LIKE ${placeholder} ESCAPE '\\' OR resolved_username LIKE ${placeholder} ESCAPE '\\' OR resolved_uuid LIKE ${placeholder} ESCAPE '\\'`;
+  }
 
   return { clause, params: [searchValue] };
 }
@@ -495,6 +500,7 @@ export async function getPlayerQueryPage(params: {
   const searchTerm = params.search?.trim();
   const { clause: whereClause, params: searchParams } = buildSearchClause(searchTerm, 3);
 
+  let sql;
   const sql = `
     SELECT identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
     FROM player_query_history
@@ -502,6 +508,9 @@ export async function getPlayerQueryPage(params: {
     ORDER BY requested_at DESC
     ${pool.getPaginationFragment('$1', '$2')}
   `;
+      OFFSET $2 ROWS FETCH NEXT $1 ROWS ONLY
+    `;
+  }
 
   const rowsResult = await pool.query<PlayerQueryHistoryRow>(sql, [pageSize, offset, ...searchParams]);
 

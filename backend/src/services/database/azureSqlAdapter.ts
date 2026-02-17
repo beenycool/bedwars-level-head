@@ -11,14 +11,13 @@ export class AzureSqlAdapter implements DatabaseAdapter {
   }
 
   private parseConnectionString(connectionString: string): mssql.config {
-    const trustServerCertificate = process.env.AZURE_SQL_TRUST_SERVER_CERTIFICATE?.toLowerCase() === 'true';
     const urlConfig = this.parseUrlFormat(connectionString);
     if (urlConfig) return urlConfig;
 
     const config: any = {
       options: {
         encrypt: true,
-        trustServerCertificate
+        trustServerCertificate: false
       }
     };
 
@@ -110,8 +109,7 @@ export class AzureSqlAdapter implements DatabaseAdapter {
                    if (firstPart.includes(':')) {
                        const lastColonIndex = firstPart.lastIndexOf(':');
                        config.server = firstPart.substring(0, lastColonIndex);
-                       const portStr = firstPart.substring(lastColonIndex + 1);
-                       config.port = parseInt(portStr, 10) || 1433;
+                       config.port = parseInt(firstPart.substring(lastColonIndex + 1), 10) || 1433;
                    } else {
                        config.server = firstPart;
                        config.port = 1433;
@@ -126,25 +124,14 @@ export class AzureSqlAdapter implements DatabaseAdapter {
         config.server = config.server.substring(4);
     }
 
-    if (!config.server) {
-      throw new Error('Azure SQL connection string is missing a server/host value');
-    }
-
-    if (config.user && config.server.includes('.database.windows.net') && !config.user.includes('@')) {
-        const serverPart = config.server.split('.')[0];
-        config.user = `${config.user}@${serverPart}`;
-    }
-
     return config as mssql.config;
   }
 
   private parseUrlFormat(connectionString: string): mssql.config | null {
     try {
-      const trustServerCertificate = process.env.AZURE_SQL_TRUST_SERVER_CERTIFICATE?.toLowerCase() === 'true';
       const normalizedString = connectionString.replace(/^sqlserver:/i, 'mssql:');
       const url = new URL(normalizedString);
       if (url.protocol !== 'mssql:') return null;
-      if (!url.hostname) return null;
 
       const parsedConfig: any = {
         server: url.hostname,
@@ -152,7 +139,7 @@ export class AzureSqlAdapter implements DatabaseAdapter {
         password: url.password,
         options: {
           encrypt: true,
-          trustServerCertificate
+          trustServerCertificate: false
         }
       };
 
@@ -225,12 +212,11 @@ export class AzureSqlAdapter implements DatabaseAdapter {
     return `${column} LIKE ${placeholder}`;
   }
 
-  formatInClause(column: string, values: any[], startIndex: number): { sql: string; params: any[]; nextIndex: number } {
+  formatInClause(column: string, values: any[], startIndex: number): { sql: string; params: any[] } {
     const placeholders = values.map((_, i) => `$${startIndex + i}`).join(', ');
     return {
       sql: `${column} IN (${placeholders})`,
       params: values,
-      nextIndex: startIndex + values.length,
     };
   }
 
@@ -270,6 +256,6 @@ export class AzureSqlAdapter implements DatabaseAdapter {
   }
 
   getPrivateRequestCountSql(sincePlaceholder: string): string {
-    return `SELECT COALESCE(SUM([count]), 0) AS total FROM rate_limits WHERE [key] LIKE 'private:%' AND window_start >= ${sincePlaceholder}`;
+    return `SELECT COALESCE(SUM(count), 0) AS total FROM rate_limits WHERE [key] LIKE 'private:%' AND window_start >= ${sincePlaceholder}`;
   }
 }
