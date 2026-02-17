@@ -139,3 +139,21 @@ Key design decisions:
 - No string building when debug disabled (early return + lazy lambda)
 - Extension functions imported explicitly: `maskForLogs`, `truncateForLogs`, `formatAsHex`, `logRenderDebug`
 
+## 2026-02-16: Hardening Pass - Debug Prefix Stability & Redaction
+
+Fixed two issues to ensure debug logging follows the plan's stable prefix requirement and properly redacts sensitive data:
+
+**Issue 1: Duplicate debug prefixes**
+- Problem: `DebugLogging.logRequestDebug()` was prepending `[DEBUG-REQ]` and `logRenderDebug()` was prepending `[DEBUG-RENDER]`, but call sites already included `[LevelheadDebug][network]`, `[LevelheadDebug][cache]`, etc.
+- Solution: Removed the prefix from both helper functions. Call sites now provide the complete message including the `[LevelheadDebug]` prefix.
+- Files changed: `DebugLogging.kt`
+
+**Issue 2: Unsanitized exception messages**
+- Problem: `ex.message` was used directly in `FetchResult.TemporaryError()` calls without redaction, potentially exposing URLs/tokens in logs.
+- Solution: Wrapped all `ex.message` usages with `sanitizeForLogs()` and null-safe operator (`?.`).
+- Files changed: `ProxyClient.kt` (4 locations), `HypixelClient.kt` (2 locations)
+
+Key implementation details:
+- Used `ex.message?.sanitizeForLogs()` to handle null safely (IOException.message can be null)
+- Applied to both `IOException` and generic `Exception` catch blocks
+- Build verified: `./gradlew build` passes
