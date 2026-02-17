@@ -1,4 +1,6 @@
 package club.sk1er.mods.levelhead.core
+import java.util.Collections
+import java.util.LinkedHashMap
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.Levelhead.gson
@@ -142,25 +144,44 @@ class DisplayManager(val file: File) {
         syncGameMode()
         val activeMode = ModeManager.getActiveGameMode() ?: return
         val displays = aboveHead.filter { it.config.enabled }
-        val requests = displays.filter { !it.cache.containsKey(Levelhead.DisplayCacheKey(player.uniqueID, activeMode)) }
-            .map { display ->
-                Levelhead.LevelheadRequest(player.uniqueID.trimmed, display, display.bottomValue, reason = Levelhead.RequestReason.PLAYER_JOIN)
+        displays.filter { !it.cache.containsKey(Levelhead.DisplayCacheKey(player.uniqueID, activeMode)) }
+            .forEach { display ->
+                enqueueRequest(player.uniqueID.trimmed, display, display.config.type, Levelhead.RequestReason.PLAYER_JOIN)
             }
-        
-        if (requests.isNotEmpty()) {
-            pendingRequests.addAll(requests)
-        }
     }
 
-    private val pendingRequests = java.util.concurrent.ConcurrentLinkedQueue<Levelhead.LevelheadRequest>()
+    private data class RequestKey(val uuid: String, val type: String)
+    private val pendingRequests: MutableMap<RequestKey, Levelhead.LevelheadRequest> = Collections.synchronizedMap(
+        object : LinkedHashMap<RequestKey, Levelhead.LevelheadRequest>(128, 0.75f, false) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<RequestKey, Levelhead.LevelheadRequest>): Boolean {
+                return size > 1000
+            }
+        }
+    )
+
+    private fun enqueueRequest(uuid: String, display: club.sk1er.mods.levelhead.display.LevelheadDisplay, type: String, reason: Levelhead.RequestReason) {
+        val key = RequestKey(uuid, type)
+        synchronized(pendingRequests) {
+            val existing = pendingRequests[key]
+            if (existing != null) {
+                pendingRequests[key] = existing.copy(displays = existing.displays + display)
+            } else {
+                pendingRequests[key] = Levelhead.LevelheadRequest(uuid, setOf(display), type, reason)
+            }
+        }
+    }
 
     fun tick() {
         if (pendingRequests.isEmpty()) return
         val batch = ArrayList<Levelhead.LevelheadRequest>()
-        var req = pendingRequests.poll()
-        while (req != null) {
-            batch.add(req)
-            req = pendingRequests.poll()
+        synchronized(pendingRequests) {
+            val it = pendingRequests.values.iterator()
+            var count = 0
+            while (it.hasNext() && count < 32) {
+                batch.add(it.next())
+                it.remove()
+                count++
+            }
         }
         if (batch.isNotEmpty()) {
             Levelhead.fetchBatch(batch)
@@ -204,18 +225,11 @@ class DisplayManager(val file: File) {
         val displays = aboveHead.filter { it.config.enabled }
         if (displays.isEmpty()) return
 
-        Minecraft.getMinecraft().theWorld?.playerEntities
-            ?.map { playerInfo ->
-                displays.map { display ->
-                    Levelhead.LevelheadRequest(playerInfo.uniqueID.trimmed, display, display.bottomValue, reason = Levelhead.RequestReason.REFRESH_VISIBLE_DISPLAYS)
-                }
+        Minecraft.getMinecraft().theWorld?.playerEntities?.forEach { playerInfo ->
+            displays.forEach { display ->
+                enqueueRequest(playerInfo.uniqueID.trimmed, display, display.config.type, Levelhead.RequestReason.REFRESH_VISIBLE_DISPLAYS)
             }
-            ?.flatten()
-            ?.let { requests ->
-                if (requests.isNotEmpty()) {
-                    Levelhead.fetchBatch(requests)
-                }
-            }
+        }
     }
 
     fun primaryDisplay(): AboveHeadDisplay? = aboveHead.firstOrNull()
@@ -311,14 +325,11 @@ class DisplayManager(val file: File) {
         
         val displays = aboveHead.filter { it.config.enabled }
         if (displays.isEmpty()) return
-        Minecraft.getMinecraft().theWorld?.playerEntities
-            ?.map { playerInfo ->
-                displays.map { display ->
-                    Levelhead.LevelheadRequest(playerInfo.uniqueID.trimmed, display, display.bottomValue, reason = Levelhead.RequestReason.REQUEST_ALL_DISPLAYS)
-                }
+        Minecraft.getMinecraft().theWorld?.playerEntities?.forEach { playerInfo ->
+            displays.forEach { display ->
+                enqueueRequest(playerInfo.uniqueID.trimmed, display, display.config.type, Levelhead.RequestReason.REQUEST_ALL_DISPLAYS)
             }
-            ?.flatten()
-            ?.let { Levelhead.fetchBatch(it) }
+        }
     }
 
     fun resetToDefaults() {

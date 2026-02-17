@@ -288,7 +288,7 @@ object Levelhead {
                         .groupBy { resolveGameMode(it.type) }
                         .forEach { (gameMode, modeRequests) ->
                             val debug = DebugLogging.isRequestDebugEnabled()
-                            val displays = modeRequests.map { it.display }.toSet()
+                            val displays = modeRequests.flatMap { it.displays }.toSet()
                             val cacheKey = StatsCacheKey(uuid, gameMode)
                             val cached = statsCache[cacheKey]
                             val reasons = if (debug) modeRequests.map { it.reason }.toSet() else null
@@ -688,7 +688,9 @@ object Levelhead {
         requests.forEach { req ->
             val gameMode = resolveGameMode(req.type)
             val matchingStats = statsForMode(stats, gameMode)
-            updateDisplayCache(req.display, uuid, matchingStats, gameMode)
+            req.displays.forEach { display ->
+                updateDisplayCache(display, uuid, matchingStats, gameMode)
+            }
         }
     }
 
@@ -732,9 +734,8 @@ object Levelhead {
 
     data class LevelheadRequest(
         val uuid: String,
-        val display: LevelheadDisplay,
-        val allowOverride: Boolean,
-        val type: String = display.config.type,
+        val displays: Set<LevelheadDisplay>,
+        val type: String,
         val reason: RequestReason = RequestReason.UNKNOWN
     )
 
