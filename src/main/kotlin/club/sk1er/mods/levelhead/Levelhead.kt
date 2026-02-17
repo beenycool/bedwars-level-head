@@ -695,11 +695,15 @@ object Levelhead {
     private fun updateDisplayCache(display: LevelheadDisplay, uuid: UUID, stats: GameStats?, gameMode: GameMode) {
         if (!display.config.enabled) return
         val activeMode = ModeManager.getActiveGameMode()
-        logger.debug("updateDisplayCache: uuid={}, statsType={}, resolvedGameMode={}, displayConfigType={}, displayConfigGameMode={}, activeMode={}", 
-            uuid, stats?.let { it::class.simpleName }, gameMode, display.config.type, display.config.gameMode, activeMode)
+        if (logger.isDebugEnabled) {
+            logger.debug("updateDisplayCache: uuid={}, statsType={}, resolvedGameMode={}, displayConfigType={}, displayConfigGameMode={}, activeMode={}",
+                uuid, stats?.let { it::class.simpleName }, gameMode, display.config.type, display.config.gameMode, activeMode)
+        }
         val tag = StatsFormatter.formatTag(uuid, stats, display.config, gameMode)
         val cacheKey = DisplayCacheKey(uuid, gameMode)
-        logger.debug("updateDisplayCache: writing tag='{}' to display.cache[{}]", tag.getString(), cacheKey)
+        if (logger.isDebugEnabled) {
+            logger.debug("updateDisplayCache: writing tag='{}' to display.cache[{}]", tag.getString(), cacheKey)
+        }
         DebugLogging.logRequestDebug {
             "[LevelheadDebug][tag] uuid=${uuid.maskForLogs()}, gameMode=$gameMode, tag=${tag.getString().truncateForLogs(200)}, header=${tag.header.value.truncateForLogs(50)} (${tag.header.color.formatAsHex()}), footer=${tag.footer.value.truncateForLogs(50)} (${tag.footer.color.formatAsHex()})"
         }
@@ -718,8 +722,10 @@ object Levelhead {
             GameMode.DUELS -> stats as? GameStats.Duels
             GameMode.SKYWARS -> stats as? GameStats.SkyWars
         }
-        logger.debug("statsForMode: inputStatsType={}, requestedGameMode={} -> resultType={} (null means input was null or cast failed)", 
-            stats?.let { it::class.simpleName }, gameMode, result?.let { it::class.simpleName })
+        if (logger.isDebugEnabled) {
+            logger.debug("statsForMode: inputStatsType={}, requestedGameMode={} -> resultType={} (null means input was null or cast failed)",
+                stats?.let { it::class.simpleName }, gameMode, result?.let { it::class.simpleName })
+        }
         return result
     }
 
