@@ -440,12 +440,12 @@ class LevelheadCommand {
             "list" -> {
                 sendMessage("${ChatColor.GREEN}Available presets:")
                 ConfigProfiles.Preset.entries.forEach { preset ->
-                    val line = ChatComponentText("${ChatColor.YELLOW}- ")
-                    val clickableName = ChatComponentText("${ChatColor.GOLD}${preset.displayName}")
-                    clickableName.chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead profile apply ${preset.name}")
-                    clickableName.chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to apply ${preset.displayName}"))
-                    line.appendSibling(clickableName)
-                    line.appendSibling(ChatComponentText("${ChatColor.YELLOW}: ${ChatColor.GRAY}${preset.description}"))
+val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
+    ChatComponentText("${ChatColor.GOLD}${preset.displayName}").apply {
+        chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead profile apply ${preset.name}")
+        chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to apply ${preset.displayName}"))
+    }
+).appendSibling(ChatComponentText("${ChatColor.YELLOW}: ${ChatColor.GRAY}${preset.description}"))
                     sendMessage(line)
                 }
             }
