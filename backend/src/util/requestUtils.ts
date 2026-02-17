@@ -7,21 +7,30 @@ import { logger } from './logger';
 
 export function isIPInCIDR(ip: string, cidr: string): boolean {
   try {
-    const [network, prefix] = ipaddr.parseCIDR(cidr);
+    const parsed = ipaddr.parseCIDR(cidr);
+    const network = parsed[0];
+    const prefix = parsed[1];
     let parsedIp = ipaddr.parse(ip);
-    if (parsedIp.kind() === 'ipv6' && parsedIp.isIPv4MappedAddress()) {
-      parsedIp = parsedIp.toIPv4Address();
+
+    // Handle IPv4-mapped IPv6 addresses
+    if (parsedIp.kind() === 'ipv6') {
+      const ipv6 = parsedIp as ipaddr.IPv6;
+      if (ipv6.isIPv4MappedAddress()) {
+        parsedIp = ipv6.toIPv4Address();
+      }
     }
 
-    if (parsedIp.kind() === 'ipv4' && network.kind() === 'ipv4') {
-      return parsedIp.match(network, prefix);
+    // Match requires same address family
+    if (parsedIp.kind() !== network.kind()) {
+      return false;
     }
 
-    if (parsedIp.kind() === 'ipv6' && network.kind() === 'ipv6') {
-      return parsedIp.match(network, prefix);
+    // Use the match method with array format [address, prefix]
+    if (parsedIp.kind() === 'ipv4') {
+      return (parsedIp as ipaddr.IPv4).match([network as ipaddr.IPv4, prefix]);
+    } else {
+      return (parsedIp as ipaddr.IPv6).match([network as ipaddr.IPv6, prefix]);
     }
-
-    return false;
   } catch {
     return false;
   }
