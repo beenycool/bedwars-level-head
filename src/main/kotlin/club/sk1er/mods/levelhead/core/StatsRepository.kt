@@ -62,6 +62,11 @@ class StatsRepository(private val maxSizeProvider: () -> Int) {
         cache[StatsCacheKey(uuid, mode)] = stats
     }
 
+    fun trimIfNeeded(ttl: Duration, now: Long = System.currentTimeMillis()) {
+        if (cache.size <= maxSizeProvider()) return
+        trim(ttl, now)
+    }
+
     fun clear() {
         cache.clear()
     }

@@ -403,7 +403,7 @@ class LevelheadCommand {
         sendMessage("${ChatColor.YELLOW}Render sampling debug logging: ${formatToggle(LevelheadConfig.debugRenderSampling)}${ChatColor.YELLOW}")
         sendMessage("${ChatColor.YELLOW}Cache size: ${ChatColor.GOLD}${snapshot.cacheSize}${ChatColor.YELLOW}, display cache entries: ${ChatColor.GOLD}$displayCache")
         sendMessage("${ChatColor.YELLOW}Rate limiter remaining: ${ChatColor.GOLD}${snapshot.rateLimitRemaining}${ChatColor.YELLOW}, proxy: ${if (snapshot.proxyEnabled) ChatColor.GREEN else ChatColor.GRAY}${if (snapshot.proxyEnabled) "enabled" else "disabled"}${ChatColor.YELLOW}")
-        sendMessage("${ChatColor.GRAY}Toggle: ${ChatColor.GOLD}/levelhead debug render [on|off]${ChatColor.GRAY} to enable/disable render debug (logs header/footer above nametags to latest.log)")
+        sendMessage("${ChatColor.GRAY}Toggle: ${ChatColor.GOLD}/levelhead debugrender [on|off]${ChatColor.GRAY} to enable/disable render debug (logs header/footer above nametags to latest.log)")
     }
 
     @SubCommand(aliases = ["debugrender"])

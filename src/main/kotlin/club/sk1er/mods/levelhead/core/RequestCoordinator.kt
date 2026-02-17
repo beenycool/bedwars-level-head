@@ -209,13 +209,17 @@ class RequestCoordinator(
                 }
             }
 
-            remaining.forEach { entry ->
-                val fetched = ensureStatsFetch(
+            val deferredFetches = remaining.map { entry ->
+                entry to ensureStatsFetch(
                     entry.cacheKey,
                     entry.cached,
                     entry.displays,
                     entry.registerForRefresh
-                ).await()
+                )
+            }
+            val fetchedResults = deferredFetches.map { it.second }.awaitAll()
+            deferredFetches.zip(fetchedResults).forEach { (entryWithDeferred, fetched) ->
+                val entry = entryWithDeferred.first
                 applyStatsToRequests(entry.uuid, entry.requests, fetched)
             }
         }
@@ -233,9 +237,6 @@ class RequestCoordinator(
 
         val existing = inFlightStatsRequests[cacheKey]
         if (existing != null) {
-            if (registerForRefresh && displays.isNotEmpty()) {
-                registerDisplaysForRefresh(cacheKey, displays)
-            }
             DebugLogging.logRequestDebug {
                 "[LevelheadDebug][request] in-flight dedupe reuse: uuid=${cacheKey.uuid.maskForLogs()} mode=${cacheKey.gameMode.name}"
             }
@@ -294,9 +295,6 @@ class RequestCoordinator(
         val previous = inFlightStatsRequests.putIfAbsent(cacheKey, deferred)
         if (previous != null) {
             deferred.cancel()
-            if (registerForRefresh && displays.isNotEmpty()) {
-                registerDisplaysForRefresh(cacheKey, displays)
-            }
             return previous
         }
 
@@ -328,7 +326,7 @@ class RequestCoordinator(
     private fun handleStatsUpdate(cacheKey: StatsCacheKey, entry: GameStats?) {
         if (entry != null) {
             repository.put(cacheKey.uuid, cacheKey.gameMode, entry)
-            repository.trim(LevelheadConfig.starCacheTtl)
+            repository.trimIfNeeded(LevelheadConfig.starCacheTtl)
         }
         val listeners = pendingDisplayRefreshes.remove(cacheKey) ?: return
         if (entry != null) {

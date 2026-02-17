@@ -246,7 +246,6 @@ object Levelhead {
             resetWorldScope()
             rateLimiter.resetState()
             clearCachedStats()
-            requestCoordinator.resetFetchTimestamps()
             ModeManager.onWorldJoin()
             displayManager.joinWorld(resetDetector = true)
         } else if (event.entity is EntityPlayer) {
