@@ -995,6 +995,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     @Transient
     private var configSyncTickCounter: Int = 0
+
+    @Transient
     private var syncRequested: Boolean = false
 
     data class ConfigSyncSnapshot(
