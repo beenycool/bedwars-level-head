@@ -778,7 +778,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     @Switch(
         name = "Debug Render Sampling",
-        description = "Log render timing and sampling decisions to latest.log for troubleshooting display issues.",
+        description = "Log header/footer text above nametags to latest.log for troubleshooting. Use /levelhead debugrender [on|off] to toggle in-game.",
         category = "Advanced"
     )
     var debugRenderSampling: Boolean = false
