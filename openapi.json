@@ -1,0 +1,728 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Urchin API",
+    "description": "API for the Urchin blacklist database providing player information, batch lookups, and administrative functions",
+    "version": "2.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://urchin.ws",
+      "description": "Production server"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "apiKeyQuery": {
+        "type": "apiKey",
+        "in": "query",
+        "name": "api_key"
+      },
+      "apiKeyHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "api_key"
+      }
+    },
+    "schemas": {
+      "Tag": {
+        "type": "object",
+        "required": [
+          "type",
+          "reason",
+          "added_on",
+          "hide_username"
+        ],
+        "properties": {
+          "type": {
+            "type": "string",
+            "description": "Type of tag"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for the tag"
+          },
+          "added_by": {
+            "type": "integer",
+            "description": "Discord user ID of user who added the tag (only included if hide_username is false or user is admin)"
+          },
+          "added_on": {
+            "type": "string",
+            "format": "date-time",
+            "description": "ISO-formatted date when the tag was added"
+          },
+          "hide_username": {
+            "type": "boolean",
+            "description": "Whether the username of who added the tag is hidden"
+          }
+        }
+      },
+      "PlayerResponse": {
+        "type": "object",
+        "required": [
+          "uuid",
+          "tags",
+          "rate_limit"
+        ],
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "Minecraft UUID of the player"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Tag"
+            },
+            "description": "List of tags associated with the player"
+          },
+          "rate_limit": {
+            "type": "integer",
+            "description": "Rate limit for the API key (600 for normal keys)"
+          }
+        }
+      },
+      "AddTagRequest": {
+        "type": "object",
+        "required": [
+          "uuid",
+          "tag_type",
+          "reason"
+        ],
+        "properties": {
+          "uuid": {
+            "type": "string",
+            "description": "Player's Minecraft UUID (with or without hyphens)"
+          },
+          "tag_type": {
+            "type": "string",
+            "description": "Type of tag to add"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for adding the tag"
+          },
+          "hide_username": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to hide the username of who added the tag"
+          },
+          "overwrite": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether to overwrite existing tag of the same type"
+          }
+        }
+      },
+      "BatchPlayerRequest": {
+        "type": "object",
+        "required": [
+          "usernames"
+        ],
+        "properties": {
+          "usernames": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "List of Minecraft usernames to look up"
+          }
+        }
+      },
+      "BatchPlayerResponse": {
+        "type": "object",
+        "required": [
+          "players",
+          "rate_limit"
+        ],
+        "properties": {
+          "players": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "$ref": "#/components/schemas/Tag"
+              }
+            },
+            "description": "Dictionary mapping usernames to their tag lists"
+          },
+          "rate_limit": {
+            "type": "integer",
+            "description": "Rate limit for the API key"
+          }
+        }
+      },
+      "CubelifyError": {
+        "type": "object",
+        "properties": {
+          "score": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "integer",
+                "example": 0
+              },
+              "mode": {
+                "type": "string",
+                "example": "add"
+              }
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "icon": {
+                  "type": "string"
+                },
+                "color": {
+                  "type": "integer"
+                },
+                "tooltip": {
+                  "type": "string"
+                },
+                "score": {
+                  "type": "integer"
+                }
+              }
+            }
+          }
+        }
+      },
+      "CubelifyResponse": {
+        "type": "object",
+        "properties": {
+          "score": {
+            "type": "object",
+            "properties": {
+              "value": {
+                "type": "number",
+                "description": "Combined score value"
+              },
+              "mode": {
+                "type": "string",
+                "description": "Score calculation mode",
+                "example": "add"
+              }
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "icon": {
+                  "type": "string",
+                  "description": "Icon identifier"
+                },
+                "color": {
+                  "type": "integer",
+                  "description": "Color code"
+                },
+                "tooltip": {
+                  "type": "string",
+                  "description": "Tooltip text"
+                },
+                "score": {
+                  "type": "number",
+                  "description": "Individual tag score"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/player": {
+      "post": {
+        "summary": "Batch player lookup",
+        "description": "Get tag information for multiple players in a single request",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "API key for authentication"
+          },
+          {
+            "name": "sources",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of sources (GAME, PARTY, PARTY_INVITES, CHAT, CHAT_MENTIONS, MANUAL, ME)"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchPlayerRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchPlayerResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request - invalid sources",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "API key locked",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded (60 requests per 5 minutes for batch endpoint)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/add-tag": {
+      "post": {
+        "summary": "Add player tag (Admin only)",
+        "description": "Admin-only endpoint to add a tag to a player",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Admin API key for authentication"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddTagRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Tag added or updated successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string",
+                      "description": "Success message"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid tag type",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Tag already exists (when overwrite=false)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "current_tags": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "tag_type": {
+                            "type": "string"
+                          },
+                          "reason": {
+                            "type": "string"
+                          },
+                          "added_by": {
+                            "type": "integer"
+                          },
+                          "added_on": {
+                            "type": "string"
+                          },
+                          "hide_username": {
+                            "type": "boolean"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/starfish/public-key": {
+      "get": {
+        "summary": "Starfish Proxy Public Key",
+        "description": "Returns the RSA public key for Starfish Proxy signature verification",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "publicKey": {
+                      "type": "string",
+                      "description": "PEM-formatted RSA public key"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Public key not configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cubelify": {
+      "get": {
+        "summary": "Player information (Cubelify)",
+        "description": "Returns player tags and score information for use with Cubelify overlay",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Player Minecraft UUID"
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "API key"
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Player Minecraft username"
+          },
+          {
+            "name": "sources",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of sources (GAME, PARTY, PARTY_INVITES, CHAT, CHAT_MENTIONS, MANUAL, ME)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CubelifyResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CubelifyError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CubelifyError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Locked API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CubelifyError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/player/{username}": {
+      "get": {
+        "summary": "Player blacklist",
+        "description": "Get a player's blacklist tags from our database",
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Minecraft username or UUID (with or without hyphens)"
+          },
+          {
+            "name": "key",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "API key for authentication"
+          },
+          {
+            "name": "sources",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Comma-separated list of sources (GAME, PARTY, PARTY_INVITES, CHAT, CHAT_MENTIONS, MANUAL, ME)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "headers": {
+              "X-RateLimit-Limit": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Maximum number of requests allowed per 5-minute window"
+              },
+              "X-RateLimit-Remaining": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Number of requests remaining in the current 5-minute window"
+              },
+              "X-RateLimit-Used": {
+                "schema": {
+                  "type": "integer"
+                },
+                "description": "Number of requests used in the current 5-minute window"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayerResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Invalid API key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "API key required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Player not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded (limit per 5-minute window)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "detail": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
