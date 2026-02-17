@@ -381,7 +381,8 @@ function parseFallbackModeEnv(name: string, defaultValue: FallbackMode): Fallbac
   console.warn(`[config] Invalid ${name}: "${raw}". Using default: ${defaultValue}`);
   return defaultValue;
 }
-export const RATE_LIMIT_FALLBACK_MODE: FallbackMode = parseFallbackModeEnv('RATE_LIMIT_FALLBACK_MODE', 'memory');
+const defaultFallbackMode = isProduction ? 'deny' : 'memory';
+export const RATE_LIMIT_FALLBACK_MODE: FallbackMode = parseFallbackModeEnv('RATE_LIMIT_FALLBACK_MODE', defaultFallbackMode);
 
 // Circuit breaker configuration for Hypixel API resilience
 // CB_FAILURE_THRESHOLD: Number of consecutive failures before opening the circuit
