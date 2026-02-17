@@ -13,11 +13,9 @@ class LevelheadTag(val owner: UUID) {
 
     override fun toString(): String = "LevelheadTag{header=$header, footer=$footer, owner=$owner}"
 
-    fun clone(): LevelheadTag {
-        val tag = LevelheadTag(owner)
-        tag.header = header.clone()
-        tag.footer = footer.clone()
-        return tag
+    fun clone(): LevelheadTag = LevelheadTag(owner).also {
+        it.header = header.clone()
+        it.footer = footer.clone()
     }
 
     companion object {
@@ -70,12 +68,10 @@ class LevelheadTag(val owner: UUID) {
 
         override fun toString(): String = "LevelheadComponent{value='$value', color='${color}', chroma=$chroma}"
 
-        fun clone(): LevelheadComponent {
-            val component = LevelheadComponent()
-            component.value = this.value
-            component.color = this.color
-            component.chroma = this.chroma
-            return component
+        fun clone(): LevelheadComponent = LevelheadComponent().also {
+            it.value = value
+            it.color = color
+            it.chroma = chroma
         }
     }
 }
