@@ -14,26 +14,32 @@ abstract class LevelheadDisplay(val displayPosition: DisplayPosition, val config
     // Cache is keyed by (UUID, GameMode) to ensure mode-specific tags are served correctly
     val cache: ConcurrentHashMap<Levelhead.DisplayCacheKey, LevelheadTag> = ConcurrentHashMap()
 
+
     fun checkCacheSize() {
         val max = max(150, Levelhead.displayManager.config.purgeSize)
+        if (cache.size <= max) return
+
+        val now = System.currentTimeMillis()
+        val activeMode = ModeManager.getActiveGameMode()
+
+        // Purge entries that are for a different game mode or haven't been seen recently.
+        // This in-place removal avoids the GC pressure of creating intermediate maps.
+        cache.entries.removeIf { (key, tag) ->
+            val isStaleMode = activeMode != null && key.gameMode != activeMode
+            val isOld = now - tag.lastSeen > 300_000L // 5 minute TTL
+
+            isStaleMode || isOld
+        }
+
+        // If still over max after timed purge, perform a hard purge of the oldest entries.
         if (cache.size > max) {
-            val world = Minecraft.getMinecraft().theWorld ?: return
-            val uuids = world.playerEntities.mapTo(mutableSetOf<UUID>()) { it.uniqueID }
-            // Get the current active mode to filter cache entries
-            val activeMode = ModeManager.getActiveGameMode()
-            // Retain entries where the key's UUID is in the current world's player set
-            // AND the key's gameMode matches the current active mode (prevents stale mode entries)
-            val cache2ElectricBoogaloo = if (activeMode != null) {
-                cache.filter { uuids.contains(it.key.uuid) && it.key.gameMode == activeMode }
-            } else {
-                // If no active mode, only filter by UUID (existing behavior)
-                cache.filter { uuids.contains(it.key.uuid) }
+            val sortedEntries = cache.entries.sortedBy { it.value.lastSeen }
+            val toRemove = cache.size - max
+            for (i in 0 until toRemove) {
+                cache.remove(sortedEntries[i].key)
             }
-            this.cache.clear()
-            this.cache.putAll(cache2ElectricBoogaloo)
         }
     }
-
     open fun loadOrRender(player: EntityPlayer?) = !player!!.displayName.formattedText.contains("§k", true)
 
     enum class DisplayPosition {
