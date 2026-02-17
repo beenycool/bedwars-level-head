@@ -285,6 +285,7 @@ export const SERVER_PORT = parseIntEnv('PORT', 3000);
 export const SERVER_HOST = process.env.HOST ?? '0.0.0.0';
 export const TRUST_PROXY_CIDRS: string[] = parseCIDRListEnv(process.env.TRUST_PROXY_CIDRS);
 export const TRUST_PROXY_ENABLED = TRUST_PROXY_CIDRS.length > 0;
+export const MONITORING_ALLOWED_CIDRS: string[] = parseCIDRListEnv(process.env.MONITORING_ALLOWED_CIDRS);
 
 export const HYPIXEL_API_BASE_URL = process.env.HYPIXEL_API_BASE_URL ?? 'https://api.hypixel.net';
 
