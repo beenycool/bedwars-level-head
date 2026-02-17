@@ -402,11 +402,39 @@ object ProxyClient {
         )
     }
 
-    private fun notifyNetworkIssue(ex: IOException) {
+    private suspend fun notifyNetworkIssue(ex: IOException) {
         if (networkIssueWarned.compareAndSet(false, true)) {
-            Levelhead.sendChat("${ChatColor.RED}Proxy stats offline. ${ChatColor.YELLOW}Retrying in 60s.")
+            val isHealthy = checkBackendHealth()
+            if (isHealthy) {
+                Levelhead.sendChat("${ChatColor.RED}Proxy stats request failed (Backend Online). ${ChatColor.YELLOW}Retrying in 60s.")
+            } else {
+                Levelhead.sendChat("${ChatColor.RED}Proxy stats offline. ${ChatColor.YELLOW}Retrying in 60s.")
+            }
         }
         Levelhead.logger.error("Network error while fetching proxy BedWars data", ex)
+    }
+
+    private suspend fun checkBackendHealth(): Boolean {
+        val healthUrl = HttpUrl.parse(LevelheadConfig.proxyBaseUrl)
+            ?.newBuilder()
+            ?.addPathSegment("healthz")
+            ?.build() ?: return false
+
+        val request = Request.Builder()
+            .url(healthUrl)
+            .get()
+            .build()
+
+        return try {
+            Levelhead.okHttpClient.newCall(request).await().use { response ->
+                if (!response.isSuccessful) return@use false
+                val body = response.body()?.string() ?: return@use false
+                val json = kotlin.runCatching { JsonParser.parseString(body).asJsonObject }.getOrNull() ?: return@use false
+                json.get("status")?.asString == "ok"
+            }
+        } catch (ex: Exception) {
+            false
+        }
     }
 
     private fun sanitizeProxyIdentifier(identifier: String): String {
