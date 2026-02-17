@@ -281,6 +281,11 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   res.status(500).json({ success: false, cause: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
 });
 
+if (process.env.NODE_ENV === "production" && !TRUST_PROXY_ENABLED) {
+  console.warn("[startup] WARNING: Production environment detected but TRUST_PROXY_CIDRS is empty.");
+  console.warn("[startup] If this application is behind a proxy (e.g., Nginx, Cloudflare, Render), rate limiting may not work correctly as all clients will appear to have the same IP address.");
+}
+
 const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
   const location = CLOUD_FLARE_TUNNEL || `http://${SERVER_HOST}:${SERVER_PORT}`;
   logger.info(`Levelhead proxy listening at ${location}`);

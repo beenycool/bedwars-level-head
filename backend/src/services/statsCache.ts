@@ -522,7 +522,7 @@ async function getIgnMappingFromRedis(ign: string, includeExpired: boolean): Pro
   }
 
   try {
-    const redisKey = `cache:${buildIgnMappingKey(ign)}`;
+    const redisKey = getCacheKey(buildIgnMappingKey(ign));
     const data = await client.get(redisKey);
     if (!data) {
       return null;
@@ -559,7 +559,7 @@ async function setIgnMappingInRedis(ign: string, mapping: IgnMappingEntry, ttlMs
 
   try {
     const expiresAt = Date.now() + ttlMs;
-    const redisKey = `cache:${buildIgnMappingKey(ign)}`;
+    const redisKey = getCacheKey(buildIgnMappingKey(ign));
     const data = JSON.stringify({
       uuid: mapping.uuid,
       nicked: mapping.nicked,
@@ -583,7 +583,7 @@ export async function getPlayerStatsFromCache(
     try {
       const client = getRedisClient();
       if (client && client.status === 'ready') {
-        const redisKey = `cache:${key}`;
+        const redisKey = getCacheKey(key);
         const data = await client.get(redisKey);
         if (data) {
           let row: CacheRow | undefined;
@@ -678,7 +678,7 @@ export async function getPlayerStatsFromCacheWithSWR(
     try {
       const client = getRedisClient();
       if (client && client.status === 'ready') {
-        const redisKey = `cache:${key}`;
+        const redisKey = getCacheKey(key);
         const data = await client.get(redisKey);
         if (data) {
           let row: CacheRow | undefined;
@@ -878,7 +878,7 @@ export async function getManyPlayerStatsFromCacheWithSWR(
     return result;
   }
 
-  const redisKeys = identifiers.map((i) => `cache:${i.key}`);
+  const redisKeys = identifiers.map((i) => getCacheKey(i.key));
 
   try {
     const values = await client.mget(...redisKeys);
@@ -1052,7 +1052,7 @@ export async function setPlayerStatsL1(
       source: metadata.source ?? null,
     });
 
-    const redisKey = `cache:${key}`;
+    const redisKey = getCacheKey(key);
     await client.setex(redisKey, Math.ceil(ttlMs / 1000), data);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -1120,7 +1120,7 @@ export async function deletePlayerStatsEntries(keys: string[]): Promise<number> 
     const client = getRedisClient();
     if (client && client.status === 'ready') {
       try {
-        const redisKeys = keys.map((key) => `cache:${key}`);
+        const redisKeys = keys.map((key) => getCacheKey(key));
         await client.del(...redisKeys);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1157,7 +1157,7 @@ export async function deleteIgnMappings(igns: string[]): Promise<number> {
     const client = getRedisClient();
     if (client && client.status === 'ready') {
       try {
-        const redisKeys = igns.map((ign) => `cache:${buildIgnMappingKey(ign)}`);
+        const redisKeys = igns.map((ign) => getCacheKey(buildIgnMappingKey(ign)));
         await client.del(...redisKeys);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -1186,8 +1186,6 @@ export async function deleteIgnMappings(igns: string[]): Promise<number> {
 }
 
 export async function clearAllPlayerStatsCaches(): Promise<number> {
-  let deleted = 0;
-
   if (isRedisAvailable()) {
     const client = getRedisClient();
     if (client && client.status === 'ready') {
@@ -1215,7 +1213,7 @@ export async function clearAllPlayerStatsCaches(): Promise<number> {
     const statsResult = await pool.query('DELETE FROM player_stats_cache');
     const ignResult = await pool.query('DELETE FROM ign_uuid_cache');
     markDbAccess();
-    return deleted + statsResult.rowCount + ignResult.rowCount;
+    return statsResult.rowCount + ignResult.rowCount;
   } catch (error) {
     logger.error('[statsCache] clear L2 caches failed', error);
     return deleted;
