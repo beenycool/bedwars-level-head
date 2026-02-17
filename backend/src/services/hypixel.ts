@@ -432,35 +432,35 @@ export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPla
   const duelsStats = response.player?.stats?.Duels ?? {};
   const skywarsStats = response.player?.stats?.SkyWars ?? {};
 
-  const duelsWins = Number(duelsStats.wins ?? 0);
-  const duelsLosses = Number(duelsStats.losses ?? 0);
-  const duelsKills = Number(duelsStats.kills ?? 0);
-  const duelsDeaths = Number(duelsStats.deaths ?? 0);
+  const hasDuelsWins = duelsStats.wins !== undefined;
+  const hasDuelsLosses = duelsStats.losses !== undefined;
+  const hasDuelsKills = duelsStats.kills !== undefined;
+  const hasDuelsDeaths = duelsStats.deaths !== undefined;
 
   const duelsAggregates =
-    !duelsWins || !duelsLosses || !duelsKills || !duelsDeaths
+    (!hasDuelsWins || !hasDuelsLosses || !hasDuelsKills || !hasDuelsDeaths)
       ? computeAggregates(duelsStats)
       : { wins: 0, losses: 0, kills: 0, deaths: 0 };
 
-  const duelsWinsTotal = duelsWins || duelsAggregates.wins;
-  const duelsLossesTotal = duelsLosses || duelsAggregates.losses;
-  const duelsKillsTotal = duelsKills || duelsAggregates.kills;
-  const duelsDeathsTotal = duelsDeaths || duelsAggregates.deaths;
+  const duelsWinsTotal = Number(duelsStats.wins ?? duelsAggregates.wins);
+  const duelsLossesTotal = Number(duelsStats.losses ?? duelsAggregates.losses);
+  const duelsKillsTotal = Number(duelsStats.kills ?? duelsAggregates.kills);
+  const duelsDeathsTotal = Number(duelsStats.deaths ?? duelsAggregates.deaths);
 
-  const skywarsWins = Number(skywarsStats.wins ?? 0);
-  const skywarsLosses = Number(skywarsStats.losses ?? 0);
-  const skywarsKills = Number(skywarsStats.kills ?? 0);
-  const skywarsDeaths = Number(skywarsStats.deaths ?? 0);
+  const hasSkywarsWins = skywarsStats.wins !== undefined;
+  const hasSkywarsLosses = skywarsStats.losses !== undefined;
+  const hasSkywarsKills = skywarsStats.kills !== undefined;
+  const hasSkywarsDeaths = skywarsStats.deaths !== undefined;
 
   const skywarsAggregates =
-    !skywarsWins || !skywarsLosses || !skywarsKills || !skywarsDeaths
+    (!hasSkywarsWins || !hasSkywarsLosses || !hasSkywarsKills || !hasSkywarsDeaths)
       ? computeAggregates(skywarsStats)
       : { wins: 0, losses: 0, kills: 0, deaths: 0 };
 
-  const skywarsWinsTotal = skywarsWins || skywarsAggregates.wins;
-  const skywarsLossesTotal = skywarsLosses || skywarsAggregates.losses;
-  const skywarsKillsTotal = skywarsKills || skywarsAggregates.kills;
-  const skywarsDeathsTotal = skywarsDeaths || skywarsAggregates.deaths;
+  const skywarsWinsTotal = Number(skywarsStats.wins ?? skywarsAggregates.wins);
+  const skywarsLossesTotal = Number(skywarsStats.losses ?? skywarsAggregates.losses);
+  const skywarsKillsTotal = Number(skywarsStats.kills ?? skywarsAggregates.kills);
+  const skywarsDeathsTotal = Number(skywarsStats.deaths ?? skywarsAggregates.deaths);
 
   return {
     displayname: response.player?.displayname ?? null,
