@@ -197,7 +197,7 @@ async function flushHistoryBuffer(): Promise<void> {
   await ensureInitialized();
 
   try {
-    const maxParams = pool.type === DatabaseType.POSTGRESQL ? 65000 : 2000;
+    const maxParams = pool.getMaxParameters();
     const maxRecordsPerChunk = Math.max(1, Math.floor(maxParams / 13));
     let flushed = 0;
 
@@ -274,11 +274,8 @@ export { flushHistoryBuffer };
 
 export async function getRecentPlayerQueries(limit = 50): Promise<PlayerQuerySummary[]> {
   await ensureInitialized();
-  const sql = pool.type === DatabaseType.POSTGRESQL
-    ? `SELECT identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
-       FROM player_query_history ORDER BY requested_at DESC LIMIT $1`
-    : `SELECT TOP ($1) identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
-       FROM player_query_history ORDER BY requested_at DESC`;
+  const sql = `SELECT identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
+       FROM player_query_history ORDER BY requested_at DESC ${pool.getPaginationFragment('$1')}`;
 
   const result = await pool.query<PlayerQueryHistoryRow>(sql, [limit]);
 
@@ -356,24 +353,14 @@ export async function getPlayerQueriesWithFilters(params: {
   const queryParams = [...dateParams, requestedLimit];
   
   let sql;
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    sql = `
-      SELECT identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
-      FROM player_query_history
-      ${dateClause}
-      ORDER BY requested_at DESC
-      LIMIT $${dateParams.length + 1}
-    `;
-  } else {
-    sql = `
-      SELECT TOP ($${dateParams.length + 1}) identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
-      FROM player_query_history
-      ${dateClause}
-      ORDER BY requested_at DESC
-    `;
-  }
-
-  const result = await pool.query<PlayerQueryHistoryRow>(sql, queryParams);
+  const limitPlaceholder = `$${dateParams.length + 1}`;
+  const sql = `
+    SELECT identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
+    FROM player_query_history
+    ${dateClause}
+    ORDER BY requested_at DESC
+    ${pool.getPaginationFragment(limitPlaceholder)}
+  `;
   return result.rows.map(mapRowToSummary);
 }
 
@@ -398,24 +385,14 @@ export async function getPlayerQueriesStats(params: {
   const queryParams = [...dateParams, requestedLimit];
 
   let sql;
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    sql = `
-      SELECT lookup_type, stars, cache_hit, response_status, latency_ms, requested_at
-      FROM player_query_history
-      ${dateClause}
-      ORDER BY requested_at DESC
-      LIMIT $${dateParams.length + 1}
-    `;
-  } else {
-    sql = `
-      SELECT TOP ($${dateParams.length + 1}) lookup_type, stars, cache_hit, response_status, latency_ms, requested_at
-      FROM player_query_history
-      ${dateClause}
-      ORDER BY requested_at DESC
-    `;
-  }
-
-  const result = await pool.query<PlayerQueryStatsRow>(sql, queryParams);
+  const limitPlaceholder = `$${dateParams.length + 1}`;
+  const sql = `
+    SELECT lookup_type, stars, cache_hit, response_status, latency_ms, requested_at
+    FROM player_query_history
+    ${dateClause}
+    ORDER BY requested_at DESC
+    ${pool.getPaginationFragment(limitPlaceholder)}
+  `;
   return result.rows.map(mapRowToStatsSummary);
 }
 
@@ -450,24 +427,15 @@ export async function getTopPlayersByQueryCount(params: {
   const queryParams = [...dateParams, limit];
 
   let sql;
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    sql = `
-      SELECT normalized_identifier, MAX(resolved_username) as resolved_username, COUNT(*) as query_count
-      FROM player_query_history
-      ${dateClause}
-      GROUP BY normalized_identifier
-      ORDER BY query_count DESC
-      LIMIT $${dateParams.length + 1}
-    `;
-  } else {
-    sql = `
-      SELECT TOP ($${dateParams.length + 1}) normalized_identifier, MAX(resolved_username) as resolved_username, COUNT(*) as query_count
-      FROM player_query_history
-      ${dateClause}
-      GROUP BY normalized_identifier
-      ORDER BY query_count DESC
-    `;
-  }
+  const limitPlaceholder = `$${dateParams.length + 1}`;
+  const sql = `
+    SELECT normalized_identifier, MAX(resolved_username) as resolved_username, COUNT(*) as query_count
+    FROM player_query_history
+    ${dateClause}
+    GROUP BY normalized_identifier
+    ORDER BY query_count DESC
+    ${pool.getPaginationFragment(limitPlaceholder)}
+  `;
 
   const result = await pool.query<{
     normalized_identifier: string;
@@ -490,10 +458,11 @@ export function buildSearchClause(searchTerm: string | undefined, startIndex: nu
   const placeholder = `$${startIndex}`;
   const searchValue = `%${searchTerm.replace(/[%_\\]/g, (match) => `\\${match}`)}%`;
   
-  let clause;
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    clause = `WHERE normalized_identifier ILIKE ${placeholder} ESCAPE '\\' OR resolved_username ILIKE ${placeholder} ESCAPE '\\' OR resolved_uuid ILIKE ${placeholder} ESCAPE '\\'`;
-  } else {
+  const cond1 = pool.getIlikeFragment('normalized_identifier', placeholder);
+  const cond2 = pool.getIlikeFragment('resolved_username', placeholder);
+  const cond3 = pool.getIlikeFragment('resolved_uuid', placeholder);
+
+  const clause = `WHERE ${cond1} ESCAPE '\' OR ${cond2} ESCAPE '\' OR ${cond3} ESCAPE '\'`; else {
     // SQL Server is usually case-insensitive by default with its default collation.
     // We use [key] notation for identifier if it's a reserved word, but here they aren't.
     clause = `WHERE normalized_identifier LIKE ${placeholder} ESCAPE '\\' OR resolved_username LIKE ${placeholder} ESCAPE '\\' OR resolved_uuid LIKE ${placeholder} ESCAPE '\\'`;
@@ -532,20 +501,13 @@ export async function getPlayerQueryPage(params: {
   const { clause: whereClause, params: searchParams } = buildSearchClause(searchTerm, 3);
 
   let sql;
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    sql = `
-      SELECT identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
-      FROM player_query_history
-      ${whereClause}
-      ORDER BY requested_at DESC
-      LIMIT $1 OFFSET $2
-    `;
-  } else {
-    sql = `
-      SELECT identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
-      FROM player_query_history
-      ${whereClause}
-      ORDER BY requested_at DESC
+  const sql = `
+    SELECT identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
+    FROM player_query_history
+    ${whereClause}
+    ORDER BY requested_at DESC
+    ${pool.getPaginationFragment('$1', '$2')}
+  `;
       OFFSET $2 ROWS FETCH NEXT $1 ROWS ONLY
     `;
   }
@@ -583,10 +545,7 @@ export async function getSystemStats(): Promise<SystemStats> {
   // Get current resource metrics
   const resourceMetrics = await getCurrentResourceMetrics();
 
-  const apiStatsQuery = pool.type === DatabaseType.POSTGRESQL
-    ? `SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000)`
-    : `SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (DATEDIFF_BIG(ms, '1970-01-01', DATEADD(hour, -1, GETDATE())))`;
-
+  const apiStatsQuery = pool.getRecentApiCallsSql(3600000);
   const apiStatsPromise = pool.query<{ count: string | number }>(apiStatsQuery)
     .catch(() => ({ rows: [{ count: 0 }] }));
 

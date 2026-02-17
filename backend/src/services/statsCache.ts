@@ -12,7 +12,6 @@ import {
   SWR_STALE_TTL_MS,
 } from '../config';
 import { CacheEntry, CacheMetadata, CacheSource, ensureInitialized, markDbAccess, pool, shouldReadFromDb } from './cache';
-import { DatabaseType } from './database/adapter';
 import { recordCacheHit, recordCacheMiss, recordCacheTierHit, recordCacheTierMiss, recordCacheSourceHit, recordCacheRefresh } from './metrics';
 import { fetchHypixelPlayer, HypixelFetchOptions, MinimalPlayerStats, extractMinimalStats } from './hypixel';
 import { getRedisClient, isRedisAvailable } from './redis';
@@ -305,18 +304,11 @@ async function getManyPlayerStatsFromDb(
 
   try {
     let queryResult;
-    if (pool.type === DatabaseType.POSTGRESQL) {
-      queryResult = await pool.query<CacheRow & { cache_key: string }>(
-        'SELECT payload, expires_at, cached_at, etag, last_modified, source, cache_key FROM player_stats_cache WHERE cache_key = ANY($1)',
-        [keys],
-      );
-    } else {
-      const placeholders = keys.map((_, i) => `@p${i + 1}`).join(',');
-      queryResult = await pool.query<CacheRow & { cache_key: string }>(
-        `SELECT payload, expires_at, cached_at, etag, last_modified, source, cache_key FROM player_stats_cache WHERE cache_key IN (${placeholders})`,
-        keys,
-      );
-    }
+    const { sql, params: inParams } = pool.formatInClause('cache_key', keys, 1);
+    queryResult = await pool.query<CacheRow & { cache_key: string }>(
+      `SELECT payload, expires_at, cached_at, etag, last_modified, source, cache_key FROM player_stats_cache WHERE ${sql}`,
+      inParams,
+    );
     markDbAccess();
 
     for (const row of queryResult.rows) {
@@ -405,37 +397,10 @@ async function setPlayerStatsInDb(
   const payload = JSON.stringify(stats);
 
   try {
-    if (pool.type === DatabaseType.POSTGRESQL) {
-      await pool.query(
-        `INSERT INTO player_stats_cache (cache_key, payload, expires_at, cached_at, etag, last_modified, source)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         ON CONFLICT (cache_key) DO UPDATE
-         SET payload = EXCLUDED.payload,
-             expires_at = EXCLUDED.expires_at,
-             cached_at = EXCLUDED.cached_at,
-             etag = EXCLUDED.etag,
-             last_modified = EXCLUDED.last_modified,
-             source = EXCLUDED.source`,
-        [key, payload, expiresAt, cachedAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
-      );
-    } else {
-      await pool.query(
-        `MERGE player_stats_cache AS target
-         USING (SELECT $1 AS cache_key, $2 AS payload, $3 AS expires_at, $4 AS cached_at, $5 AS etag, $6 AS last_modified, $7 AS source) AS source
-         ON (target.cache_key = source.cache_key)
-         WHEN MATCHED THEN
-           UPDATE SET payload = source.payload,
-                      expires_at = source.expires_at,
-                      cached_at = source.cached_at,
-                      etag = source.etag,
-                      last_modified = source.last_modified,
-                      source = source.source
-         WHEN NOT MATCHED THEN
-           INSERT (cache_key, payload, expires_at, cached_at, etag, last_modified, source)
-           VALUES (source.cache_key, source.payload, source.expires_at, source.cached_at, source.etag, source.last_modified, source.source);`,
-        [key, payload, expiresAt, cachedAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
-      );
-    }
+    const columns = ['cache_key', 'payload', 'expires_at', 'cached_at', 'etag', 'last_modified', 'source'];
+    const updateColumns = ['payload', 'expires_at', 'cached_at', 'etag', 'last_modified', 'source'];
+    const sql = pool.getUpsertQuery('player_stats_cache', columns, 'cache_key', updateColumns);
+    await pool.query(sql, [key, payload, expiresAt, cachedAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null]);
     markDbAccess();
   } catch (error) {
     console.error('[statsCache] failed to write L2 cache', error);
@@ -481,33 +446,10 @@ async function setIgnMappingInDb(ign: string, uuid: string | null, nicked: boole
 
   const expiresAt = Date.now() + ttlMs;
   try {
-    if (pool.type === DatabaseType.POSTGRESQL) {
-      await pool.query(
-        `INSERT INTO ign_uuid_cache (ign, uuid, nicked, expires_at)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (ign) DO UPDATE
-         SET uuid = EXCLUDED.uuid,
-             nicked = EXCLUDED.nicked,
-             expires_at = EXCLUDED.expires_at,
-             updated_at = NOW()`,
-        [ign, uuid, nicked, expiresAt],
-      );
-    } else {
-      await pool.query(
-        `MERGE ign_uuid_cache AS target
-         USING (SELECT $1 AS ign, $2 AS uuid, $3 AS nicked, $4 AS expires_at) AS source
-         ON (target.ign = source.ign)
-         WHEN MATCHED THEN
-           UPDATE SET uuid = source.uuid,
-                      nicked = source.nicked,
-                      expires_at = source.expires_at,
-                      updated_at = SYSUTCDATETIME()
-         WHEN NOT MATCHED THEN
-           INSERT (ign, uuid, nicked, expires_at)
-           VALUES (source.ign, source.uuid, source.nicked, source.expires_at);`,
-        [ign, uuid, nicked, expiresAt],
-      );
-    }
+    const columns = ['ign', 'uuid', 'nicked', 'expires_at'];
+    const updateColumns = ['uuid', 'nicked', 'expires_at'];
+    const sql = pool.getUpsertQuery('ign_uuid_cache', columns, 'ign', updateColumns);
+    await pool.query(sql, [ign, uuid, nicked, expiresAt]);
     markDbAccess();
   } catch (error) {
     console.error('[statsCache] failed to write ign mapping', error);
@@ -999,12 +941,8 @@ export async function getManyPlayerStatsFromCacheWithSWR(
     if (expiredKeys.length > 0) {
       const doBatchDelete = async () => {
         try {
-          if (pool.type === DatabaseType.POSTGRESQL) {
-            await pool.query('DELETE FROM player_stats_cache WHERE cache_key = ANY($1)', [expiredKeys]);
-          } else {
-            const placeholders = expiredKeys.map((_, i) => `@p${i + 1}`).join(',');
-            await pool.query(`DELETE FROM player_stats_cache WHERE cache_key IN (${placeholders})`, expiredKeys);
-          }
+          const { sql, params: delParams } = pool.formatInClause('cache_key', expiredKeys, 1);
+          await pool.query(`DELETE FROM player_stats_cache WHERE ${sql}`, delParams);
         } catch (e) {
           console.warn('[statsCache] failed to batch delete expired L2 entries', e);
         }
@@ -1131,14 +1069,8 @@ export async function deletePlayerStatsEntries(keys: string[]): Promise<number> 
   await ensureInitialized();
 
   try {
-    if (pool.type === DatabaseType.POSTGRESQL) {
-      const result = await pool.query('DELETE FROM player_stats_cache WHERE cache_key = ANY($1)', [keys]);
-      markDbAccess();
-      return result.rowCount;
-    }
-
-    const placeholders = keys.map((_, i) => `@p${i + 1}`).join(',');
-    const result = await pool.query(`DELETE FROM player_stats_cache WHERE cache_key IN (${placeholders})`, keys);
+    const { sql, params: delParams } = pool.formatInClause('cache_key', keys, 1);
+    const result = await pool.query(`DELETE FROM player_stats_cache WHERE ${sql}`, delParams);
     markDbAccess();
     return result.rowCount;
   } catch (error) {
@@ -1168,14 +1100,8 @@ export async function deleteIgnMappings(igns: string[]): Promise<number> {
   await ensureInitialized();
 
   try {
-    if (pool.type === DatabaseType.POSTGRESQL) {
-      const result = await pool.query('DELETE FROM ign_uuid_cache WHERE ign = ANY($1)', [igns]);
-      markDbAccess();
-      return result.rowCount;
-    }
-
-    const placeholders = igns.map((_, i) => `@p${i + 1}`).join(',');
-    const result = await pool.query(`DELETE FROM ign_uuid_cache WHERE ign IN (${placeholders})`, igns);
+    const { sql, params: delParams } = pool.formatInClause('ign', igns, 1);
+    const result = await pool.query(`DELETE FROM ign_uuid_cache WHERE ${sql}`, delParams);
     markDbAccess();
     return result.rowCount;
   } catch (error) {

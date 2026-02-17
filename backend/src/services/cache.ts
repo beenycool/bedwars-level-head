@@ -229,9 +229,7 @@ export async function purgeExpiredEntries(now: number = Date.now()): Promise<voi
   }
   markDbAccess();
 
-  const historyQuery = pool.type === DatabaseType.POSTGRESQL
-    ? "DELETE FROM player_query_history WHERE requested_at < NOW() - INTERVAL '30 days'"
-    : "DELETE FROM player_query_history WHERE requested_at < DATEADD(day, -30, GETDATE())";
+  const historyQuery = pool.getPurgeSql("player_query_history", "requested_at", 30);
 
   const historyResult = await pool.query(historyQuery);
   const purgedHistory = historyResult.rowCount;
@@ -353,38 +351,11 @@ export async function setCachedPayload<T>(
   const expiresAt = cachedAt + ttlMs;
   const payload = JSON.stringify(value);
 
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    await pool.query(
-      `INSERT INTO player_stats_cache (cache_key, payload, expires_at, cached_at, etag, last_modified, source)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       ON CONFLICT (cache_key) DO UPDATE
-       SET payload = EXCLUDED.payload,
-           expires_at = EXCLUDED.expires_at,
-           cached_at = EXCLUDED.cached_at,
-           etag = EXCLUDED.etag,
-           last_modified = EXCLUDED.last_modified,
-           source = EXCLUDED.source`,
-      [key, payload, expiresAt, cachedAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
-    );
-  } else {
-    await pool.query(
-      `MERGE player_stats_cache AS target
-       USING (SELECT $1 AS cache_key, $2 AS payload, $3 AS expires_at, $4 AS cached_at, $5 AS etag, $6 AS last_modified, $7 AS source) AS source
-       ON (target.cache_key = source.cache_key)
-       WHEN MATCHED THEN
-         UPDATE SET payload = source.payload,
-                    expires_at = source.expires_at,
-                    cached_at = source.cached_at,
-                    etag = source.etag,
-                    last_modified = source.last_modified,
-                    source = source.source
-       WHEN NOT MATCHED THEN
-         INSERT (cache_key, payload, expires_at, cached_at, etag, last_modified, source)
-         VALUES (source.cache_key, source.payload, source.expires_at, source.cached_at, source.etag, source.last_modified, source.source);`,
-      [key, payload, expiresAt, cachedAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
-    );
-  }
-  markDbAccess();
+  const columns = ['cache_key', 'payload', 'expires_at', 'cached_at', 'etag', 'last_modified', 'source'];
+  const updateColumns = ['payload', 'expires_at', 'cached_at', 'etag', 'last_modified', 'source'];
+  const sql = pool.getUpsertQuery('player_stats_cache', columns, 'cache_key', updateColumns);
+
+  await pool.query(sql, [key, payload, expiresAt, cachedAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null]);
 }
 
 export async function clearAllCacheEntries(): Promise<number> {
@@ -413,14 +384,8 @@ export async function deleteCacheEntries(keys: string[]): Promise<number> {
     deleted += await deletePlayerCacheEntries(keys);
   }
 
-  let result;
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    result = await pool.query('DELETE FROM player_stats_cache WHERE cache_key = ANY($1)', [keys]);
-  } else {
-    // SQL Server doesn't support ANY($1) with an array directly.
-    const placeholders = keys.map((_, i) => `@p${i + 1}`).join(',');
-    result = await pool.query(`DELETE FROM player_stats_cache WHERE cache_key IN (${placeholders})`, keys);
-  }
+  const { sql, params: delParams } = pool.formatInClause('cache_key', keys, 1);
+  result = await pool.query(`DELETE FROM player_stats_cache WHERE ${sql}`, delParams);
   markDbAccess();
   return deleted + result.rowCount;
 }
@@ -432,26 +397,8 @@ export async function closeCache(): Promise<void> {
 
 export async function getActivePrivateUserCount(since: number): Promise<number> {
   await ensureInitialized();
-  let result;
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    result = await pool.query<{ count: string }>(
-      `
-      SELECT COUNT(DISTINCT split_part(key, ':', 2)) AS count
-      FROM rate_limits
-      WHERE key LIKE 'private:%' AND window_start >= $1
-      `,
-      [since],
-    );
-  } else {
-    result = await pool.query<{ count: number }>(
-      `
-      SELECT COUNT(DISTINCT SUBSTRING([key], CHARINDEX(':', [key]) + 1, LEN([key]))) AS count
-      FROM rate_limits
-      WHERE [key] LIKE 'private:%' AND window_start >= $1
-      `,
-      [since],
-    );
-  }
+  const sql = pool.getActivePrivateUserCountSql('$1');
+  const result = await pool.query<{ count: string | number }>(sql, [since]);
   markDbAccess();
   const raw = result.rows[0]?.count ?? '0';
   const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number(raw);
@@ -460,26 +407,8 @@ export async function getActivePrivateUserCount(since: number): Promise<number> 
 
 export async function getPrivateRequestCount(since: number): Promise<number> {
   await ensureInitialized();
-  let result;
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    result = await pool.query<{ total: string | number | null }>(
-      `
-      SELECT COALESCE(SUM(count), 0) AS total
-      FROM rate_limits
-      WHERE key LIKE 'private:%' AND window_start >= $1
-      `,
-      [since],
-    );
-  } else {
-    result = await pool.query<{ total: string | number | null }>(
-      `
-      SELECT COALESCE(SUM(count), 0) AS total
-      FROM rate_limits
-      WHERE [key] LIKE 'private:%' AND window_start >= $1
-      `,
-      [since],
-    );
-  }
+  const sql = pool.getPrivateRequestCountSql('$1');
+  const result = await pool.query<{ total: string | number | null }>(sql, [since]);
   markDbAccess();
   const raw = result.rows[0]?.total ?? '0';
   const parsed = typeof raw === 'string' ? Number.parseInt(raw, 10) : Number(raw);
