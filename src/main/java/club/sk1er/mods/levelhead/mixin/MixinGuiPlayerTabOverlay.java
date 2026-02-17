@@ -110,8 +110,8 @@ public class MixinGuiPlayerTabOverlay {
         String trimmedUuid = uuid.toString().replace("-", "");
         Levelhead.LevelheadRequest request = new Levelhead.LevelheadRequest(
             trimmedUuid,
-            Levelhead.INSTANCE.getDisplayManager().primaryDisplay(),
-            false,
+            Collections.singleton(Levelhead.INSTANCE.getDisplayManager().primaryDisplay()),
+
             GameMode.BEDWARS.getTypeId(),
             Levelhead.RequestReason.TAB_LIST
         );

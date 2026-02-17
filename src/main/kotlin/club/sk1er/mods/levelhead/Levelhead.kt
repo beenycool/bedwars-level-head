@@ -281,6 +281,55 @@ object Levelhead {
     fun fetchBatch(requests: List<LevelheadRequest>): Job {
         return requestCoordinator.fetchBatch(requests)
     }
+                                    DebugLogging.logRequestDebug {
+                                        "[LevelheadDebug][cache] COLD miss: uuid=$maskedUuid trimmed=$trimmedMasked mode=${gameMode.name} reasons=$reasons"
+                                    }
+                                    pending += PendingStatsRequest(
+                                        trimmedUuid,
+                                        uuid,
+                                        gameMode,
+                                        modeRequests,
+                                        displays,
+                                        cached,
+                                        false
+                                    )
+                                    DebugLogging.logRequestDebug {
+                                        "[LevelheadDebug][request] fetch initiated: uuid=$maskedUuid trimmed=$trimmedMasked mode=${gameMode.name} reason=COLD_MISS"
+                                    }
+                                }
+                                cached.isExpired(LevelheadConfig.starCacheTtl, now) -> {
+                                    statsCacheMetrics.recordMiss(CacheMissReason.EXPIRED)
+                                    registerDisplaysForRefresh(cacheKey, displays)
+                                    applyStatsToRequests(uuid, modeRequests, cached)
+                                    DebugLogging.logRequestDebug {
+                                        "[LevelheadDebug][cache] EXPIRED refresh: uuid=$maskedUuid trimmed=$trimmedMasked mode=${gameMode.name} reasons=$reasons"
+                                    }
+                                    pending += PendingStatsRequest(
+                                        trimmedUuid,
+                                        uuid,
+                                        gameMode,
+                                        modeRequests,
+                                        displays,
+                                        cached,
+                                        true
+                                    )
+                                    DebugLogging.logRequestDebug {
+                                        "[LevelheadDebug][request] fetch initiated: uuid=$maskedUuid trimmed=$trimmedMasked mode=${gameMode.name} reason=EXPIRED_REFRESH"
+                                    }
+                                }
+                                else -> {
+                                    applyStatsToRequests(uuid, modeRequests, cached)
+                                    DebugLogging.logRequestDebug {
+                                        "[LevelheadDebug][cache] HIT: uuid=$maskedUuid trimmed=$trimmedMasked mode=${gameMode.name} reasons=$reasons"
+                                    }
+                                }
+                            }
+                        }
+                }
+
+            if (pending.isEmpty()) return@launch
+            if (!ModeManager.shouldRequestData()) return@launch
+>>>>>>> origin/fix-display-manager-queue-burst-14137476276322458969
 
             val remaining = pending.toMutableList()
 
@@ -543,7 +592,9 @@ object Levelhead {
         requests.forEach { req ->
             val gameMode = resolveGameMode(req.type)
             val matchingStats = statsForMode(stats, gameMode)
-            updateDisplayCache(req.display, uuid, matchingStats, gameMode)
+            req.displays.forEach { display ->
+                updateDisplayCache(display, uuid, matchingStats, gameMode)
+            }
         }
     }
 
@@ -594,9 +645,8 @@ object Levelhead {
 
     data class LevelheadRequest(
         val uuid: String,
-        val display: LevelheadDisplay,
-        val allowOverride: Boolean,
-        val type: String = display.config.type,
+        val displays: Set<LevelheadDisplay>,
+        val type: String,
         val reason: RequestReason = RequestReason.UNKNOWN
     )
 
