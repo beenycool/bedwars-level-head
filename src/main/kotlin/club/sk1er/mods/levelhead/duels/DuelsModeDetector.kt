@@ -85,7 +85,7 @@ object DuelsModeDetector {
     fun isInDuels(): Boolean = currentContext().isDuels
 
     fun shouldRequestData(): Boolean {
-        return Levelhead.isOnHypixel() && isInDuels()
+        return Levelhead.isOnHypixel() && isInDuelsMatch()
     }
 
     fun shouldRenderTags(): Boolean {
@@ -106,22 +106,34 @@ object DuelsModeDetector {
     }
 
     private fun detectContext(): Context {
-        if (BedwarsModeDetector.isInBedwars() || SkyWarsModeDetector.isInSkyWars()) {
+        val isInBedwars = BedwarsModeDetector.isInBedwars()
+        val isInSkywars = SkyWarsModeDetector.isInSkyWars()
+        Levelhead.logger.debug("detectContext: isInBedwars={} isInSkywars={}", isInBedwars, isInSkywars)
+        
+        if (isInBedwars || isInSkywars) {
+            Levelhead.logger.debug("detectContext: returning NONE due to Bedwars/SkyWars")
             return Context.NONE
         }
 
         val scoreboardContext = detectScoreboardContext()
+        Levelhead.logger.debug("detectContext: scoreboardContext={}", scoreboardContext)
+        
         if (scoreboardContext != null && scoreboardContext != Context.NONE) {
+            Levelhead.logger.debug("detectContext: returning scoreboardContext={}", scoreboardContext)
             return scoreboardContext
         }
 
         if (scoreboardContext == null || isScoreboardTitleGeneric()) {
             val chatContext = currentChatContext()
+            Levelhead.logger.debug("detectContext: chatContext={} (scoreboardNull={} titleGeneric={})", 
+                chatContext, scoreboardContext == null, isScoreboardTitleGeneric())
             if (chatContext != Context.NONE) {
+                Levelhead.logger.debug("detectContext: returning chatContext={}", chatContext)
                 return chatContext
             }
         }
 
+        Levelhead.logger.debug("detectContext: returning final {}", scoreboardContext ?: Context.NONE)
         return scoreboardContext ?: Context.NONE
     }
 
@@ -141,9 +153,18 @@ object DuelsModeDetector {
 
     private fun detectScoreboardContext(): Context? {
         val mc = Minecraft.getMinecraft()
-        val world = mc.theWorld ?: return null
-        val scoreboard = world.scoreboard ?: return null
-        val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: return null
+        val world = mc.theWorld ?: run {
+            Levelhead.logger.debug("detectScoreboardContext: world is null, returning null")
+            return null
+        }
+        val scoreboard = world.scoreboard ?: run {
+            Levelhead.logger.debug("detectScoreboardContext: scoreboard is null, returning null")
+            return null
+        }
+        val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: run {
+            Levelhead.logger.debug("detectScoreboardContext: objective is null, returning null")
+            return null
+        }
 
         val rawTitle = objective.displayName?.let {
             StringUtils.stripControlCodes(it)
@@ -151,8 +172,11 @@ object DuelsModeDetector {
         val title = rawTitle.uppercase(Locale.ROOT)
         val normalizedTitle = title.replace(WHITESPACE_PATTERN, "")
         
+        Levelhead.logger.debug("detectScoreboardContext: title='{}' normalized='{}'", rawTitle, normalizedTitle)
+        
         // If the title explicitly says BEDWARS or SKYWARS, we let those detectors handle it
         if (normalizedTitle.contains("BEDWARS") || normalizedTitle.contains("SKYWARS")) {
+            Levelhead.logger.debug("detectScoreboardContext: title contains BEDWARS/SKYWARS, returning NONE")
             return Context.NONE
         }
         
@@ -165,24 +189,29 @@ object DuelsModeDetector {
             .filter { it.isNotBlank() }
             .toList()
 
+        Levelhead.logger.debug("detectScoreboardContext: lines={} content={}", lines.size, lines.take(10).joinToString(" | "))
+
         val normalizedLines = lines.map { it.uppercase(Locale.ROOT) }
-        val isBedwarsDuels = normalizedTitle.contains("BEDWARS") ||
-            normalizedLines.any { line ->
-                line.contains("BED WARS") ||
-                    line.contains("BEDS:") ||
-                    line.contains("BEDS BROKEN") ||
-                    line.contains("FINAL KILLS") ||
-                    line.contains("EMERALDS IN") ||
-                    line.contains("DIAMONDS IN")
-            }
+        val isBedwarsDuels = normalizedLines.any { line ->
+            line.contains("BED WARS") ||
+                line.contains("BEDS:") ||
+                line.contains("BEDS BROKEN") ||
+                line.contains("FINAL KILLS") ||
+                line.contains("EMERALDS IN") ||
+                line.contains("DIAMONDS IN")
+        }
 
         if (isBedwarsDuels) {
+            Levelhead.logger.debug("detectScoreboardContext: isBedwarsDuels=true, returning NONE")
             return Context.NONE
         }
 
         val isDuelScoreboard = normalizedTitle.contains("DUELS") || lines.any { it.contains("Duel", ignoreCase = true) }
+        Levelhead.logger.debug("detectScoreboardContext: isDuelScoreboard={} (titleHasDUELS={} linesHaveDuel={})", 
+            isDuelScoreboard, normalizedTitle.contains("DUELS"), lines.any { it.contains("Duel", ignoreCase = true) })
         
         if (!isDuelScoreboard) {
+            Levelhead.logger.debug("detectScoreboardContext: not detected as Duels scoreboard, returning NONE")
             return Context.NONE
         }
 
@@ -195,29 +224,35 @@ object DuelsModeDetector {
             it.contains("Health:", ignoreCase = true) ||
             it.contains("Round:", ignoreCase = true)
         }
+        Levelhead.logger.debug("detectScoreboardContext: matchIndicators={}", matchIndicators)
         
         val preGameIndicators = lines.any {
             it.contains("Starting in", ignoreCase = true) ||
             it.contains("Players:", ignoreCase = true) ||
             it.contains("Mode:", ignoreCase = true)
         }
+        Levelhead.logger.debug("detectScoreboardContext: preGameIndicators={}", preGameIndicators)
 
         val mainLobbyIndicators = lines.any {
-            it.contains("Wins:", ignoreCase = true) && !it.contains("Opponent:", ignoreCase = true) ||
+            (it.contains("Wins:", ignoreCase = true) && !it.contains("Opponent:", ignoreCase = true)) ||
             it.contains("Losses:", ignoreCase = true) ||
             it.contains("Winstreak", ignoreCase = true) ||
             it.contains("Coins:", ignoreCase = true) ||
             it.contains("Tokens:", ignoreCase = true)
         }
+        Levelhead.logger.debug("detectScoreboardContext: mainLobbyIndicators={}", mainLobbyIndicators)
 
         if (matchIndicators) {
+            Levelhead.logger.debug("detectScoreboardContext: returning MATCH")
             return Context.MATCH
         }
 
         if (preGameIndicators || mainLobbyIndicators) {
+            Levelhead.logger.debug("detectScoreboardContext: returning LOBBY")
             return Context.LOBBY
         }
 
+        Levelhead.logger.debug("detectScoreboardContext: falling through to NONE")
         return Context.NONE
     }
 

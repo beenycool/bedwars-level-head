@@ -6,6 +6,8 @@ import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.handleRetryAfterHint
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.parseRetryAfterMillis
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.sanitizeForLogs
 import club.sk1er.mods.levelhead.config.LevelheadConfig
+import club.sk1er.mods.levelhead.core.DebugLogging
+import club.sk1er.mods.levelhead.core.DebugLogging.maskForLogs
 import net.minecraft.util.EnumChatFormatting as ChatColor
 import okhttp3.HttpUrl
 import okhttp3.Request
@@ -31,12 +33,6 @@ object HypixelClient {
             ?.addQueryParameter("uuid", uuid.toString().replace("-", ""))
             ?.build()
 
-        // Temporary logging for debugging
-        Levelhead.logger.info(
-            "[BACKEND_REQUEST] Hypixel fetchPlayer - URL: {}, UUID: {}",
-            url?.toString()?.sanitizeForLogs(), uuid
-        )
-
         if (url == null) {
             Levelhead.logger.error("Failed to build Hypixel BedWars endpoint URL")
             return FetchResult.PermanentError("INVALID_URL")
@@ -50,16 +46,23 @@ object HypixelClient {
             .get()
             .build()
 
+        val debugEnabled = DebugLogging.isRequestDebugEnabled()
+        val maskedUuid = if (debugEnabled) uuid.maskForLogs() else null
+        DebugLogging.logRequestDebug {
+            "[LevelheadDebug][network] request start: endpoint=${HYPIXEL_PLAYER_ENDPOINT}, uuid=$maskedUuid, hasApiKey=${key.isNotBlank()}"
+        }
+
         return try {
             executeWithRetries(request, "Hypixel player").use { response ->
-                // Temporary logging for debugging
-                Levelhead.logger.info(
-                    "[BACKEND_REQUEST] Hypixel response - Status: {}, Retry-After: {}",
-                    response.code(),
-                    response.header("Retry-After") ?: "null"
-                )
                 val body = response.body()?.string().orEmpty()
                 val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
+
+                DebugLogging.logRequestDebug {
+                    val statusCode = response.code()
+                    val isNotModified = statusCode == 304
+                    val bodyLength = body.length
+                    "[LevelheadDebug][network] response: status=$statusCode${if (isNotModified) " (Not Modified)" else ""}, bodyLength=$bodyLength"
+                }
 
                 if (!response.isSuccessful) {
                     val json = kotlin.runCatching { Levelhead.jsonParser.parse(body).asJsonObject }.getOrNull()
@@ -82,20 +85,33 @@ object HypixelClient {
 
                 invalidKeyWarned.set(false)
                 networkIssueWarned.set(false)
-                val json = kotlin.runCatching { Levelhead.jsonParser.parse(body).asJsonObject }.getOrElse {
+                val parseResult = kotlin.runCatching { Levelhead.jsonParser.parse(body).asJsonObject }
+                val json = parseResult.getOrElse {
+                    DebugLogging.logRequestDebug {
+                        "[LevelheadDebug][network] parse: success=false, error=${it::class.simpleName}"
+                    }
                     Levelhead.logger.error("Failed to parse Hypixel response", it)
                     return FetchResult.TemporaryError("PARSE_ERROR")
+                }
+                DebugLogging.logRequestDebug {
+                    "[LevelheadDebug][network] parse: success=true"
                 }
                 handleRetryAfterHint("hypixel", retryAfterMillis)
 
                 FetchResult.Success(json)
             }
         } catch (ex: IOException) {
+            DebugLogging.logRequestDebug {
+                "[LevelheadDebug][network] error: ${ex::class.simpleName}"
+            }
             notifyNetworkIssue(ex)
-            FetchResult.TemporaryError(ex.message)
+            FetchResult.TemporaryError(ex.message?.sanitizeForLogs())
         } catch (ex: Exception) {
+            DebugLogging.logRequestDebug {
+                "[LevelheadDebug][network] error: ${ex::class.simpleName}"
+            }
             Levelhead.logger.error("Failed to fetch Hypixel BedWars data", ex)
-            FetchResult.TemporaryError(ex.message)
+            FetchResult.TemporaryError(ex.message?.sanitizeForLogs())
         }
     }
 

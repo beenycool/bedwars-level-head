@@ -399,6 +399,8 @@ class LevelheadCommand {
         sendMessage("${ChatColor.YELLOW}Display position: UI ${ChatColor.GOLD}${uiPosition.name.lowercase(Locale.ROOT)}${ChatColor.YELLOW}, runtime ${ChatColor.GOLD}${runtimePosition.name.lowercase(Locale.ROOT)}${ChatColor.YELLOW}")
         sendMessage("${ChatColor.YELLOW}Vertical offset: UI ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", LevelheadConfig.verticalOffset.toDouble())}${ChatColor.YELLOW}, runtime ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", runtimeOffset)}${ChatColor.YELLOW}")
         sendMessage("${ChatColor.YELLOW}Config sync debug logging: ${formatToggle(LevelheadConfig.debugConfigSync)}${ChatColor.YELLOW}")
+        sendMessage("${ChatColor.YELLOW}Request debug logging: ${formatToggle(LevelheadConfig.debugRequests)}${ChatColor.YELLOW}")
+        sendMessage("${ChatColor.YELLOW}Render sampling debug logging: ${formatToggle(LevelheadConfig.debugRenderSampling)}${ChatColor.YELLOW}")
         sendMessage("${ChatColor.YELLOW}Cache size: ${ChatColor.GOLD}${snapshot.cacheSize}${ChatColor.YELLOW}, display cache entries: ${ChatColor.GOLD}$displayCache")
         sendMessage("${ChatColor.YELLOW}Rate limiter remaining: ${ChatColor.GOLD}${snapshot.rateLimitRemaining}${ChatColor.YELLOW}, proxy: ${if (snapshot.proxyEnabled) ChatColor.GREEN else ChatColor.GRAY}${if (snapshot.proxyEnabled) "enabled" else "disabled"}${ChatColor.YELLOW}")
     }
