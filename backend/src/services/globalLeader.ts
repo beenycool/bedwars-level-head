@@ -94,7 +94,7 @@ async function heartbeat(): Promise<void> {
 
     if (!client || client.status !== 'ready') {
       hasRedisLock = false;
-      await transitionToLeader('redis-unavailable-fallback');
+      await transitionFromLeader('redis-unavailable');
       return;
     }
 
