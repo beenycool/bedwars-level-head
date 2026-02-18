@@ -21,6 +21,7 @@ import okhttp3.RequestBody
 import java.io.IOException
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -404,6 +405,7 @@ object ProxyClient {
 
     private suspend fun notifyNetworkIssue(ex: IOException) {
         if (networkIssueWarned.compareAndSet(false, true)) {
+            Levelhead.sendChat("${ChatColor.YELLOW}Checking backend health...")
             val isHealthy = checkBackendHealth()
             if (isHealthy) {
                 Levelhead.sendChat("${ChatColor.RED}Proxy stats request failed (Backend Online). ${ChatColor.YELLOW}Retrying in 60s.")
@@ -422,11 +424,18 @@ object ProxyClient {
 
         val request = Request.Builder()
             .url(healthUrl)
+            .header("User-Agent", "Levelhead/${Levelhead.VERSION} (Health Check)")
             .get()
             .build()
 
+        val healthCheckClient = Levelhead.okHttpClient.newBuilder()
+            .callTimeout(5, TimeUnit.SECONDS)
+            .connectTimeout(2, TimeUnit.SECONDS)
+            .readTimeout(2, TimeUnit.SECONDS)
+            .build()
+
         return try {
-            Levelhead.okHttpClient.newCall(request).await().use { response ->
+            healthCheckClient.newCall(request).await().use { response ->
                 if (!response.isSuccessful) return@use false
                 val body = response.body()?.string() ?: return@use false
                 val json = kotlin.runCatching { JsonParser.parseString(body).asJsonObject }.getOrNull() ?: return@use false
