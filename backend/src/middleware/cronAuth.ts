@@ -3,10 +3,15 @@ import crypto from 'crypto';
 import { CRON_API_KEYS } from '../config';
 import { HttpError } from '../util/httpError';
 
-// Pre-compute SHA-256 hashes of allowed keys
-// This mitigates timing attacks by ensuring constant-time comparison.
+// Generate a random salt on startup to ensure these hashes are unique to this process
+// and cannot be pre-computed by an attacker.
+const SALT = crypto.randomBytes(32);
+
+// Pre-compute HMAC-SHA256 hashes of allowed keys.
+// Using HMAC-SHA256 provides cryptographic strength and prevents pre-computation attacks
+// (unlike simple SHA-256) while being significantly faster than PBKDF2 to prevent CPU exhaustion DoS.
 const ALLOWED_KEY_HASHES = CRON_API_KEYS.map((key) =>
-  crypto.createHash('sha256').update(key).digest()
+  crypto.createHmac('sha256', SALT).update(key).digest()
 );
 
 export function extractCronToken(req: Request): string | null {
@@ -31,13 +36,14 @@ export function extractCronToken(req: Request): string | null {
 
 /**
  * Compares a provided token against a list of allowed keys in a timing-safe manner.
- * Using SHA-256 ensures constant length comparison and cryptographic strength.
+ * Using HMAC-SHA256 ensures constant length comparison and cryptographic strength
+ * without the CPU overhead of PBKDF2.
  */
 export function validateCronToken(token: string): boolean {
   if (!token) return false;
 
-  // Hash the incoming token using SHA-256
-  const tokenHash = crypto.createHash('sha256').update(token).digest();
+  // Hash the incoming token using HMAC-SHA256 with the process-local salt
+  const tokenHash = crypto.createHmac('sha256', SALT).update(token).digest();
 
   // To prevent timing attacks, we must iterate through all keys and not short-circuit.
   // Using reduce with a bitwise OR ensures we process every key without conditional branching.
