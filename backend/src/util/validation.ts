@@ -281,8 +281,6 @@ export const criticalFields = [
     'bedwars_experience',
     'Experience',
     'experience',
-    'kills_bedwars',
-    'wins_bedwars',
     'final_kills_bedwars',
     'final_deaths_bedwars',
 ];
