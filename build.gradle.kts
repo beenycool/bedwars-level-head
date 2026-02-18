@@ -52,7 +52,7 @@ configurations.configureEach {
 }
 
 dependencies {
-    val oneconfig = "cc.polyfrost:oneconfig-$platform:0.2.2-alpha+"
+    val oneconfig = "cc.polyfrost:oneconfig-$platform:0.2.2-alpha223"
     val universalcraft = "cc.polyfrost:universalcraft-$platform:246"
     val essentialForge = "gg.essential:essential-1.8.9-forge:1.3.10.2"
     val essentialLoader = "gg.essential:loader-launchwrapper:1.1.3"
@@ -73,7 +73,13 @@ dependencies {
     embed("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     embed("com.squareup.okhttp3:okhttp:3.14.9")
     embed("com.google.code.gson:gson:2.10.1")
-    compileOnly("org.spongepowered:mixin:0.8.5-SNAPSHOT")
+    compileOnly("org.spongepowered:mixin:0.8.5")
+    embed("com.github.ben-manes.caffeine:caffeine:2.9.3")
+
+    // Test dependencies - pure JVM
+    testImplementation(platform("org.junit:junit-bom:5.10.0"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 val manifestAttributes = mapOf(
@@ -92,6 +98,8 @@ tasks.compileKotlin {
 
 tasks.withType<Jar> {
     duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
 }
 
 tasks.jar {
@@ -102,6 +110,16 @@ tasks.named<ShadowJar>("shadowJar") {
     configurations = listOf(embed)
     archiveClassifier.set("dev")
     destinationDirectory.set(layout.buildDirectory.dir("dev-libs"))
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    mergeServiceFiles()
+    isPreserveFileTimestamps = false
+    isReproducibleFileOrder = true
+    relocate("kotlin", "club.sk1er.mods.levelhead.shadow.kotlin")
+    relocate("kotlinx.coroutines", "club.sk1er.mods.levelhead.shadow.kotlinx.coroutines")
+    relocate("okhttp3", "club.sk1er.mods.levelhead.shadow.okhttp3")
+    relocate("okio", "club.sk1er.mods.levelhead.shadow.okio")
+    relocate("com.google.gson", "club.sk1er.mods.levelhead.shadow.gson")
+    relocate("com.github.benmanes.caffeine", "club.sk1er.mods.levelhead.shadow.caffeine")
     manifest.attributes(manifestAttributes)
 }
 
@@ -109,4 +127,9 @@ tasks.named<RemapJarTask>("remapJar") {
     input.set(tasks.named<ShadowJar>("shadowJar").flatMap { it.archiveFile })
     dependsOn(tasks.named("shadowJar"))
     archiveClassifier.set("")
+}
+
+// Configure JUnit5 for tests
+tasks.test {
+    useJUnitPlatform()
 }
