@@ -43,8 +43,44 @@ import crypto from 'crypto';
 import { requestId } from './middleware/requestId';
 import { logger } from './util/logger';
 import { sanitizeUrlForLogs } from './util/requestUtils';
+import { startGlobalLeaderElection, stopGlobalLeaderElection } from './services/globalLeader';
 
 const app = express();
+let globalPurgeInterval: ReturnType<typeof setInterval> | null = null;
+
+async function startLeaderScopedServices(): Promise<void> {
+  if (globalPurgeInterval) {
+    return;
+  }
+
+  await purgeExpiredEntries().catch((error) => {
+    logger.error('Failed to purge expired cache entries', error);
+  });
+
+  await initializeDynamicRateLimitService().catch((error) => {
+    logger.error('Failed initializing dynamic rate limit service', error);
+    process.exit(1);
+  });
+
+  startKeyCountRefresher();
+
+  globalPurgeInterval = setInterval(() => {
+    void purgeExpiredEntries().catch((error) => {
+      logger.error('Failed to purge expired cache entries', error);
+    });
+  }, 60 * 60 * 1000);
+  globalPurgeInterval.unref();
+}
+
+async function stopLeaderScopedServices(): Promise<void> {
+  if (globalPurgeInterval) {
+    clearInterval(globalPurgeInterval);
+    globalPurgeInterval = null;
+  }
+
+  stopDynamicRateLimitService();
+  stopKeyCountRefresher();
+}
 
 app.use(requestId);
 app.use((_req, res, next) => {
@@ -242,15 +278,6 @@ app.get('/metrics', enforceAdminRateLimit, enforceMonitoringAuth, async (_req, r
   res.send(await registry.metrics());
 });
 
-void purgeExpiredEntries().catch((error) => {
-  logger.error('Failed to purge expired cache entries', error);
-});
-
-void initializeDynamicRateLimitService().catch((error) => {
-  logger.error('Failed initializing dynamic rate limit service', error);
-  process.exit(1);
-});
-
 void initializeResourceMetrics().catch((error) => {
   logger.error('Failed initializing resource metrics', error);
   process.exit(1);
@@ -259,11 +286,10 @@ void initializeResourceMetrics().catch((error) => {
 // Start history flush interval
 startHistoryFlushInterval();
 
-const purgeInterval = setInterval(() => {
-  void purgeExpiredEntries().catch((error) => {
-    logger.error('Failed to purge expired cache entries', error);
-  });
-}, 60 * 60 * 1000);
+startGlobalLeaderElection({
+  onLeaderStart: startLeaderScopedServices,
+  onLeaderStop: stopLeaderScopedServices,
+});
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (err instanceof HttpError) {
@@ -305,7 +331,6 @@ const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
   logger.info(`Cache DB pool configured with min=${CACHE_DB_POOL_MIN} max=${CACHE_DB_POOL_MAX}.`);
 
   startAdaptiveTtlRefresh();
-  startKeyCountRefresher();
 
   void Promise.all([
     getRedisClient()?.ping().catch(() => {}),
@@ -333,11 +358,11 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
 
   shuttingDown = true;
   logger.info(`Received ${signal}. Shutting down gracefully...`);
-  clearInterval(purgeInterval);
+  await stopGlobalLeaderElection().catch((error) => {
+    logger.error('Error stopping global leader election during shutdown', error);
+  });
   stopHistoryFlushInterval();
-  stopDynamicRateLimitService();
   stopAdaptiveTtlRefresh();
-  stopKeyCountRefresher();
   stopResourceMetrics();
 
   const forcedShutdown = setTimeout(() => {
@@ -387,6 +412,6 @@ shutdownSignals.forEach((signal) => {
 });
 
 process.on('exit', () => {
-  clearInterval(purgeInterval);
+  void stopGlobalLeaderElection();
   void safeCloseCache();
 });

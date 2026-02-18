@@ -2,12 +2,15 @@ import { pool, ensureInitialized } from './cache';
 import { DatabaseType } from './database/adapter';
 import { HYPIXEL_API_CALL_WINDOW_MS } from '../config';
 import { logger } from '../util/logger';
+import { getRedisClient, isRedisAvailable } from './redis';
 
 const MAX_BUFFER_SIZE = 100;
 const MAX_HARD_CAP = 10_000;
 const FLUSH_INTERVAL_MS = 5000;
 const MAX_RETRIES = 3;
 const MAX_AGE_MS = 2 * HYPIXEL_API_CALL_WINDOW_MS;
+const REDIS_ROLLING_KEY = 'hypixel_api_calls_rolling';
+const REDIS_ROLLING_TTL_SECONDS = Math.ceil((HYPIXEL_API_CALL_WINDOW_MS * 2) / 1000);
 
 interface BufferedCall {
   uuid: string;
@@ -21,6 +24,33 @@ const hypixelCallBuffer: BufferedCall[] = [];
 const inflightBatch: BufferedCall[] = [];
 let flushPromise: Promise<void> | null = null;
 let flushInterval: NodeJS.Timeout | null = null;
+
+function buildRedisRollingMember(uuid: string, calledAt: number): string {
+  const nonce = Math.random().toString(36).slice(2);
+  return `${uuid}:${calledAt}:${nonce}`;
+}
+
+async function recordHypixelCallInRedis(uuid: string, calledAt: number): Promise<void> {
+  if (!isRedisAvailable()) {
+    return;
+  }
+
+  const client = getRedisClient();
+  if (!client) {
+    return;
+  }
+
+  const cutoff = calledAt - HYPIXEL_API_CALL_WINDOW_MS;
+  const member = buildRedisRollingMember(uuid, calledAt);
+
+  try {
+    await client.zadd(REDIS_ROLLING_KEY, calledAt, member);
+    await client.zremrangebyscore(REDIS_ROLLING_KEY, '-inf', cutoff);
+    await client.expire(REDIS_ROLLING_KEY, REDIS_ROLLING_TTL_SECONDS);
+  } catch (error) {
+    logger.warn('[hypixelTracker] Failed to update Redis rolling counter', error);
+  }
+}
 
 async function flushHypixelCallBuffer(): Promise<void> {
   if (flushPromise) {
@@ -86,6 +116,8 @@ async function flushHypixelCallBuffer(): Promise<void> {
 }
 
 export async function recordHypixelApiCall(uuid: string, calledAt: number = Date.now()): Promise<void> {
+  await recordHypixelCallInRedis(uuid, calledAt);
+
   // Backpressure: If buffer is full, wait for current flush
   if (hypixelCallBuffer.length >= MAX_HARD_CAP) {
     if (flushPromise) {
@@ -122,6 +154,21 @@ export async function getHypixelCallCount(
   windowMs: number = HYPIXEL_API_CALL_WINDOW_MS,
   now: number = Date.now(),
 ): Promise<number> {
+  if (isRedisAvailable()) {
+    const client = getRedisClient();
+    if (client) {
+      const cutoff = now - windowMs;
+      try {
+        const count = await client.zcount(REDIS_ROLLING_KEY, cutoff, '+inf');
+        if (Number.isFinite(count)) {
+          return Number(count);
+        }
+      } catch (error) {
+        logger.warn('[hypixelTracker] Redis zcount failed, falling back to SQL count', error);
+      }
+    }
+  }
+
   await ensureInitialized();
   const cutoff = now - windowMs;
 

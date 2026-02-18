@@ -12,20 +12,46 @@ import {
   flushResourceMetricsOnShutdown,
 } from './services/resourceMetrics';
 import { shutdown as shutdownHypixelTracker } from './services/hypixelTracker';
+import { startGlobalLeaderElection, stopGlobalLeaderElection } from './services/globalLeader';
 
-let purgeInterval: ReturnType<typeof setInterval> | null = null;
+let globalPurgeInterval: ReturnType<typeof setInterval> | null = null;
 let cacheClosePromise: Promise<void> | null = null;
 
-export function startBackgroundServices(): void {
-  void purgeExpiredEntries().catch((error) => {
+async function startLeaderScopedServices(): Promise<void> {
+  if (globalPurgeInterval) {
+    return;
+  }
+
+  await purgeExpiredEntries().catch((error) => {
     console.error('Failed to purge expired cache entries', error);
   });
 
-  void initializeDynamicRateLimitService().catch((error) => {
+  await initializeDynamicRateLimitService().catch((error) => {
     console.error('Failed initializing dynamic rate limit service', error);
     process.exit(1);
   });
 
+  startKeyCountRefresher();
+
+  globalPurgeInterval = setInterval(() => {
+    void purgeExpiredEntries().catch((error) => {
+      console.error('Failed to purge expired cache entries', error);
+    });
+  }, 60 * 60 * 1000);
+  globalPurgeInterval.unref();
+}
+
+async function stopLeaderScopedServices(): Promise<void> {
+  if (globalPurgeInterval) {
+    clearInterval(globalPurgeInterval);
+    globalPurgeInterval = null;
+  }
+
+  stopDynamicRateLimitService();
+  stopKeyCountRefresher();
+}
+
+export function startBackgroundServices(): void {
   void initializeResourceMetrics().catch((error) => {
     console.error('Failed initializing resource metrics', error);
     process.exit(1);
@@ -33,27 +59,20 @@ export function startBackgroundServices(): void {
 
   startHistoryFlushInterval();
 
-  purgeInterval = setInterval(() => {
-    void purgeExpiredEntries().catch((error) => {
-      console.error('Failed to purge expired cache entries', error);
-    });
-  }, 60 * 60 * 1000);
+  startGlobalLeaderElection({
+    onLeaderStart: startLeaderScopedServices,
+    onLeaderStop: stopLeaderScopedServices,
+  });
 }
 
 export function startPostListenServices(): void {
   startAdaptiveTtlRefresh();
-  startKeyCountRefresher();
 }
 
 export function stopAllServices(): void {
-  if (purgeInterval) {
-    clearInterval(purgeInterval);
-    purgeInterval = null;
-  }
+  void stopGlobalLeaderElection();
   stopHistoryFlushInterval();
-  stopDynamicRateLimitService();
   stopAdaptiveTtlRefresh();
-  stopKeyCountRefresher();
   stopResourceMetrics();
 }
 
