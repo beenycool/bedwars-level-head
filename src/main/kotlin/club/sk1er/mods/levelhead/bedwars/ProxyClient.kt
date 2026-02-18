@@ -14,8 +14,11 @@ import com.google.gson.JsonParser
 import com.google.gson.JsonObject
 import com.google.gson.JsonPrimitive
 import net.minecraft.util.EnumChatFormatting as ChatColor
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
 import okhttp3.MediaType
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import java.io.IOException
@@ -32,6 +35,15 @@ object ProxyClient {
     private val invalidProxyTokenWarned = AtomicBoolean(false)
     private val networkIssueWarned = AtomicBoolean(false)
     private val proxyMisconfiguredWarned = AtomicBoolean(false)
+
+    private val shortTimeoutClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(2, TimeUnit.SECONDS)
+            .readTimeout(2, TimeUnit.SECONDS)
+            .writeTimeout(2, TimeUnit.SECONDS)
+            .callTimeout(3, TimeUnit.SECONDS)
+            .build()
+    }
 
     fun isAvailable(): Boolean {
         if (!LevelheadConfig.proxyEnabled) return false
@@ -405,12 +417,14 @@ object ProxyClient {
 
     private suspend fun notifyNetworkIssue(ex: IOException) {
         if (networkIssueWarned.compareAndSet(false, true)) {
-            Levelhead.sendChat("${ChatColor.YELLOW}Checking backend health...")
-            val isHealthy = checkBackendHealth()
-            if (isHealthy) {
-                Levelhead.sendChat("${ChatColor.RED}Proxy stats request failed (Backend Online). ${ChatColor.YELLOW}Retrying in 60s.")
-            } else {
-                Levelhead.sendChat("${ChatColor.RED}Proxy stats offline. ${ChatColor.YELLOW}Retrying in 60s.")
+            Levelhead.sendChat("${ChatColor.RED}Proxy stats request failed. ${ChatColor.YELLOW}Checking backend status...")
+            Levelhead.scope.launch(Dispatchers.IO) {
+                val isHealthy = checkBackendHealth()
+                if (isHealthy) {
+                    Levelhead.sendChat("${ChatColor.RED}Proxy stats request failed (Backend Online). ${ChatColor.YELLOW}Retrying in 60s.")
+                } else {
+                    Levelhead.sendChat("${ChatColor.RED}Proxy stats offline. ${ChatColor.YELLOW}Retrying in 60s.")
+                }
             }
         }
         Levelhead.logger.error("Network error while fetching proxy BedWars data", ex)
@@ -425,18 +439,12 @@ object ProxyClient {
 
         val request = Request.Builder()
             .url(healthUrl)
-            .header("User-Agent", "Levelhead/${Levelhead.VERSION} (Health Check)")
+            .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
             .get()
             .build()
 
-        val healthCheckClient = Levelhead.okHttpClient.newBuilder()
-            .callTimeout(5, TimeUnit.SECONDS)
-            .connectTimeout(2, TimeUnit.SECONDS)
-            .readTimeout(2, TimeUnit.SECONDS)
-            .build()
-
         return try {
-            healthCheckClient.newCall(request).await().use { response ->
+            shortTimeoutClient.newCall(request).await().use { response ->
                 if (!response.isSuccessful) return@use false
                 val body = response.body()?.string() ?: return@use false
                 val json = kotlin.runCatching { JsonParser.parseString(body).asJsonObject }.getOrNull() ?: return@use false

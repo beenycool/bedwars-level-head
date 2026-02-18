@@ -25,6 +25,8 @@ const backgroundRefreshLocks: Map<string, Promise<void>> = new Map();
 
 const PLAYER_KEY_PREFIX = 'player:';
 const IGN_MAPPING_PREFIX = 'ignmap:';
+const REDIS_PURGE_SCAN_COUNT = 1000;
+const REDIS_PURGE_BATCH_SIZE = 500;
 
 /**
  * Fetch result with stats and metadata for cache storage
@@ -1193,13 +1195,18 @@ export async function clearAllPlayerStatsCaches(): Promise<number> {
     if (client && client.status === 'ready') {
       try {
         let cursor = '0';
-        // Optimized: Increased COUNT to 1000 to reduce network round-trips.
         do {
-          const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'cache:*', 'COUNT', 1000);
+          const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'cache:*', 'COUNT', REDIS_PURGE_SCAN_COUNT);
           cursor = newCursor;
           if (keys.length > 0) {
-            await client.del(...keys);
-            deleted += keys.length;
+            for (let i = 0; i < keys.length; i += REDIS_PURGE_BATCH_SIZE) {
+              const chunk = keys.slice(i, i + REDIS_PURGE_BATCH_SIZE);
+              try {
+                deleted += await client.unlink(...chunk);
+              } catch {
+                deleted += await client.del(...chunk);
+              }
+            }
           }
         } while (cursor !== '0');
       } catch (error) {

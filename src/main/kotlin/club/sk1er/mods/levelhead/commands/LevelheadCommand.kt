@@ -16,8 +16,11 @@ import cc.polyfrost.oneconfig.utils.commands.annotations.Main
 import cc.polyfrost.oneconfig.utils.commands.annotations.SubCommand
 import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.GuiScreen
+import net.minecraft.event.ClickEvent
+import net.minecraft.event.HoverEvent
 import net.minecraft.util.ChatComponentText
 import net.minecraft.util.EnumChatFormatting as ChatColor
+import net.minecraft.util.IChatComponent
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -437,7 +440,13 @@ class LevelheadCommand {
             "list" -> {
                 sendMessage("${ChatColor.GREEN}Available presets:")
                 ConfigProfiles.Preset.entries.forEach { preset ->
-                    sendMessage("${ChatColor.YELLOW}- ${ChatColor.GOLD}${preset.displayName}${ChatColor.YELLOW}: ${ChatColor.GRAY}${preset.description}")
+val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
+    ChatComponentText("${ChatColor.GOLD}${preset.displayName}").apply {
+        chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead profile apply ${preset.name}")
+        chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to apply ${preset.displayName}"))
+    }
+).appendSibling(ChatComponentText("${ChatColor.YELLOW}: ${ChatColor.GRAY}${preset.description}"))
+                    sendMessage(line)
                 }
             }
             "apply" -> {
@@ -485,10 +494,16 @@ class LevelheadCommand {
 
     private fun sendProfileHelp() {
         sendMessage("${ChatColor.YELLOW}Profile commands:")
-        sendMessage("${ChatColor.GRAY}  ${ChatColor.GOLD}/levelhead profile list${ChatColor.GRAY} - Show available presets")
-        sendMessage("${ChatColor.GRAY}  ${ChatColor.GOLD}/levelhead profile apply <name>${ChatColor.GRAY} - Apply a preset")
-        sendMessage("${ChatColor.GRAY}  ${ChatColor.GOLD}/levelhead profile export${ChatColor.GRAY} - Export config to clipboard")
-        sendMessage("${ChatColor.GRAY}  ${ChatColor.GOLD}/levelhead profile import${ChatColor.GRAY} - Import config from clipboard")
+        fun sendLine(command: String, desc: String, run: Boolean) {
+            val line = ChatComponentText("  ")
+                .appendSibling(createClickableCommand(command, run))
+                .appendSibling(ChatComponentText(" ${ChatColor.GRAY}- $desc"))
+            sendMessage(line)
+        }
+        sendLine("/levelhead profile list", "Show available presets", true)
+        sendLine("/levelhead profile apply <name>", "Apply a preset", false)
+        sendLine("/levelhead profile export", "Export config to clipboard", true)
+        sendLine("/levelhead profile import", "Import config from clipboard", false)
     }
 
     private fun handleDisplayHeader(args: List<String>) {
@@ -630,18 +645,27 @@ class LevelheadCommand {
         sendMessage(
             "${ChatColor.GRAY}Options:${ChatColor.YELLOW} enable/disable toggle usage (${enabledState}${ChatColor.YELLOW}), url to set the backend (${ChatColor.GOLD}$baseUrl${ChatColor.YELLOW}), token to update auth (${ChatColor.GOLD}$tokenState${ChatColor.YELLOW})."
         )
-        sendMessage(
-            "${ChatColor.GRAY}Try:${ChatColor.GOLD} /levelhead proxy enable${ChatColor.YELLOW}, ${ChatColor.GOLD}/levelhead proxy url https://example.com${ChatColor.YELLOW}, ${ChatColor.GOLD}/levelhead proxy token <token>${ChatColor.YELLOW}."
-        )
+        val toggleCmd = if (LevelheadConfig.proxyEnabled) "/levelhead proxy disable" else "/levelhead proxy enable"
+        val msg = ChatComponentText("${ChatColor.GRAY}Try: ")
+            .appendSibling(createClickableCommand(toggleCmd, run = true))
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
+            .appendSibling(createClickableCommand("/levelhead proxy url https://example.com"))
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
+            .appendSibling(createClickableCommand("/levelhead proxy token <token>"))
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
+        sendMessage(msg)
     }
 
     private fun sendAdminHelp() {
         sendMessage(
             "${ChatColor.YELLOW}Admin commands control the proxy cache.${ChatColor.GRAY} Available: ${ChatColor.GOLD}purgecache [player]${ChatColor.GRAY} to clear cached stats globally or for a specific player."
         )
-        sendMessage(
-            "${ChatColor.GRAY}Example:${ChatColor.GOLD} /levelhead admin purgecache${ChatColor.YELLOW} (all) or ${ChatColor.GOLD}/levelhead admin purgecache Notch${ChatColor.YELLOW}."
-        )
+        val msg = ChatComponentText("${ChatColor.GRAY}Example: ")
+            .appendSibling(createClickableCommand("/levelhead admin purgecache", run = false))
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW} (all) or "))
+            .appendSibling(createClickableCommand("/levelhead admin purgecache Notch"))
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
+        sendMessage(msg)
     }
 
     private fun sendStatus(message: String) {
@@ -675,11 +699,30 @@ class LevelheadCommand {
         }
     }
 
+    private fun createClickableCommand(command: String, run: Boolean = false): IChatComponent {
+        val action = if (run) ClickEvent.Action.RUN_COMMAND else ClickEvent.Action.SUGGEST_COMMAND
+        val hoverText = if (run) "${ChatColor.GREEN}Click to run" else "${ChatColor.GREEN}Click to fill"
+
+        return ChatComponentText("${ChatColor.GOLD}$command").apply {
+            chatStyle.chatClickEvent = ClickEvent(action, command)
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText(hoverText))
+        }
+    }
+
     private fun sendMessage(message: String) {
         val minecraft = Minecraft.getMinecraft()
         val formatted = "${ChatColor.AQUA}[Levelhead] ${ChatColor.RESET}$message"
         minecraft.addScheduledTask {
             minecraft.thePlayer?.addChatMessage(ChatComponentText(formatted))
+        }
+    }
+
+    private fun sendMessage(component: IChatComponent) {
+        val minecraft = Minecraft.getMinecraft()
+        val formatted = ChatComponentText("${ChatColor.AQUA}[Levelhead] ${ChatColor.RESET}")
+        formatted.appendSibling(component)
+        minecraft.addScheduledTask {
+            minecraft.thePlayer?.addChatMessage(formatted)
         }
     }
 
@@ -699,9 +742,14 @@ class LevelheadCommand {
     }
 
     private fun sendDisplayUsage() {
-        sendMessage(
-            "${ChatColor.GRAY}Use ${ChatColor.GOLD}/levelhead display header <text|color>${ChatColor.GRAY}, ${ChatColor.GOLD}/levelhead display offset <value>${ChatColor.GRAY}, ${ChatColor.GOLD}/levelhead display showself <on|off>${ChatColor.GRAY} to make changes."
-        )
+        val msg = ChatComponentText("${ChatColor.GRAY}Use ")
+            .appendSibling(createClickableCommand("/levelhead display header <text|color>"))
+            .appendSibling(ChatComponentText("${ChatColor.GRAY}, "))
+            .appendSibling(createClickableCommand("/levelhead display offset <value>"))
+            .appendSibling(ChatComponentText("${ChatColor.GRAY}, "))
+            .appendSibling(createClickableCommand("/levelhead display showself <on|off>"))
+            .appendSibling(ChatComponentText("${ChatColor.GRAY} to make changes."))
+        sendMessage(msg)
     }
 
     private fun sendDisplayHeaderDetails() {

@@ -285,6 +285,7 @@ export const SERVER_PORT = parseIntEnv('PORT', 3000);
 export const SERVER_HOST = process.env.HOST ?? '0.0.0.0';
 export const TRUST_PROXY_CIDRS: string[] = parseCIDRListEnv(process.env.TRUST_PROXY_CIDRS);
 export const TRUST_PROXY_ENABLED = TRUST_PROXY_CIDRS.length > 0;
+export const MONITORING_ALLOWED_CIDRS: string[] = parseCIDRListEnv(process.env.MONITORING_ALLOWED_CIDRS);
 
 export const HYPIXEL_API_BASE_URL = process.env.HYPIXEL_API_BASE_URL ?? 'https://api.hypixel.net';
 
@@ -385,6 +386,12 @@ export const REDIS_URL = process.env.REDIS_URL ?? '';
 export const REDIS_COMMAND_TIMEOUT = parseIntEnv('REDIS_COMMAND_TIMEOUT', 2000);
 export const REDIS_STATS_BUCKET_SIZE_MS = parseIntEnv('REDIS_STATS_BUCKET_SIZE_MS', 60 * 1000);
 export const REDIS_STATS_CACHE_TTL_MS = parseIntEnv('REDIS_STATS_CACHE_TTL_MS', 2000);
+export const GLOBAL_JOBS_LEADER_LOCK_KEY = process.env.GLOBAL_JOBS_LEADER_LOCK_KEY?.trim() || 'levelhead:global_jobs_leader';
+export const GLOBAL_JOBS_LEADER_TTL_MS = Math.max(5000, parseIntEnv('GLOBAL_JOBS_LEADER_TTL_MS', 15000));
+export const GLOBAL_JOBS_LEADER_RETRY_MS = Math.min(
+  Math.max(1000, parseIntEnv('GLOBAL_JOBS_LEADER_RETRY_MS', 5000)),
+  Math.floor(GLOBAL_JOBS_LEADER_TTL_MS / 2),
+);
 
 // Rate limiting Redis requirements for multi-instance deployments
 // In production with multiple instances, Redis should be mandatory to ensure

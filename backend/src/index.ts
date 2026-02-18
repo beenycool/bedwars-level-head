@@ -25,6 +25,8 @@ import {
 } from './services/dynamicRateLimit';
 import { startAdaptiveTtlRefresh, stopAdaptiveTtlRefresh } from './services/statsCache';
 import { getRedisClient, getRateLimitFallbackState, startKeyCountRefresher, stopKeyCountRefresher } from './services/redis';
+import { enforceAdminRateLimit } from './middleware/rateLimit';
+import { enforceMonitoringAuth, isAuthorizedMonitoring } from './middleware/monitoringAuth';
 import {
   initializeResourceMetrics,
   stopResourceMetrics,
@@ -41,8 +43,44 @@ import crypto from 'crypto';
 import { requestId } from './middleware/requestId';
 import { logger } from './util/logger';
 import { sanitizeUrlForLogs } from './util/requestUtils';
+import { startGlobalLeaderElection, stopGlobalLeaderElection } from './services/globalLeader';
 
 const app = express();
+let globalPurgeInterval: ReturnType<typeof setInterval> | null = null;
+
+async function startLeaderScopedServices(): Promise<void> {
+  if (globalPurgeInterval) {
+    return;
+  }
+
+  await purgeExpiredEntries().catch((error) => {
+    logger.error('Failed to purge expired cache entries', error);
+  });
+
+  await initializeDynamicRateLimitService().catch((error) => {
+    logger.error('Failed initializing dynamic rate limit service', error);
+    throw error; // Let the caller (transitionToLeader) handle the failure
+  });
+
+  startKeyCountRefresher();
+
+  globalPurgeInterval = setInterval(() => {
+    void purgeExpiredEntries().catch((error) => {
+      logger.error('Failed to purge expired cache entries', error);
+    });
+  }, 60 * 60 * 1000);
+  globalPurgeInterval.unref();
+}
+
+async function stopLeaderScopedServices(): Promise<void> {
+  if (globalPurgeInterval) {
+    clearInterval(globalPurgeInterval);
+    globalPurgeInterval = null;
+  }
+
+  stopDynamicRateLimitService();
+  stopKeyCountRefresher();
+}
 
 app.use(requestId);
 app.use((_req, res, next) => {
@@ -108,21 +146,30 @@ app.use(pinoHttp({
 
 function isIPInCIDR(ip: string, cidr: string): boolean {
   try {
-    const [network, prefix] = ipaddr.parseCIDR(cidr);
+    const parsed = ipaddr.parseCIDR(cidr);
+    const network = parsed[0];
+    const prefix = parsed[1];
     let parsedIp = ipaddr.parse(ip);
-    if (parsedIp.kind() === 'ipv6' && parsedIp.isIPv4MappedAddress()) {
-      parsedIp = parsedIp.toIPv4Address();
+
+    // Handle IPv4-mapped IPv6 addresses
+    if (parsedIp.kind() === 'ipv6') {
+      const ipv6 = parsedIp as ipaddr.IPv6;
+      if (ipv6.isIPv4MappedAddress()) {
+        parsedIp = ipv6.toIPv4Address();
+      }
     }
 
-    if (parsedIp.kind() === 'ipv4' && network.kind() === 'ipv4') {
-      return parsedIp.match(network, prefix);
+    // Match requires same address family
+    if (parsedIp.kind() !== network.kind()) {
+      return false;
     }
 
-    if (parsedIp.kind() === 'ipv6' && network.kind() === 'ipv6') {
-      return parsedIp.match(network, prefix);
+    // Use the match method with array format [address, prefix]
+    if (parsedIp.kind() === 'ipv4') {
+      return (parsedIp as ipaddr.IPv4).match([network as ipaddr.IPv4, prefix]);
+    } else {
+      return (parsedIp as ipaddr.IPv6).match([network as ipaddr.IPv6, prefix]);
     }
-
-    return false;
   } catch {
     return false;
   }
@@ -164,7 +211,8 @@ if (CRON_API_KEYS.length > 0) {
 }
 app.use('/stats', statsRouter);
 
-app.get('/healthz', async (_req, res) => {
+app.get('/healthz', enforceAdminRateLimit, async (req, res) => {
+  // lgtm[js/missing-rate-limiting]
   res.locals.metricsRoute = '/healthz';
   const [dbHealthy, hypixelHealthy] = await Promise.all([
     cachePool
@@ -196,41 +244,38 @@ app.get('/healthz', async (_req, res) => {
     }
   }
 
-  res.status(healthy ? 200 : 503).json({
+  const response: Record<string, unknown> = {
     status,
-    circuitBreaker: {
+    timestamp: new Date().toISOString(),
+  };
+
+  if (isAuthorizedMonitoring(req)) {
+    response.circuitBreaker = {
       state: circuitBreaker.state,
       failureCount: circuitBreaker.failureCount,
       ...(circuitBreaker.lastFailureAt ? { lastFailureAt: new Date(circuitBreaker.lastFailureAt).toISOString() } : {}),
       ...(circuitBreaker.nextRetryAt ? { nextRetryAt: new Date(circuitBreaker.nextRetryAt).toISOString() } : {}),
-    },
-    rateLimit: {
+    };
+    response.rateLimit = {
       requireRedis: fallbackState.requireRedis,
       fallbackMode: fallbackState.fallbackMode,
       isInFallbackMode: fallbackState.isInFallbackMode,
       ...(fallbackState.activatedAt ? { activatedAt: fallbackState.activatedAt } : {}),
-    },
-    checks: {
+    };
+    response.checks = {
       database: dbHealthy,
       hypixel: hypixelHealthy,
-    },
-    timestamp: new Date().toISOString(),
-  });
+    };
+  }
+
+  res.status(healthy ? 200 : 503).json(response);
 });
 
-app.get('/metrics', async (_req, res) => {
+app.get('/metrics', enforceAdminRateLimit, enforceMonitoringAuth, async (_req, res) => {
+  // lgtm[js/missing-rate-limiting]
   res.locals.metricsRoute = '/metrics';
   res.set('Content-Type', registry.contentType);
   res.send(await registry.metrics());
-});
-
-void purgeExpiredEntries().catch((error) => {
-  logger.error('Failed to purge expired cache entries', error);
-});
-
-void initializeDynamicRateLimitService().catch((error) => {
-  logger.error('Failed initializing dynamic rate limit service', error);
-  process.exit(1);
 });
 
 void initializeResourceMetrics().catch((error) => {
@@ -241,11 +286,10 @@ void initializeResourceMetrics().catch((error) => {
 // Start history flush interval
 startHistoryFlushInterval();
 
-const purgeInterval = setInterval(() => {
-  void purgeExpiredEntries().catch((error) => {
-    logger.error('Failed to purge expired cache entries', error);
-  });
-}, 60 * 60 * 1000);
+startGlobalLeaderElection({
+  onLeaderStart: startLeaderScopedServices,
+  onLeaderStop: stopLeaderScopedServices,
+});
 
 app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   if (err instanceof HttpError) {
@@ -287,7 +331,6 @@ const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
   logger.info(`Cache DB pool configured with min=${CACHE_DB_POOL_MIN} max=${CACHE_DB_POOL_MAX}.`);
 
   startAdaptiveTtlRefresh();
-  startKeyCountRefresher();
 
   void Promise.all([
     getRedisClient()?.ping().catch(() => {}),
@@ -315,11 +358,11 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
 
   shuttingDown = true;
   logger.info(`Received ${signal}. Shutting down gracefully...`);
-  clearInterval(purgeInterval);
+  await stopGlobalLeaderElection().catch((error) => {
+    logger.error('Error stopping global leader election during shutdown', error);
+  });
   stopHistoryFlushInterval();
-  stopDynamicRateLimitService();
   stopAdaptiveTtlRefresh();
-  stopKeyCountRefresher();
   stopResourceMetrics();
 
   const forcedShutdown = setTimeout(() => {
@@ -368,7 +411,9 @@ shutdownSignals.forEach((signal) => {
   });
 });
 
+// Best-effort cleanup; process.on('exit') is sync so async work may not complete.
+// Proper shutdown should use the shutdown() signal handlers that await these.
 process.on('exit', () => {
-  clearInterval(purgeInterval);
+  void stopGlobalLeaderElection();
   void safeCloseCache();
 });

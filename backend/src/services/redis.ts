@@ -135,6 +135,7 @@ return {next_cursor, rl, stats, cache}
 `;
 
 const REDIS_SCAN_BATCH_SIZE = 1000;
+const REDIS_PURGE_UNLINK_BATCH_SIZE = 500;
 
 // ---------------------------------------------------------------------------
 // Rate Limiting (Hybrid: In-Memory + Redis)
@@ -838,14 +839,19 @@ export async function clearAllPlayerCacheEntries(): Promise<number> {
         let cursor = '0';
         let deletedCount = 0;
 
-        // Optimized: Increased COUNT to 1000 to reduce network round-trips.
         do {
             const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'cache:*', 'COUNT', 1000);
             cursor = newCursor;
 
             if (keys.length > 0) {
-                await client.del(...keys);
-                deletedCount += keys.length;
+                for (let i = 0; i < keys.length; i += REDIS_PURGE_UNLINK_BATCH_SIZE) {
+                    const chunk = keys.slice(i, i + REDIS_PURGE_UNLINK_BATCH_SIZE);
+                    try {
+                        deletedCount += await client.unlink(...chunk);
+                    } catch {
+                        deletedCount += await client.del(...chunk);
+                    }
+                }
             }
         } while (cursor !== '0');
 

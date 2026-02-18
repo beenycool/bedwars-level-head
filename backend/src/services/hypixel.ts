@@ -427,40 +427,39 @@ function computeAggregates(stats: Record<string, unknown>) {
   return { wins, losses, kills, deaths };
 }
 
+function extractModeStats(
+  stats: Record<string, unknown>,
+): { wins: number; losses: number; kills: number; deaths: number } {
+  const hasWins = stats.wins != null;
+  const hasLosses = stats.losses != null;
+  const hasKills = stats.kills != null;
+  const hasDeaths = stats.deaths != null;
+
+  if (hasWins && hasLosses && hasKills && hasDeaths) {
+    return {
+      wins: Number(stats.wins),
+      losses: Number(stats.losses),
+      kills: Number(stats.kills),
+      deaths: Number(stats.deaths),
+    };
+  }
+
+  const aggregates = computeAggregates(stats);
+  return {
+    wins: hasWins ? Number(stats.wins) : aggregates.wins,
+    losses: hasLosses ? Number(stats.losses) : aggregates.losses,
+    kills: hasKills ? Number(stats.kills) : aggregates.kills,
+    deaths: hasDeaths ? Number(stats.deaths) : aggregates.deaths,
+  };
+}
+
 export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPlayerStats {
   const bedwarsStats = response.player?.stats?.Bedwars ?? {};
   const duelsStats = response.player?.stats?.Duels ?? {};
   const skywarsStats = response.player?.stats?.SkyWars ?? {};
 
-  const duelsWins = Number(duelsStats.wins ?? 0);
-  const duelsLosses = Number(duelsStats.losses ?? 0);
-  const duelsKills = Number(duelsStats.kills ?? 0);
-  const duelsDeaths = Number(duelsStats.deaths ?? 0);
-
-  const duelsAggregates =
-    !duelsWins || !duelsLosses || !duelsKills || !duelsDeaths
-      ? computeAggregates(duelsStats)
-      : { wins: 0, losses: 0, kills: 0, deaths: 0 };
-
-  const duelsWinsTotal = duelsWins || duelsAggregates.wins;
-  const duelsLossesTotal = duelsLosses || duelsAggregates.losses;
-  const duelsKillsTotal = duelsKills || duelsAggregates.kills;
-  const duelsDeathsTotal = duelsDeaths || duelsAggregates.deaths;
-
-  const skywarsWins = Number(skywarsStats.wins ?? 0);
-  const skywarsLosses = Number(skywarsStats.losses ?? 0);
-  const skywarsKills = Number(skywarsStats.kills ?? 0);
-  const skywarsDeaths = Number(skywarsStats.deaths ?? 0);
-
-  const skywarsAggregates =
-    !skywarsWins || !skywarsLosses || !skywarsKills || !skywarsDeaths
-      ? computeAggregates(skywarsStats)
-      : { wins: 0, losses: 0, kills: 0, deaths: 0 };
-
-  const skywarsWinsTotal = skywarsWins || skywarsAggregates.wins;
-  const skywarsLossesTotal = skywarsLosses || skywarsAggregates.losses;
-  const skywarsKillsTotal = skywarsKills || skywarsAggregates.kills;
-  const skywarsDeathsTotal = skywarsDeaths || skywarsAggregates.deaths;
+  const duelsAggregates = extractModeStats(duelsStats);
+  const skywarsAggregates = extractModeStats(skywarsStats);
 
   return {
     displayname: response.player?.displayname ?? null,
@@ -472,19 +471,19 @@ export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPla
     bedwars_final_deaths: Number(bedwarsStats.final_deaths_bedwars ?? 0),
 
     // Duels
-    duels_wins: duelsWinsTotal,
-    duels_losses: duelsLossesTotal,
-    duels_kills: duelsKillsTotal,
-    duels_deaths: duelsDeathsTotal,
+    duels_wins: duelsAggregates.wins,
+    duels_losses: duelsAggregates.losses,
+    duels_kills: duelsAggregates.kills,
+    duels_deaths: duelsAggregates.deaths,
 
     // SkyWars
     skywars_experience: (skywarsStats as any).skywars_experience
                        ?? (skywarsStats as any).SkyWars_experience
                        ?? (skywarsStats as any).Experience
                        ?? null,
-    skywars_wins: skywarsWinsTotal,
-    skywars_losses: skywarsLossesTotal,
-    skywars_kills: skywarsKillsTotal,
-    skywars_deaths: skywarsDeathsTotal,
+    skywars_wins: skywarsAggregates.wins,
+    skywars_losses: skywarsAggregates.losses,
+    skywars_kills: skywarsAggregates.kills,
+    skywars_deaths: skywarsAggregates.deaths,
   };
 }
