@@ -1,6 +1,5 @@
 
 import { performance } from 'perf_hooks';
-import crypto from 'crypto';
 
 // We need to mock the config module before importing the auth middleware
 // because the middleware reads the config at the top level to initialize hashes.
@@ -30,6 +29,9 @@ describe('Auth Middleware Performance Benchmark', () => {
     // Safety check: Ensure logic is correct
     expect(validateAdminToken('test-admin-key-1')).toBe(true);
     expect(validateAdminToken('invalid-key')).toBe(false);
+
+    // Regression check: Ensure performance is within acceptable limits (e.g. < 1ms)
+    expect(avg).toBeLessThan(1);
   });
 
   test('validateCronToken performance', () => {
@@ -47,5 +49,8 @@ describe('Auth Middleware Performance Benchmark', () => {
     // Safety check
     expect(validateCronToken('test-cron-key-1')).toBe(true);
     expect(validateCronToken('invalid-key')).toBe(false);
+
+    // Regression check: Ensure performance is within acceptable limits (e.g. < 1ms)
+    expect(avg).toBeLessThan(1);
   });
 });

@@ -18,6 +18,7 @@ const HASH_OPTS = { N: 16, r: 1, p: 1 };
 const KEY_LEN = 32;
 
 // Pre-compute hashes of allowed keys using Scrypt
+// @codeql-suppress [js/insufficient-password-hash] API tokens are high-entropy; low work factor (N=16) is intentional to prevent CPU DoS.
 const ALLOWED_KEY_HASHES = CRON_API_KEYS.map((key) =>
   crypto.scryptSync(key, SALT, KEY_LEN, HASH_OPTS)
 );

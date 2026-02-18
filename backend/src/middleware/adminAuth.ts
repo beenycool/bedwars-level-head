@@ -18,6 +18,7 @@ const HASH_OPTS = { N: 16, r: 1, p: 1 };
 const KEY_LEN = 32;
 
 // Pre-compute hashes of allowed keys using Scrypt
+// @codeql-suppress [js/insufficient-password-hash] API tokens are high-entropy; low work factor (N=16) is intentional to prevent CPU DoS.
 const ALLOWED_KEY_HASHES = ADMIN_API_KEYS.map((key) =>
   crypto.scryptSync(key, SALT, KEY_LEN, HASH_OPTS)
 );
@@ -52,16 +53,15 @@ export function validateAdminToken(token: string): boolean {
 
   // Hash the incoming token using Scrypt with the same low-cost parameters
   const tokenHash = crypto.scryptSync(token, SALT, KEY_LEN, HASH_OPTS);
-  let match = false;
 
-  for (const keyHash of ALLOWED_KEY_HASHES) {
-    // timingSafeEqual requires buffers of equal length
-    if (crypto.timingSafeEqual(tokenHash, keyHash)) {
-      match = true;
-    }
-  }
+  // To prevent timing attacks, we must iterate through all keys and not short-circuit.
+  // Using reduce with a bitwise OR ensures we process every key without conditional branching.
+  const match = ALLOWED_KEY_HASHES.reduce(
+    (acc, keyHash) => acc | Number(crypto.timingSafeEqual(tokenHash, keyHash)),
+    0
+  );
 
-  return match;
+  return Boolean(match);
 }
 
 export const enforceAdminAuth: RequestHandler = (req: Request, _res: Response, next: NextFunction) => {

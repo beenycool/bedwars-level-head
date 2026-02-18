@@ -430,10 +430,10 @@ function computeAggregates(stats: Record<string, unknown>) {
 function extractModeStats(
   stats: Record<string, unknown>,
 ): { wins: number; losses: number; kills: number; deaths: number } {
-  const hasWins = stats.wins !== undefined;
-  const hasLosses = stats.losses !== undefined;
-  const hasKills = stats.kills !== undefined;
-  const hasDeaths = stats.deaths !== undefined;
+  const hasWins = stats.wins != null;
+  const hasLosses = stats.losses != null;
+  const hasKills = stats.kills != null;
+  const hasDeaths = stats.deaths != null;
 
   if (hasWins && hasLosses && hasKills && hasDeaths) {
     return {
