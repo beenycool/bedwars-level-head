@@ -503,7 +503,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         sendLine("/levelhead profile list", "Show available presets", true)
         sendLine("/levelhead profile apply <name>", "Apply a preset", false)
         sendLine("/levelhead profile export", "Export config to clipboard", true)
-        sendLine("/levelhead profile import", "Import config from clipboard", true)
+        sendLine("/levelhead profile import", "Import config from clipboard", false)
     }
 
     private fun handleDisplayHeader(args: List<String>) {
@@ -645,22 +645,14 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         sendMessage(
             "${ChatColor.GRAY}Options:${ChatColor.YELLOW} enable/disable toggle usage (${enabledState}${ChatColor.YELLOW}), url to set the backend (${ChatColor.GOLD}$baseUrl${ChatColor.YELLOW}), token to update auth (${ChatColor.GOLD}$tokenState${ChatColor.YELLOW})."
         )
-        val commands = listOf(
-            createClickableCommand("/levelhead proxy enable", run = true),
-            createClickableCommand("/levelhead proxy url https://example.com"),
-            createClickableCommand("/levelhead proxy token <token>")
-        )
-        val separator = ChatComponentText("${ChatColor.YELLOW}, ")
+        val toggleCmd = if (LevelheadConfig.proxyEnabled) "/levelhead proxy disable" else "/levelhead proxy enable"
         val msg = ChatComponentText("${ChatColor.GRAY}Try: ")
-
-        commands.forEachIndexed { index, component ->
-            msg.appendSibling(component)
-            if (index < commands.size - 1) {
-                msg.appendSibling(separator)
-            }
-        }
-
-        msg.appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
+            .appendSibling(createClickableCommand(toggleCmd, run = true))
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
+            .appendSibling(createClickableCommand("/levelhead proxy url https://example.com"))
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
+            .appendSibling(createClickableCommand("/levelhead proxy token <token>"))
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
         sendMessage(msg)
     }
 
@@ -669,7 +661,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
             "${ChatColor.YELLOW}Admin commands control the proxy cache.${ChatColor.GRAY} Available: ${ChatColor.GOLD}purgecache [player]${ChatColor.GRAY} to clear cached stats globally or for a specific player."
         )
         val msg = ChatComponentText("${ChatColor.GRAY}Example: ")
-            .appendSibling(createClickableCommand("/levelhead admin purgecache", run = true))
+            .appendSibling(createClickableCommand("/levelhead admin purgecache", run = false))
             .appendSibling(ChatComponentText("${ChatColor.YELLOW} (all) or "))
             .appendSibling(createClickableCommand("/levelhead admin purgecache Notch"))
             .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
