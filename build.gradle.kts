@@ -53,17 +53,19 @@ configurations.configureEach {
 
 dependencies {
     val oneconfig = "cc.polyfrost:oneconfig-$platform:0.2.2-alpha223"
+    val oneconfigWrapperLaunchwrapper = "cc.polyfrost:oneconfig-wrapper-launchwrapper:1.0.0-beta17"
     val universalcraft = "cc.polyfrost:universalcraft-$platform:246"
     val essentialForge = "gg.essential:essential-1.8.9-forge:1.3.10.2"
     val essentialLoader = "gg.essential:loader-launchwrapper:1.1.3"
 
     modCompileOnly(oneconfig)
-    modImplementation(oneconfig)
-
-    embed(oneconfig)
 
     modCompileOnly(universalcraft)
     modImplementation(universalcraft)
+
+    if (platform.isLegacyForge) {
+        embed(oneconfigWrapperLaunchwrapper)
+    }
 
     // Essential is used for rendering (UGraphics/UMatrixStack) and is embedded via the loader
     compileOnly(essentialForge)
