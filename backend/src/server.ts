@@ -42,7 +42,7 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
 
   shuttingDown = true;
   console.log(`Received ${signal}. Shutting down gracefully...`);
-  stopAllServices();
+  await stopAllServices();
 
   const forcedShutdown = setTimeout(() => {
     console.error('Forcing shutdown.');
