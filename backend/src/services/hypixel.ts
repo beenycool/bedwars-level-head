@@ -430,21 +430,26 @@ function computeAggregates(stats: Record<string, unknown>) {
 function extractModeStats(
   stats: Record<string, unknown>,
 ): { wins: number; losses: number; kills: number; deaths: number } {
-  const wins = Number(stats.wins ?? 0);
-  const losses = Number(stats.losses ?? 0);
-  const kills = Number(stats.kills ?? 0);
-  const deaths = Number(stats.deaths ?? 0);
+  const hasWins = stats.wins !== undefined;
+  const hasLosses = stats.losses !== undefined;
+  const hasKills = stats.kills !== undefined;
+  const hasDeaths = stats.deaths !== undefined;
 
-  const aggregates =
-    !wins || !losses || !kills || !deaths
-      ? computeAggregates(stats)
-      : { wins: 0, losses: 0, kills: 0, deaths: 0 };
+  if (hasWins && hasLosses && hasKills && hasDeaths) {
+    return {
+      wins: Number(stats.wins),
+      losses: Number(stats.losses),
+      kills: Number(stats.kills),
+      deaths: Number(stats.deaths),
+    };
+  }
 
+  const aggregates = computeAggregates(stats);
   return {
-    wins: wins || aggregates.wins,
-    losses: losses || aggregates.losses,
-    kills: kills || aggregates.kills,
-    deaths: deaths || aggregates.deaths,
+    wins: hasWins ? Number(stats.wins) : aggregates.wins,
+    losses: hasLosses ? Number(stats.losses) : aggregates.losses,
+    kills: hasKills ? Number(stats.kills) : aggregates.kills,
+    deaths: hasDeaths ? Number(stats.deaths) : aggregates.deaths,
   };
 }
 

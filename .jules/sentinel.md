@@ -19,3 +19,8 @@
 **Vulnerability:** The `enforceAdminAuth` middleware (which performs CPU-intensive PBKDF2 hashing) was placed *before* the `enforceRateLimit` middleware in sensitive routes like `admin.ts` and `apikey.ts`.
 **Learning:** Middleware order is critical for security. CPU-intensive operations (like password hashing or heavy crypto) must always be protected by rate limiting to prevent attackers from exhausting server resources with invalid requests.
 **Prevention:** Always place rate limiting middleware as early as possible in the request processing pipeline, especially before any resource-intensive authentication or validation steps.
+
+## 2026-02-18 - CPU Exhaustion via PBKDF2 in API Key Validation
+**Vulnerability:** The `validateAdminToken` and `validateCronToken` functions used `crypto.pbkdf2Sync` with 10,000 iterations for *every* request to validate API keys. This allowed an attacker to exhaust server CPU resources by sending many requests with invalid tokens, causing a Denial of Service (DoS).
+**Learning:** While PBKDF2 is excellent for password storage (where slowness is a feature), it is inappropriate for high-throughput API key validation. API keys are typically high-entropy random strings that don't need salt/iterations to prevent rainbow table attacks in the same way user passwords do.
+**Prevention:** Use fast cryptographic hashes (like SHA-256) for API key validation. If constant-time comparison is needed, hash the input once and compare with stored hashes using `crypto.timingSafeEqual`. Avoid iterative KDFs in the hot path of request processing.
