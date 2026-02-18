@@ -1,5 +1,6 @@
 import express from 'express';
 import compression from 'compression';
+import ipaddr from 'ipaddr.js';
 import playerRouter from './routes/player';
 import playerPublicRouter from './routes/playerPublic';
 import apikeyPublicRouter from './routes/apikeyPublic';
@@ -14,7 +15,8 @@ import {
   CRON_API_KEYS,
 } from './config';
 import { purgeExpiredEntries, closeCache, pool as cachePool } from './services/cache';
-import { observeRequest } from './services/metrics';
+import { observeRequest, registry } from './services/metrics';
+import { checkHypixelReachability, getCircuitBreakerState } from './services/hypixel';
 import { shutdown as shutdownHypixelTracker } from './services/hypixelTracker';
 import { flushHistoryBuffer, startHistoryFlushInterval, stopHistoryFlushInterval } from './services/history';
 import {
@@ -22,7 +24,9 @@ import {
   stopDynamicRateLimitService,
 } from './services/dynamicRateLimit';
 import { startAdaptiveTtlRefresh, stopAdaptiveTtlRefresh } from './services/statsCache';
-import { getRedisClient, startKeyCountRefresher, stopKeyCountRefresher } from './services/redis';
+import { getRedisClient, getRateLimitFallbackState, startKeyCountRefresher, stopKeyCountRefresher } from './services/redis';
+import { enforceAdminRateLimit } from './middleware/rateLimit';
+import { enforceMonitoringAuth, isAuthorizedMonitoring } from './middleware/monitoringAuth';
 import {
   initializeResourceMetrics,
   stopResourceMetrics,
@@ -106,21 +110,30 @@ app.use(pinoHttp({
 
 function isIPInCIDR(ip: string, cidr: string): boolean {
   try {
-    const [network, prefix] = ipaddr.parseCIDR(cidr);
+    const parsed = ipaddr.parseCIDR(cidr);
+    const network = parsed[0];
+    const prefix = parsed[1];
     let parsedIp = ipaddr.parse(ip);
-    if (parsedIp.kind() === 'ipv6' && parsedIp.isIPv4MappedAddress()) {
-      parsedIp = parsedIp.toIPv4Address();
+
+    // Handle IPv4-mapped IPv6 addresses
+    if (parsedIp.kind() === 'ipv6') {
+      const ipv6 = parsedIp as ipaddr.IPv6;
+      if (ipv6.isIPv4MappedAddress()) {
+        parsedIp = ipv6.toIPv4Address();
+      }
     }
 
-    if (parsedIp.kind() === 'ipv4' && network.kind() === 'ipv4') {
-      return parsedIp.match(network, prefix);
+    // Match requires same address family
+    if (parsedIp.kind() !== network.kind()) {
+      return false;
     }
 
-    if (parsedIp.kind() === 'ipv6' && network.kind() === 'ipv6') {
-      return parsedIp.match(network, prefix);
+    // Use the match method with array format [address, prefix]
+    if (parsedIp.kind() === 'ipv4') {
+      return (parsedIp as ipaddr.IPv4).match([network as ipaddr.IPv4, prefix]);
+    } else {
+      return (parsedIp as ipaddr.IPv6).match([network as ipaddr.IPv6, prefix]);
     }
-
-    return false;
   } catch {
     return false;
   }
@@ -130,8 +143,8 @@ function isIPInCIDR(ip: string, cidr: string): boolean {
 app.set('trust proxy', (ip: string) => {
   return TRUST_PROXY_CIDRS.some((cidr) => isIPInCIDR(ip, cidr));
 });
-
 // Enable gzip compression for all responses (clients should send Accept-Encoding: gzip)
+// Large Hypixel JSON payloads compress very well (often 80-90% reduction)
 app.use(compression());
 app.use(express.json({ limit: '64kb' }));
 
@@ -162,7 +175,8 @@ if (CRON_API_KEYS.length > 0) {
 }
 app.use('/stats', statsRouter);
 
-app.get('/healthz', async (_req, res) => {
+app.get('/healthz', enforceAdminRateLimit, async (req, res) => {
+  // lgtm[js/missing-rate-limiting]
   res.locals.metricsRoute = '/healthz';
   const [dbHealthy, hypixelHealthy] = await Promise.all([
     cachePool
@@ -194,29 +208,35 @@ app.get('/healthz', async (_req, res) => {
     }
   }
 
-  res.status(healthy ? 200 : 503).json({
+  const response: Record<string, unknown> = {
     status,
-    circuitBreaker: {
+    timestamp: new Date().toISOString(),
+  };
+
+  if (isAuthorizedMonitoring(req)) {
+    response.circuitBreaker = {
       state: circuitBreaker.state,
       failureCount: circuitBreaker.failureCount,
       ...(circuitBreaker.lastFailureAt ? { lastFailureAt: new Date(circuitBreaker.lastFailureAt).toISOString() } : {}),
       ...(circuitBreaker.nextRetryAt ? { nextRetryAt: new Date(circuitBreaker.nextRetryAt).toISOString() } : {}),
-    },
-    rateLimit: {
+    };
+    response.rateLimit = {
       requireRedis: fallbackState.requireRedis,
       fallbackMode: fallbackState.fallbackMode,
       isInFallbackMode: fallbackState.isInFallbackMode,
       ...(fallbackState.activatedAt ? { activatedAt: fallbackState.activatedAt } : {}),
-    },
-    checks: {
+    };
+    response.checks = {
       database: dbHealthy,
       hypixel: hypixelHealthy,
-    },
-    timestamp: new Date().toISOString(),
-  });
+    };
+  }
+
+  res.status(healthy ? 200 : 503).json(response);
 });
 
-app.get('/metrics', async (_req, res) => {
+app.get('/metrics', enforceAdminRateLimit, enforceMonitoringAuth, async (_req, res) => {
+  // lgtm[js/missing-rate-limiting]
   res.locals.metricsRoute = '/metrics';
   res.set('Content-Type', registry.contentType);
   res.send(await registry.metrics());
@@ -236,6 +256,7 @@ void initializeResourceMetrics().catch((error) => {
   process.exit(1);
 });
 
+// Start history flush interval
 startHistoryFlushInterval();
 
 const purgeInterval = setInterval(() => {
@@ -253,6 +274,7 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
         }
       });
     }
+    // Build response body with retry info for rate limit errors
     const responseBody: Record<string, unknown> = { success: false, cause: err.causeCode, message: err.message };
     if (err.status === 429 && err.headers?.['Retry-After']) {
       const retryAfterSeconds = parseInt(err.headers['Retry-After'], 10);
@@ -276,11 +298,6 @@ app.use((err: unknown, _req: express.Request, res: express.Response, _next: expr
   }
   res.status(500).json({ success: false, cause: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
 });
-
-if (process.env.NODE_ENV === "production" && !TRUST_PROXY_ENABLED) {
-  console.warn("[startup] WARNING: Production environment detected but TRUST_PROXY_CIDRS is empty.");
-  console.warn("[startup] If this application is behind a proxy (e.g., Nginx, Cloudflare, Render), rate limiting may not work correctly as all clients will appear to have the same IP address.");
-}
 
 const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
   const location = CLOUD_FLARE_TUNNEL || `http://${SERVER_HOST}:${SERVER_PORT}`;
@@ -341,9 +358,11 @@ async function shutdown(signal: NodeJS.Signals): Promise<void> {
         resolve();
       });
     });
+    // Flush history buffer before closing cache
     await flushHistoryBuffer().catch((error) => {
       logger.error('Error flushing history buffer during shutdown', error);
     });
+    // Flush hypixel tracker buffer before closing cache
     await shutdownHypixelTracker().catch((error) => {
       logger.error('Error shutting down hypixel tracker during shutdown', error);
     });

@@ -1,6 +1,5 @@
 import express from 'express';
 import compression from 'compression';
-import ipaddr from 'ipaddr.js';
 import playerRouter from './routes/player';
 import playerPublicRouter from './routes/playerPublic';
 import apikeyPublicRouter from './routes/apikeyPublic';
@@ -10,37 +9,52 @@ import { pool as cachePool } from './services/cache';
 import { observeRequest, registry } from './services/metrics';
 import { checkHypixelReachability, getCircuitBreakerState } from './services/hypixel';
 import { getRateLimitFallbackState } from './services/redis';
+import { enforceMonitoringAuth, isAuthorizedMonitoring } from './middleware/monitoringAuth';
 import adminRouter from './routes/admin';
 import apikeyRouter from './routes/apikey';
 import statsRouter from './routes/stats';
 import configRouter from './routes/config';
 import cronRouter from './routes/cron';
-import { securityHeaders } from './middleware/securityHeaders';
-import { sanitizeUrlForLogs } from './util/requestUtils';
-
-function isIPInCIDR(ip: string, cidr: string): boolean {
-  try {
-    const [network, prefix] = ipaddr.parseCIDR(cidr);
-    let parsedIp = ipaddr.parse(ip);
-    if (parsedIp.kind() === 'ipv6' && parsedIp.isIPv4MappedAddress()) {
-      parsedIp = parsedIp.toIPv4Address();
-    }
-
-    if (parsedIp.kind() !== network.kind()) {
-      return false;
-    }
-
-    return parsedIp.match([network, prefix]);
-  } catch {
-    return false;
-  }
-}
+import helmet from 'helmet';
+import crypto from 'crypto';
+import { enforceAdminRateLimit } from './middleware/rateLimit';
+import { sanitizeUrlForLogs, isIPInCIDR } from './util/requestUtils';
 
 export function createApp(): express.Express {
   const app = express();
 
-  app.disable('x-powered-by');
-  app.use(securityHeaders);
+  app.use((_req, res, next) => {
+    res.locals.nonce = crypto.randomBytes(16).toString('base64');
+    next();
+  });
+
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        scriptSrc: ["'self'", (_req, res) => `'nonce-${(res as express.Response).locals.nonce}'`, "'strict-dynamic'"],
+        styleSrc: ["'self'", (_req, res) => `'nonce-${(res as express.Response).locals.nonce}'`],
+        imgSrc: ["'self'", "data:"],
+        connectSrc: ["'self'", "https://cdn.jsdelivr.net"],
+        objectSrc: ["'none'"],
+        baseUri: ["'none'"],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+        upgradeInsecureRequests: [],
+      },
+    },
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
+    referrerPolicy: {
+      policy: 'strict-origin-when-cross-origin',
+    },
+    frameguard: {
+      action: 'deny',
+    },
+  }));
 
   app.set('trust proxy', (ip: string) => {
     return TRUST_PROXY_CIDRS.some((cidr) => isIPInCIDR(ip, cidr));
@@ -90,7 +104,8 @@ export function createApp(): express.Express {
   }
   app.use('/stats', statsRouter);
 
-  app.get('/healthz', async (_req, res) => {
+  app.get('/healthz', enforceAdminRateLimit, async (req, res) => {
+    // lgtm[js/missing-rate-limiting]
     res.locals.metricsRoute = '/healthz';
     const [dbHealthy, hypixelHealthy] = await Promise.all([
       cachePool
@@ -119,29 +134,35 @@ export function createApp(): express.Express {
       }
     }
 
-    res.status(healthy ? 200 : 503).json({
+    const response: Record<string, unknown> = {
       status,
-      circuitBreaker: {
+      timestamp: new Date().toISOString(),
+    };
+
+    if (isAuthorizedMonitoring(req)) {
+      response.circuitBreaker = {
         state: circuitBreaker.state,
         failureCount: circuitBreaker.failureCount,
         ...(circuitBreaker.lastFailureAt ? { lastFailureAt: new Date(circuitBreaker.lastFailureAt).toISOString() } : {}),
         ...(circuitBreaker.nextRetryAt ? { nextRetryAt: new Date(circuitBreaker.nextRetryAt).toISOString() } : {}),
-      },
-      rateLimit: {
+      };
+      response.rateLimit = {
         requireRedis: fallbackState.requireRedis,
         fallbackMode: fallbackState.fallbackMode,
         isInFallbackMode: fallbackState.isInFallbackMode,
         ...(fallbackState.activatedAt ? { activatedAt: fallbackState.activatedAt } : {}),
-      },
-      checks: {
+      };
+      response.checks = {
         database: dbHealthy,
         hypixel: hypixelHealthy,
-      },
-      timestamp: new Date().toISOString(),
-    });
+      };
+    }
+
+    res.status(healthy ? 200 : 503).json(response);
   });
 
-  app.get('/metrics', async (_req, res) => {
+  app.get('/metrics', enforceAdminRateLimit, enforceMonitoringAuth, async (_req, res) => {
+    // lgtm[js/missing-rate-limiting]
     res.locals.metricsRoute = '/metrics';
     res.set('Content-Type', registry.contentType);
     res.send(await registry.metrics());

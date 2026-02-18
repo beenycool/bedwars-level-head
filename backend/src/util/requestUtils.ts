@@ -1,9 +1,40 @@
-import ipaddr from "ipaddr.js";
 
+import ipaddr from 'ipaddr.js';
 import { recordPlayerQuery } from '../services/history';
 import { ResolvedPlayer } from '../services/player';
 import { isValidBedwarsObject } from './typeChecks';
 import { logger } from './logger';
+
+export function isIPInCIDR(ip: string, cidr: string): boolean {
+  try {
+    const parsed = ipaddr.parseCIDR(cidr);
+    const network = parsed[0];
+    const prefix = parsed[1];
+    let parsedIp = ipaddr.parse(ip);
+
+    // Handle IPv4-mapped IPv6 addresses
+    if (parsedIp.kind() === 'ipv6') {
+      const ipv6 = parsedIp as ipaddr.IPv6;
+      if (ipv6.isIPv4MappedAddress()) {
+        parsedIp = ipv6.toIPv4Address();
+      }
+    }
+
+    // Match requires same address family
+    if (parsedIp.kind() !== network.kind()) {
+      return false;
+    }
+
+    // Use the match method with array format [address, prefix]
+    if (parsedIp.kind() === 'ipv4') {
+      return (parsedIp as ipaddr.IPv4).match([network as ipaddr.IPv4, prefix]);
+    } else {
+      return (parsedIp as ipaddr.IPv6).match([network as ipaddr.IPv6, prefix]);
+    }
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Parses the If-Modified-Since header string into a timestamp number.
@@ -94,25 +125,4 @@ export function sanitizeUrlForLogs(target: string): string {
 
   const path = sanitized.slice(0, queryIndex);
   return `${path}?<redacted>`;
-}
-
-/**
- * Checks if an IP address is within a CIDR range.
- */
-export function isIPInCIDR(ip: string, cidr: string): boolean {
-  try {
-    const [network, prefix] = ipaddr.parseCIDR(cidr);
-    let parsedIp = ipaddr.parse(ip);
-    if (parsedIp.kind() === 'ipv6' && parsedIp.isIPv4MappedAddress()) {
-      parsedIp = parsedIp.toIPv4Address();
-    }
-
-    if (parsedIp.kind() !== network.kind()) {
-      return false;
-    }
-
-    return parsedIp.match([network, prefix]);
-  } catch {
-    return false;
-  }
 }

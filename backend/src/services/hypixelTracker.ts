@@ -1,9 +1,8 @@
 import { pool, ensureInitialized } from './cache';
-
+import { DatabaseType } from './database/adapter';
 import { HYPIXEL_API_CALL_WINDOW_MS } from '../config';
 import { logger } from '../util/logger';
 
-const REDIS_KEY = 'hypixel_api_calls_rolling';
 const MAX_BUFFER_SIZE = 100;
 const MAX_HARD_CAP = 10_000;
 const FLUSH_INTERVAL_MS = 5000;
@@ -40,7 +39,7 @@ async function flushHypixelCallBuffer(): Promise<void> {
 
       await ensureInitialized();
 
-      const maxParams = pool.getMaxParameters();
+      const maxParams = pool.type === DatabaseType.POSTGRESQL ? 65000 : 2000;
       const maxRecordsPerChunk = Math.floor(maxParams / 2);
 
       // Process chunks from inflightBatch
@@ -97,24 +96,11 @@ export async function recordHypixelApiCall(uuid: string, calledAt: number = Date
   }
 
   hypixelCallBuffer.push({
-    uuid,
-    calledAt,
-    retryCount: 0,
-    createdAt: Date.now()
+      uuid,
+      calledAt,
+      retryCount: 0,
+      createdAt: Date.now()
   });
-
-  // Track globally in Redis for real-time accuracy across instances
-  if (isRedisAvailable()) {
-    const client = getRedisClient();
-    if (client) {
-      const member = `${uuid}:${calledAt}:${Math.random().toString(36).substring(2, 10)}`;
-      void client.zadd(REDIS_KEY, calledAt, member).catch((err) => {
-        console.error('[hypixelTracker] Redis ZADD failed', err);
-      });
-      // Set TTL to 2x the window to ensure it eventually clears if all instances die
-      void client.expire(REDIS_KEY, Math.ceil((HYPIXEL_API_CALL_WINDOW_MS * 2) / 1000)).catch(() => { });
-    }
-  }
 
   if (hypixelCallBuffer.length >= MAX_BUFFER_SIZE) {
     void flushHypixelCallBuffer().catch((error) => {
@@ -136,24 +122,6 @@ export async function getHypixelCallCount(
   windowMs: number = HYPIXEL_API_CALL_WINDOW_MS,
   now: number = Date.now(),
 ): Promise<number> {
-  // Try Redis first for real-time global accuracy
-  if (isRedisAvailable()) {
-    const client = getRedisClient();
-    if (client) {
-      const cutoff = now - windowMs;
-      try {
-        // Clean up old entries (older than 2x window)
-        const cleanupCutoff = now - Math.max(windowMs, HYPIXEL_API_CALL_WINDOW_MS) * 2;
-        void client.zremrangebyscore(REDIS_KEY, '-inf', cleanupCutoff).catch(() => { });
-
-        return await client.zcount(REDIS_KEY, cutoff, '+inf');
-      } catch (error) {
-        console.error('[hypixelTracker] Redis ZCOUNT failed, falling back to DB', error);
-      }
-    }
-  }
-
-  // Fallback to DB + local buffers (under-counts in multi-instance setup)
   await ensureInitialized();
   const cutoff = now - windowMs;
 

@@ -1,11 +1,14 @@
-import { Redis } from 'ioredis';
+import Redis from 'ioredis';
+import { createHmac } from 'node:crypto';
 import {
     REDIS_URL,
     REDIS_COMMAND_TIMEOUT,
     REDIS_KEY_SALT,
     REDIS_STATS_BUCKET_SIZE_MS,
     REDIS_STATS_CACHE_TTL_MS,
+    RATE_LIMIT_WINDOW_MS,
     RATE_LIMIT_REQUIRE_REDIS,
+    RATE_LIMIT_FALLBACK_MODE,
 } from '../config';
 import { CacheEntry, CacheMetadata } from './cache';
 import { logger } from '../util/logger';
@@ -15,46 +18,10 @@ import { logger } from '../util/logger';
 // ---------------------------------------------------------------------------
 
 let redis: Redis | null = null;
-let redisUrl = REDIS_URL;
-
-export function setRedisUrl(url: string): void {
-    redisUrl = url;
-    if (redis) {
-        redis.disconnect();
-        redis = null;
-    }
-}
 
 export function getRedisClient(): Redis | null {
-    if (!redis && redisUrl) {
-        try {
-            redis = new Redis(redisUrl, {
-                commandTimeout: REDIS_COMMAND_TIMEOUT,
-                maxRetriesPerRequest: 1,
-                retryStrategy: (times) => {
-                    const delay = Math.min(times * 100, 3000);
-                    return delay;
-                },
-                // Add connectTimeout to avoid hanging indefinitely
-                connectTimeout: 5000,
-            });
-
-            redis.on('error', (err) => {
-                // Silently handle connection errors to prevent app crashes
-                // Middleware will handle fallback to in-memory/allow
-                if (err instanceof Error) {
-                    const msg = err.message;
-                    if (msg.includes('ECONNREFUSED')) {
-                        // Suppress noisy connection refused logs if we expect them
-                    } else {
-                        console.error('[redis] client error:', msg);
-                    }
-                }
-            });
-        } catch (err) {
-            console.error('[redis] failed to initialize client', err);
-            redis = null;
-        }
+    if (!REDIS_URL) {
+        return null;
     }
 
     if (!redis) {
@@ -90,8 +57,10 @@ export function isRedisAvailable(): boolean {
     return client !== null && client.status === 'ready';
 }
 
+
+
 // ---------------------------------------------------------------------------
-// Rate Limiting Lua Scripts
+// IP Hashing
 // ---------------------------------------------------------------------------
 
 export function hashIp(ip: string): string {
@@ -100,8 +69,34 @@ export function hashIp(ip: string): string {
     return hash.slice(0, 32);
 }
 
-local current = redis.call("INCRBY", reqKey, cost)
+// ---------------------------------------------------------------------------
+// Lua Scripts (Atomic Operations)
+// ---------------------------------------------------------------------------
+
+// Atomic increment with TTL set only on first creation
+// ARGV[1] = windowMs, ARGV[2] = cost (amount to increment)
+// Note: In Redis Lua, numeric comparisons work correctly because INCRBY returns a number
+// and we convert ARGV[2] to a number with tonumber(). The TTL is set when current == cost,
+// meaning this is the first increment for this key in the window.
+const ATOMIC_INCR_SCRIPT = `
+local cost = tonumber(ARGV[2]) or 1
+local current = redis.call("INCRBY", KEYS[1], cost)
 if current == cost then
+  redis.call("PEXPIRE", KEYS[1], ARGV[1])
+end
+return {current, redis.call("PTTL", KEYS[1])}
+`;
+
+// Atomic bucket update: increments counter and adds to HLL, sets TTL only on creation
+const ATOMIC_BUCKET_SCRIPT = `
+local reqKey = KEYS[1]
+local hllKey = KEYS[2]
+local ttl = tonumber(ARGV[1])
+local ipHash = ARGV[2]
+
+local reqExists = redis.call("EXISTS", reqKey)
+redis.call("INCR", reqKey)
+if reqExists == 0 then
   redis.call("PEXPIRE", reqKey, ttl)
 end
 
@@ -159,7 +154,7 @@ export interface RateLimitFallbackState {
 export function getRateLimitFallbackState(): RateLimitFallbackState {
   return {
     isInFallbackMode,
-    fallbackMode: (process.env.RATE_LIMIT_FALLBACK_MODE as any) ?? 'memory',
+    fallbackMode: isInFallbackMode ? RATE_LIMIT_FALLBACK_MODE : null,
     activatedAt: fallbackModeActivatedAt ? new Date(fallbackModeActivatedAt).toISOString() : null,
     requireRedis: RATE_LIMIT_REQUIRE_REDIS,
   };
@@ -432,145 +427,15 @@ interface GlobalStatsCache {
     value: { requestCount: number; activeUsers: number } | null;
     expiresAt: number;
 }
-const memoryRateLimitBuckets = new Map<string, MemoryBucket>();
 
-// Cleanup memory buckets periodically
-setInterval(() => {
-    const now = Date.now();
-    for (const [key, bucket] of memoryRateLimitBuckets.entries()) {
-        if (now > bucket.expiresAt) {
-            memoryRateLimitBuckets.delete(key);
-        }
-    }
-}, 60000).unref();
+const statsCache: GlobalStatsCache = {
+    value: null,
+    expiresAt: 0,
+};
 
-export type RateLimitResult = { count: number; ttl: number } | null | string;
-export const RATE_LIMIT_DENY_ALL = 'DENY_ALL';
-export const RATE_LIMIT_ALLOW_ALL = 'ALLOW_ALL';
-
-/**
- * Atomic increment of a rate limit bucket.
- * Falls back to in-memory limiting if Redis is unavailable.
- */
-export async function incrementRateLimit(
-    key: string,
-    windowMs: number,
-    cost: number = 1,
-): Promise<RateLimitResult> {
-    const client = getRedisClient();
-    const redisKey = `rl:${key}`;
-    const now = Date.now();
-
-    if (!client || client.status !== 'ready') {
-        // Handle Redis failure
-        if (!isInFallbackMode) {
-          isInFallbackMode = true;
-          fallbackModeActivatedAt = now;
-          console.error('[redis] Redis unavailable, entering rate limit fallback mode');
-        }
-
-        const mode = process.env.RATE_LIMIT_FALLBACK_MODE?.toLowerCase() ?? 'memory';
-        if (mode === 'deny') return RATE_LIMIT_DENY_ALL;
-        if (mode === 'allow') return RATE_LIMIT_ALLOW_ALL;
-
-        // Default: 'memory' - basic per-instance limiting
-        const bucket = memoryRateLimitBuckets.get(redisKey);
-        if (bucket && now < bucket.expiresAt) {
-            bucket.count += cost;
-            return { count: bucket.count, ttl: bucket.expiresAt - now };
-        } else {
-            const expiresAt = now + windowMs;
-            memoryRateLimitBuckets.set(redisKey, { count: cost, expiresAt });
-            return { count: cost, ttl: windowMs };
-        }
-    }
-
-    // Redis is available, recover from fallback if necessary
-    if (isInFallbackMode) {
-      isInFallbackMode = false;
-      fallbackModeActivatedAt = null;
-      console.info('[redis] Redis re-established, exiting rate limit fallback mode');
-    }
-
-    try {
-        // Hash IP for HLL stats
-        const ipHash = createHash('sha256')
-            .update(key + REDIS_KEY_SALT)
-            .digest('hex')
-            .slice(0, 16);
-
-        // Calculate global stats bucket (e.g., stats:hll:1625097600000)
-        const statsBucket = Math.floor(now / REDIS_STATS_BUCKET_SIZE_MS) * REDIS_STATS_BUCKET_SIZE_MS;
-        const hllKey = `stats:hll:${statsBucket}`;
-
-        // Single-trip execution using Lua
-        await client.eval(
-            INCREMENT_SCRIPT,
-            0,
-            redisKey,
-            String(windowMs),
-            String(cost),
-            ipHash,
-            hllKey,
-        );
-
-        const [count, ttl] = await Promise.all([
-            client.get(redisKey),
-            client.pttl(redisKey),
-        ]);
-
-        return {
-            count: parseInt(count || '0', 10),
-            ttl: Math.max(0, ttl),
-        };
-    } catch (err) {
-        console.error('[redis] incrementRateLimit failed', err);
-        return null;
-    }
-}
-
-/**
- * Tracks unique client IPs for global statistics without enforcing a limit.
- */
-export async function trackGlobalStats(clientIp: string): Promise<void> {
-    const client = getRedisClient();
-    if (!client || client.status !== 'ready') return;
-
-    try {
-        const now = Date.now();
-        const ipHash = createHash('sha256')
-            .update(clientIp + REDIS_KEY_SALT)
-            .digest('hex')
-            .slice(0, 16);
-
-        const statsBucket = Math.floor(now / REDIS_STATS_BUCKET_SIZE_MS) * REDIS_STATS_BUCKET_SIZE_MS;
-        const hllKey = `stats:hll:${statsBucket}`;
-
-        await client.pfadd(hllKey, ipHash);
-        await client.pexpire(hllKey, 24 * 60 * 60 * 1000); // 24h retention
-    } catch (err) {
-        // Silent fail for stats
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Monitoring & Diagnostics
-// ---------------------------------------------------------------------------
-
-export interface RedisStats {
-    connected: boolean;
-    memoryUsed: string;
-    memoryUsedBytes: number;
-    memoryMax: string;
-    memoryPercent: number;
-    totalKeys: number;
-    rateLimitKeys: number;
-    statsKeys: number;
-    localCacheSize: number;
-    localCacheMaxSize: number;
-}
-
+// Cache heavy stats operations (SCAN) for 10 seconds
 const HEAVY_STATS_TTL_MS = 10000;
+
 interface InMemoryCache<T> {
     value: T | null;
     expiresAt: number;
@@ -603,7 +468,6 @@ async function withMemoryCache<T>(
 
 // Background refresher for key counts (avoids blocking requests)
 let cachedKeyCounts: KeyCounts = { rateLimitKeys: 0, statsKeys: 0, cacheKeys: 0 };
-let cachedCacheVersion = '1';
 let keyCountRefreshInterval: NodeJS.Timeout | null = null;
 let isRefreshingKeyCounts = false;
 
@@ -618,18 +482,10 @@ async function refreshKeyCounts(): Promise<void> {
       return;
     }
 
-    // Fetch cache version alongside key counts
-    const versionPromise = client.get('cache_version');
-
     let cursor = '0';
     let tempRateLimitKeys = 0;
     let tempStatsKeys = 0;
     let tempCacheKeys = 0;
-
-    const [version] = await Promise.all([versionPromise]);
-    if (version) {
-      cachedCacheVersion = version;
-    }
 
     do {
       // Use Lua script to scan and count in one pass
@@ -642,9 +498,9 @@ async function refreshKeyCounts(): Promise<void> {
       const [nextCursor, rl, stats, cache] = result;
 
       cursor = nextCursor;
-      tempRateLimitKeys += Number(rl);
-      tempStatsKeys += Number(stats);
-      tempCacheKeys += Number(cache);
+      tempRateLimitKeys += rl;
+      tempStatsKeys += stats;
+      tempCacheKeys += cache;
     } while (cursor !== '0');
 
     cachedKeyCounts = {
@@ -660,36 +516,6 @@ async function refreshKeyCounts(): Promise<void> {
   }
 }
 
-/**
- * Returns a versioned cache key.
- * This implements "namespace versioning" for O(1) mass cache invalidation.
- */
-export function getCacheKey(key: string): string {
-  return `cache:v${cachedCacheVersion}:${key}`;
-}
-
-/**
- * Increments the global cache version in Redis.
- * This effectively invalidates all existing cache entries in O(1) time.
- */
-export async function incrementCacheVersion(): Promise<number> {
-  const client = getRedisClient();
-  if (!client || client.status !== 'ready') {
-    return 0;
-  }
-
-  try {
-    const newVersion = await client.incr('cache_version');
-    cachedCacheVersion = String(newVersion);
-    console.info(`[redis] Cache version incremented to v${newVersion} (mass invalidation)`);
-    return newVersion;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    console.error('[redis] incrementCacheVersion failed', message);
-    return 0;
-  }
-}
-
 export function startKeyCountRefresher(): void {
   if (keyCountRefreshInterval) return;
 
@@ -700,7 +526,8 @@ export function startKeyCountRefresher(): void {
     void refreshKeyCounts().catch((err) => {
       logger.error('[redis] key count refresh interval error', err);
     });
-  }, 10000); // Refresh every 10s
+  }, HEAVY_STATS_TTL_MS);
+  keyCountRefreshInterval.unref();
 }
 
 export function stopKeyCountRefresher(): void {
@@ -803,27 +630,27 @@ export interface RedisStats {
 }
 
 export async function getRedisStats(): Promise<RedisStats> {
-    const client = getRedisClient();
-    const localCache = (client as any)?.localCache as { size: number; maxSize: number } ?? { size: 0, maxSize: 0 };
-    const defaultStats: RedisStats = {
-        connected: false,
-        memoryUsed: 'N/A',
-        memoryUsedBytes: 0,
-        memoryMax: 'N/A',
-        memoryPercent: 0,
-        totalKeys: 0,
-        rateLimitKeys: 0,
-        statsKeys: 0,
-        localCacheSize: localCache.size,
-        localCacheMaxSize: localCache.maxSize,
-    };
+    return withMemoryCache(redisStatsCache, HEAVY_STATS_TTL_MS, async () => {
+        const localCache = getLocalCacheStats();
+        const defaultStats: RedisStats = {
+            connected: false,
+            memoryUsed: 'N/A',
+            memoryUsedBytes: 0,
+            memoryMax: 'N/A',
+            memoryPercent: 0,
+            totalKeys: 0,
+            rateLimitKeys: 0,
+            statsKeys: 0,
+            localCacheSize: localCache.size,
+            localCacheMaxSize: localCache.maxSize,
+        };
 
-    if (!client || client.status !== 'ready') {
-        return defaultStats;
-    }
+        const client = getRedisClient();
+        if (!client || client.status !== 'ready') {
+            return defaultStats;
+        }
 
-    return withMemoryCache(redisStatsCache, REDIS_STATS_CACHE_TTL_MS, async () => {
-       try {
+        try {
             // Get memory info
             const info = await client.info('memory');
             const memoryMatch = info.match(/used_memory:(\d+)/);
@@ -919,7 +746,8 @@ export async function getPlayerCacheEntry<T>(key: string): Promise<CacheEntry<T>
     }
 
     try {
-        const redisKey = getCacheKey(key);
+        // Redis key pattern: cache:{key} storing JSON: { payload, expires_at, etag, last_modified, source }
+        const redisKey = `cache:${key}`;
         const data = await client.get(redisKey);
 
         if (!data) {
@@ -977,7 +805,7 @@ export async function setPlayerCacheEntry<T>(
             source: metadata.source ?? null,
         });
 
-        const redisKey = getCacheKey(key);
+        const redisKey = `cache:${key}`;
         await client.setex(redisKey, Math.ceil(ttlMs / 1000), data);
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -992,7 +820,7 @@ export async function clearPlayerCacheEntry(key: string): Promise<void> {
     }
 
     try {
-        const redisKey = getCacheKey(key);
+        const redisKey = `cache:${key}`;
         await client.del(redisKey);
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -1040,7 +868,7 @@ export async function deletePlayerCacheEntries(keys: string[]): Promise<number> 
     }
 
     try {
-        const redisKeys = keys.map((key) => getCacheKey(key));
+        const redisKeys = keys.map((key) => `cache:${key}`);
         const result = await client.del(...redisKeys);
         return result;
     } catch (err) {
