@@ -92,9 +92,12 @@ async function heartbeat(): Promise<void> {
   try {
     const client = getRedisClient();
 
+    // When Redis is unavailable, all instances assume leader duties (multi-leader fallback).
+    // Leader-scoped services (purge, dynamic rate limit, key count refresher) run on every
+    // instance concurrently until Redis recovers. Operators should expect duplicate background work.
     if (!client || client.status !== 'ready') {
       hasRedisLock = false;
-      await transitionFromLeader('redis-unavailable');
+      await transitionToLeader('redis-unavailable-fallback');
       return;
     }
 

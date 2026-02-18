@@ -1,4 +1,5 @@
 import { purgeExpiredEntries, closeCache } from './services/cache';
+import { logger } from './util/logger';
 import { flushHistoryBuffer, startHistoryFlushInterval, stopHistoryFlushInterval } from './services/history';
 import {
   initializeDynamicRateLimitService,
@@ -13,7 +14,6 @@ import {
 } from './services/resourceMetrics';
 import { shutdown as shutdownHypixelTracker } from './services/hypixelTracker';
 import { startGlobalLeaderElection, stopGlobalLeaderElection } from './services/globalLeader';
-import { logger } from './util/logger';
 
 let globalPurgeInterval: ReturnType<typeof setInterval> | null = null;
 let cacheClosePromise: Promise<void> | null = null;
@@ -29,7 +29,7 @@ async function startLeaderScopedServices(): Promise<void> {
 
   await initializeDynamicRateLimitService().catch((error) => {
     logger.error('Failed initializing dynamic rate limit service', error);
-    process.exit(1);
+    throw error; // Let the caller (transitionToLeader) handle the failure
   });
 
   startKeyCountRefresher();
@@ -70,8 +70,8 @@ export function startPostListenServices(): void {
   startAdaptiveTtlRefresh();
 }
 
-export function stopAllServices(): void {
-  void stopGlobalLeaderElection();
+export async function stopAllServices(): Promise<void> {
+  await stopGlobalLeaderElection();
   stopHistoryFlushInterval();
   stopAdaptiveTtlRefresh();
   stopResourceMetrics();
