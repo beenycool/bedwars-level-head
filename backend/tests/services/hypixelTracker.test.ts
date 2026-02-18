@@ -61,8 +61,8 @@ describe('hypixelTracker', () => {
       expect.any(Number),
       expect.stringMatching(/test-uuid:[0-9]+:[a-z0-9]+/)
     );
-    expect(mockPipeline.zremrangebyscore).toHaveBeenCalled();
-    expect(mockPipeline.expire).toHaveBeenCalled();
+    expect(mockPipeline.zremrangebyscore).toHaveBeenCalledWith('hypixel_api_calls_rolling', '-inf', expect.any(Number));
+    expect(mockPipeline.expire).toHaveBeenCalledWith('hypixel_api_calls_rolling', expect.any(Number));
     expect(mockPipeline.exec).toHaveBeenCalled();
   });
 
