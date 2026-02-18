@@ -645,13 +645,22 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         sendMessage(
             "${ChatColor.GRAY}Options:${ChatColor.YELLOW} enable/disable toggle usage (${enabledState}${ChatColor.YELLOW}), url to set the backend (${ChatColor.GOLD}$baseUrl${ChatColor.YELLOW}), token to update auth (${ChatColor.GOLD}$tokenState${ChatColor.YELLOW})."
         )
+        val commands = listOf(
+            createClickableCommand("/levelhead proxy enable", run = true),
+            createClickableCommand("/levelhead proxy url https://example.com"),
+            createClickableCommand("/levelhead proxy token <token>")
+        )
+        val separator = ChatComponentText("${ChatColor.YELLOW}, ")
         val msg = ChatComponentText("${ChatColor.GRAY}Try: ")
-            .appendSibling(createClickableCommand("/levelhead proxy enable", run = true))
-            .appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
-            .appendSibling(createClickableCommand("/levelhead proxy url https://example.com"))
-            .appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
-            .appendSibling(createClickableCommand("/levelhead proxy token <token>"))
-            .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
+
+        commands.forEachIndexed { index, component ->
+            msg.appendSibling(component)
+            if (index < commands.size - 1) {
+                msg.appendSibling(separator)
+            }
+        }
+
+        msg.appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
         sendMessage(msg)
     }
 
