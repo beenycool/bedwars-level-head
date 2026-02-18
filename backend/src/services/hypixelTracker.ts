@@ -44,9 +44,12 @@ async function recordHypixelCallInRedis(uuid: string, calledAt: number): Promise
   const member = buildRedisRollingMember(uuid, calledAt);
 
   try {
-    await client.zadd(REDIS_ROLLING_KEY, calledAt, member);
-    await client.zremrangebyscore(REDIS_ROLLING_KEY, '-inf', cutoff);
-    await client.expire(REDIS_ROLLING_KEY, REDIS_ROLLING_TTL_SECONDS);
+    // Bolt: Use pipeline to batch commands and reduce network round-trips
+    const pipeline = client.pipeline();
+    pipeline.zadd(REDIS_ROLLING_KEY, calledAt, member);
+    pipeline.zremrangebyscore(REDIS_ROLLING_KEY, '-inf', cutoff);
+    pipeline.expire(REDIS_ROLLING_KEY, REDIS_ROLLING_TTL_SECONDS);
+    await pipeline.exec();
   } catch (error) {
     logger.warn('[hypixelTracker] Failed to update Redis rolling counter', error);
   }
