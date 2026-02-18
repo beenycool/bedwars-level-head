@@ -417,7 +417,8 @@ object ProxyClient {
     }
 
     private suspend fun checkBackendHealth(): Boolean {
-        val healthUrl = HttpUrl.parse(LevelheadConfig.proxyBaseUrl)
+        val baseUrl = LevelheadConfig.resolveDbUrl()
+        val healthUrl = HttpUrl.parse(baseUrl)
             ?.newBuilder()
             ?.addPathSegment("healthz")
             ?.build() ?: return false
@@ -439,7 +440,8 @@ object ProxyClient {
                 if (!response.isSuccessful) return@use false
                 val body = response.body()?.string() ?: return@use false
                 val json = kotlin.runCatching { JsonParser.parseString(body).asJsonObject }.getOrNull() ?: return@use false
-                json.get("status")?.asString == "ok"
+                val status = json.get("status")
+                status?.isJsonPrimitive == true && status.asString == "ok"
             }
         } catch (ex: Exception) {
             Levelhead.logger.warn("Failed to check backend health", ex)
