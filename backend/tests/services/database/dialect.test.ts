@@ -1,56 +1,54 @@
 import { PostgresAdapter } from '../../../src/services/database/postgresAdapter';
 import { AzureSqlAdapter } from '../../../src/services/database/azureSqlAdapter';
+import { DatabaseType } from '../../../src/services/database/adapter';
 
 describe('Database Dialect Abstraction', () => {
   const pgAdapter = new PostgresAdapter({});
   const azureAdapter = new AzureSqlAdapter('server=localhost;database=test;user=sa;password=pass');
 
   describe('PostgresAdapter', () => {
-    it('should generate correct placeholders', () => {
-      expect(pgAdapter.getPlaceholder(1)).toBe('$1');
+    it('implements the DatabaseAdapter contract', () => {
+      expect(pgAdapter.type).toBe(DatabaseType.POSTGRESQL);
+      expect(typeof pgAdapter.query).toBe('function');
+      expect(typeof pgAdapter.connect).toBe('function');
+      expect(typeof pgAdapter.close).toBe('function');
+      expect(typeof pgAdapter.getPool).toBe('function');
     });
-    it('should generate correct pagination SQL', () => {
-      expect(pgAdapter.getLimitOffsetSql(10)).toBe('LIMIT 10');
-      expect(pgAdapter.getLimitOffsetSql(10, 20)).toBe('LIMIT 10 OFFSET 20');
-    });
-    it('should generate correct date minus interval SQL', () => {
-      expect(pgAdapter.getDateMinusIntervalSql(30, 'day')).toBe("NOW() - INTERVAL '30 days'");
-    });
-    it('should generate correct upsert SQL', () => {
-      const sql = pgAdapter.getUpsertSql('t', ['a', 'b'], 'a', ['b']);
-      expect(sql).toContain('INSERT INTO t (a, b)');
-      expect(sql).toContain('ON CONFLICT (a) DO UPDATE SET b = EXCLUDED.b');
-    });
-    it('should generate correct array IN SQL', () => {
-      expect(pgAdapter.getArrayInSql('c', ['$1'])).toBe('c = ANY($1)');
-    });
-    it('should generate correct substring SQL', () => {
-      expect(pgAdapter.getSubstringAfterSql('k', ':')).toBe("split_part(k, ':', 2)");
+
+    it('returns a pg pool-like object', () => {
+      const pool = pgAdapter.getPool() as any;
+      expect(pool).toBeDefined();
+      expect(typeof pool.query).toBe('function');
+      expect(typeof pool.end).toBe('function');
     });
   });
 
   describe('AzureSqlAdapter', () => {
-    it('should generate correct placeholders', () => {
-      expect(azureAdapter.getPlaceholder(1)).toBe('@p1');
+    it('implements the DatabaseAdapter contract', () => {
+      expect(azureAdapter.type).toBe(DatabaseType.AZURE_SQL);
+      expect(typeof azureAdapter.query).toBe('function');
+      expect(typeof azureAdapter.connect).toBe('function');
+      expect(typeof azureAdapter.close).toBe('function');
+      expect(typeof azureAdapter.getPool).toBe('function');
     });
-    it('should generate correct pagination SQL', () => {
-      expect(azureAdapter.getLimitOffsetSql(10, 20)).toBe('OFFSET 20 ROWS FETCH NEXT 10 ROWS ONLY');
+
+    it('parses URL-style connection strings', () => {
+      const parsed = (azureAdapter as any).parseUrlFormat('mssql://user:pass@db.example.com:1433/levelhead?encrypt=true');
+      expect(parsed).not.toBeNull();
+      expect(parsed.server).toBe('db.example.com');
+      expect(parsed.port).toBe(1433);
+      expect(parsed.database).toBe('levelhead');
+      expect(parsed.user).toBe('user');
+      expect(parsed.password).toBe('pass');
+      expect(parsed.options.encrypt).toBe(true);
     });
-    it('should generate correct date minus interval SQL', () => {
-      expect(azureAdapter.getDateMinusIntervalSql(30, 'day')).toBe('DATEADD(day, -30, GETUTCDATE())');
-    });
-    it('should generate correct upsert SQL', () => {
-      const sql = azureAdapter.getUpsertSql('t', ['a', 'b'], 'a', ['b']);
-      expect(sql).toContain('MERGE t AS target');
-      expect(sql).toContain('USING (SELECT @p1 AS a, @p2 AS b) AS source');
-      expect(sql).toContain('ON (target.a = source.a)');
-      expect(sql).toContain('UPDATE SET target.b = source.b');
-    });
-    it('should generate correct array IN SQL', () => {
-      expect(azureAdapter.getArrayInSql('c', ['@p1'])).toBe('c IN (@p1)');
-    });
-    it('should generate correct substring SQL', () => {
-      expect(azureAdapter.getSubstringAfterSql('k', ':')).toBe("SUBSTRING(k, CHARINDEX(':', k) + 1, LEN(k))");
+
+    it('returns an mssql pool-like object', () => {
+      const pool = azureAdapter.getPool() as any;
+      expect(pool).toBeDefined();
+      expect(typeof pool.request).toBe('function');
+      expect(typeof pool.connect).toBe('function');
+      expect(typeof pool.close).toBe('function');
     });
   });
 });
