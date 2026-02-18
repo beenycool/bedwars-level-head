@@ -59,7 +59,7 @@ async function startLeaderScopedServices(): Promise<void> {
 
   await initializeDynamicRateLimitService().catch((error) => {
     logger.error('Failed initializing dynamic rate limit service', error);
-    process.exit(1);
+    throw error; // Let the caller (transitionToLeader) handle the failure
   });
 
   startKeyCountRefresher();
@@ -411,6 +411,8 @@ shutdownSignals.forEach((signal) => {
   });
 });
 
+// Best-effort cleanup; process.on('exit') is sync so async work may not complete.
+// Proper shutdown should use the shutdown() signal handlers that await these.
 process.on('exit', () => {
   void stopGlobalLeaderElection();
   void safeCloseCache();

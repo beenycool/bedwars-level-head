@@ -1,4 +1,5 @@
 import { purgeExpiredEntries, closeCache } from './services/cache';
+import { logger } from './util/logger';
 import { flushHistoryBuffer, startHistoryFlushInterval, stopHistoryFlushInterval } from './services/history';
 import {
   initializeDynamicRateLimitService,
@@ -23,19 +24,19 @@ async function startLeaderScopedServices(): Promise<void> {
   }
 
   await purgeExpiredEntries().catch((error) => {
-    console.error('Failed to purge expired cache entries', error);
+    logger.error('Failed to purge expired cache entries', error);
   });
 
   await initializeDynamicRateLimitService().catch((error) => {
-    console.error('Failed initializing dynamic rate limit service', error);
-    process.exit(1);
+    logger.error('Failed initializing dynamic rate limit service', error);
+    throw error; // Let the caller (transitionToLeader) handle the failure
   });
 
   startKeyCountRefresher();
 
   globalPurgeInterval = setInterval(() => {
     void purgeExpiredEntries().catch((error) => {
-      console.error('Failed to purge expired cache entries', error);
+      logger.error('Failed to purge expired cache entries', error);
     });
   }, 60 * 60 * 1000);
   globalPurgeInterval.unref();
@@ -53,7 +54,7 @@ async function stopLeaderScopedServices(): Promise<void> {
 
 export function startBackgroundServices(): void {
   void initializeResourceMetrics().catch((error) => {
-    console.error('Failed initializing resource metrics', error);
+    logger.error('Failed initializing resource metrics', error);
     process.exit(1);
   });
 
@@ -69,8 +70,8 @@ export function startPostListenServices(): void {
   startAdaptiveTtlRefresh();
 }
 
-export function stopAllServices(): void {
-  void stopGlobalLeaderElection();
+export async function stopAllServices(): Promise<void> {
+  await stopGlobalLeaderElection();
   stopHistoryFlushInterval();
   stopAdaptiveTtlRefresh();
   stopResourceMetrics();
@@ -78,20 +79,20 @@ export function stopAllServices(): void {
 
 export async function flushBeforeClose(): Promise<void> {
   await flushHistoryBuffer().catch((error) => {
-    console.error('Error flushing history buffer during shutdown', error);
+    logger.error('Error flushing history buffer during shutdown', error);
   });
   await shutdownHypixelTracker().catch((error) => {
-    console.error('Error shutting down hypixel tracker during shutdown', error);
+    logger.error('Error shutting down hypixel tracker during shutdown', error);
   });
   await flushResourceMetricsOnShutdown().catch((err) =>
-    console.error('Failed to flush resource metrics on shutdown', err),
+    logger.error('Failed to flush resource metrics on shutdown', err),
   );
 }
 
 export function safeCloseCache(): Promise<void> {
   if (!cacheClosePromise) {
     cacheClosePromise = closeCache().catch((error) => {
-      console.error('Error closing cache database', error);
+      logger.error('Error closing cache database', error);
     });
   }
   return cacheClosePromise;
