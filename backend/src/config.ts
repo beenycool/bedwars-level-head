@@ -386,6 +386,9 @@ export const REDIS_URL = process.env.REDIS_URL ?? '';
 export const REDIS_COMMAND_TIMEOUT = parseIntEnv('REDIS_COMMAND_TIMEOUT', 2000);
 export const REDIS_STATS_BUCKET_SIZE_MS = parseIntEnv('REDIS_STATS_BUCKET_SIZE_MS', 60 * 1000);
 export const REDIS_STATS_CACHE_TTL_MS = parseIntEnv('REDIS_STATS_CACHE_TTL_MS', 2000);
+export const GLOBAL_JOBS_LEADER_LOCK_KEY = process.env.GLOBAL_JOBS_LEADER_LOCK_KEY?.trim() || 'levelhead:global_jobs_leader';
+export const GLOBAL_JOBS_LEADER_TTL_MS = Math.max(5000, parseIntEnv('GLOBAL_JOBS_LEADER_TTL_MS', 15000));
+export const GLOBAL_JOBS_LEADER_RETRY_MS = Math.max(1000, parseIntEnv('GLOBAL_JOBS_LEADER_RETRY_MS', 5000));
 
 // Rate limiting Redis requirements for multi-instance deployments
 // In production with multiple instances, Redis should be mandatory to ensure
