@@ -15,22 +15,29 @@ import java.util.Locale
 
 object TabRender {
 
-    @JvmStatic
-    fun getLevelheadWidth(info: NetworkPlayerInfo): Int {
-        if (!Levelhead.displayManager.config.enabled) return 0
-        if (!LevelheadConfig.showTabStats) return 0
-        if (!Levelhead.isOnHypixel()) return 0
+    /**
+     * Validates and resolves tab string data for a player.
+     * Returns null if any validation fails, otherwise returns the tab string.
+     */
+    private fun resolveTabStringForInfo(info: NetworkPlayerInfo): String? {
+        if (!Levelhead.displayManager.config.enabled) return null
+        if (!LevelheadConfig.showTabStats) return null
+        if (!Levelhead.isOnHypixel()) return null
 
-        val uuid = info.gameProfile.id ?: return 0
-        if (uuid.version() == 2) return 0
+        val uuid = info.gameProfile.id ?: return null
+        if (uuid.version() == 2) return null
 
-        val gameMode = ModeManager.getActiveGameMode() ?: return 0
-        val stats = Levelhead.getCachedStats(uuid, gameMode) ?: return 0
-        if (stats.nicked) return 0
+        val gameMode = ModeManager.getActiveGameMode() ?: return null
+        val stats = Levelhead.getCachedStats(uuid, gameMode) ?: return null
+        if (stats.nicked) return null
 
         val tabString = getTabString(stats, gameMode)
-        if (tabString.isBlank()) return 0
+        return if (tabString.isBlank()) null else tabString
+    }
 
+    @JvmStatic
+    fun getLevelheadWidth(info: NetworkPlayerInfo): Int {
+        val tabString = resolveTabStringForInfo(info) ?: return 0
         return Minecraft.getMinecraft().fontRendererObj.getStringWidth(tabString) + 3
     }
 
@@ -55,8 +62,7 @@ object TabRender {
                 stats as GameStats.Duels
                 val wins = stats.wins ?: return ""
                 val divisionTag = DuelsStats.formatDivisionTag(wins)
-                val losses = stats.losses ?: 0
-                val wlr = if (losses <= 0) wins.toDouble() else wins.toDouble() / losses.toDouble()
+                val wlr = DuelsStats.calculateWLR(wins, stats.losses) ?: wins.toDouble()
                 val wlrColor = ratioColor(wlr)
                 "$divisionTag §7: ${wlrColor}${String.format(Locale.ROOT, "%.2f", wlr)}"
             }
@@ -64,9 +70,7 @@ object TabRender {
                 stats as GameStats.SkyWars
                 if (stats.level == null) return ""
                 val levelTag = SkyWarsStats.formatLevelTag(stats.levelInt)
-                val kills = stats.kills ?: 0
-                val deaths = stats.deaths ?: 0
-                val kdr = if (deaths <= 0) kills.toDouble() else kills.toDouble() / deaths.toDouble()
+                val kdr = SkyWarsStats.calculateKDR(stats.kills, stats.deaths) ?: (stats.kills ?: 0).toDouble()
                 val kdrColor = ratioColor(kdr)
                 "$levelTag §7: ${kdrColor}${String.format(Locale.ROOT, "%.2f", kdr)}"
             }
@@ -75,19 +79,7 @@ object TabRender {
 
     @JvmStatic
     fun drawPingHook(offset: Int, x: Int, y: Int, info: NetworkPlayerInfo) {
-        if (!Levelhead.displayManager.config.enabled) return
-        if (!LevelheadConfig.showTabStats) return
-        if (!Levelhead.isOnHypixel()) return
-
-        val uuid = info.gameProfile.id ?: return
-        if (uuid.version() == 2) return
-
-        val gameMode = ModeManager.getActiveGameMode() ?: return
-        val stats = Levelhead.getCachedStats(uuid, gameMode) ?: return
-        if (stats.nicked) return
-
-        val tabString = getTabString(stats, gameMode)
-        if (tabString.isBlank()) return
+        val tabString = resolveTabStringForInfo(info) ?: return
 
         val fontRenderer = Minecraft.getMinecraft().fontRendererObj
         var drawX = offset + x - 12 - fontRenderer.getStringWidth(tabString)

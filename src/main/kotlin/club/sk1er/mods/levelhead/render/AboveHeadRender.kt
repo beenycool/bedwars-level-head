@@ -190,19 +190,19 @@ object AboveHeadRender {
             val uGraphics = UGraphics.getFromTessellator().beginWithDefaultShader(UGraphics.DrawMode.QUADS, DefaultVertexFormats.POSITION_COLOR)
             uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), -1.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
             uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), 8.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
-            uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 1).toDouble(), 8.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
-            uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 1).toDouble(), -1.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
+            uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 2).toDouble(), 8.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
+            uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 2).toDouble(), -1.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
             uGraphics.drawDirect()
         }
-        renderString(fontrenderer, tag, displayManager.config.textShadow)
+        renderString(fontrenderer, tag, displayManager.config.textShadow, stringWidth)
         UGraphics.enableLighting()
         UGraphics.disableBlend()
         UGraphics.color4f(1.0f, 1.0f, 1.0f, 1.0f)
         UGraphics.GL.popMatrix()
     }
 
-    private fun renderString(renderer: FontRenderer, tag: LevelheadTag, shadow: Boolean) {
-        var x = -(tag.getTotalWidth(renderer) shr 1)
+    private fun renderString(renderer: FontRenderer, tag: LevelheadTag, shadow: Boolean, stringWidthHalf: Int) {
+        var x = -stringWidthHalf
         //Render header
         render(renderer, tag.header, x, shadow)
         x += tag.header.getWidth(renderer)

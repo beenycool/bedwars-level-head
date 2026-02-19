@@ -118,10 +118,11 @@ class RateLimiterTest {
         // Register a server cooldown silently
         limiter.registerServerCooldown(Duration.ofMinutes(1), silent = true)
 
-        // Try to consume - should be blocked due to cooldown
+        // Try to consume - should be blocked due to cooldown but callback should NOT be invoked
         limiter.consume()
 
-        assertEquals(1, blockedCalls.size)
+        // With silent=true, the blocked callback should NOT be called
+        assertEquals(0, blockedCalls.size)
     }
 
     @Test
@@ -147,7 +148,7 @@ class RateLimiterTest {
     }
 
     @Test
-    fun `multiple consumes are thread-safe`() {
+    fun `sequential consumes decrement tokens correctly`() {
         val blockedCalls = mutableListOf<RateLimiterMetrics>()
         val resetCalls = mutableListOf<Unit>()
 
@@ -158,7 +159,7 @@ class RateLimiterTest {
             onReset = { resetCalls.add(Unit) }
         )
 
-        // Consume tokens sequentially to avoid threading complexity in test
+        // Consume tokens sequentially
         repeat(50) { limiter.consume() }
 
         assertEquals(0, blockedCalls.size)
