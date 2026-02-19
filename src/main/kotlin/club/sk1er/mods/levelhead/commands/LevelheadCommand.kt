@@ -84,10 +84,25 @@ class LevelheadCommand {
             else -> "${ChatColor.GREEN}configured"
         }
 
-        sendMessage(
-            "${ChatColor.AQUA}BedWars Levelhead ${ChatColor.GOLD}v${Levelhead.VERSION}${ChatColor.YELLOW}: " +
-                "${enabledColor}${if (enabled) "enabled" else "disabled"}${ChatColor.YELLOW}."
-        )
+        val statusText = if (enabled) "enabled" else "disabled"
+        val toggleCmd = if (enabled) "/levelhead disable" else "/levelhead enable"
+        val hoverText = if (enabled) "Click to disable" else "Click to enable"
+
+        val statusComponent = ChatComponentText(statusText).apply {
+            chatStyle.color = enabledColor
+            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, toggleCmd)
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText(hoverText).apply { chatStyle.color = ChatColor.GREEN })
+        }
+
+        val mainComponent = ChatComponentText("").apply {
+            appendSibling(ChatComponentText("BedWars Levelhead ").apply { chatStyle.color = ChatColor.AQUA })
+            appendSibling(ChatComponentText("v${Levelhead.VERSION}").apply { chatStyle.color = ChatColor.GOLD })
+            appendSibling(ChatComponentText(": ").apply { chatStyle.color = ChatColor.YELLOW })
+            appendSibling(statusComponent)
+            appendSibling(ChatComponentText(".").apply { chatStyle.color = ChatColor.YELLOW })
+        }
+
+        sendMessage(mainComponent)
         sendMessage(
             "${ChatColor.YELLOW}Header: ${ChatColor.GOLD}$header${ChatColor.YELLOW}, " +
                 "offset ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", offset)}${ChatColor.YELLOW}, " +
