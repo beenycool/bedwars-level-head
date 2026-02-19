@@ -16,7 +16,15 @@ jest.mock('../../src/services/redis', () => ({
 }));
 
 describe('hypixelTracker', () => {
+  const mockPipeline = {
+    zadd: jest.fn().mockReturnThis(),
+    zremrangebyscore: jest.fn().mockReturnThis(),
+    expire: jest.fn().mockReturnThis(),
+    exec: jest.fn().mockResolvedValue([]),
+  };
+
   const mockRedis = {
+    pipeline: jest.fn(() => mockPipeline),
     zadd: jest.fn().mockReturnValue(Promise.resolve(1)),
     zcount: jest.fn().mockReturnValue(Promise.resolve(0)),
     zremrangebyscore: jest.fn().mockReturnValue(Promise.resolve(0)),
@@ -42,16 +50,20 @@ describe('hypixelTracker', () => {
     expect(mockRedis.zcount).toHaveBeenCalledWith('hypixel_api_calls_rolling', expect.any(Number), '+inf');
   });
 
-  it('should record calls in Redis when available', async () => {
+  it('should record calls in Redis when available using pipeline', async () => {
     (redisService.isRedisAvailable as jest.Mock).mockReturnValue(true);
 
     await recordHypixelApiCall('test-uuid');
 
-    expect(mockRedis.zadd).toHaveBeenCalledWith(
+    expect(mockRedis.pipeline).toHaveBeenCalled();
+    expect(mockPipeline.zadd).toHaveBeenCalledWith(
       'hypixel_api_calls_rolling',
       expect.any(Number),
       expect.stringMatching(/test-uuid:[0-9]+:[a-z0-9]+/)
     );
+    expect(mockPipeline.zremrangebyscore).toHaveBeenCalledWith('hypixel_api_calls_rolling', '-inf', expect.any(Number));
+    expect(mockPipeline.expire).toHaveBeenCalledWith('hypixel_api_calls_rolling', expect.any(Number));
+    expect(mockPipeline.exec).toHaveBeenCalled();
   });
 
   it('should fallback to DB when Redis is not available', async () => {

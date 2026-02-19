@@ -22,9 +22,9 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import java.io.IOException
-import java.util.concurrent.TimeUnit
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.crypto.Mac
 import javax.crypto.spec.SecretKeySpec
@@ -431,7 +431,8 @@ object ProxyClient {
     }
 
     private suspend fun checkBackendHealth(): Boolean {
-        val healthUrl = HttpUrl.parse(LevelheadConfig.proxyBaseUrl)
+        val baseUrl = LevelheadConfig.resolveDbUrl()
+        val healthUrl = HttpUrl.parse(baseUrl)
             ?.newBuilder()
             ?.addPathSegment("healthz")
             ?.build() ?: return false
@@ -447,7 +448,8 @@ object ProxyClient {
                 if (!response.isSuccessful) return@use false
                 val body = response.body()?.string() ?: return@use false
                 val json = kotlin.runCatching { JsonParser.parseString(body).asJsonObject }.getOrNull() ?: return@use false
-                json.get("status")?.asString == "ok"
+                val status = json.get("status")
+                status?.isJsonPrimitive == true && status.asString == "ok"
             }
         } catch (ex: Exception) {
             Levelhead.logger.warn("Failed to check backend health", ex)

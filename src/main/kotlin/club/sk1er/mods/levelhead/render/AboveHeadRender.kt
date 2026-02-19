@@ -184,7 +184,7 @@ object AboveHeadRender {
         UGraphics.disableDepth()
         UGraphics.enableBlend()
         UGraphics.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO)
-        val stringWidth = fontrenderer.getStringWidth(tag.getString()) shr 1
+        val stringWidth = tag.getTotalWidth(fontrenderer) shr 1
         val uGraphics = UGraphics.getFromTessellator().beginWithDefaultShader(UGraphics.DrawMode.QUADS, DefaultVertexFormats.POSITION_COLOR)
         uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), -1.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
         uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), 8.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
@@ -199,10 +199,10 @@ object AboveHeadRender {
     }
 
     private fun renderString(renderer: FontRenderer, tag: LevelheadTag) {
-        var x = -(renderer.getStringWidth(tag.getString()) shr 1)
+        var x = -(tag.getTotalWidth(renderer) shr 1)
         //Render header
         render(renderer, tag.header, x)
-        x += renderer.getStringWidth(tag.header.value)
+        x += tag.header.getWidth(renderer)
         //render footer
         render(renderer, tag.footer, x)
     }

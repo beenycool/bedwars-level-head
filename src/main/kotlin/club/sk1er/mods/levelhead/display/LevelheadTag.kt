@@ -1,7 +1,5 @@
 package club.sk1er.mods.levelhead.display
 
-import club.sk1er.mods.levelhead.Levelhead
-import com.google.gson.JsonObject
 import java.awt.Color
 import java.util.*
 
@@ -11,6 +9,14 @@ class LevelheadTag(val owner: UUID) {
     var footer: LevelheadComponent = LevelheadComponent()
 
     fun getString() = "${header.value}${footer.value}"
+
+    /**
+     * Returns the total rendered pixel width of this tag (header + footer) using the
+     * provided [fontRenderer]. Both components cache their individual widths, so this
+     * is effectively free after the first call following a value change.
+     */
+    fun getTotalWidth(fontRenderer: net.minecraft.client.gui.FontRenderer): Int =
+        header.getWidth(fontRenderer) + footer.getWidth(fontRenderer)
 
     override fun toString(): String = "LevelheadTag{header=$header, footer=$footer, owner=$owner}"
 

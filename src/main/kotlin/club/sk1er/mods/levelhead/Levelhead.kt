@@ -367,7 +367,9 @@ object Levelhead {
             uuid, stats?.let { it::class.simpleName }, gameMode, display.config.type, display.config.gameMode, activeMode)
         val tag = StatsFormatter.formatTag(uuid, stats, display.config, gameMode)
         val cacheKey = DisplayCacheKey(uuid, gameMode)
-        logger.debug("updateDisplayCache: writing tag='{}' to display.cache[{}]", tag.getString(), cacheKey)
+        if (logger.isDebugEnabled) {
+            logger.debug("updateDisplayCache: writing tag='{}' to display.cache[{}]", tag.getString(), cacheKey)
+        }
         DebugLogging.logRequestDebug {
             "[LevelheadDebug][tag] uuid=${uuid.maskForLogs()}, gameMode=$gameMode, tag=${tag.getString().truncateForLogs(200)}, header=${tag.header.value.truncateForLogs(50)} (${tag.header.color.formatAsHex()}), footer=${tag.footer.value.truncateForLogs(50)} (${tag.footer.color.formatAsHex()})"
         }

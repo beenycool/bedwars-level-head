@@ -92,11 +92,16 @@ The backend uses environment variables for all secrets and tunables. The `.env.e
 | `HYPIXEL_TIMEOUT_MS` | ❌ | Hypixel API request timeout (defaults to `5000`). |
 | `HYPIXEL_RETRY_DELAY_MIN_MS` | ❌ | Minimum retry backoff when calling the Hypixel API (defaults to `50`). |
 | `HYPIXEL_RETRY_DELAY_MAX_MS` | ❌ | Maximum retry backoff when calling the Hypixel API (defaults to `150`). |
-| `TRUST_PROXY` | ❌ | Express [trust proxy](https://expressjs.com/en/guide/behind-proxies.html) setting. Defaults to `false` to ignore forwarded IP headers. |
+| `TRUST_PROXY_CIDRS` | ✅ (production) | Comma-separated CIDR allowlist for trusted reverse proxies used for forwarded IP parsing. Required in production (or when `CLOUDFLARE_TUNNEL` is set). |
+| `MONITORING_ALLOWED_CIDRS` | ❌ | Comma-separated CIDR allowlist for operational endpoints (`/metrics`, `/stats`, and detailed `/healthz`). Defaults to loopback only. |
+| `REDIS_KEY_SALT` | ✅ (production) | Secret salt used when hashing client IPs into Redis keys. Must be 32+ characters in production. |
 | `BACKEND_VERSION` | ❌ | Overrides the version string used in outbound `User-Agent` headers and Prometheus build metrics. Defaults to `package.json` version. |
 | `BUILD_SHA` | ❌ | Optional revision/Git SHA included in outbound `User-Agent` headers and Prometheus build metrics. |
 | `RATE_LIMIT_REQUIRE_REDIS` | ❌ | If true, Redis is mandatory for rate limiting. Defaults to `true` in production, `false` otherwise. |
 | `RATE_LIMIT_FALLBACK_MODE` | ❌ | Fallback behavior when Redis is unavailable (`deny`, `allow`, or `memory`). Defaults to `deny` in production, `memory` otherwise. |
+| `GLOBAL_JOBS_LEADER_LOCK_KEY` | ❌ | Redis key used for leader election that coordinates global maintenance jobs across replicas. |
+| `GLOBAL_JOBS_LEADER_TTL_MS` | ❌ | Redis lease TTL for the leader lock in milliseconds (defaults to `15000`, min `5000`). |
+| `GLOBAL_JOBS_LEADER_RETRY_MS` | ❌ | Leader election heartbeat/retry interval in milliseconds (defaults to `5000`, min `1000`). |
 
 Set these variables in your deployment environment or `.env` file.
 
@@ -132,15 +137,13 @@ Multiple tokens can be configured by providing a comma-separated list in `CRON_A
 
 ### Proxy awareness
 
-Set the `TRUST_PROXY` value to match your ingress/CDN topology so that rate limiting and logging see the correct client IP. Examples:
+Set `TRUST_PROXY_CIDRS` to match your ingress/CDN topology so that rate limiting and logging see the correct client IP. Examples:
 
-- `TRUST_PROXY=false` (default) – use direct client IPs, ignoring `X-Forwarded-*`.
-- `TRUST_PROXY=loopback` – trust headers from local reverse proxies such as Nginx on the same host.
-- `TRUST_PROXY=1` – trust the first hop (Heroku-style single proxy).
-- `TRUST_PROXY=cloudflare` – trust Cloudflare’s published ranges.
-- `TRUST_PROXY=10.0.0.0/8` – trust requests forwarded by a known internal subnet.
+- `TRUST_PROXY_CIDRS=127.0.0.1/32` – trust only local reverse proxy.
+- `TRUST_PROXY_CIDRS=10.0.0.0/8,172.16.0.0/12` – trust known private subnets.
+- `TRUST_PROXY_CIDRS=173.245.48.0/20,103.21.244.0/22,...` – trust published CDN ingress ranges.
 
-If you deploy behind Cloudflare Tunnel, Nginx, or another load balancer, document the exact value you use so future operators do not accidentally collapse all IPs to the proxy address.
+If you deploy behind Cloudflare Tunnel, Nginx, or another load balancer, document the exact CIDR list so future operators do not accidentally trust untrusted forwarded headers.
 
 ### Cache TTL and validators
 
@@ -176,8 +179,8 @@ Minimal stats responses include:
 
 ### Other Routes
 
-- `GET /stats` - Statistics endpoint (public)
-- `GET /healthz` - Health check endpoint (public)
-- `GET /metrics` - Prometheus metrics endpoint (public)
+- `GET /stats` - Statistics endpoint (restricted to monitoring allowlist or valid admin/cron token)
+- `GET /healthz` - Health check endpoint (public, with detailed checks only for monitoring-authenticated callers)
+- `GET /metrics` - Prometheus metrics endpoint (restricted to monitoring allowlist or valid admin/cron token)
 
 Successful responses return the minimal stats payload; ensure clients expect the reduced shape.

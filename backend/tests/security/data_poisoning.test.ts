@@ -88,4 +88,21 @@ describe('Data Poisoning Vulnerability', () => {
 
         expect(matchesCriticalFields(source, submitted)).toBe(false);
     });
+
+    it('should ignore non-persisted field mismatches when persisted fields match', () => {
+        const source = {
+            bedwars_experience: 1000,
+            final_kills_bedwars: 50,
+            final_deaths_bedwars: 5,
+            kills_bedwars: 100,
+        };
+        const submitted = {
+            bedwars_experience: 1000,
+            final_kills_bedwars: 50,
+            final_deaths_bedwars: 5,
+            kills_bedwars: 9999,
+        };
+
+        expect(matchesCriticalFields(source, submitted)).toBe(true);
+    });
 });

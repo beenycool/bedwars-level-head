@@ -1,4 +1,5 @@
 import { purgeExpiredEntries, closeCache } from './services/cache';
+import { logger } from './util/logger';
 import { flushHistoryBuffer, startHistoryFlushInterval, stopHistoryFlushInterval } from './services/history';
 import {
   initializeDynamicRateLimitService,
@@ -12,67 +13,86 @@ import {
   flushResourceMetricsOnShutdown,
 } from './services/resourceMetrics';
 import { shutdown as shutdownHypixelTracker } from './services/hypixelTracker';
+import { startGlobalLeaderElection, stopGlobalLeaderElection } from './services/globalLeader';
 
-let purgeInterval: ReturnType<typeof setInterval> | null = null;
+let globalPurgeInterval: ReturnType<typeof setInterval> | null = null;
 let cacheClosePromise: Promise<void> | null = null;
 
+async function startLeaderScopedServices(): Promise<void> {
+  if (globalPurgeInterval) {
+    return;
+  }
+
+  await purgeExpiredEntries().catch((error) => {
+    logger.error('Failed to purge expired cache entries', error);
+  });
+
+  await initializeDynamicRateLimitService().catch((error) => {
+    logger.error('Failed initializing dynamic rate limit service', error);
+    throw error; // Let the caller (transitionToLeader) handle the failure
+  });
+
+  startKeyCountRefresher();
+
+  globalPurgeInterval = setInterval(() => {
+    void purgeExpiredEntries().catch((error) => {
+      logger.error('Failed to purge expired cache entries', error);
+    });
+  }, 60 * 60 * 1000);
+  globalPurgeInterval.unref();
+}
+
+async function stopLeaderScopedServices(): Promise<void> {
+  if (globalPurgeInterval) {
+    clearInterval(globalPurgeInterval);
+    globalPurgeInterval = null;
+  }
+
+  stopDynamicRateLimitService();
+  stopKeyCountRefresher();
+}
+
 export function startBackgroundServices(): void {
-  void purgeExpiredEntries().catch((error) => {
-    console.error('Failed to purge expired cache entries', error);
-  });
-
-  void initializeDynamicRateLimitService().catch((error) => {
-    console.error('Failed initializing dynamic rate limit service', error);
-    process.exit(1);
-  });
-
   void initializeResourceMetrics().catch((error) => {
-    console.error('Failed initializing resource metrics', error);
+    logger.error('Failed initializing resource metrics', error);
     process.exit(1);
   });
 
   startHistoryFlushInterval();
 
-  purgeInterval = setInterval(() => {
-    void purgeExpiredEntries().catch((error) => {
-      console.error('Failed to purge expired cache entries', error);
-    });
-  }, 60 * 60 * 1000);
+  startGlobalLeaderElection({
+    onLeaderStart: startLeaderScopedServices,
+    onLeaderStop: stopLeaderScopedServices,
+  });
 }
 
 export function startPostListenServices(): void {
   startAdaptiveTtlRefresh();
-  startKeyCountRefresher();
 }
 
-export function stopAllServices(): void {
-  if (purgeInterval) {
-    clearInterval(purgeInterval);
-    purgeInterval = null;
-  }
+export async function stopAllServices(): Promise<void> {
+  await stopGlobalLeaderElection();
   stopHistoryFlushInterval();
-  stopDynamicRateLimitService();
   stopAdaptiveTtlRefresh();
-  stopKeyCountRefresher();
   stopResourceMetrics();
 }
 
 export async function flushBeforeClose(): Promise<void> {
   await flushHistoryBuffer().catch((error) => {
-    console.error('Error flushing history buffer during shutdown', error);
+    logger.error('Error flushing history buffer during shutdown', error);
   });
   await shutdownHypixelTracker().catch((error) => {
-    console.error('Error shutting down hypixel tracker during shutdown', error);
+    logger.error('Error shutting down hypixel tracker during shutdown', error);
   });
   await flushResourceMetricsOnShutdown().catch((err) =>
-    console.error('Failed to flush resource metrics on shutdown', err),
+    logger.error('Failed to flush resource metrics on shutdown', err),
   );
 }
 
 export function safeCloseCache(): Promise<void> {
   if (!cacheClosePromise) {
     cacheClosePromise = closeCache().catch((error) => {
-      console.error('Error closing cache database', error);
+      logger.error('Error closing cache database', error);
     });
   }
   return cacheClosePromise;
