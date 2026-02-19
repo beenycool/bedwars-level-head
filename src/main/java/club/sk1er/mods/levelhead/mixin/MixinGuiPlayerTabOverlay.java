@@ -35,6 +35,12 @@ public class MixinGuiPlayerTabOverlay {
     /**
      * Widens the name column in the tab list to accommodate Levelhead stats.
      * Uses ceiling division to ensure sufficient space is allocated.
+     *
+     * Note: This injection matches the getStringWidth call used for column width measurement.
+     * The ordinal is not specified because the exact position depends on the Minecraft version's
+     * bytecode. The levelhead$currentPlayerInfo null check ensures we only modify when we have
+     * valid player context. If this causes issues with other mods, inspect the renderPlayerlist
+     * bytecode to determine the correct ordinal for the column-width getStringWidth call.
      */
     @ModifyArg(
         method = "renderPlayerlist",
