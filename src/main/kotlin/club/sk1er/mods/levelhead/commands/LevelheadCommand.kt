@@ -87,15 +87,16 @@ class LevelheadCommand {
         val statusText = if (enabled) "enabled" else "disabled"
         val toggleCmd = if (enabled) "/levelhead disable" else "/levelhead enable"
         val hoverText = if (enabled) "Click to disable" else "Click to enable"
+        val hoverColor = if (enabled) ChatColor.RED else ChatColor.GREEN
 
         val statusComponent = ChatComponentText(statusText).apply {
             chatStyle.color = enabledColor
             chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, toggleCmd)
-            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText(hoverText).apply { chatStyle.color = ChatColor.GREEN })
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText(hoverText).apply { chatStyle.color = hoverColor })
         }
 
-        val mainComponent = ChatComponentText("").apply {
-            appendSibling(ChatComponentText("BedWars Levelhead ").apply { chatStyle.color = ChatColor.AQUA })
+        val mainComponent = ChatComponentText("BedWars Levelhead ").apply {
+            chatStyle.color = ChatColor.AQUA
             appendSibling(ChatComponentText("v${Levelhead.VERSION}").apply { chatStyle.color = ChatColor.GOLD })
             appendSibling(ChatComponentText(": ").apply { chatStyle.color = ChatColor.YELLOW })
             appendSibling(statusComponent)
