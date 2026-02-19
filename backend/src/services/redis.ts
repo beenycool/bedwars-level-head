@@ -109,6 +109,30 @@ end
 return 1
 `;
 
+// Bolt: Batch bucket update for buffered stats
+const BATCH_BUCKET_SCRIPT = `
+local reqKey = KEYS[1]
+local hllKey = KEYS[2]
+local ttl = tonumber(ARGV[1])
+local count = tonumber(ARGV[2])
+
+local reqExists = redis.call("EXISTS", reqKey)
+redis.call("INCRBY", reqKey, count)
+if reqExists == 0 then
+  redis.call("PEXPIRE", reqKey, ttl)
+end
+
+if #ARGV > 2 then
+  local hllExists = redis.call("EXISTS", hllKey)
+  redis.call("PFADD", hllKey, unpack(ARGV, 3))
+  if hllExists == 0 then
+    redis.call("PEXPIRE", hllKey, ttl)
+  end
+end
+
+return 1
+`;
+
 // Scan keyspace and count prefixes in one pass
 // ARGV[1] = cursor, ARGV[2] = count
 const COUNT_KEYS_SCRIPT = `
@@ -400,23 +424,59 @@ function getBucketKeys(bucket: number): { reqKey: string; hllKey: string } {
     };
 }
 
-export async function trackGlobalStats(ip: string): Promise<void> {
-    const client = getRedisClient();
-    if (!client) {
+const STATS_FLUSH_INTERVAL_MS = 1000;
+const MAX_STATS_BUFFER_SIZE = 1000;
+
+let statsBufferRequestCount = 0;
+const statsBufferIpHashes = new Set<string>();
+let statsFlushInterval: NodeJS.Timeout | null = null;
+
+async function flushGlobalStats(): Promise<void> {
+    if (statsBufferRequestCount === 0 && statsBufferIpHashes.size === 0) {
         return;
     }
+
+    const client = getRedisClient();
+    if (!client || client.status !== 'ready') {
+        statsBufferRequestCount = 0;
+        statsBufferIpHashes.clear();
+        return;
+    }
+
+    const count = statsBufferRequestCount;
+    const ips = Array.from(statsBufferIpHashes);
+
+    // Reset buffer immediately
+    statsBufferRequestCount = 0;
+    statsBufferIpHashes.clear();
 
     try {
         const bucket = getCurrentBucket();
         const { reqKey, hllKey } = getBucketKeys(bucket);
-        const ipHash = hashIp(ip);
-        // TTL = window + 1 bucket to ensure we have full coverage
         const ttl = RATE_LIMIT_WINDOW_MS + REDIS_STATS_BUCKET_SIZE_MS;
 
-        await client.eval(ATOMIC_BUCKET_SCRIPT, 2, reqKey, hllKey, ttl.toString(), ipHash);
+        await client.eval(BATCH_BUCKET_SCRIPT, 2, reqKey, hllKey, ttl.toString(), count.toString(), ...ips);
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        logger.error('[redis] trackGlobalStats failed', message);
+        logger.error('[redis] flushGlobalStats failed', message);
+    }
+}
+
+export async function trackGlobalStats(ip: string): Promise<void> {
+    const ipHash = hashIp(ip);
+
+    statsBufferRequestCount++;
+    statsBufferIpHashes.add(ipHash);
+
+    if (!statsFlushInterval) {
+        statsFlushInterval = setInterval(() => {
+            void flushGlobalStats();
+        }, STATS_FLUSH_INTERVAL_MS);
+        statsFlushInterval.unref();
+    }
+
+    if (statsBufferIpHashes.size >= MAX_STATS_BUFFER_SIZE) {
+        await flushGlobalStats();
     }
 }
 
@@ -606,6 +666,12 @@ export async function getGlobalStats(windowMs: number): Promise<{ requestCount: 
 // ---------------------------------------------------------------------------
 
 export async function closeRedis(): Promise<void> {
+    if (statsFlushInterval) {
+        clearInterval(statsFlushInterval);
+        statsFlushInterval = null;
+    }
+    await flushGlobalStats();
+
     if (redis) {
         await redis.quit();
         redis = null;
