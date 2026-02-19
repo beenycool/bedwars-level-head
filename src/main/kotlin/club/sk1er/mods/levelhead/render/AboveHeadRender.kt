@@ -185,32 +185,39 @@ object AboveHeadRender {
         UGraphics.enableBlend()
         UGraphics.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO)
         val stringWidth = tag.getTotalWidth(fontrenderer) shr 1
-        val uGraphics = UGraphics.getFromTessellator().beginWithDefaultShader(UGraphics.DrawMode.QUADS, DefaultVertexFormats.POSITION_COLOR)
-        uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), -1.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
-        uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), 8.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
-        uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 1).toDouble(), 8.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
-        uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 1).toDouble(), -1.0, 0.0).color(0.0f, 0.0f, 0.0f, 0.25f).endVertex()
-        uGraphics.drawDirect()
-        renderString(fontrenderer, tag)
+        if (displayManager.config.showBackground) {
+            val bgAlpha = displayManager.config.backgroundOpacity
+            val uGraphics = UGraphics.getFromTessellator().beginWithDefaultShader(UGraphics.DrawMode.QUADS, DefaultVertexFormats.POSITION_COLOR)
+            uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), -1.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
+            uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), 8.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
+            uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 1).toDouble(), 8.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
+            uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 1).toDouble(), -1.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
+            uGraphics.drawDirect()
+        }
+        renderString(fontrenderer, tag, displayManager.config.textShadow)
         UGraphics.enableLighting()
         UGraphics.disableBlend()
         UGraphics.color4f(1.0f, 1.0f, 1.0f, 1.0f)
         UGraphics.GL.popMatrix()
     }
 
-    private fun renderString(renderer: FontRenderer, tag: LevelheadTag) {
+    private fun renderString(renderer: FontRenderer, tag: LevelheadTag, shadow: Boolean) {
         var x = -(tag.getTotalWidth(renderer) shr 1)
         //Render header
-        render(renderer, tag.header, x)
+        render(renderer, tag.header, x, shadow)
         x += tag.header.getWidth(renderer)
         //render footer
-        render(renderer, tag.footer, x)
+        render(renderer, tag.footer, x, shadow)
     }
 
-    private fun render(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int) {
+    private fun render(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int, shadow: Boolean) {
         UGraphics.disableDepth()
         UGraphics.depthMask(false)
-        renderer.drawString(component.value, x, 0, component.color.withAlpha(0.2f).rgb)
+        if (shadow) {
+            renderer.drawStringWithShadow(component.value, x.toFloat(), 0f, component.color.withAlpha(0.2f).rgb)
+        } else {
+            renderer.drawString(component.value, x, 0, component.color.withAlpha(0.2f).rgb)
+        }
         UGraphics.enableDepth()
         UGraphics.depthMask(true)
         UGraphics.directColor3f(1.0f, 1.0f, 1.0f)
@@ -220,6 +227,12 @@ object AboveHeadRender {
             component.color.blue / 255f,
             .5f
         )
-        renderer.drawString(component.value, x, 0, component.color.rgb)
+        UGraphics.GL.translate(0f, 0f, -0.01f)
+        if (shadow) {
+            renderer.drawStringWithShadow(component.value, x.toFloat(), 0f, component.color.rgb)
+        } else {
+            renderer.drawString(component.value, x, 0, component.color.rgb)
+        }
+        UGraphics.GL.translate(0f, 0f, 0.01f)
     }
 }
