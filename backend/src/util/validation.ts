@@ -189,36 +189,36 @@ function validateType(value: unknown, expectedType: string): boolean {
 
 /**
  * Helper to extract bedwars stats object from various nested structures.
- * Explicitly rejects arrays to ensure only plain objects are returned.
+ * Uses isNonArrayObject helper to standardize validation.
  */
 export function extractBedwarsRecord(data: any): Record<string, unknown> | null {
-    if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+    if (!isNonArrayObject(data)) return null;
 
     // Check player.stats.Bedwars
-    if (data.player && typeof data.player === 'object' && !Array.isArray(data.player)) {
+    if (isNonArrayObject(data.player)) {
         const stats = (data.player as any).stats;
-        if (stats && typeof stats === 'object' && !Array.isArray(stats)) {
+        if (isNonArrayObject(stats)) {
             const bedwars = stats.Bedwars;
-            if (bedwars && typeof bedwars === 'object' && !Array.isArray(bedwars)) {
+            if (isNonArrayObject(bedwars)) {
                 return bedwars;
             }
         }
     }
 
     // Check data.bedwars (often from proxy payloads)
-    if (data.data && typeof data.data === 'object' && !Array.isArray(data.data)) {
+    if (isNonArrayObject(data.data)) {
         const bedwars = (data.data as any).bedwars;
-        if (bedwars && typeof bedwars === 'object' && !Array.isArray(bedwars)) {
+        if (isNonArrayObject(bedwars)) {
             return bedwars;
         }
     }
 
     // Check direct bedwars property
-    if (data.bedwars && typeof data.bedwars === 'object' && !Array.isArray(data.bedwars)) {
+    if (isNonArrayObject(data.bedwars)) {
         return (data.bedwars as any);
     }
 
-    // Fallback: assume data itself is the record, but we already checked it's an object and not an array above
+    // Fallback: assume data itself is the record, since we verified it's a non-array object
     return data;
 }
 
@@ -229,7 +229,7 @@ export function extractBedwarsRecord(data: any): Record<string, unknown> | null 
 export function validateBedwarsStats(data: unknown): ValidationResult {
     const errors: ValidationError[] = [];
 
-    if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    if (!isNonArrayObject(data)) {
         return {
             valid: false,
             errors: [{
