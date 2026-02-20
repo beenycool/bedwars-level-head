@@ -313,7 +313,12 @@ class LevelheadCommand {
                 if (url.isNullOrEmpty()) {
                     val current = LevelheadConfig.proxyBaseUrl.ifBlank { "not set" }
                     val msg = ChatComponentText("${ChatColor.RED}Provide the proxy base URL.${ChatColor.YELLOW} Current URL: ${ChatColor.GOLD}$current${ChatColor.YELLOW}. Try ")
-                        .appendSibling(createClickableCommand("/levelhead proxy url "))
+                        .appendSibling(
+                            ChatComponentText("${ChatColor.GOLD}/levelhead proxy url <url>").apply {
+                                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/levelhead proxy url ")
+                                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to fill"))
+                            }
+                        )
                         .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
                     sendMessage(msg)
                     return
