@@ -192,9 +192,12 @@ class LevelheadCommand {
     fun mod(state: String) {
         val toggle = parseToggle(state)
         if (toggle == null) {
-            sendMessage(
-                "${ChatColor.RED}Couldn't understand '$state'.${ChatColor.YELLOW} Toggle the mod with ${ChatColor.GOLD}/levelhead mod <on|off>${ChatColor.YELLOW}. Current state: ${formatToggle(Levelhead.displayManager.config.enabled)}${ChatColor.YELLOW}."
-            )
+            val msg = ChatComponentText("${ChatColor.RED}Couldn't understand '$state'.${ChatColor.YELLOW} Try ")
+                .appendSibling(createClickableCommand("/levelhead mod on", run = true))
+                .appendSibling(ChatComponentText("${ChatColor.YELLOW} or "))
+                .appendSibling(createClickableCommand("/levelhead mod off", run = true))
+                .appendSibling(ChatComponentText("${ChatColor.YELLOW}. Current state: ${formatToggle(Levelhead.displayManager.config.enabled)}${ChatColor.YELLOW}."))
+            sendMessage(msg)
             return
         }
         updateEnabledState(toggle)
@@ -309,9 +312,10 @@ class LevelheadCommand {
                 val url = parsedArgs.getOrNull(1)?.trim()
                 if (url.isNullOrEmpty()) {
                     val current = LevelheadConfig.proxyBaseUrl.ifBlank { "not set" }
-                    sendMessage(
-                        "${ChatColor.RED}Provide the proxy base URL.${ChatColor.YELLOW} Current URL: ${ChatColor.GOLD}$current${ChatColor.YELLOW}. Try ${ChatColor.GOLD}/levelhead proxy url <baseUrl>${ChatColor.YELLOW}."
-                    )
+                    val msg = ChatComponentText("${ChatColor.RED}Provide the proxy base URL.${ChatColor.YELLOW} Current URL: ${ChatColor.GOLD}$current${ChatColor.YELLOW}. Try ")
+                        .appendSibling(createClickableCommand("/levelhead proxy url "))
+                        .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
+                    sendMessage(msg)
                     return
                 }
                 val parsed = HttpUrl.parse(url)
@@ -335,9 +339,10 @@ class LevelheadCommand {
                 val token = parsedArgs.getOrNull(1)?.trim()
                 if (token.isNullOrEmpty()) {
                     val currentState = if (LevelheadConfig.proxyAuthToken.isBlank()) "not set" else "configured"
-                    sendMessage(
-                        "${ChatColor.RED}Provide the proxy auth token.${ChatColor.YELLOW} Current token: ${ChatColor.GOLD}$currentState${ChatColor.YELLOW}. Use ${ChatColor.GOLD}/levelhead proxy token <token>${ChatColor.YELLOW}."
-                    )
+                    val msg = ChatComponentText("${ChatColor.RED}Provide the proxy auth token.${ChatColor.YELLOW} Current token: ${ChatColor.GOLD}$currentState${ChatColor.YELLOW}. Use ")
+                        .appendSibling(createClickableCommand("/levelhead proxy token "))
+                        .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
+                    sendMessage(msg)
                     return
                 }
                 LevelheadConfig.updateProxyAuthToken(token)
@@ -373,9 +378,10 @@ class LevelheadCommand {
     fun whois(@Greedy identifier: String) {
         val trimmedIdentifier = identifier.trim()
         if (trimmedIdentifier.isEmpty()) {
-            sendMessage(
-                "${ChatColor.RED}Tell me who to inspect.${ChatColor.YELLOW} Run ${ChatColor.GOLD}/levelhead whois <player|uuid>${ChatColor.YELLOW} using an in-game name, UUID, or someone nearby."
-            )
+            val msg = ChatComponentText("${ChatColor.RED}Tell me who to inspect.${ChatColor.YELLOW} Run ")
+                .appendSibling(createClickableCommand("/levelhead whois "))
+                .appendSibling(ChatComponentText("${ChatColor.YELLOW} using an in-game name, UUID, or someone nearby."))
+            sendMessage(msg)
             return
         }
 
