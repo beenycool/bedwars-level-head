@@ -1,7 +1,7 @@
 import { getRedisClient } from './redis';
 import axios from 'axios';
 import { createHash, pbkdf2Sync } from 'node:crypto';
-import { HYPIXEL_API_BASE_URL, OUTBOUND_USER_AGENT } from '../config';
+import { HYPIXEL_API_BASE_URL, OUTBOUND_USER_AGENT, REDIS_KEY_SALT } from '../config';
 import { logger } from '../util/logger';
 
 export type ApiKeyStatus = 'valid' | 'invalid' | 'unknown' | 'pending';
@@ -27,13 +27,15 @@ const REDIS_KEY_PREFIX = 'apikey:';
 const API_KEY_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function hashKey(key: string): string {
-  const salt = 'hypixel-apikey-hash-v1';
+  // Use REDIS_KEY_SALT if available, otherwise fallback for dev/migration
+  const salt = REDIS_KEY_SALT || 'hypixel-apikey-hash-v1';
   const iterations = 100_000;
   const keylen = 32;
   const digest = 'sha256';
 
   const derived = pbkdf2Sync(key, salt, iterations, keylen, digest);
-  return derived.toString('hex').slice(0, 16);
+  // Return 32 characters (16 bytes) of the hash to reduce collision probability
+  return derived.toString('hex').slice(0, 32);
 }
 
 export function isValidApiKeyFormat(key: string): boolean {
