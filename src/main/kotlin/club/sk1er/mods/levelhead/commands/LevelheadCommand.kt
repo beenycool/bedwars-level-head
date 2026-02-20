@@ -383,7 +383,7 @@ class LevelheadCommand {
     fun whois(@Greedy identifier: String) {
         val trimmedIdentifier = identifier.trim()
         if (trimmedIdentifier.isEmpty()) {
-            val msg = ChatComponentText("${ChatColor.RED}Tell me who to inspect.${ChatColor.YELLOW} Run ")
+            val msg = ChatComponentText("${ChatColor.RED}Tell me who to inspect.${ChatColor.YELLOW} Try ")
                 .appendSibling(createClickableCommand("/levelhead whois "))
                 .appendSibling(ChatComponentText("${ChatColor.YELLOW} using an in-game name, UUID, or someone nearby."))
             sendMessage(msg)
