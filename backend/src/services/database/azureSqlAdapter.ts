@@ -9,7 +9,7 @@ export class AzureSqlAdapter implements DatabaseAdapter {
   constructor(connectionString: string) {
     // Parse the connection string manually for Azure SQL
     const config = this.parseConnectionString(connectionString);
-    logger.info('[database] Azure SQL config parsed:', {
+    logger.info({
       server: config.server,
       port: config.port,
       database: config.database,
@@ -17,7 +17,7 @@ export class AzureSqlAdapter implements DatabaseAdapter {
       hasPassword: !!config.password,
       trustServerCertificate: config.options?.trustServerCertificate,
       serverType: typeof config.server
-    });
+    }, '[database] Azure SQL config parsed:');
     this.pool = new mssql.ConnectionPool(config);
   }
 
@@ -345,8 +345,8 @@ export class AzureSqlAdapter implements DatabaseAdapter {
         rowCount: result.rowsAffected[0] || 0,
       };
     } catch (error) {
-      logger.error('[database] Azure SQL query error:', error);
-      logger.error('SQL:', convertedSql);
+      logger.error({ error }, '[database] Azure SQL query error:');
+      logger.error({ sql: convertedSql }, 'SQL:');
       throw error;
     }
   }

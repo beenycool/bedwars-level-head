@@ -355,7 +355,7 @@ function readPackageVersion(): string {
       return parsed.version.trim();
     }
   } catch (error) {
-    logger.warn('Unable to read backend package version for user-agent metadata', error);
+    logger.warn({ error }, 'Unable to read backend package version for user-agent metadata');
   }
 
   return 'dev';

@@ -1,4 +1,3 @@
-import { Mutex } from 'async-mutex';
 import pLimit from 'p-limit';
 import { pool } from './cache';
 import { DatabaseType } from './database/adapter';
@@ -90,9 +89,8 @@ const DEFAULT_PLAYER_QUERIES_LIMIT = 200;
 const MAX_ALLOWED_LIMIT = 10000;
 const CONCURRENT_HISTORY_FETCHES = 5;
 
-// Add a buffer with mutex protection
-const bufferMutex = new Mutex();
-const historyBuffer: PlayerQueryRecord[] = [];
+// Add a buffer
+let historyBuffer: PlayerQueryRecord[] = [];
 const MAX_HISTORY_BUFFER = 50_000;
 const BATCH_FLUSH_INTERVAL = 5000; // 5 seconds
 let flushInterval: NodeJS.Timeout | null = null;
@@ -174,7 +172,7 @@ const initialization = (async () => {
       supportsPgTotalRelationSize = false;
     }
   } catch (error) {
-    logger.error('Failed to initialize player_query_history table', error);
+    logger.error({ error }, 'Failed to initialize player_query_history table');
     throw error;
   }
 })();
@@ -184,16 +182,11 @@ async function ensureInitialized(): Promise<void> {
 }
 
 async function flushHistoryBuffer(): Promise<void> {
-  const batch = await bufferMutex.runExclusive(() => {
-    if (historyBuffer.length === 0) {
-      return [];
-    }
-    const copy = [...historyBuffer];
-    historyBuffer.length = 0;
-    return copy;
-  });
-
-  if (batch.length === 0) return;
+  if (historyBuffer.length === 0) {
+    return;
+  }
+  const batch = historyBuffer;
+  historyBuffer = [];
 
   await ensureInitialized();
 
@@ -238,28 +231,25 @@ async function flushHistoryBuffer(): Promise<void> {
 
     logger.info(`[history] Flushed ${flushed} records in batch`);
   } catch (err) {
-    logger.error('[history] Failed to flush batch', err);
-    await bufferMutex.runExclusive(() => {
-      historyBuffer.unshift(...batch);
-    });
+    logger.error({ err }, '[history] Failed to flush batch');
+    // Prepend failed batch to current buffer
+    historyBuffer = batch.concat(historyBuffer);
   }
 }
 
-export async function recordPlayerQuery(record: PlayerQueryRecord): Promise<void> {
-  await bufferMutex.runExclusive(() => {
-    if (historyBuffer.length >= MAX_HISTORY_BUFFER) {
-      historyBuffer.shift();
-      logger.warn(`[history] buffer at capacity (${MAX_HISTORY_BUFFER}); dropping oldest entry`);
-    }
-    historyBuffer.push(record);
-  });
+export function recordPlayerQuery(record: PlayerQueryRecord): void {
+  if (historyBuffer.length >= MAX_HISTORY_BUFFER) {
+    historyBuffer.shift();
+    logger.warn(`[history] buffer at capacity (${MAX_HISTORY_BUFFER}); dropping oldest entry`);
+  }
+  historyBuffer.push(record);
 }
 
 export function startHistoryFlushInterval(): void {
   if (flushInterval !== null) return;
   flushInterval = setInterval(() => {
     void flushHistoryBuffer().catch((error) => {
-      logger.error('[history] Unhandled error in flush interval', error);
+      logger.error({ error }, '[history] Unhandled error in flush interval');
     });
   }, BATCH_FLUSH_INTERVAL);
 }
