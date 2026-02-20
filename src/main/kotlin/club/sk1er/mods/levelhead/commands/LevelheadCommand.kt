@@ -192,7 +192,8 @@ class LevelheadCommand {
     fun mod(state: String) {
         val toggle = parseToggle(state)
         if (toggle == null) {
-            val msg = ChatComponentText("${ChatColor.RED}Couldn't understand '$state'.${ChatColor.YELLOW} Try ")
+            val sanitizedState = state.replace("§", "")
+            val msg = ChatComponentText("${ChatColor.RED}Couldn't understand '$sanitizedState'.${ChatColor.YELLOW} Try ")
                 .appendSibling(createClickableCommand("/levelhead mod on", run = true))
                 .appendSibling(ChatComponentText("${ChatColor.YELLOW} or "))
                 .appendSibling(createClickableCommand("/levelhead mod off", run = true))
