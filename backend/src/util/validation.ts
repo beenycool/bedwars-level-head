@@ -204,7 +204,17 @@ export function validateBedwarsStats(data: unknown): ValidationResult {
         };
     }
 
-    const record = data as Record<string, unknown>;
+    let record = data as Record<string, unknown>;
+
+    // Handle nested structure if the full Hypixel JSON is sent
+    // We try to locate the actual Bedwars stats object
+    if (record.player && typeof record.player === 'object' && (record.player as any).stats?.Bedwars) {
+         record = (record.player as any).stats.Bedwars;
+    } else if (record.data && typeof record.data === 'object' && (record.data as any).bedwars) {
+         record = (record.data as any).bedwars;
+    } else if (record.bedwars && typeof record.bedwars === 'object') {
+         record = (record.bedwars as any);
+    }
 
     // Validate known fields have correct types
     for (const [field, expectedType] of Object.entries(BEDWARS_STATS_SCHEMA)) {
@@ -288,9 +298,24 @@ export const criticalFields = [
 export function matchesCriticalFields(source: Record<string, unknown>, submitted: Record<string, unknown>): boolean {
     let hasMatchedAnyField = false;
 
+    // Normalize source and submitted to flat bedwars objects if necessary
+    let normalizedSource = source;
+    let normalizedSubmitted = submitted;
+
+    // Helper to extract bedwars stats
+    const extractBedwars = (obj: any): any => {
+        if (obj?.player?.stats?.Bedwars) return obj.player.stats.Bedwars;
+        if (obj?.data?.bedwars) return obj.data.bedwars;
+        if (obj?.bedwars) return obj.bedwars;
+        return obj;
+    };
+
+    normalizedSource = extractBedwars(source);
+    normalizedSubmitted = extractBedwars(submitted);
+
     for (const field of criticalFields) {
-        const sourceValue = source[field];
-        const submittedValue = submitted[field];
+        const sourceValue = normalizedSource[field];
+        const submittedValue = normalizedSubmitted[field];
 
         if (sourceValue !== undefined) {
             // Source has data for this field
