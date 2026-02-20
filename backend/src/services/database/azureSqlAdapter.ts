@@ -310,8 +310,8 @@ export class AzureSqlAdapter implements DatabaseAdapter {
 
     if (params && params.length > 0) {
       // Optimized parameter replacement: O(N) instead of O(N^2)
-      // Replace all  with @pN in one pass
-      convertedSql = convertedSql.replace(/$(\d+)(?![0-9])/g, (match, p1) => {
+      // FIX: Escape the $ to match literal $N, preventing it from being treated as end-of-string
+      convertedSql = convertedSql.replace(/\$(\d+)(?![0-9])/g, (match, p1) => {
         const index = parseInt(p1, 10);
         if (index >= 1 && index <= params.length) {
           return `@p${index}`;

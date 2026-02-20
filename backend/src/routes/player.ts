@@ -430,13 +430,15 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
 
     // Detect payload type and extract stats
     let minimalStats: MinimalPlayerStats;
-    const isFullResponse = (submission.player && typeof submission.player === 'object') || (submission.data && typeof submission.data === 'object');
+    // Updated isFullResponse logic: Only treat as full response if it matches Hypixel shape (has player object)
+    // Proxy payloads (data.bedwars) are partial updates and should be routed to buildMinimalStatsFromSubmission
+    const isFullResponse = (submission.player && typeof submission.player === 'object');
 
     if (isFullResponse) {
-         // Full Hypixel response or Proxy payload
+         // Full Hypixel response -> extract all stats
          minimalStats = extractMinimalStats(submission as any);
     } else {
-         // Partial/Legacy Bedwars stats object
+         // Partial update (Proxy or legacy) -> build minimal stats (zeros out missing fields)
          minimalStats = buildMinimalStatsFromSubmission(submission);
     }
 
@@ -447,9 +449,8 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
 
     if (existingEntry?.value) {
         mergedStats = { ...existingEntry.value };
-        mergedStats.displayname = displaynameToUse ?? mergedStats.displayname;
+        // Removed redundant assignment to mergedStats.displayname here per PR review
 
-        // Update Bedwars (Critical fields) - always update if present/valid
         const hasExperience = Object.prototype.hasOwnProperty.call(submission, 'bedwars_experience') ||
                             Object.prototype.hasOwnProperty.call(submission, 'Experience') ||
                             Object.prototype.hasOwnProperty.call(submission, 'experience');
@@ -459,10 +460,14 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
              // Overwrite all stats with authoritative full response
              // This ensures Duels/SkyWars are updated correctly
              Object.assign(mergedStats, minimalStats);
-             // Restore proper displayname if needed (though Object.assign overwrites it with minimalStats.displayname)
+
+             // Restore proper displayname if needed (Object.assign overwrites it with minimalStats.displayname)
              mergedStats.displayname = displaynameToUse ?? mergedStats.displayname;
         } else {
              // Partial update: Only update Bedwars fields that are present
+             // Restore proper displayname here as well for partial updates
+             mergedStats.displayname = displaynameToUse ?? mergedStats.displayname;
+
              if (hasExperience && minimalStats.bedwars_experience !== null) {
                  mergedStats.bedwars_experience = minimalStats.bedwars_experience;
              }

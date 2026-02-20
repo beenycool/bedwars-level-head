@@ -188,6 +188,26 @@ function validateType(value: unknown, expectedType: string): boolean {
 }
 
 /**
+ * Helper to extract bedwars stats object from various nested structures
+ */
+export function extractBedwarsRecord(data: any): Record<string, unknown> | null {
+    if (!data || typeof data !== 'object') return null;
+
+    if (data.player && typeof data.player === 'object' && (data.player as any).stats?.Bedwars) {
+         return (data.player as any).stats.Bedwars;
+    }
+    if (data.data && typeof data.data === 'object' && (data.data as any).bedwars) {
+         return (data.data as any).bedwars;
+    }
+    if (data.bedwars && typeof data.bedwars === 'object') {
+         return (data.bedwars as any);
+    }
+
+    // Fallback: assume data itself is the record
+    return data;
+}
+
+/**
  * Validate Bedwars stats schema
  * Ensures known fields match expected types but allows extra Hypixel fields
  */
@@ -204,16 +224,16 @@ export function validateBedwarsStats(data: unknown): ValidationResult {
         };
     }
 
-    let record = data as Record<string, unknown>;
+    const record = extractBedwarsRecord(data);
 
-    // Handle nested structure if the full Hypixel JSON is sent
-    // We try to locate the actual Bedwars stats object
-    if (record.player && typeof record.player === 'object' && (record.player as any).stats?.Bedwars) {
-         record = (record.player as any).stats.Bedwars;
-    } else if (record.data && typeof record.data === 'object' && (record.data as any).bedwars) {
-         record = (record.data as any).bedwars;
-    } else if (record.bedwars && typeof record.bedwars === 'object') {
-         record = (record.bedwars as any);
+    if (!record) {
+         return {
+            valid: false,
+            errors: [{
+                field: 'data',
+                message: 'Could not extract valid Bedwars stats object',
+            }],
+        };
     }
 
     // Validate known fields have correct types
@@ -298,20 +318,10 @@ export const criticalFields = [
 export function matchesCriticalFields(source: Record<string, unknown>, submitted: Record<string, unknown>): boolean {
     let hasMatchedAnyField = false;
 
-    // Normalize source and submitted to flat bedwars objects if necessary
-    let normalizedSource = source;
-    let normalizedSubmitted = submitted;
+    const normalizedSource = extractBedwarsRecord(source);
+    const normalizedSubmitted = extractBedwarsRecord(submitted);
 
-    // Helper to extract bedwars stats
-    const extractBedwars = (obj: any): any => {
-        if (obj?.player?.stats?.Bedwars) return obj.player.stats.Bedwars;
-        if (obj?.data?.bedwars) return obj.data.bedwars;
-        if (obj?.bedwars) return obj.bedwars;
-        return obj;
-    };
-
-    normalizedSource = extractBedwars(source);
-    normalizedSubmitted = extractBedwars(submitted);
+    if (!normalizedSource || !normalizedSubmitted) return false;
 
     for (const field of criticalFields) {
         const sourceValue = normalizedSource[field];
