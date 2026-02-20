@@ -309,25 +309,32 @@ export class AzureSqlAdapter implements DatabaseAdapter {
     const request = this.pool.request();
 
     if (params && params.length > 0) {
-      // Convert $1, $2 to @p1, @p2 and register them in the request
+      // Optimized parameter replacement: O(N) instead of O(N^2)
+      // FIX: Use explicit capturing group (\d+) to get the index for p1
+      convertedSql = convertedSql.replace(/\$(\d+)(?![0-9])/g, (match, p1) => {
+        const index = parseInt(p1, 10);
+        if (index >= 1 && index <= params.length) {
+          return `@p${index}`;
+        }
+        return match;
+      });
+
+      // Register parameters in the request
       params.forEach((value, index) => {
-        const paramName = `p${index + 1}`;
-        convertedSql = convertedSql.replace(new RegExp(`\\$${index + 1}(?![0-9])`, 'g'), `@${paramName}`);
-        request.input(paramName, value);
+        request.input(`p${index + 1}`, value);
       });
     }
 
     // Basic transformations for common PG to SQL Server differences
-    // This is a minimal set; more complex migrations are handled in the service layers
     convertedSql = convertedSql
       .replace(/CREATE TABLE IF NOT EXISTS (\w+) \(/g, (match, tableName) => {
         return `IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[${tableName}]') AND type in (N'U')) CREATE TABLE ${tableName} (`;
       })
-      .replace(/INSERT INTO (\w+) (.+) ON CONFLICT \((.+)\) DO UPDATE SET (.+)/g, (match: string, table: string, cols: string, conflictCol: string, updateSet: string) => {
+      // Updated regex to handle multi-line SQL statements using [\s\S]+?
+      .replace(/INSERT INTO (\w+) ([\s\S]+?) ON CONFLICT \(([\s\S]+?)\) DO UPDATE\s+SET ([\s\S]+)/ig, (match: string, table: string, cols: string, conflictCol: string, updateSet: string) => {
         // Simple UPSERT transformation for PG 'ON CONFLICT'
-        // This is a very basic regex and might need refinement for complex cases
-        // For our specific use cases in player_stats_cache, it's usually enough
-        const mergeSql = this.buildMergeStatement(table, cols, conflictCol, updateSet);
+        const sanitizedUpdateSet = updateSet.replace(/;+\s*$/, '').trim();
+        const mergeSql = this.buildMergeStatement(table, cols, conflictCol, sanitizedUpdateSet);
         return mergeSql || match;
       });
 

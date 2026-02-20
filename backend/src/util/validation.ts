@@ -188,14 +188,54 @@ function validateType(value: unknown, expectedType: string): boolean {
 }
 
 /**
+ * Helper to extract bedwars stats object from various nested structures.
+ * Uses isNonArrayObject helper to standardize validation.
+ */
+export function extractBedwarsRecord(data: any): Record<string, unknown> | null {
+    if (!isNonArrayObject(data)) return null;
+
+    // Check player.stats.Bedwars
+    if (isNonArrayObject(data.player)) {
+        const stats = (data.player as any).stats;
+        if (isNonArrayObject(stats)) {
+            const bedwars = stats.Bedwars;
+            if (isNonArrayObject(bedwars)) {
+                return bedwars;
+            }
+        }
+    }
+
+    // Check data.bedwars (often from proxy payloads)
+    if (isNonArrayObject(data.data)) {
+        const bedwars = (data.data as any).bedwars;
+        if (isNonArrayObject(bedwars)) {
+            return bedwars;
+        }
+    }
+
+    // Check direct bedwars property
+    if (isNonArrayObject(data.bedwars)) {
+        return (data.bedwars as any);
+    }
+
+    // Fallback: assume data itself is the record, since we verified it's a non-array object
+    return data;
+}
+
+/**
  * Validate Bedwars stats schema
  * Ensures known fields match expected types but allows extra Hypixel fields
  */
 export function validateBedwarsStats(data: unknown): ValidationResult {
     const errors: ValidationError[] = [];
 
-    if (!data || typeof data !== 'object' || Array.isArray(data)) {
-        return {
+    // Removed redundant isNonArrayObject check here.
+    // extractBedwarsRecord handles the check internally and returns null if invalid.
+
+    const record = extractBedwarsRecord(data);
+
+    if (!record) {
+         return {
             valid: false,
             errors: [{
                 field: 'data',
@@ -203,8 +243,6 @@ export function validateBedwarsStats(data: unknown): ValidationResult {
             }],
         };
     }
-
-    const record = data as Record<string, unknown>;
 
     // Validate known fields have correct types
     for (const [field, expectedType] of Object.entries(BEDWARS_STATS_SCHEMA)) {
@@ -288,9 +326,14 @@ export const criticalFields = [
 export function matchesCriticalFields(source: Record<string, unknown>, submitted: Record<string, unknown>): boolean {
     let hasMatchedAnyField = false;
 
+    const normalizedSource = extractBedwarsRecord(source);
+    const normalizedSubmitted = extractBedwarsRecord(submitted);
+
+    if (!normalizedSource || !normalizedSubmitted) return false;
+
     for (const field of criticalFields) {
-        const sourceValue = source[field];
-        const submittedValue = submitted[field];
+        const sourceValue = normalizedSource[field];
+        const submittedValue = normalizedSubmitted[field];
 
         if (sourceValue !== undefined) {
             // Source has data for this field

@@ -12,7 +12,7 @@ import { isValidBedwarsObject } from '../util/typeChecks';
 import { extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely } from '../util/requestUtils';
 import { CacheSource } from '../services/cache';
 import { COMMUNITY_SUBMIT_SECRET } from '../config';
-import { MinimalPlayerStats } from '../services/hypixel';
+import { MinimalPlayerStats, extractMinimalStats } from '../services/hypixel';
 import { getPlayerStatsFromCache, setIgnMapping, setPlayerStatsBoth } from '../services/statsCache';
 import { getCircuitBreakerState } from '../services/hypixel';
 import { logger } from '../util/logger';
@@ -427,33 +427,65 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
   try {
     const submission = data as Record<string, unknown>;
     const existingEntry = await getPlayerStatsFromCache(cacheKey, true);
-    const minimalStats = buildMinimalStatsFromSubmission(submission);
-    const hasExperience =
-      Object.prototype.hasOwnProperty.call(submission, 'bedwars_experience') ||
-      Object.prototype.hasOwnProperty.call(submission, 'Experience') ||
-      Object.prototype.hasOwnProperty.call(submission, 'experience');
-    const hasFinalKills = Object.prototype.hasOwnProperty.call(submission, 'final_kills_bedwars');
-    const hasFinalDeaths = Object.prototype.hasOwnProperty.call(submission, 'final_deaths_bedwars');
+
+    // Detect payload type and extract stats
+    let minimalStats: MinimalPlayerStats;
+    // Updated isFullResponse logic: Only treat as full response if it matches Hypixel shape (has player object)
+    // Proxy payloads (data.bedwars) are partial updates and should be routed to buildMinimalStatsFromSubmission
+    const isFullResponse = (submission.player && typeof submission.player === 'object');
+
+    if (isFullResponse) {
+         // Full Hypixel response -> extract all stats
+         minimalStats = extractMinimalStats(submission as any);
+    } else {
+         // Partial update (Proxy or legacy) -> build minimal stats (zeros out missing fields)
+         minimalStats = buildMinimalStatsFromSubmission(submission);
+    }
+
     const verifiedName = verificationResult.verifiedDisplayname;
-    // Prefer verified name from Hypixel if available, otherwise fallback to user submission (which was validated against Hypixel if present)
     const displaynameToUse = verifiedName ?? minimalStats.displayname;
 
-    const mergedStats = existingEntry?.value
-      ? {
-          ...existingEntry.value,
-          displayname: displaynameToUse ?? existingEntry.value.displayname,
-          bedwars_experience:
-            hasExperience && minimalStats.bedwars_experience !== null
-              ? minimalStats.bedwars_experience
-              : existingEntry.value.bedwars_experience,
-          bedwars_final_kills: hasFinalKills
-            ? minimalStats.bedwars_final_kills
-            : existingEntry.value.bedwars_final_kills,
-          bedwars_final_deaths: hasFinalDeaths
-            ? minimalStats.bedwars_final_deaths
-            : existingEntry.value.bedwars_final_deaths,
+    let mergedStats: MinimalPlayerStats;
+
+    if (existingEntry?.value) {
+        mergedStats = { ...existingEntry.value };
+        // Removed redundant assignment to mergedStats.displayname here per PR review
+
+        const hasExperience = Object.prototype.hasOwnProperty.call(submission, 'bedwars_experience') ||
+                            Object.prototype.hasOwnProperty.call(submission, 'Experience') ||
+                            Object.prototype.hasOwnProperty.call(submission, 'experience');
+
+        // For full response, we trust the extracted value implicitly
+        if (isFullResponse) {
+             // Overwrite all stats with authoritative full response
+             // This ensures Duels/SkyWars are updated correctly
+             Object.assign(mergedStats, minimalStats);
+
+             // Restore proper displayname if needed (Object.assign overwrites it with minimalStats.displayname)
+             mergedStats.displayname = displaynameToUse ?? mergedStats.displayname;
+        } else {
+             // Partial update: Only update Bedwars fields that are present
+             // Restore proper displayname here as well for partial updates
+             mergedStats.displayname = displaynameToUse ?? mergedStats.displayname;
+
+             if (hasExperience && minimalStats.bedwars_experience !== null) {
+                 mergedStats.bedwars_experience = minimalStats.bedwars_experience;
+             }
+
+             if (Object.prototype.hasOwnProperty.call(submission, 'final_kills_bedwars')) {
+                 mergedStats.bedwars_final_kills = minimalStats.bedwars_final_kills;
+             }
+
+             if (Object.prototype.hasOwnProperty.call(submission, 'final_deaths_bedwars')) {
+                 mergedStats.bedwars_final_deaths = minimalStats.bedwars_final_deaths;
+             }
+             // Explicitly DO NOT update Duels/SkyWars here to preserve existing data
         }
-      : { ...minimalStats, displayname: displaynameToUse };
+    } else {
+        // New entry
+        mergedStats = { ...minimalStats, displayname: displaynameToUse };
+    }
+
     const etag = `contrib-${Date.now()}`;
     const lastModified = Date.now();
 

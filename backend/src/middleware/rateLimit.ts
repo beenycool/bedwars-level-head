@@ -1,63 +1,14 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
-import ipaddr from 'ipaddr.js';
 import {
   DYNAMIC_RATE_LIMIT_CACHE_TTL_MS,
   RATE_LIMIT_MAX,
   RATE_LIMIT_WINDOW_MS,
   RATE_LIMIT_REQUIRE_REDIS,
   RATE_LIMIT_FALLBACK_MODE,
-  TRUST_PROXY_ENABLED,
-  TRUST_PROXY_CIDRS,
   ADMIN_RATE_LIMIT_WINDOW_MS,
   ADMIN_RATE_LIMIT_MAX,
 } from '../config';
 import { HttpError } from '../util/httpError';
-
-function isIPInCIDR(ip: string, cidr: string): boolean {
-  try {
-    const [network, prefix] = ipaddr.parseCIDR(cidr);
-    let parsedIp = ipaddr.parse(ip);
-    if (parsedIp.kind() === 'ipv6' && parsedIp.isIPv4MappedAddress()) {
-      parsedIp = parsedIp.toIPv4Address();
-    }
-    if (parsedIp.kind() !== network.kind()) return false;
-    return parsedIp.match([network, prefix]);
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Extracts the client IP from X-Forwarded-For when the direct connection
- * is from a trusted proxy. Uses the leftmost (original client) IP.
- * Returns null if the header is missing, malformed, or the direct connection
- * is not from a trusted proxy.
- */
-function extractClientIpFromForwarded(req: Request): string | null {
-  if (!TRUST_PROXY_ENABLED || TRUST_PROXY_CIDRS.length === 0) return null;
-
-  const directRemote = req.socket.remoteAddress;
-  if (!directRemote) return null;
-
-  // Only trust X-Forwarded-For when the direct connection is from a trusted proxy
-  const isFromTrustedProxy = TRUST_PROXY_CIDRS.some((cidr) => isIPInCIDR(directRemote, cidr));
-  if (!isFromTrustedProxy) return null;
-
-  const forwarded = req.header('x-forwarded-for');
-  if (!forwarded || typeof forwarded !== 'string') return null;
-
-  // X-Forwarded-For format: "client, proxy1, proxy2" - leftmost is original client
-  const first = forwarded.split(',')[0]?.trim();
-  if (!first || first.length === 0) return null;
-
-  // Validate it's a parseable IP
-  try {
-    ipaddr.parse(first);
-    return first;
-  } catch {
-    return null;
-  }
-}
 import { rateLimitBlocksTotal } from '../services/metrics';
 import {
   incrementRateLimit,
@@ -122,26 +73,17 @@ async function resolveDynamicLimitValue(): Promise<number> {
 }
 
 /**
- * Resolves the client IP address, handling proxy deployments correctly.
- * When TRUST_PROXY_ENABLED, explicitly parses X-Forwarded-For when the direct
- * connection is from a trusted proxy CIDR, avoiding reliance on Express req.ip
- * which may be wrong if trust proxy is misconfigured.
+ * Resolves the client IP address.
+ * Relies on Express req.ip which handles proxy trust configuration (app.set('trust proxy')).
  */
 export function getClientIpAddress(req: Request): string {
-  let ip: string | undefined;
-
-  if (TRUST_PROXY_ENABLED) {
-    const forwarded = extractClientIpFromForwarded(req);
-    if (forwarded) {
-      ip = forwarded;
-    }
-  }
+  const ip = req.ip;
 
   if (!ip) {
-    ip = req.socket.remoteAddress ?? undefined;
-  }
+    // Fallback if req.ip is somehow undefined (should be populated by Express)
+    const socketIp = req.socket.remoteAddress;
+    if (socketIp) return socketIp;
 
-  if (!ip) {
     throw new HttpError(400, 'INVALID_REQUEST', 'Unable to identify client IP address');
   }
 
