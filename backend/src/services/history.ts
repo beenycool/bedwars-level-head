@@ -172,7 +172,7 @@ const initialization = (async () => {
       supportsPgTotalRelationSize = false;
     }
   } catch (error) {
-    logger.error({ error }, 'Failed to initialize player_query_history table');
+    logger.error({ err: error }, 'Failed to initialize player_query_history table');
     throw error;
   }
 })();
@@ -249,7 +249,7 @@ export function startHistoryFlushInterval(): void {
   if (flushInterval !== null) return;
   flushInterval = setInterval(() => {
     void flushHistoryBuffer().catch((error) => {
-      logger.error({ error }, '[history] Unhandled error in flush interval');
+      logger.error({ err: error }, '[history] Unhandled error in flush interval');
     });
   }, BATCH_FLUSH_INTERVAL);
 }

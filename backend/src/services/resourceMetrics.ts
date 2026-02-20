@@ -255,7 +255,7 @@ async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
       }
     }
   } catch (err) {
-    logger.error('[resourceMetrics] failed to persist aggregate', err);
+    logger.error({ err }, '[resourceMetrics] failed to persist aggregate');
     throw err;
   }
 }
@@ -283,7 +283,7 @@ async function flushBuffer(): Promise<void> {
       const uniqueBuckets = aggregates.length;
       logger.info(`[resourceMetrics] flushed ${samples.length} samples across ${uniqueBuckets} bucket${uniqueBuckets > 1 ? 's' : ''}`);
     } catch (error) {
-      logger.warn({ error }, 'Failed to flush resource metrics buffer, retaining for retry:');
+      logger.warn({ err: error }, 'Failed to flush resource metrics buffer, retaining for retry:');
       // Prepend failed samples back to buffer
       memoryBuffer = samples.concat(memoryBuffer);
     }
@@ -309,7 +309,7 @@ async function pruneOldData(): Promise<void> {
       }
     }
   } catch (err) {
-    logger.error('[resourceMetrics] failed to prune old data', err);
+    logger.error({ err }, '[resourceMetrics] failed to prune old data');
   }
 }
 
@@ -413,7 +413,7 @@ export async function initializeResourceMetrics(): Promise<void> {
     }
     logger.info('[resourceMetrics] table is ready');
   } catch (err) {
-    logger.error('[resourceMetrics] failed to initialize table', err);
+    logger.error({ err }, '[resourceMetrics] failed to initialize table');
     throw err;
   }
 
@@ -596,7 +596,7 @@ export async function getResourceMetricsHistory(
       .filter(r => r.bucketStart >= cutoff && (!endDate || r.bucketStart <= endDate))
       .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime());
   } catch (err) {
-    logger.error('[resourceMetrics] failed to get history', err);
+    logger.error({ err }, '[resourceMetrics] failed to get history');
     return [];
   }
 }
