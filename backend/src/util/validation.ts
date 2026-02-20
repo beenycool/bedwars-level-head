@@ -188,22 +188,37 @@ function validateType(value: unknown, expectedType: string): boolean {
 }
 
 /**
- * Helper to extract bedwars stats object from various nested structures
+ * Helper to extract bedwars stats object from various nested structures.
+ * Explicitly rejects arrays to ensure only plain objects are returned.
  */
 export function extractBedwarsRecord(data: any): Record<string, unknown> | null {
-    if (!data || typeof data !== 'object') return null;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
 
-    if (data.player && typeof data.player === 'object' && (data.player as any).stats?.Bedwars) {
-         return (data.player as any).stats.Bedwars;
-    }
-    if (data.data && typeof data.data === 'object' && (data.data as any).bedwars) {
-         return (data.data as any).bedwars;
-    }
-    if (data.bedwars && typeof data.bedwars === 'object') {
-         return (data.bedwars as any);
+    // Check player.stats.Bedwars
+    if (data.player && typeof data.player === 'object' && !Array.isArray(data.player)) {
+        const stats = (data.player as any).stats;
+        if (stats && typeof stats === 'object' && !Array.isArray(stats)) {
+            const bedwars = stats.Bedwars;
+            if (bedwars && typeof bedwars === 'object' && !Array.isArray(bedwars)) {
+                return bedwars;
+            }
+        }
     }
 
-    // Fallback: assume data itself is the record
+    // Check data.bedwars (often from proxy payloads)
+    if (data.data && typeof data.data === 'object' && !Array.isArray(data.data)) {
+        const bedwars = (data.data as any).bedwars;
+        if (bedwars && typeof bedwars === 'object' && !Array.isArray(bedwars)) {
+            return bedwars;
+        }
+    }
+
+    // Check direct bedwars property
+    if (data.bedwars && typeof data.bedwars === 'object' && !Array.isArray(data.bedwars)) {
+        return (data.bedwars as any);
+    }
+
+    // Fallback: assume data itself is the record, but we already checked it's an object and not an array above
     return data;
 }
 

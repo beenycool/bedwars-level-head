@@ -310,8 +310,8 @@ export class AzureSqlAdapter implements DatabaseAdapter {
 
     if (params && params.length > 0) {
       // Optimized parameter replacement: O(N) instead of O(N^2)
-      // FIX: Escape the $ to match literal $N, preventing it from being treated as end-of-string
-      convertedSql = convertedSql.replace(/\$(\d+)(?![0-9])/g, (match, p1) => {
+      // FIX: Escape the $ to match literal , preventing it from being treated as end-of-string
+      convertedSql = convertedSql.replace(/\(?![0-9])/g, (match, p1) => {
         const index = parseInt(p1, 10);
         if (index >= 1 && index <= params.length) {
           return `@p${index}`;
@@ -333,7 +333,8 @@ export class AzureSqlAdapter implements DatabaseAdapter {
       // Updated regex to handle multi-line SQL statements using [\s\S]+?
       .replace(/INSERT INTO (\w+) ([\s\S]+?) ON CONFLICT \(([\s\S]+?)\) DO UPDATE\s+SET ([\s\S]+)/ig, (match: string, table: string, cols: string, conflictCol: string, updateSet: string) => {
         // Simple UPSERT transformation for PG 'ON CONFLICT'
-        const mergeSql = this.buildMergeStatement(table, cols, conflictCol, updateSet);
+        const sanitizedUpdateSet = updateSet.replace(/;+\s*$/, '').trim();
+        const mergeSql = this.buildMergeStatement(table, cols, conflictCol, sanitizedUpdateSet);
         return mergeSql || match;
       });
 
