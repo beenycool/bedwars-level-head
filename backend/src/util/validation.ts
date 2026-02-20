@@ -229,15 +229,8 @@ export function extractBedwarsRecord(data: any): Record<string, unknown> | null 
 export function validateBedwarsStats(data: unknown): ValidationResult {
     const errors: ValidationError[] = [];
 
-    if (!isNonArrayObject(data)) {
-        return {
-            valid: false,
-            errors: [{
-                field: 'data',
-                message: 'Data must be a non-null object',
-            }],
-        };
-    }
+    // Removed redundant isNonArrayObject check here.
+    // extractBedwarsRecord handles the check internally and returns null if invalid.
 
     const record = extractBedwarsRecord(data);
 
@@ -246,7 +239,7 @@ export function validateBedwarsStats(data: unknown): ValidationResult {
             valid: false,
             errors: [{
                 field: 'data',
-                message: 'Could not extract valid Bedwars stats object',
+                message: 'Data must be a non-null object',
             }],
         };
     }
