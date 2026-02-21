@@ -1,4 +1,3 @@
-import { Mutex } from 'async-mutex';
 import { pool } from './cache';
 import { DatabaseType } from './database/adapter';
 import os from 'os';
@@ -39,8 +38,8 @@ const BUCKET_INTERVAL_MS = 60 * 1000; // 1-minute buckets
 const MAX_BUFFER_SIZE = 12_000;
 const RETENTION_DAYS = 30;
 
-const bufferMutex = new Mutex();
-const memoryBuffer: MemorySample[] = [];
+let memoryBuffer: MemorySample[] = [];
+let isFlushing = false;
 
 let lastCpuUsage: NodeJS.CpuUsage | null = null;
 let lastCpuCheckTime = 0;
@@ -256,35 +255,40 @@ async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
       }
     }
   } catch (err) {
-    logger.error('[resourceMetrics] failed to persist aggregate', err);
+    logger.error({ err }, '[resourceMetrics] failed to persist aggregate');
     throw err;
   }
 }
 
 async function flushBuffer(): Promise<void> {
-  const release = await bufferMutex.acquire();
+  if (isFlushing) {
+    return;
+  }
+  isFlushing = true;
+
   try {
     if (memoryBuffer.length === 0) return;
 
-    const samples = [...memoryBuffer];
+    // Snapshot and clear buffer immediately
+    const samples = memoryBuffer;
+    memoryBuffer = [];
+
     const aggregates = aggregateToBuckets(samples);
     if (aggregates.length === 0) {
-      memoryBuffer.length = 0;
       return;
     }
 
     try {
       await persistAggregate(aggregates);
-      const maxPersistedTimestamp = Math.max(...samples.map(s => s.timestamp));
-      const retainedSamples = memoryBuffer.filter(sample => sample.timestamp > maxPersistedTimestamp);
-      memoryBuffer.splice(0, memoryBuffer.length, ...retainedSamples);
       const uniqueBuckets = aggregates.length;
       logger.info(`[resourceMetrics] flushed ${samples.length} samples across ${uniqueBuckets} bucket${uniqueBuckets > 1 ? 's' : ''}`);
     } catch (error) {
-      logger.warn('Failed to flush resource metrics buffer, retaining for retry:', error);
+      logger.warn({ err: error }, 'Failed to flush resource metrics buffer, retaining for retry:');
+      // Prepend failed samples back to buffer
+      memoryBuffer = samples.concat(memoryBuffer);
     }
   } finally {
-    release();
+    isFlushing = false;
   }
 }
 
@@ -305,11 +309,11 @@ async function pruneOldData(): Promise<void> {
       }
     }
   } catch (err) {
-    logger.error('[resourceMetrics] failed to prune old data', err);
+    logger.error({ err }, '[resourceMetrics] failed to prune old data');
   }
 }
 
-async function takeSample(): Promise<void> {
+function takeSample(): void {
   const memUsage = process.memoryUsage();
   const cpuPercent = getCpuPercent();
 
@@ -322,15 +326,10 @@ async function takeSample(): Promise<void> {
     cpuPercent,
   };
 
-  const release = await bufferMutex.acquire();
-  try {
-    memoryBuffer.push(sample);
+  memoryBuffer.push(sample);
 
-    if (memoryBuffer.length > MAX_BUFFER_SIZE) {
-      memoryBuffer.splice(0, memoryBuffer.length - MAX_BUFFER_SIZE);
-    }
-  } finally {
-    release();
+  if (memoryBuffer.length > MAX_BUFFER_SIZE) {
+    memoryBuffer.splice(0, memoryBuffer.length - MAX_BUFFER_SIZE);
   }
 }
 
@@ -414,14 +413,18 @@ export async function initializeResourceMetrics(): Promise<void> {
     }
     logger.info('[resourceMetrics] table is ready');
   } catch (err) {
-    logger.error('[resourceMetrics] failed to initialize table', err);
+    logger.error({ err }, '[resourceMetrics] failed to initialize table');
     throw err;
   }
 
   getCpuPercent();
 
   sampleInterval = setInterval(() => {
-    void takeSample().catch(err => logger.error('[resourceMetrics] sample error', err));
+    try {
+      takeSample();
+    } catch (err) {
+      logger.error({ err }, '[resourceMetrics] sample error');
+    }
   }, SAMPLE_INTERVAL_MS);
 
   const now = new Date();
@@ -429,11 +432,11 @@ export async function initializeResourceMetrics(): Promise<void> {
   const msUntilNextBucket = nextBucket.getTime() - now.getTime();
 
   alignmentTimeout = setTimeout(() => {
-    void flushBuffer().catch(err => logger.error('[resourceMetrics] flush error', err));
-    void pruneOldData().catch(err => logger.error('[resourceMetrics] prune error', err));
+    void flushBuffer().catch(err => logger.error({ err }, '[resourceMetrics] flush error'));
+    void pruneOldData().catch(err => logger.error({ err }, '[resourceMetrics] prune error'));
     flushInterval = setInterval(() => {
-      void flushBuffer().catch(err => logger.error('[resourceMetrics] flush error', err));
-      void pruneOldData().catch(err => logger.error('[resourceMetrics] prune error', err));
+      void flushBuffer().catch(err => logger.error({ err }, '[resourceMetrics] flush error'));
+      void pruneOldData().catch(err => logger.error({ err }, '[resourceMetrics] prune error'));
     }, FLUSH_INTERVAL_MS);
   }, msUntilNextBucket);
 
@@ -471,13 +474,7 @@ export interface CurrentResourceMetrics {
 export async function getCurrentResourceMetrics(): Promise<CurrentResourceMetrics> {
   const memUsage = process.memoryUsage();
   const cpuPercent = getCpuPercent();
-  const release = await bufferMutex.acquire();
-  let bufferSize: number;
-  try {
-    bufferSize = memoryBuffer.length;
-  } finally {
-    release();
-  }
+  const bufferSize = memoryBuffer.length;
 
   return {
     rssMB: Math.round(memUsage.rss / 1024 / 1024 * 100) / 100,
@@ -557,13 +554,7 @@ export async function getResourceMetricsHistory(
     }
 
     // Include current buffer
-    const release = await bufferMutex.acquire();
-    let bufferAggregates: BucketAggregate[] = [];
-    try {
-      bufferAggregates = aggregateToBuckets(memoryBuffer);
-    } finally {
-      release();
-    }
+    const bufferAggregates = aggregateToBuckets(memoryBuffer);
 
     const merged = new Map<number, ResourceMetricsHistoryRow>();
     for (const row of dbRows) {
@@ -605,7 +596,7 @@ export async function getResourceMetricsHistory(
       .filter(r => r.bucketStart >= cutoff && (!endDate || r.bucketStart <= endDate))
       .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime());
   } catch (err) {
-    logger.error('[resourceMetrics] failed to get history', err);
+    logger.error({ err }, '[resourceMetrics] failed to get history');
     return [];
   }
 }

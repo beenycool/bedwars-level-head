@@ -12,8 +12,10 @@ import { getResourceMetricsHistory } from '../services/resourceMetrics';
 import { escapeHtml } from '../util/html';
 import { toCSV } from '../util/csv';
 import { logger } from '../util/logger';
+import { enforcePublicRateLimit } from '../middleware/rateLimitPublic';
 
 const router = Router();
+router.use(enforcePublicRateLimit);
 const PAGE_SIZE = 25;
 
 function formatDate(date: Date): string {

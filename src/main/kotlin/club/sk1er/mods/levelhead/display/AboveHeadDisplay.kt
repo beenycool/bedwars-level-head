@@ -24,6 +24,7 @@ class AboveHeadDisplay(config: DisplayConfig) : LevelheadDisplay(DisplayPosition
         // Check server-side invisibility first (e.g., spectators, hidden players)
         if (player.isInvisibleToPlayer(localPlayer)) return false
         if (player.isInvisible) return false
+        if (player.isSneaking) return false
         //#if MC==10809
         if (player.isPotionActive(Potion.invisibility)) return false
         //#endif

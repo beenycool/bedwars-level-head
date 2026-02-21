@@ -14,7 +14,7 @@ export class PostgresAdapter implements DatabaseAdapter {
     });
 
     this.pool.on('error', (error: unknown) => {
-      logger.error('[database] unexpected PostgreSQL error', error);
+      logger.error({ error }, '[database] unexpected PostgreSQL error');
     });
   }
 

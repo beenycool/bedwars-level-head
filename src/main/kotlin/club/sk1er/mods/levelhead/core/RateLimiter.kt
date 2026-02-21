@@ -28,6 +28,7 @@ class RateLimiter(
 
     private val state = AtomicReference(RateState(limit, System.currentTimeMillis()))
     private val serverCooldownUntil = AtomicLong(0L)
+    private val silentCooldown = AtomicLong(0L)
 
     /**
      * Consumes a single token from the rate limiter.
@@ -40,7 +41,10 @@ class RateLimiter(
         val cooldown = serverCooldownUntil.get()
         if (now < cooldown) {
             ensureReset(now)
-            onBlocked(metricsSnapshot())
+            // Only trigger callback if cooldown is not silent
+            if (silentCooldown.get() <= 0) {
+                onBlocked(metricsSnapshot())
+            }
             return
         }
 
@@ -64,6 +68,7 @@ class RateLimiter(
     fun resetState() {
         state.set(RateState(limit, System.currentTimeMillis()))
         serverCooldownUntil.set(0L)
+        silentCooldown.set(0L)
         onReset()
     }
 
@@ -105,7 +110,10 @@ class RateLimiter(
         val now = System.currentTimeMillis()
         val until = now + duration.toMillis()
         serverCooldownUntil.set(until)
-        if (!silent) {
+        if (silent) {
+            silentCooldown.set(until)
+        } else {
+            silentCooldown.set(0L)
             ensureReset(now)
             onBlocked(metricsSnapshot())
         }
