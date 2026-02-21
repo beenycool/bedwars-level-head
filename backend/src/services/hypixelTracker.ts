@@ -80,10 +80,11 @@ async function flushHypixelCallBuffer(): Promise<void> {
       while (inflightBatch.length > 0) {
         const chunk = inflightBatch.slice(0, maxRecordsPerChunk);
         // Bolt: Optimized from flatMap to reduce array allocations
-        const params = new Array(chunk.length * 2);
+        const PARAMS_PER_RECORD = 2;
+        const params = new Array(chunk.length * PARAMS_PER_RECORD);
         for (let i = 0; i < chunk.length; i++) {
-          params[i * 2] = chunk[i].calledAt;
-          params[i * 2 + 1] = chunk[i].uuid;
+          params[i * PARAMS_PER_RECORD] = chunk[i].calledAt;
+          params[i * PARAMS_PER_RECORD + 1] = chunk[i].uuid;
         }
         const values = chunk.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ');
 
