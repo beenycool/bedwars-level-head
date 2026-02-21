@@ -54,7 +54,7 @@ export function parseIfModifiedSince(value: string | undefined): number | undefi
  */
 export async function recordQuerySafely(payload: Parameters<typeof recordPlayerQuery>[0]): Promise<void> {
     try {
-        await recordPlayerQuery(payload);
+        recordPlayerQuery(payload);
     } catch (error) {
         logger.error('Failed to record player query', {
             error,
