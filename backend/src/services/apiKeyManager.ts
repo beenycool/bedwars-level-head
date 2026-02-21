@@ -71,7 +71,7 @@ function maskKey(key: string): string {
 
 // Helper to migrate legacy keys on cache miss
 async function migrateLegacyKey(
-  redis: any, // Using any for Redis client to simplify type import
+  redis: ReturnType<typeof getRedisClient>,
   key: string,
   newKeyHash: string
 ): Promise<string | null> {
@@ -80,7 +80,10 @@ async function migrateLegacyKey(
   const legacyData = await redis.get(legacyKey);
 
   if (legacyData) {
-    logger.info(`[apikey] Migrating API key from legacy hash ${legacyHash} to new hash ${newKeyHash}`);
+    // Mask hashes for logging (first 8 chars)
+    const maskedLegacy = legacyHash.slice(0, 8) + '...';
+    const maskedNew = newKeyHash.slice(0, 8) + '...';
+    logger.info(`[apikey] Migrating API key from legacy hash ${maskedLegacy} to new hash ${maskedNew}`);
 
     // Get original TTL
     const ttl = await redis.ttl(legacyKey);
@@ -102,6 +105,8 @@ async function migrateLegacyKey(
 }
 
 export async function storeApiKey(key: string): Promise<ApiKeyValidation> {
+  // Note: Migration/cleanup of legacy keys is performed only on get/validate code paths, not on store.
+  // This may result in a legacy entry being shadowed for up to the TTL (30 days).
   const keyHash = hashKey(key);
   const redis = getRedisClient();
   
@@ -279,6 +284,9 @@ export async function getApiKeyValidationByHash(keyHash: string): Promise<ApiKey
   if (!redis || redis.status !== 'ready') {
     return null;
   }
+
+  // Note: We cannot perform migration here because we don't have the original API key
+  // to compute the legacy hash.
 
   try {
     const data = await redis.get(getRedisKey(keyHash));

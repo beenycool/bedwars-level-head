@@ -29,10 +29,6 @@ describe('API Key Hashing Security', () => {
   beforeEach(() => {
     jest.resetModules();
     jest.clearAllMocks();
-    mockRedis.setex.mockClear();
-    mockRedis.get.mockClear();
-    mockRedis.del.mockClear();
-    mockRedis.ttl.mockClear();
     mockRedis.ttl.mockResolvedValue(300);
   });
 
@@ -131,7 +127,8 @@ describe('API Key Hashing Security', () => {
             validationStatus: 'valid',
             validatedCount: 5,
             lastValidatedAt: 12345,
-            keyHash: legacyHash // simulate stored data
+            errorMessage: null,
+            createdAt: 10000
         })); // Hit legacy key
         return Promise.resolve(null);
     });
