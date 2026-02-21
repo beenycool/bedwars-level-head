@@ -126,7 +126,22 @@ class LevelheadCommand {
         val sanitized = key.trim()
         val normalized = sanitized.replace("-", "")
         if (!API_KEY_PATTERN.matches(normalized)) {
-            sendMessage("${ChatColor.RED}Invalid Hypixel API key. Keys should be 32 hexadecimal characters.")
+            val length = normalized.length
+            val reason = if (length != 32) {
+                "Length is $length (should be 32)"
+            } else {
+                "Contains invalid characters"
+            }
+
+            sendMessage("${ChatColor.RED}Invalid Hypixel API key. $reason.")
+
+            val helpMsg = ChatComponentText("${ChatColor.YELLOW}Get a new key at ")
+                .appendSibling(ChatComponentText("${ChatColor.GOLD}developer.hypixel.net").apply {
+                    chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.OPEN_URL, "https://developer.hypixel.net")
+                    chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to open"))
+                })
+                .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
+            sendMessage(helpMsg)
             return
         }
 
