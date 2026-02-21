@@ -26,16 +26,34 @@ interface StoredApiKeyData {
 const REDIS_KEY_PREFIX = 'apikey:';
 const API_KEY_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function hashKey(key: string): string {
-  // Use REDIS_KEY_SALT if available, otherwise fallback for dev/migration
-  const salt = REDIS_KEY_SALT || 'hypixel-apikey-hash-v1';
+function hashKeyLegacy(key: string): string {
+  const salt = 'hypixel-apikey-hash-v1';
   const iterations = 100_000;
   const keylen = 32;
   const digest = 'sha256';
 
   const derived = pbkdf2Sync(key, salt, iterations, keylen, digest);
-  // Return 32 characters (16 bytes) of the hash to reduce collision probability
-  return derived.toString('hex').slice(0, 32);
+  return derived.toString('hex').slice(0, 16);
+}
+
+let warnedMissingSalt = false;
+
+function hashKey(key: string): string {
+  // Use REDIS_KEY_SALT if available, otherwise fallback for dev/migration
+  if (!REDIS_KEY_SALT && !warnedMissingSalt) {
+    logger.warn('[apikey] REDIS_KEY_SALT is not set. Falling back to default salt. Please set REDIS_KEY_SALT in environment.');
+    warnedMissingSalt = true;
+  }
+
+  const salt = REDIS_KEY_SALT || 'hypixel-apikey-hash-v1';
+  const iterations = 100_000;
+  // Option A: 16 bytes (32 hex characters)
+  const keylen = 16;
+  const digest = 'sha256';
+
+  const derived = pbkdf2Sync(key, salt, iterations, keylen, digest);
+  // Return 32 characters (16 bytes)
+  return derived.toString('hex');
 }
 
 export function isValidApiKeyFormat(key: string): boolean {
@@ -49,6 +67,38 @@ function getRedisKey(keyHash: string): string {
 function maskKey(key: string): string {
   if (key.length <= 8) return '***';
   return key.slice(0, 4) + '****' + key.slice(-4);
+}
+
+// Helper to migrate legacy keys on cache miss
+async function migrateLegacyKey(
+  redis: any, // Using any for Redis client to simplify type import
+  key: string,
+  newKeyHash: string
+): Promise<string | null> {
+  const legacyHash = hashKeyLegacy(key);
+  const legacyKey = getRedisKey(legacyHash);
+  const legacyData = await redis.get(legacyKey);
+
+  if (legacyData) {
+    logger.info(`[apikey] Migrating API key from legacy hash ${legacyHash} to new hash ${newKeyHash}`);
+
+    // Get original TTL
+    const ttl = await redis.ttl(legacyKey);
+    const ttlToUse = ttl > 0 ? ttl : 30 * 24 * 60 * 60; // Default 30 days if no TTL
+
+    // Copy to new key
+    await redis.setex(
+      getRedisKey(newKeyHash),
+      ttlToUse,
+      legacyData
+    );
+    // Delete legacy key
+    await redis.del(legacyKey);
+
+    return legacyData;
+  }
+
+  return null;
 }
 
 export async function storeApiKey(key: string): Promise<ApiKeyValidation> {
@@ -92,7 +142,13 @@ export async function validateApiKey(key: string): Promise<ApiKeyValidation> {
   
   // Try to get existing data
   if (redis && redis.status === 'ready') {
-    const existing = await redis.get(getRedisKey(keyHash));
+    let existing = await redis.get(getRedisKey(keyHash));
+
+    // Migration logic
+    if (!existing) {
+      existing = await migrateLegacyKey(redis, key, keyHash);
+    }
+
     if (existing) {
       try {
         storedData = JSON.parse(existing) as StoredApiKeyData;
@@ -191,7 +247,13 @@ export async function getApiKeyValidation(key: string): Promise<ApiKeyValidation
   }
 
   try {
-    const data = await redis.get(getRedisKey(keyHash));
+    let data = await redis.get(getRedisKey(keyHash));
+
+    // Migration logic
+    if (!data) {
+      data = await migrateLegacyKey(redis, key, keyHash);
+    }
+
     if (!data) {
       return null;
     }
