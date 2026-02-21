@@ -151,7 +151,12 @@ export async function validateApiKey(key: string): Promise<ApiKeyValidation> {
 
     // Migration logic
     if (!existing) {
-      existing = await migrateLegacyKey(redis, key, keyHash);
+      try {
+        existing = await migrateLegacyKey(redis, key, keyHash);
+      } catch (error) {
+        // Log error but continue validation (do not block)
+        logger.error({ err: error }, '[apikey] Migration failed during validation');
+      }
     }
 
     if (existing) {
@@ -256,7 +261,11 @@ export async function getApiKeyValidation(key: string): Promise<ApiKeyValidation
 
     // Migration logic
     if (!data) {
-      data = await migrateLegacyKey(redis, key, keyHash);
+      try {
+        data = await migrateLegacyKey(redis, key, keyHash);
+      } catch (error) {
+        logger.error({ err: error }, '[apikey] Migration failed during get');
+      }
     }
 
     if (!data) {
