@@ -202,10 +202,11 @@ async function flushHistoryBuffer(): Promise<void> {
       const chunk = batch.slice(offset, offset + maxRecordsPerChunk);
       promises.push(limit(async () => {
         // Bolt: Optimized from flatMap to reduce array allocations
-        const params = new Array(chunk.length * 13);
+        const PARAMS_PER_RECORD = 13;
+        const params = new Array(chunk.length * PARAMS_PER_RECORD);
         for (let i = 0; i < chunk.length; i++) {
           const record = chunk[i];
-          const start = i * 13;
+          const start = i * PARAMS_PER_RECORD;
           params[start] = record.identifier;
           params[start + 1] = record.normalizedIdentifier;
           params[start + 2] = record.lookupType;
