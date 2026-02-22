@@ -91,7 +91,7 @@ const CONCURRENT_HISTORY_FETCHES = 5;
 
 // Add a buffer
 let historyBuffer: PlayerQueryRecord[] = [];
-const MAX_HISTORY_BUFFER = 50_000;
+const MAX_HISTORY_BUFFER = 5_000;
 const BATCH_FLUSH_INTERVAL = 5000; // 5 seconds
 let flushInterval: NodeJS.Timeout | null = null;
 let supportsPgTotalRelationSize: boolean | null = null;
@@ -252,8 +252,10 @@ async function flushHistoryBuffer(): Promise<void> {
 
 export function recordPlayerQuery(record: PlayerQueryRecord): void {
   if (historyBuffer.length >= MAX_HISTORY_BUFFER) {
-    historyBuffer.shift();
-    logger.warn(`[history] buffer at capacity (${MAX_HISTORY_BUFFER}); dropping oldest entry`);
+    // Drop the oldest 10% in one go to prevent continuous O(N) array shifting
+    const dropCount = Math.floor(MAX_HISTORY_BUFFER * 0.1) || 1;
+    historyBuffer.splice(0, dropCount);
+    logger.warn(`[history] buffer at capacity (${MAX_HISTORY_BUFFER}); dropped oldest ${dropCount} entries`);
   }
   historyBuffer.push(record);
 }

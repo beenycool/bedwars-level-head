@@ -35,7 +35,7 @@ interface BucketAggregate {
 const SAMPLE_INTERVAL_MS = 30_000;
 const FLUSH_INTERVAL_MS = 60 * 1000; // Flush every minute
 const BUCKET_INTERVAL_MS = 60 * 1000; // 1-minute buckets
-const MAX_BUFFER_SIZE = 12_000;
+const MAX_BUFFER_SIZE = 300;
 const RETENTION_DAYS = 30;
 
 let memoryBuffer: MemorySample[] = [];
