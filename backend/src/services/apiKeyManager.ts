@@ -1,7 +1,8 @@
 import { getRedisClient } from './redis';
 import axios from 'axios';
-import { createHash } from 'node:crypto';
-import { pbkdf2 as pbkdf2Async } from 'node:crypto/promises';
+import { createHash, pbkdf2 } from 'node:crypto';
+import { promisify } from 'node:util';
+const pbkdf2Async = promisify(pbkdf2);
 import { HYPIXEL_API_BASE_URL, OUTBOUND_USER_AGENT, REDIS_KEY_SALT } from '../config';
 import { logger } from '../util/logger';
 
