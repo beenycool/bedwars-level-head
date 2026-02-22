@@ -51,6 +51,9 @@ export function extractAdminToken(req: Request): string | null {
 export function validateAdminToken(token: string): boolean {
   if (!token) return false;
 
+  // Prevent DoS via long tokens: max 128 chars is generous for 32-64 char API keys
+  if (token.length > 128) return false;
+
   // Hash the incoming token using Scrypt with the same low-cost parameters
   const tokenHash = crypto.scryptSync(token, SALT, KEY_LEN, HASH_OPTS);
 
