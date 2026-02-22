@@ -35,7 +35,9 @@ interface BucketAggregate {
 const SAMPLE_INTERVAL_MS = 30_000;
 const FLUSH_INTERVAL_MS = 60 * 1000; // Flush every minute
 const BUCKET_INTERVAL_MS = 60 * 1000; // 1-minute buckets
-const MAX_BUFFER_SIZE = 300;
+// Default 300 samples (2.5 hours) prevents memory bloat during DB outages.
+// Can be tuned via RESOURCE_METRICS_BUFFER_SIZE env var.
+const MAX_BUFFER_SIZE = parseInt(process.env.RESOURCE_METRICS_BUFFER_SIZE || '300', 10);
 const RETENTION_DAYS = 30;
 
 let memoryBuffer: MemorySample[] = [];

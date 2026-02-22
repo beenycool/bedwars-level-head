@@ -227,12 +227,6 @@ const LOCAL_CACHE_MAX_SIZE = 10000; // Max entries in local cache
 
 // Cleanup old entries periodically
 setInterval(() => {
-    // Memory Optimization: If Redis is healthy and active, we don't need this local cache to persist indefinitely
-    if (isRedisAvailable() && !isInFallbackMode && localRateLimits.size > 0) {
-        localRateLimits.clear();
-        return;
-    }
-
     const now = Date.now();
     const windowMs = RATE_LIMIT_WINDOW_MS;
     for (const [key, entry] of localRateLimits) {

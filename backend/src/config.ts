@@ -330,7 +330,7 @@ export const CACHE_DB_WARM_WINDOW_MS = Math.max(0, parseIntEnv('CACHE_DB_WARM_WI
 export const CACHE_DB_ALLOW_COLD_READS = parseBooleanEnv('CACHE_DB_ALLOW_COLD_READS', false);
 
 export const CACHE_DB_POOL_MIN = parseIntEnv('CACHE_DB_POOL_MIN', 2);
-export const CACHE_DB_POOL_MAX = parseIntEnv('CACHE_DB_POOL_MAX', 5);
+export const CACHE_DB_POOL_MAX = parseIntEnv('CACHE_DB_POOL_MAX', 8);
 
 export const HYPIXEL_TIMEOUT_MS = parseIntEnv('HYPIXEL_TIMEOUT_MS', 5 * 1000);
 export const HYPIXEL_RETRY_DELAY_MIN_MS = parseIntEnv('HYPIXEL_RETRY_DELAY_MIN_MS', 50);
