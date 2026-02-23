@@ -134,14 +134,7 @@ class LevelheadCommand {
             }
 
             sendMessage("${ChatColor.RED}Invalid Hypixel API key. $reason.")
-
-            val helpMsg = ChatComponentText("${ChatColor.YELLOW}Get a new key at ")
-                .appendSibling(ChatComponentText("${ChatColor.GOLD}developer.hypixel.net").apply {
-                    chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.OPEN_URL, "https://developer.hypixel.net")
-                    chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to open"))
-                })
-                .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
-            sendMessage(helpMsg)
+            sendMessage(getDeveloperKeyHelpMessage())
             return
         }
 
@@ -155,6 +148,7 @@ class LevelheadCommand {
             if (!valid) {
                 Minecraft.getMinecraft().addScheduledTask {
                     sendMessage("${ChatColor.RED}Warning: That API key appears to be invalid (Hypixel rejected it).")
+                    sendMessage(getDeveloperKeyHelpMessage())
                 }
             }
         }
@@ -923,6 +917,15 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
             }
             json.get("purged")?.asInt ?: 0
         }
+    }
+
+    private fun getDeveloperKeyHelpMessage(): IChatComponent {
+        return ChatComponentText("${ChatColor.YELLOW}Get a new key at ")
+            .appendSibling(ChatComponentText("${ChatColor.GOLD}developer.hypixel.net").apply {
+                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.OPEN_URL, "https://developer.hypixel.net")
+                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to open"))
+            })
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
     }
 
 }
