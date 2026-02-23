@@ -146,11 +146,8 @@ class LevelheadCommand {
         Levelhead.scope.launch {
             val valid = validateApiKey(sanitized)
             if (!valid) {
-                Minecraft.getMinecraft().addScheduledTask {
-                    sendMessage("${ChatColor.RED}Warning: That API key appears to be invalid (Hypixel rejected it).")
-                    sendMessage(getDeveloperKeyHelpMessage())
-                }
-            }
+                sendMessage("${ChatColor.RED}Warning: That API key appears to be invalid (Hypixel rejected it).")
+                sendMessage(getDeveloperKeyHelpMessage())
         }
     }
 
