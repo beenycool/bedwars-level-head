@@ -2,6 +2,7 @@ import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import crypto from 'crypto';
 import { ADMIN_API_KEYS } from '../config';
 import { HttpError } from '../util/httpError';
+import { MAX_TOKEN_LENGTH } from './authConstants';
 
 // Generate a random salt on startup to ensure these hashes are unique to this process
 // and cannot be pre-computed by an attacker.
@@ -52,7 +53,7 @@ export function validateAdminToken(token: string): boolean {
   if (!token) return false;
 
   // Prevent DoS via long tokens: max 128 chars is generous for 32-64 char API keys
-  if (token.length > 128) return false;
+  if (token.length > MAX_TOKEN_LENGTH) return false;
 
   // Hash the incoming token using Scrypt with the same low-cost parameters
   const tokenHash = crypto.scryptSync(token, SALT, KEY_LEN, HASH_OPTS);

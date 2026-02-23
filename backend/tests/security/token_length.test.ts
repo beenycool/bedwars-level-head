@@ -1,4 +1,3 @@
-
 import crypto from 'crypto';
 import { validateAdminToken } from '../../src/middleware/adminAuth';
 import { validateCronToken } from '../../src/middleware/cronAuth';
@@ -26,43 +25,25 @@ describe('Token Length Validation (DoS Protection)', () => {
     scryptSpy.mockRestore();
   });
 
-  describe('validateAdminToken', () => {
+  describe.each([
+    { name: 'validateAdminToken', validateFn: validateAdminToken },
+    { name: 'validateCronToken', validateFn: validateCronToken },
+  ])('$name', ({ validateFn }) => {
     it('should process tokens within length limit', () => {
       const validLengthToken = 'a'.repeat(128);
-      validateAdminToken(validLengthToken);
+      validateFn(validLengthToken);
       expect(scryptSpy).toHaveBeenCalled();
     });
 
     it('should reject tokens exceeding length limit without hashing', () => {
       const longToken = 'a'.repeat(129);
-      const result = validateAdminToken(longToken);
+      const result = validateFn(longToken);
       expect(result).toBe(false);
       expect(scryptSpy).not.toHaveBeenCalled();
     });
 
     it('should reject empty tokens immediately', () => {
-      const result = validateAdminToken('');
-      expect(result).toBe(false);
-      expect(scryptSpy).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('validateCronToken', () => {
-    it('should process tokens within length limit', () => {
-      const validLengthToken = 'a'.repeat(128);
-      validateCronToken(validLengthToken);
-      expect(scryptSpy).toHaveBeenCalled();
-    });
-
-    it('should reject tokens exceeding length limit without hashing', () => {
-      const longToken = 'a'.repeat(129);
-      const result = validateCronToken(longToken);
-      expect(result).toBe(false);
-      expect(scryptSpy).not.toHaveBeenCalled();
-    });
-
-    it('should reject empty tokens immediately', () => {
-      const result = validateCronToken('');
+      const result = validateFn('');
       expect(result).toBe(false);
       expect(scryptSpy).not.toHaveBeenCalled();
     });
