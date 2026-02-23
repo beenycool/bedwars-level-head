@@ -35,7 +35,7 @@ export function createApp(): express.Express {
         scriptSrc: ["'self'", (_req, res) => `'nonce-${(res as express.Response).locals.nonce}'`, "'strict-dynamic'"],
         styleSrc: ["'self'", (_req, res) => `'nonce-${(res as express.Response).locals.nonce}'`],
         imgSrc: ["'self'", "data:"],
-      connectSrc: ["'self'"],
+        connectSrc: ["'self'"],
         objectSrc: ["'none'"],
         baseUri: ["'none'"],
         formAction: ["'self'"],
@@ -57,7 +57,7 @@ export function createApp(): express.Express {
   }));
 
   app.use((_req, res, next) => {
-    res.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=(), interest-cohort=()');
+    res.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=(), browsing-topics=()');
     next();
   });
 
