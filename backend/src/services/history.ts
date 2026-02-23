@@ -91,7 +91,7 @@ const CONCURRENT_HISTORY_FETCHES = 5;
 
 // Add a buffer
 let historyBuffer: PlayerQueryRecord[] = [];
-const MAX_HISTORY_BUFFER = 50_000;
+const MAX_HISTORY_BUFFER = 5_000;
 const BATCH_FLUSH_INTERVAL = 5000; // 5 seconds
 let flushInterval: NodeJS.Timeout | null = null;
 let supportsPgTotalRelationSize: boolean | null = null;
@@ -201,13 +201,26 @@ async function flushHistoryBuffer(): Promise<void> {
     for (let offset = 0; offset < batch.length; offset += maxRecordsPerChunk) {
       const chunk = batch.slice(offset, offset + maxRecordsPerChunk);
       promises.push(limit(async () => {
-        const params = chunk.flatMap((record: PlayerQueryRecord) => [
-          record.identifier, record.normalizedIdentifier, record.lookupType,
-          record.resolvedUuid, record.resolvedUsername, record.stars,
-          record.nicked, record.cacheSource, record.cacheHit,
-          record.revalidated, record.installId, record.responseStatus,
-          record.latencyMs != null ? Math.round(record.latencyMs) : null,
-        ]);
+        // Bolt: Optimized from flatMap to reduce array allocations
+        const PARAMS_PER_RECORD = 13;
+        const params = new Array(chunk.length * PARAMS_PER_RECORD);
+        for (let i = 0; i < chunk.length; i++) {
+          const record = chunk[i];
+          const start = i * PARAMS_PER_RECORD;
+          params[start] = record.identifier;
+          params[start + 1] = record.normalizedIdentifier;
+          params[start + 2] = record.lookupType;
+          params[start + 3] = record.resolvedUuid;
+          params[start + 4] = record.resolvedUsername;
+          params[start + 5] = record.stars;
+          params[start + 6] = record.nicked;
+          params[start + 7] = record.cacheSource;
+          params[start + 8] = record.cacheHit;
+          params[start + 9] = record.revalidated;
+          params[start + 10] = record.installId;
+          params[start + 11] = record.responseStatus;
+          params[start + 12] = record.latencyMs != null ? Math.round(record.latencyMs) : null;
+        }
 
         const universalRows = chunk.map((_, i) => {
           const base = i * 13;
@@ -239,8 +252,10 @@ async function flushHistoryBuffer(): Promise<void> {
 
 export function recordPlayerQuery(record: PlayerQueryRecord): void {
   if (historyBuffer.length >= MAX_HISTORY_BUFFER) {
-    historyBuffer.shift();
-    logger.warn(`[history] buffer at capacity (${MAX_HISTORY_BUFFER}); dropping oldest entry`);
+    // Drop the oldest 10% in one go to prevent continuous O(N) array shifting
+    const dropCount = Math.floor(MAX_HISTORY_BUFFER * 0.1) || 1;
+    historyBuffer.splice(0, dropCount);
+    logger.warn(`[history] buffer at capacity (${MAX_HISTORY_BUFFER}); dropped oldest ${dropCount} entries`);
   }
   historyBuffer.push(record);
 }

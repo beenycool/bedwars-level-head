@@ -1,7 +1,9 @@
 import { getRedisClient } from './redis';
 import axios from 'axios';
-import { createHash, pbkdf2Sync } from 'node:crypto';
-import { HYPIXEL_API_BASE_URL, OUTBOUND_USER_AGENT } from '../config';
+import { createHash, pbkdf2 } from 'node:crypto';
+import { promisify } from 'node:util';
+const pbkdf2Async = promisify(pbkdf2);
+import { HYPIXEL_API_BASE_URL, OUTBOUND_USER_AGENT, REDIS_KEY_SALT } from '../config';
 import { logger } from '../util/logger';
 
 export type ApiKeyStatus = 'valid' | 'invalid' | 'unknown' | 'pending';
@@ -26,14 +28,34 @@ interface StoredApiKeyData {
 const REDIS_KEY_PREFIX = 'apikey:';
 const API_KEY_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function hashKey(key: string): string {
+async function hashKeyLegacy(key: string): Promise<string> {
   const salt = 'hypixel-apikey-hash-v1';
   const iterations = 100_000;
   const keylen = 32;
   const digest = 'sha256';
 
-  const derived = pbkdf2Sync(key, salt, iterations, keylen, digest);
+  const derived = await pbkdf2Async(key, salt, iterations, keylen, digest);
   return derived.toString('hex').slice(0, 16);
+}
+
+let warnedMissingSalt = false;
+
+async function hashKey(key: string): Promise<string> {
+  // Use REDIS_KEY_SALT if available, otherwise fallback for dev/migration
+  if (!REDIS_KEY_SALT && !warnedMissingSalt) {
+    logger.warn('[apikey] REDIS_KEY_SALT is not set. Falling back to default salt. Please set REDIS_KEY_SALT in environment.');
+    warnedMissingSalt = true;
+  }
+
+  const salt = REDIS_KEY_SALT || 'hypixel-apikey-hash-v1';
+  const iterations = 100_000;
+  // Option A: 16 bytes (32 hex characters)
+  const keylen = 16;
+  const digest = 'sha256';
+
+  const derived = await pbkdf2Async(key, salt, iterations, keylen, digest);
+  // Return 32 characters (16 bytes)
+  return derived.toString('hex');
 }
 
 export function isValidApiKeyFormat(key: string): boolean {
@@ -49,8 +71,45 @@ function maskKey(key: string): string {
   return key.slice(0, 4) + '****' + key.slice(-4);
 }
 
+// Helper to migrate legacy keys on cache miss
+async function migrateLegacyKey(
+  redis: ReturnType<typeof getRedisClient>,
+  key: string,
+  newKeyHash: string
+): Promise<string | null> {
+  const legacyHash = await hashKeyLegacy(key);
+  const legacyKey = getRedisKey(legacyHash);
+  const legacyData = await redis.get(legacyKey);
+
+  if (legacyData) {
+    // Mask hashes for logging (first 8 chars)
+    const maskedLegacy = legacyHash.slice(0, 8) + '...';
+    const maskedNew = newKeyHash.slice(0, 8) + '...';
+    logger.info(`[apikey] Migrating API key from legacy hash ${maskedLegacy} to new hash ${maskedNew}`);
+
+    // Get original TTL
+    const ttl = await redis.ttl(legacyKey);
+    const ttlToUse = ttl > 0 ? ttl : 30 * 24 * 60 * 60; // Default 30 days if no TTL
+
+    // Copy to new key
+    await redis.setex(
+      getRedisKey(newKeyHash),
+      ttlToUse,
+      legacyData
+    );
+    // Delete legacy key
+    await redis.del(legacyKey);
+
+    return legacyData;
+  }
+
+  return null;
+}
+
 export async function storeApiKey(key: string): Promise<ApiKeyValidation> {
-  const keyHash = hashKey(key);
+  // Note: Migration/cleanup of legacy keys is performed only on get/validate code paths, not on store.
+  // This may result in a legacy entry being shadowed for up to the TTL (30 days).
+  const keyHash = await hashKey(key);
   const redis = getRedisClient();
   
   const data: StoredApiKeyData = {
@@ -82,7 +141,7 @@ export async function storeApiKey(key: string): Promise<ApiKeyValidation> {
 }
 
 export async function validateApiKey(key: string): Promise<ApiKeyValidation> {
-  const keyHash = hashKey(key);
+  const keyHash = await hashKey(key);
   const redis = getRedisClient();
   
   let storedData: StoredApiKeyData | null = null;
@@ -90,7 +149,18 @@ export async function validateApiKey(key: string): Promise<ApiKeyValidation> {
   
   // Try to get existing data
   if (redis && redis.status === 'ready') {
-    const existing = await redis.get(getRedisKey(keyHash));
+    let existing = await redis.get(getRedisKey(keyHash));
+
+    // Migration logic
+    if (!existing) {
+      try {
+        existing = await migrateLegacyKey(redis, key, keyHash);
+      } catch (error) {
+        // Log error but continue validation (do not block)
+        logger.error({ err: error }, '[apikey] Migration failed during validation');
+      }
+    }
+
     if (existing) {
       try {
         storedData = JSON.parse(existing) as StoredApiKeyData;
@@ -181,7 +251,7 @@ async function performValidationCheck(key: string): Promise<ValidationCheckResul
 }
 
 export async function getApiKeyValidation(key: string): Promise<ApiKeyValidation | null> {
-  const keyHash = hashKey(key);
+  const keyHash = await hashKey(key);
   const redis = getRedisClient();
 
   if (!redis || redis.status !== 'ready') {
@@ -189,7 +259,17 @@ export async function getApiKeyValidation(key: string): Promise<ApiKeyValidation
   }
 
   try {
-    const data = await redis.get(getRedisKey(keyHash));
+    let data = await redis.get(getRedisKey(keyHash));
+
+    // Migration logic
+    if (!data) {
+      try {
+        data = await migrateLegacyKey(redis, key, keyHash);
+      } catch (error) {
+        logger.error({ err: error }, '[apikey] Migration failed during get');
+      }
+    }
+
     if (!data) {
       return null;
     }
@@ -204,7 +284,7 @@ export async function getApiKeyValidation(key: string): Promise<ApiKeyValidation
       errorMessage: stored.errorMessage,
     };
   } catch (error) {
-    logger.error('[apikey] get failed', error);
+    logger.error({ err: error }, '[apikey] get failed');
     return null;
   }
 }
@@ -215,6 +295,9 @@ export async function getApiKeyValidationByHash(keyHash: string): Promise<ApiKey
   if (!redis || redis.status !== 'ready') {
     return null;
   }
+
+  // Note: We cannot perform migration here because we don't have the original API key
+  // to compute the legacy hash.
 
   try {
     const data = await redis.get(getRedisKey(keyHash));
@@ -232,7 +315,7 @@ export async function getApiKeyValidationByHash(keyHash: string): Promise<ApiKey
       errorMessage: stored.errorMessage,
     };
   } catch (error) {
-    logger.error('[apikey] getByHash failed', error);
+    logger.error({ err: error }, '[apikey] getByHash failed');
     return null;
   }
 }
@@ -294,7 +377,7 @@ export async function deleteApiKey(keyHash: string): Promise<boolean> {
     const result = await redis.del(getRedisKey(keyHash));
     return result > 0;
   } catch (error) {
-    logger.error('[apikey] delete failed', error);
+    logger.error({ err: error }, '[apikey] delete failed');
     return false;
   }
 }

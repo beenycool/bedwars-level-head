@@ -126,7 +126,15 @@ class LevelheadCommand {
         val sanitized = key.trim()
         val normalized = sanitized.replace("-", "")
         if (!API_KEY_PATTERN.matches(normalized)) {
-            sendMessage("${ChatColor.RED}Invalid Hypixel API key. Keys should be 32 hexadecimal characters.")
+            val length = normalized.length
+            val reason = if (length != 32) {
+                "Length is $length (should be 32)"
+            } else {
+                "Contains invalid characters"
+            }
+
+            sendMessage("${ChatColor.RED}Invalid Hypixel API key. $reason.")
+            sendMessage(getDeveloperKeyHelpMessage())
             return
         }
 
@@ -140,6 +148,7 @@ class LevelheadCommand {
             if (!valid) {
                 Minecraft.getMinecraft().addScheduledTask {
                     sendMessage("${ChatColor.RED}Warning: That API key appears to be invalid (Hypixel rejected it).")
+                    sendMessage(getDeveloperKeyHelpMessage())
                 }
             }
         }
@@ -792,6 +801,15 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         )
     }
 
+    private fun getDeveloperKeyHelpMessage(): IChatComponent {
+        return ChatComponentText("${ChatColor.YELLOW}Get a new key at ")
+            .appendSibling(ChatComponentText("${ChatColor.GOLD}developer.hypixel.net").apply {
+                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.OPEN_URL, "https://developer.hypixel.net")
+                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to open"))
+            })
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
+    }
+
     private fun sendDisplayOffsetDetails() {
         val offset = Levelhead.displayManager.config.offset
         sendMessage(
@@ -908,6 +926,17 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
             }
             json.get("purged")?.asInt ?: 0
         }
+    }
+
+    private fun getDeveloperKeyHelpMessage(): IChatComponent {
+        val developerUrl = "https://developer.hypixel.net"
+        val developerHost = "developer.hypixel.net"
+        return ChatComponentText("${ChatColor.YELLOW}Get a new key at ")
+            .appendSibling(ChatComponentText("${ChatColor.GOLD}$developerHost").apply {
+                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.OPEN_URL, developerUrl)
+                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to open"))
+            })
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
     }
 
 }
