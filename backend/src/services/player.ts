@@ -416,11 +416,11 @@ export async function resolvePlayer(
   identifier: string,
   options?: PlayerResolutionOptions,
 ): Promise<ResolvedPlayer> {
-  // Bolt: Optimized identifier normalization
-  // Avoid regex scanning for dashed UUIDs by checking length first (36 chars)
+  // Fast normalization: combine length gate with structural dash check
+  
   let key = identifier;
-  if (key.length === 36) {
-    key = key.replace(/-/g, '');
+  if (key.length === 36 && key[8] === '-' && key[13] === '-' && key[18] === '-' && key[23] === '-') {
+    key = key.slice(0, 8) + key.slice(9, 13) + key.slice(14, 18) + key.slice(19, 23) + key.slice(24);
   }
   key = key.toLowerCase();
 

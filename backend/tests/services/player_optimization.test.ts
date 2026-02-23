@@ -95,12 +95,12 @@ describe('resolvePlayer optimization', () => {
 
   it('should reject dashed UUID with invalid length', async () => {
     const invalidDashed = '12345678-1234-1234-1234-1234567890abc'; // too long
-    await expect(resolvePlayer(invalidDashed)).rejects.toThrow('Identifier must be a valid UUID');
+    await expect(resolvePlayer(invalidDashed)).rejects.toThrow("Identifier must be a valid UUID (no dashes) or Minecraft username.");
   });
 
   it('should reject IGN that is too long', async () => {
     const longIgn = 'ThisIgnIsWayTooLongForMinecraft';
-    await expect(resolvePlayer(longIgn)).rejects.toThrow('Identifier must be a valid UUID');
+    await expect(resolvePlayer(longIgn)).rejects.toThrow("Identifier must be a valid UUID (no dashes) or Minecraft username.");
   });
 
   it('should handle misplaced dashes if they result in valid UUID (optimization check)', async () => {
