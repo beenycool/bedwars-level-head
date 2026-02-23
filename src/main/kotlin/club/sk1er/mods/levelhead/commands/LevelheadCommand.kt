@@ -801,6 +801,15 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         )
     }
 
+    private fun getDeveloperKeyHelpMessage(): IChatComponent {
+        return ChatComponentText("${ChatColor.YELLOW}Get a new key at ")
+            .appendSibling(ChatComponentText("${ChatColor.GOLD}developer.hypixel.net").apply {
+                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.OPEN_URL, "https://developer.hypixel.net")
+                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to open"))
+            })
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
+    }
+
     private fun sendDisplayOffsetDetails() {
         val offset = Levelhead.displayManager.config.offset
         sendMessage(
