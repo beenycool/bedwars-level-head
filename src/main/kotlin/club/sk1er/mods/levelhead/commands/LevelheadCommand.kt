@@ -920,9 +920,11 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
     }
 
     private fun getDeveloperKeyHelpMessage(): IChatComponent {
+        val developerUrl = "https://developer.hypixel.net"
+        val developerHost = "developer.hypixel.net"
         return ChatComponentText("${ChatColor.YELLOW}Get a new key at ")
-            .appendSibling(ChatComponentText("${ChatColor.GOLD}developer.hypixel.net").apply {
-                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.OPEN_URL, "https://developer.hypixel.net")
+            .appendSibling(ChatComponentText("${ChatColor.GOLD}$developerHost").apply {
+                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.OPEN_URL, developerUrl)
                 chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to open"))
             })
             .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
