@@ -148,6 +148,7 @@ class LevelheadCommand {
             if (!valid) {
                 sendMessage("${ChatColor.RED}Warning: That API key appears to be invalid (Hypixel rejected it).")
                 sendMessage(getDeveloperKeyHelpMessage())
+            }
         }
     }
 
@@ -796,15 +797,6 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         sendMessage(
             "${ChatColor.YELLOW}Current header color: ${ChatColor.GOLD}${formatColor(currentHeaderColor())}${ChatColor.YELLOW}. Use ${ChatColor.GOLD}/levelhead display header color <color>${ChatColor.YELLOW} with a hex code, RGB value, or Minecraft color name."
         )
-    }
-
-    private fun getDeveloperKeyHelpMessage(): IChatComponent {
-        return ChatComponentText("${ChatColor.YELLOW}Get a new key at ")
-            .appendSibling(ChatComponentText("${ChatColor.GOLD}developer.hypixel.net").apply {
-                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.OPEN_URL, "https://developer.hypixel.net")
-                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to open"))
-            })
-            .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
     }
 
     private fun sendDisplayOffsetDetails() {
