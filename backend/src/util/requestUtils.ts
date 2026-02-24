@@ -140,10 +140,5 @@ export function sanitizeSearchQuery(query: unknown, maxLength = 100): string {
     return '';
   }
 
-  const trimmed = query.trim();
-  if (trimmed.length > maxLength) {
-    return trimmed.slice(0, maxLength);
-  }
-
-  return trimmed;
+  return query.trim().slice(0, maxLength);
 }
