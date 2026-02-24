@@ -12,6 +12,7 @@ import { getResourceMetricsHistory } from '../services/resourceMetrics';
 import { escapeHtml } from '../util/html';
 import { toCSV } from '../util/csv';
 import { logger } from '../util/logger';
+import { sanitizeSearchQuery } from '../util/requestUtils';
 import { enforcePublicRateLimit } from '../middleware/rateLimitPublic';
 
 const router = Router();
@@ -177,7 +178,7 @@ router.get('/data', async (req, res, next) => {
     const effectiveLimit = validLimit ?? (hasTimeFilter ? MAX_ALLOWED_LIMIT : DEFAULT_CHART_LIMIT);
 
     // Additional data for table update (dashboard is usually page 1)
-    const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const search = sanitizeSearchQuery(req.query.q);
     const page = 1;
 
     // Fetch all data in parallel
@@ -221,7 +222,7 @@ router.get('/data', async (req, res, next) => {
 router.get('/', async (req, res, next) => {
   try {
     const requestedPage = Number.parseInt((req.query.page as string) ?? '1', 10);
-    const search = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const search = sanitizeSearchQuery(req.query.q);
     const safePage = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
 
     // Parse filter parameters

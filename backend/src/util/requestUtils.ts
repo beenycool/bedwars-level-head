@@ -126,3 +126,24 @@ export function sanitizeUrlForLogs(target: string): string {
   const path = sanitized.slice(0, queryIndex);
   return `${path}?<redacted>`;
 }
+
+/**
+ * Sanitizes and validates a search query parameter.
+ * Trims whitespace and truncates to a maximum length to prevent resource exhaustion.
+ *
+ * @param query - The raw query parameter (usually from req.query.q)
+ * @param maxLength - Maximum allowed length (default: 100)
+ * @returns The sanitized query string, or empty string if invalid
+ */
+export function sanitizeSearchQuery(query: unknown, maxLength = 100): string {
+  if (typeof query !== 'string') {
+    return '';
+  }
+
+  const trimmed = query.trim();
+  if (trimmed.length > maxLength) {
+    return trimmed.slice(0, maxLength);
+  }
+
+  return trimmed;
+}
