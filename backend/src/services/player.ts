@@ -19,7 +19,6 @@ import {
 } from './statsCache';
 
 const uuidRegex = /^[0-9a-f]{32}$/i;
-const dashedUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ignRegex = /^[a-zA-Z0-9_]{1,16}$/;
 
 const memoizedResults = new LRUCache<string, ResolvedPlayer>({
@@ -417,9 +416,19 @@ export async function resolvePlayer(
   identifier: string,
   options?: PlayerResolutionOptions,
 ): Promise<ResolvedPlayer> {
-  const normalizedIdentifier = dashedUuidRegex.test(identifier) ? identifier.replace(/-/g, '') : identifier;
-  const key = normalizedIdentifier.toLowerCase();
-  const inFlightKey = uuidRegex.test(key) ? `uuid:${key}` : ignRegex.test(key) ? `ign:${key}` : null;
+  // Fast normalization: combine length gate with structural dash check
+  
+  let key = identifier;
+  if (key.length === 36 && key[8] === '-' && key[13] === '-' && key[18] === '-' && key[23] === '-') {
+    key = key.slice(0, 8) + key.slice(9, 13) + key.slice(14, 18) + key.slice(19, 23) + key.slice(24);
+  }
+  key = key.toLowerCase();
+
+  // Bolt: Consolidate validation logic to avoid repeated regex execution
+  const isUuid = key.length === 32 && uuidRegex.test(key);
+  const isIgn = !isUuid && ignRegex.test(key);
+
+  const inFlightKey = isUuid ? `uuid:${key}` : isIgn ? `ign:${key}` : null;
   if (inFlightKey) {
     const pending = inFlightRequests.get(inFlightKey);
     if (pending) {
@@ -431,12 +440,13 @@ export async function resolvePlayer(
   const conditional = normalizeConditionalHeaders(options);
 
   const executor = async (): Promise<ResolvedPlayer> => {
-    if (uuidRegex.test(key)) {
+    if (isUuid) {
       return fetchByUuid(key, conditional);
     }
 
-    if (ignRegex.test(identifier)) {
-      return fetchByIgn(identifier, conditional);
+    if (isIgn) {
+      // Bolt: Pass normalized key (lowercase) to avoid re-normalization
+      return fetchByIgn(key, conditional);
     }
 
     throw new HttpError(

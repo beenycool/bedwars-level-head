@@ -146,10 +146,8 @@ class LevelheadCommand {
         Levelhead.scope.launch {
             val valid = validateApiKey(sanitized)
             if (!valid) {
-                Minecraft.getMinecraft().addScheduledTask {
-                    sendMessage("${ChatColor.RED}Warning: That API key appears to be invalid (Hypixel rejected it).")
-                    sendMessage(getDeveloperKeyHelpMessage())
-                }
+                sendMessage("${ChatColor.RED}Warning: That API key appears to be invalid (Hypixel rejected it).")
+                sendMessage(getDeveloperKeyHelpMessage())
             }
         }
     }
@@ -571,9 +569,10 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 }
                 val color = parseColor(colorInput)
                 if (color == null) {
-                    sendMessage(
-                        "${ChatColor.RED}Unable to parse color '$colorInput'.${ChatColor.YELLOW} Try a hex code (e.g. ${ChatColor.GOLD}#ff00ff${ChatColor.YELLOW}), RGB (r,g,b), or a Minecraft color name.${ChatColor.YELLOW} Current header color: ${ChatColor.GOLD}${formatColor(currentHeaderColor())}${ChatColor.YELLOW}."
-                    )
+                    val msg = ChatComponentText("${ChatColor.RED}Unable to parse color '$colorInput'.${ChatColor.YELLOW} Try a hex code (e.g. ${ChatColor.GOLD}#ff00ff${ChatColor.YELLOW}), RGB (r,g,b), or a ")
+                        .appendSibling(getMinecraftColorNameHelpComponent())
+                        .appendSibling(ChatComponentText("${ChatColor.YELLOW}. Current header color: ${ChatColor.GOLD}${formatColor(currentHeaderColor())}${ChatColor.YELLOW}."))
+                    sendMessage(msg)
                     return
                 }
                 val hexColor = formatColor(color)
@@ -796,18 +795,10 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
     }
 
     private fun sendDisplayHeaderColorHelp() {
-        sendMessage(
-            "${ChatColor.YELLOW}Current header color: ${ChatColor.GOLD}${formatColor(currentHeaderColor())}${ChatColor.YELLOW}. Use ${ChatColor.GOLD}/levelhead display header color <color>${ChatColor.YELLOW} with a hex code, RGB value, or Minecraft color name."
-        )
-    }
-
-    private fun getDeveloperKeyHelpMessage(): IChatComponent {
-        return ChatComponentText("${ChatColor.YELLOW}Get a new key at ")
-            .appendSibling(ChatComponentText("${ChatColor.GOLD}developer.hypixel.net").apply {
-                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.OPEN_URL, "https://developer.hypixel.net")
-                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to open"))
-            })
+        val msg = ChatComponentText("${ChatColor.YELLOW}Current header color: ${ChatColor.GOLD}${formatColor(currentHeaderColor())}${ChatColor.YELLOW}. Use ${ChatColor.GOLD}/levelhead display header color <color>${ChatColor.YELLOW} with a hex code, RGB value, or ")
+            .appendSibling(getMinecraftColorNameHelpComponent())
             .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
+        sendMessage(msg)
     }
 
     private fun sendDisplayOffsetDetails() {
@@ -937,6 +928,20 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to open"))
             })
             .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
+    }
+
+    private fun getMinecraftColorNameHelpComponent(): IChatComponent {
+        val hoverContent = ChatComponentText("${ChatColor.GREEN}Available colors:")
+        NAMED_COLORS.keys.forEach { name ->
+            val colorCode = runCatching { ChatColor.valueOf(name.uppercase(Locale.ROOT)) }.getOrNull() ?: ChatColor.GRAY
+            hoverContent.appendSibling(ChatComponentText("\n - ").apply { chatStyle.color = ChatColor.GRAY })
+            hoverContent.appendSibling(ChatComponentText(name).apply { chatStyle.color = colorCode })
+        }
+
+        return ChatComponentText("Minecraft color name").apply {
+            chatStyle.color = ChatColor.GOLD
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, hoverContent)
+        }
     }
 
 }
