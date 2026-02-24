@@ -933,9 +933,8 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
     private fun getMinecraftColorNameHelpComponent(): IChatComponent {
         val hoverContent = ChatComponentText("${ChatColor.GREEN}Available colors:")
         NAMED_COLORS.keys.forEach { name ->
-            hoverContent.appendSibling(ChatComponentText("\n"))
             val colorCode = runCatching { ChatColor.valueOf(name.uppercase(Locale.ROOT)) }.getOrNull() ?: ChatColor.GRAY
-            hoverContent.appendSibling(ChatComponentText(" - ").apply { chatStyle.color = ChatColor.GRAY })
+            hoverContent.appendSibling(ChatComponentText("\n - ").apply { chatStyle.color = ChatColor.GRAY })
             hoverContent.appendSibling(ChatComponentText(name).apply { chatStyle.color = colorCode })
         }
 
