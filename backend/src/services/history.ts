@@ -96,6 +96,10 @@ const BATCH_FLUSH_INTERVAL = 5000; // 5 seconds
 let flushInterval: NodeJS.Timeout | null = null;
 let supportsPgTotalRelationSize: boolean | null = null;
 
+// Bolt: Cache large INSERT query strings to avoid O(N) string generation/allocation
+let cachedUniversalQuery: string | null = null;
+let cachedUniversalQuerySize = 0;
+
 const initialization = (async () => {
   try {
     if (pool.type === DatabaseType.POSTGRESQL) {
@@ -222,18 +226,29 @@ async function flushHistoryBuffer(): Promise<void> {
           params[start + 12] = record.latencyMs != null ? Math.round(record.latencyMs) : null;
         }
 
-        const universalRows = chunk.map((_, i) => {
-          const base = i * 13;
-          return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`;
-        });
+        let universalQuery: string;
+        // Optimization: Use cached query string for full chunks
+        if (chunk.length === maxRecordsPerChunk && cachedUniversalQuery && cachedUniversalQuerySize === maxRecordsPerChunk) {
+          universalQuery = cachedUniversalQuery;
+        } else {
+          const universalRows = chunk.map((_, i) => {
+            const base = i * 13;
+            return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`;
+          });
 
-        const universalQuery = `
+          universalQuery = `
           INSERT INTO player_query_history (
             identifier, normalized_identifier, lookup_type, resolved_uuid,
             resolved_username, stars, nicked, cache_source, cache_hit,
             revalidated, install_id, response_status, latency_ms
           ) VALUES ${universalRows.join(', ')}
         `;
+
+          if (chunk.length === maxRecordsPerChunk) {
+            cachedUniversalQuery = universalQuery;
+            cachedUniversalQuerySize = maxRecordsPerChunk;
+          }
+        }
 
         await pool.query(universalQuery, params);
         flushed += chunk.length;
