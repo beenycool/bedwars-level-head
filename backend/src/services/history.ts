@@ -98,7 +98,6 @@ let supportsPgTotalRelationSize: boolean | null = null;
 
 // Bolt: Cache large INSERT query strings to avoid O(N) string generation/allocation
 let cachedUniversalQuery: string | null = null;
-let cachedUniversalQuerySize = 0;
 
 const initialization = (async () => {
   try {
@@ -228,7 +227,7 @@ async function flushHistoryBuffer(): Promise<void> {
 
         let universalQuery: string;
         // Optimization: Use cached query string for full chunks
-        if (chunk.length === maxRecordsPerChunk && cachedUniversalQuery && cachedUniversalQuerySize === maxRecordsPerChunk) {
+        if (chunk.length === maxRecordsPerChunk && cachedUniversalQuery) {
           universalQuery = cachedUniversalQuery;
         } else {
           const universalRows = chunk.map((_, i) => {
@@ -246,7 +245,6 @@ async function flushHistoryBuffer(): Promise<void> {
 
           if (chunk.length === maxRecordsPerChunk) {
             cachedUniversalQuery = universalQuery;
-            cachedUniversalQuerySize = maxRecordsPerChunk;
           }
         }
 
