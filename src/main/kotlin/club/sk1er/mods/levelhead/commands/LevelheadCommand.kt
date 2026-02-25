@@ -809,7 +809,11 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         val offset = Levelhead.displayManager.config.offset
         val msg = ChatComponentText("${ChatColor.YELLOW}Current display offset: ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", offset)}${ChatColor.YELLOW}. Use ")
             .appendSibling(createClickableCommand("/levelhead display offset <value>"))
-            .appendSibling(ChatComponentText("${ChatColor.YELLOW} with a value between ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.1f", MIN_DISPLAY_OFFSET)}${ChatColor.YELLOW} and ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.1f", MAX_DISPLAY_OFFSET)}${ChatColor.YELLOW}."))
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW} with a value between "))
+            .appendSibling(ChatComponentText(String.format(Locale.ROOT, "%.1f", MIN_DISPLAY_OFFSET)).apply { chatStyle.color = ChatColor.GOLD })
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW} and "))
+            .appendSibling(ChatComponentText(String.format(Locale.ROOT, "%.1f", MAX_DISPLAY_OFFSET)).apply { chatStyle.color = ChatColor.GOLD })
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
         sendMessage(msg)
     }
 
