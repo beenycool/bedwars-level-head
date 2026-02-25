@@ -26,7 +26,7 @@ let flushPromise: Promise<void> | null = null;
 let flushInterval: NodeJS.Timeout | null = null;
 
 // Bolt: Cache the last generated INSERT query to avoid O(N) string generation
-let cachedQuery: { count: number; sql: string } | null = null;
+let cachedQuery: { count: number; type: DatabaseType; sql: string } | null = null;
 
 function buildRedisRollingMember(uuid: string, calledAt: number): string {
   const nonce = Math.random().toString(36).slice(2);
@@ -90,12 +90,12 @@ async function flushHypixelCallBuffer(): Promise<void> {
           params[i * PARAMS_PER_RECORD + 1] = chunk[i].uuid;
         }
         let sql: string;
-        if (cachedQuery && cachedQuery.count === chunk.length) {
+        if (cachedQuery && cachedQuery.count === chunk.length && cachedQuery.type === pool.type) {
           sql = cachedQuery.sql;
         } else {
           const values = chunk.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ');
           sql = `INSERT INTO hypixel_api_calls (called_at, uuid) VALUES ${values}`;
-          cachedQuery = { count: chunk.length, sql };
+          cachedQuery = { count: chunk.length, type: pool.type, sql };
         }
 
         try {
