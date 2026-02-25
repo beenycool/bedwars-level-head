@@ -619,9 +619,10 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         }
         val toggle = args.getOrNull(0)?.let { parseToggle(it) }
         if (toggle == null) {
-            sendMessage(
-                "${ChatColor.RED}Couldn't understand '${args[0]}'.${ChatColor.YELLOW} Use ${ChatColor.GOLD}/levelhead display showself <on|off>${ChatColor.YELLOW}. Current setting: ${formatToggle(currentShowSelf())}${ChatColor.YELLOW}."
-            )
+            val msg = ChatComponentText("${ChatColor.RED}Couldn't understand '${args[0]}'.${ChatColor.YELLOW} Use ")
+                .appendSibling(createClickableCommand("/levelhead display showself <on|off>"))
+                .appendSibling(ChatComponentText("${ChatColor.YELLOW}. Current setting: ${formatToggle(currentShowSelf())}${ChatColor.YELLOW}."))
+            sendMessage(msg)
             return
         }
         val previous = LevelheadConfig.showSelf
@@ -788,14 +789,17 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
     }
 
     private fun sendDisplayHeaderDetails() {
-        sendMessage(
-            "${ChatColor.YELLOW}Current header text: ${ChatColor.GOLD}${currentHeaderText()}${ChatColor.YELLOW}. Use ${ChatColor.GOLD}/levelhead display header text <value>${ChatColor.YELLOW} to change it."
-        )
+        val msg = ChatComponentText("${ChatColor.YELLOW}Current header text: ${ChatColor.GOLD}${currentHeaderText()}${ChatColor.YELLOW}. Use ")
+            .appendSibling(createClickableCommand("/levelhead display header text <value>"))
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW} to change it."))
+        sendMessage(msg)
         sendDisplayHeaderColorHelp()
     }
 
     private fun sendDisplayHeaderColorHelp() {
-        val msg = ChatComponentText("${ChatColor.YELLOW}Current header color: ${ChatColor.GOLD}${formatColor(currentHeaderColor())}${ChatColor.YELLOW}. Use ${ChatColor.GOLD}/levelhead display header color <color>${ChatColor.YELLOW} with a hex code, RGB value, or ")
+        val msg = ChatComponentText("${ChatColor.YELLOW}Current header color: ${ChatColor.GOLD}${formatColor(currentHeaderColor())}${ChatColor.YELLOW}. Use ")
+            .appendSibling(createClickableCommand("/levelhead display header color <color>"))
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW} with a hex code, RGB value, or "))
             .appendSibling(getMinecraftColorNameHelpComponent())
             .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
         sendMessage(msg)
@@ -803,15 +807,17 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
 
     private fun sendDisplayOffsetDetails() {
         val offset = Levelhead.displayManager.config.offset
-        sendMessage(
-            "${ChatColor.YELLOW}Current display offset: ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", offset)}${ChatColor.YELLOW}. Provide a value between ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.1f", MIN_DISPLAY_OFFSET)}${ChatColor.YELLOW} and ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.1f", MAX_DISPLAY_OFFSET)}${ChatColor.YELLOW}."
-        )
+        val msg = ChatComponentText("${ChatColor.YELLOW}Current display offset: ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", offset)}${ChatColor.YELLOW}. Use ")
+            .appendSibling(createClickableCommand("/levelhead display offset <value>"))
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW} with a value between ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.1f", MIN_DISPLAY_OFFSET)}${ChatColor.YELLOW} and ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.1f", MAX_DISPLAY_OFFSET)}${ChatColor.YELLOW}."))
+        sendMessage(msg)
     }
 
     private fun sendDisplayShowSelfDetails() {
-        sendMessage(
-            "${ChatColor.YELLOW}Self display visibility is currently ${formatToggle(currentShowSelf())}${ChatColor.YELLOW}. Use ${ChatColor.GOLD}/levelhead display showself <on|off>${ChatColor.YELLOW} to change it."
-        )
+        val msg = ChatComponentText("${ChatColor.YELLOW}Self display visibility is currently ${formatToggle(currentShowSelf())}${ChatColor.YELLOW}. Use ")
+            .appendSibling(createClickableCommand("/levelhead display showself <on|off>"))
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW} to change it."))
+        sendMessage(msg)
     }
 
     private fun currentHeaderText(): String {
