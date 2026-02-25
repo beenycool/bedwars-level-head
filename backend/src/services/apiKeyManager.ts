@@ -62,6 +62,11 @@ export function isValidApiKeyFormat(key: string): boolean {
   return API_KEY_REGEX.test(key.trim());
 }
 
+export function isValidKeyHashFormat(hash: string): boolean {
+  // Allow 16 chars (legacy) or 32 chars (new)
+  return /^([a-f0-9]{16}|[a-f0-9]{32})$/i.test(hash);
+}
+
 function getRedisKey(keyHash: string): string {
   return `${REDIS_KEY_PREFIX}${keyHash}`;
 }
