@@ -1,6 +1,8 @@
-import { recordHypixelApiCall, getHypixelCallCount, shutdown } from '../../src/services/hypixelTracker';
-import * as redisService from '../../src/services/redis';
 import { pool } from '../../src/services/cache';
+import * as redisService from '../../src/services/redis';
+
+// We need to use require/resetModules for test isolation because the module has internal state
+let hypixelTracker: typeof import('../../src/services/hypixelTracker');
 
 jest.mock('../../src/services/cache', () => ({
   pool: {
@@ -32,28 +34,55 @@ describe('hypixelTracker', () => {
   };
 
   beforeEach(() => {
+    jest.resetModules();
     jest.clearAllMocks();
-    (redisService.getRedisClient as jest.Mock).mockReturnValue(mockRedis);
+
+    // We need to re-mock imports because resetModules clears the cache
+    jest.mock('../../src/services/cache', () => ({
+      pool: {
+        query: jest.fn().mockResolvedValue({ rows: [{ count: 0 }] }),
+        type: 'postgresql',
+      },
+      ensureInitialized: jest.fn().mockResolvedValue(undefined),
+    }));
+
+    jest.mock('../../src/services/redis', () => ({
+      getRedisClient: jest.fn(),
+      isRedisAvailable: jest.fn(),
+    }));
+
+    // Mock redis service functions before requiring the module
+    const rs = require('../../src/services/redis');
+    rs.getRedisClient.mockReturnValue(mockRedis);
+    rs.isRedisAvailable.mockReturnValue(true); // Default to true
+
+    // Re-import the module to get fresh internal state (arrays)
+    hypixelTracker = require('../../src/services/hypixelTracker');
   });
 
   afterAll(async () => {
-    await shutdown();
+    if (hypixelTracker) {
+        await hypixelTracker.shutdown();
+    }
   });
 
   it('should use Redis for counting when available', async () => {
-    (redisService.isRedisAvailable as jest.Mock).mockReturnValue(true);
+    // Redefine mock behavior for this specific test
+    const rs = require('../../src/services/redis');
+    rs.isRedisAvailable.mockReturnValue(true);
     mockRedis.zcount.mockResolvedValue(5);
 
-    const count = await getHypixelCallCount();
+    const count = await hypixelTracker.getHypixelCallCount();
 
     expect(count).toBe(5);
     expect(mockRedis.zcount).toHaveBeenCalledWith('hypixel_api_calls_rolling', expect.any(Number), '+inf');
   });
 
   it('should record calls in Redis when available using pipeline', async () => {
-    (redisService.isRedisAvailable as jest.Mock).mockReturnValue(true);
+    const rs = require('../../src/services/redis');
+    rs.isRedisAvailable.mockReturnValue(true);
 
-    await recordHypixelApiCall('test-uuid');
+    await hypixelTracker.recordHypixelApiCall('test-uuid');
 
     expect(mockRedis.pipeline).toHaveBeenCalled();
     expect(mockPipeline.zadd).toHaveBeenCalledWith(
@@ -67,42 +96,45 @@ describe('hypixelTracker', () => {
   });
 
   it('should fallback to DB when Redis is not available', async () => {
-    (redisService.isRedisAvailable as jest.Mock).mockReturnValue(false);
-    (pool.query as jest.Mock).mockResolvedValue({ rows: [{ count: 10 }] });
+    const rs = require('../../src/services/redis');
+    rs.isRedisAvailable.mockReturnValue(false);
 
-    const count = await getHypixelCallCount();
+    // We need to re-require cache pool because jest.resetModules clears mocks too if not carefully handled
+    // Or we can rely on the fact that we mocked it in beforeEach's inline require (implied by jest.mock hoisting usually, but resetModules makes it tricky)
 
-    // It might be 11 if the previous test's call is still in the local buffer
-    expect(count).toBeGreaterThanOrEqual(10);
-    expect(pool.query).toHaveBeenCalledWith(expect.stringContaining('SELECT COUNT(*)'), expect.any(Array));
+    // Let's grab the mock directly from the re-required module
+    const { pool: mockPool } = require('../../src/services/cache');
+    mockPool.query.mockResolvedValue({ rows: [{ count: 10 }] });
+
+    const count = await hypixelTracker.getHypixelCallCount();
+
+    expect(count).toBe(10);
+    expect(mockPool.query).toHaveBeenCalledWith(expect.stringContaining('SELECT COUNT(*)'), expect.any(Array));
   });
 
   it('should correctly count inflight items during partial flush', async () => {
-    (redisService.isRedisAvailable as jest.Mock).mockReturnValue(false);
-    // Mock DB to "see" 0 items initially
-    (pool.query as jest.Mock).mockResolvedValue({ rows: [{ count: 0 }] });
+    const rs = require('../../src/services/redis');
+    rs.isRedisAvailable.mockReturnValue(false);
+
+    const { pool: mockPool } = require('../../src/services/cache');
+    mockPool.query.mockResolvedValue({ rows: [{ count: 0 }] });
 
     // Add multiple items to the buffer
-    await recordHypixelApiCall('uuid-1');
-    await recordHypixelApiCall('uuid-2');
-    await recordHypixelApiCall('uuid-3');
+    await hypixelTracker.recordHypixelApiCall('uuid-1');
+    await hypixelTracker.recordHypixelApiCall('uuid-2');
+    await hypixelTracker.recordHypixelApiCall('uuid-3');
 
     // Simulate a scenario where flush has started and moved items to inflightBatch,
     // but DB insertion hasn't finished or offset hasn't updated yet.
     // However, recordHypixelApiCall triggers flush asynchronously.
     // We can rely on getHypixelCallCount to check the sum of DB + buffer + inflight.
 
-    // Force a situation where we rely on the internal counters
-    const count = await getHypixelCallCount();
+    // With test isolation, we know exactly 3 items were added.
+    const count = await hypixelTracker.getHypixelCallCount();
 
     // We added 3 items.
     // DB reports 0 (mocked).
-    // Buffer/Inflight should account for 3.
-    // Previous tests might have left items, so we check relative increase or exact match if isolation holds.
-    // Given the singleton nature, previous 'test-uuid' might be there.
-
-    // Let's filter by the UUIDs we just added if we could access internal state,
-    // but here we just check if it's at least 3.
-    expect(count).toBeGreaterThanOrEqual(3);
+    // Buffer/Inflight should account for exactly 3.
+    expect(count).toBe(3);
   });
 });

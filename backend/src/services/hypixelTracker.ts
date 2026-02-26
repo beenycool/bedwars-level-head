@@ -110,7 +110,13 @@ async function flushHypixelCallBuffer(): Promise<void> {
     } finally {
       // Remove successfully processed items (if any) in one go
       if (inflightOffset > 0) {
-        inflightBatch.splice(0, inflightOffset);
+        if (inflightOffset === inflightBatch.length) {
+          // All items were processed, clear the array efficiently.
+          inflightBatch.length = 0;
+        } else {
+          // Only some items were processed, splice them out.
+          inflightBatch.splice(0, inflightOffset);
+        }
         inflightOffset = 0;
       }
 
@@ -192,6 +198,12 @@ export async function getHypixelCallCount(
   await ensureInitialized();
   const cutoff = now - windowMs;
 
+  // Snapshot memory state before async DB query to avoid race conditions
+  // where items move from inflight -> DB during the await.
+  const snapshotOffset = inflightOffset;
+  const snapshotInflight = [...inflightBatch];
+  const snapshotBuffer = [...hypixelCallBuffer];
+
   const result = await pool.query<{ count: string | number }>(
     `
     SELECT COUNT(*) AS count
@@ -201,13 +213,16 @@ export async function getHypixelCallCount(
     [cutoff],
   );
 
-  const bufferCount = hypixelCallBuffer.filter((item) => item.calledAt >= cutoff).length;
-  // inflightBatch contains items currently being flushed.
-  // Items before inflightOffset are already in DB (counted by SQL query).
-  // Items at/after inflightOffset are not yet in DB, so we count them here.
+  const bufferCount = snapshotBuffer.filter((item) => item.calledAt >= cutoff).length;
+
+  // Count items that were pending in memory at the time of the snapshot.
+  // We use the snapshotOffset because if the flush progressed during the await,
+  // the real inflightOffset would have increased, but the DB count (executed before/during)
+  // might not reflect those new inserts yet depending on transaction isolation/timing.
+  // By using the snapshot, we ensure we count everything that was in memory *before* we asked the DB.
   let inflightCount = 0;
-  for (let i = inflightOffset; i < inflightBatch.length; i++) {
-    if (inflightBatch[i].calledAt >= cutoff) {
+  for (let i = snapshotOffset; i < snapshotInflight.length; i++) {
+    if (snapshotInflight[i].calledAt >= cutoff) {
       inflightCount++;
     }
   }
