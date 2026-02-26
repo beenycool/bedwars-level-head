@@ -22,6 +22,9 @@ interface BufferedCall {
 const hypixelCallBuffer: BufferedCall[] = [];
 // inflightBatch is module-level so getHypixelCallCount can include it
 const inflightBatch: BufferedCall[] = [];
+// inflightOffset tracks how many items in inflightBatch have been successfully written to DB
+// but not yet removed from the array (to avoid O(N) splice in the loop).
+let inflightOffset = 0;
 let flushPromise: Promise<void> | null = null;
 let flushInterval: NodeJS.Timeout | null = null;
 
@@ -76,9 +79,11 @@ async function flushHypixelCallBuffer(): Promise<void> {
       const maxRecordsPerChunk = Math.floor(maxParams / 2);
 
       // Process chunks from inflightBatch
-      // We slice from the beginning and splice on success to avoid double counting
-      while (inflightBatch.length > 0) {
-        const chunk = inflightBatch.slice(0, maxRecordsPerChunk);
+      // We slice using inflightOffset to avoid O(N) splice inside the loop
+      while (inflightOffset < inflightBatch.length) {
+        const chunkEnd = Math.min(inflightOffset + maxRecordsPerChunk, inflightBatch.length);
+        const chunk = inflightBatch.slice(inflightOffset, chunkEnd);
+
         // Bolt: Optimized from flatMap to reduce array allocations
         const PARAMS_PER_RECORD = 2;
         const params = new Array(chunk.length * PARAMS_PER_RECORD);
@@ -93,9 +98,9 @@ async function flushHypixelCallBuffer(): Promise<void> {
             `INSERT INTO hypixel_api_calls (called_at, uuid) VALUES ${values}`,
             params,
           );
-          // Success: remove these items from inflightBatch immediately
-          // This ensures getHypixelCallCount doesn't count them twice (once in DB, once here)
-          inflightBatch.splice(0, chunk.length);
+          // Success: advance offset
+          // Items before offset are in DB; items at/after offset are still pending
+          inflightOffset += chunk.length;
         } catch (error) {
           logger.error('[hypixelTracker] Failed to flush chunk, re-queueing remaining items', error);
           // Stop processing further chunks on error to preserve order/integrity
@@ -103,6 +108,12 @@ async function flushHypixelCallBuffer(): Promise<void> {
         }
       }
     } finally {
+      // Remove successfully processed items (if any) in one go
+      if (inflightOffset > 0) {
+        inflightBatch.splice(0, inflightOffset);
+        inflightOffset = 0;
+      }
+
       // If items remain (due to error), put them back in the buffer to retry later
       if (inflightBatch.length > 0) {
         const now = Date.now();
@@ -191,8 +202,15 @@ export async function getHypixelCallCount(
   );
 
   const bufferCount = hypixelCallBuffer.filter((item) => item.calledAt >= cutoff).length;
-  // inflightBatch contains items currently being flushed but not yet confirmed written (or failed)
-  const inflightCount = inflightBatch.filter((item) => item.calledAt >= cutoff).length;
+  // inflightBatch contains items currently being flushed.
+  // Items before inflightOffset are already in DB (counted by SQL query).
+  // Items at/after inflightOffset are not yet in DB, so we count them here.
+  let inflightCount = 0;
+  for (let i = inflightOffset; i < inflightBatch.length; i++) {
+    if (inflightBatch[i].calledAt >= cutoff) {
+      inflightCount++;
+    }
+  }
 
   const rawValue = result.rows[0]?.count ?? '0';
   const parsed = typeof rawValue === 'string' ? Number.parseInt(rawValue, 10) : Number(rawValue);
