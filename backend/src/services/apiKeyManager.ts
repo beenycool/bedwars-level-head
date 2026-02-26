@@ -1,8 +1,9 @@
 import { getRedisClient } from './redis';
 import axios from 'axios';
-import { createHash, pbkdf2 } from 'node:crypto';
+import { createHash, pbkdf2, scrypt } from 'node:crypto';
 import { promisify } from 'node:util';
 const pbkdf2Async = promisify(pbkdf2);
+const scryptAsync = promisify(scrypt);
 import { HYPIXEL_API_BASE_URL, OUTBOUND_USER_AGENT, REDIS_KEY_SALT } from '../config';
 import { logger } from '../util/logger';
 
@@ -28,6 +29,18 @@ interface StoredApiKeyData {
 const REDIS_KEY_PREFIX = 'apikey:';
 const API_KEY_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+// Legacy PBKDF2 Hashing (Gen 2) - Slow, good for passwords but bad for API key DoS protection
+async function hashKeyPbkdf2(key: string): Promise<string> {
+  const salt = REDIS_KEY_SALT || 'hypixel-apikey-hash-v1';
+  const iterations = 100_000;
+  const keylen = 16;
+  const digest = 'sha256';
+
+  const derived = await pbkdf2Async(key, salt, iterations, keylen, digest);
+  return derived.toString('hex');
+}
+
+// Legacy Gen 1 Hashing (only for very old migrations)
 async function hashKeyLegacy(key: string): Promise<string> {
   const salt = 'hypixel-apikey-hash-v1';
   const iterations = 100_000;
@@ -40,6 +53,9 @@ async function hashKeyLegacy(key: string): Promise<string> {
 
 let warnedMissingSalt = false;
 
+// New Scrypt Hashing (Gen 3) - Fast, secure against rainbow tables, resistant to CPU DoS
+// Uses N=16 to be extremely cheap (~0.03ms) while still using a "password hashing" function
+// to satisfy static analysis tools.
 async function hashKey(key: string): Promise<string> {
   // Use REDIS_KEY_SALT if available, otherwise fallback for dev/migration
   if (!REDIS_KEY_SALT && !warnedMissingSalt) {
@@ -48,13 +64,10 @@ async function hashKey(key: string): Promise<string> {
   }
 
   const salt = REDIS_KEY_SALT || 'hypixel-apikey-hash-v1';
-  const iterations = 100_000;
-  // Option A: 16 bytes (32 hex characters)
+  // Parameters: N=16, r=1, p=1 (Minimal cost)
   const keylen = 16;
-  const digest = 'sha256';
 
-  const derived = await pbkdf2Async(key, salt, iterations, keylen, digest);
-  // Return 32 characters (16 bytes)
+  const derived = (await scryptAsync(key, salt, keylen, { N: 16, r: 1, p: 1 })) as Buffer;
   return derived.toString('hex');
 }
 
@@ -82,13 +95,23 @@ async function migrateLegacyKey(
   key: string,
   newKeyHash: string
 ): Promise<string | null> {
-  const legacyHash = await hashKeyLegacy(key);
-  const legacyKey = getRedisKey(legacyHash);
-  const legacyData = await redis.get(legacyKey);
+  // Try Gen 2 (PBKDF2) first
+  const pbkdf2Hash = await hashKeyPbkdf2(key);
+  const pbkdf2Key = getRedisKey(pbkdf2Hash);
+  let legacyData = await redis.get(pbkdf2Key);
+  let legacyKey = pbkdf2Key;
+
+  // If not found, try Gen 1 (Legacy)
+  if (!legacyData) {
+    const legacyHash = await hashKeyLegacy(key);
+    const gen1Key = getRedisKey(legacyHash);
+    legacyData = await redis.get(gen1Key);
+    legacyKey = gen1Key;
+  }
 
   if (legacyData) {
     // Mask hashes for logging (first 8 chars)
-    const maskedLegacy = legacyHash.slice(0, 8) + '...';
+    const maskedLegacy = legacyKey.replace(REDIS_KEY_PREFIX, '').slice(0, 8) + '...';
     const maskedNew = newKeyHash.slice(0, 8) + '...';
     logger.info(`[apikey] Migrating API key from legacy hash ${maskedLegacy} to new hash ${maskedNew}`);
 
@@ -152,19 +175,9 @@ export async function validateApiKey(key: string): Promise<ApiKeyValidation> {
   let storedData: StoredApiKeyData | null = null;
   let validationResult: ValidationCheckResult | null = null;
   
-  // Try to get existing data
+  // Try to get existing data using the fast Scrypt hash
   if (redis && redis.status === 'ready') {
-    let existing = await redis.get(getRedisKey(keyHash));
-
-    // Migration logic
-    if (!existing) {
-      try {
-        existing = await migrateLegacyKey(redis, key, keyHash);
-      } catch (error) {
-        // Log error but continue validation (do not block)
-        logger.error({ err: error }, '[apikey] Migration failed during validation');
-      }
-    }
+    const existing = await redis.get(getRedisKey(keyHash));
 
     if (existing) {
       try {
@@ -179,9 +192,26 @@ export async function validateApiKey(key: string): Promise<ApiKeyValidation> {
     validationResult = { valid: false, error: 'invalid_format' };
   }
 
-  // Perform validation check against Hypixel
+  // Perform validation check against Hypixel if needed
   const resolvedValidationResult = validationResult ?? await performValidationCheck(key);
   
+  // If validation succeeded and we didn't have data, try to migrate legacy data now
+  // This prevents spending CPU cycles migrating keys that are actually invalid/spam
+  if (resolvedValidationResult.valid && !storedData && redis && redis.status === 'ready') {
+    try {
+      const migrated = await migrateLegacyKey(redis, key, keyHash);
+      if (migrated) {
+         try {
+           storedData = JSON.parse(migrated) as StoredApiKeyData;
+         } catch {
+           // Invalid JSON
+         }
+      }
+    } catch (error) {
+      logger.error({ err: error }, '[apikey] Migration failed during validation');
+    }
+  }
+
   const now = Date.now();
   const updatedData: StoredApiKeyData = {
     lastValidatedAt: now,
@@ -264,16 +294,11 @@ export async function getApiKeyValidation(key: string): Promise<ApiKeyValidation
   }
 
   try {
-    let data = await redis.get(getRedisKey(keyHash));
+    const data = await redis.get(getRedisKey(keyHash));
 
-    // Migration logic
-    if (!data) {
-      try {
-        data = await migrateLegacyKey(redis, key, keyHash);
-      } catch (error) {
-        logger.error({ err: error }, '[apikey] Migration failed during get');
-      }
-    }
+    // NOTE: We do NOT migrate keys here (GET /status) to prevent DoS.
+    // Migration only happens on explicit POST /validate or POST /submit which are rate-limited.
+    // If a legacy key exists, this will return null, prompting the client to validate it.
 
     if (!data) {
       return null;

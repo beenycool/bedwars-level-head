@@ -1,4 +1,4 @@
-import { pbkdf2Sync } from 'node:crypto';
+import { pbkdf2Sync, scryptSync } from 'node:crypto';
 
 // Mock Redis
 const mockRedis = {
@@ -23,6 +23,12 @@ jest.mock('../../src/util/logger', () => ({
   logger: mockLogger,
 }));
 
+// Mock axios for validation
+jest.mock('axios', () => ({
+  get: jest.fn().mockResolvedValue({ status: 200, data: { success: true } }),
+  isAxiosError: jest.fn().mockReturnValue(false),
+}));
+
 describe('API Key Hashing Security', () => {
   const DEFAULT_SALT = 'hypixel-apikey-hash-v1';
 
@@ -32,7 +38,7 @@ describe('API Key Hashing Security', () => {
     mockRedis.ttl.mockResolvedValue(300);
   });
 
-  it('should use the configured REDIS_KEY_SALT and produce a 32-char hash', async () => {
+  it('should use the configured REDIS_KEY_SALT with Scrypt (N=16) and produce a 32-char hash', async () => {
     const TEST_SALT = 'custom-test-salt-for-security-check';
 
     // Mock config dynamically
@@ -46,12 +52,10 @@ describe('API Key Hashing Security', () => {
 
     const key = '55555555-4444-3333-2222-111111111111';
 
-    // Calculate expected hash
-    const iterations = 100_000;
+    // Calculate expected Scrypt hash
     const keylen = 16;
-    const digest = 'sha256';
-    const derived = pbkdf2Sync(key, TEST_SALT, iterations, keylen, digest);
-    const expectedHash = derived.toString('hex'); // 32 chars
+    const derived = scryptSync(key, TEST_SALT, keylen, { N: 16, r: 1, p: 1 });
+    const expectedHash = derived.toString('hex'); // 32 chars (16 bytes hex encoded)
 
     expect(expectedHash).toHaveLength(32);
 
@@ -75,10 +79,9 @@ describe('API Key Hashing Security', () => {
 
     const key = '55555555-4444-3333-2222-111111111111';
 
-    const iterations = 100_000;
+    // Expected Scrypt hash with default salt
     const keylen = 16;
-    const digest = 'sha256';
-    const derived = pbkdf2Sync(key, DEFAULT_SALT, iterations, keylen, digest);
+    const derived = scryptSync(key, DEFAULT_SALT, keylen, { N: 16, r: 1, p: 1 });
     const expectedHash = derived.toString('hex');
 
     // First call - should log warning
@@ -100,7 +103,7 @@ describe('API Key Hashing Security', () => {
     expect(mockLogger.warn).not.toHaveBeenCalled();
   });
 
-  it('should migrate legacy keys on cache miss and preserve TTL', async () => {
+  it('should migrate legacy PBKDF2 keys on validation success (Gen 2 -> Gen 3)', async () => {
      const TEST_SALT = 'migration-test-salt';
 
     // Mock config
@@ -109,15 +112,15 @@ describe('API Key Hashing Security', () => {
       REDIS_KEY_SALT: TEST_SALT,
     }));
 
-    const { getApiKeyValidation } = require('../../src/services/apiKeyManager');
+    const { validateApiKey } = require('../../src/services/apiKeyManager');
     const key = '55555555-4444-3333-2222-111111111111';
 
-    // Compute new hash
-    const newHash = pbkdf2Sync(key, TEST_SALT, 100_000, 16, 'sha256').toString('hex');
+    // Compute new Scrypt hash (Gen 3)
+    const newHash = scryptSync(key, TEST_SALT, 16, { N: 16, r: 1, p: 1 }).toString('hex');
     const newRedisKey = `apikey:${newHash}`;
 
-    // Compute legacy hash: keylen=32, slice(0,16) -> 16 chars
-    const legacyHash = pbkdf2Sync(key, DEFAULT_SALT, 100_000, 32, 'sha256').toString('hex').slice(0, 16);
+    // Compute legacy PBKDF2 hash (Gen 2): 100k iter, 16 bytes
+    const legacyHash = pbkdf2Sync(key, TEST_SALT, 100_000, 16, 'sha256').toString('hex');
     const legacyRedisKey = `apikey:${legacyHash}`;
 
     // Setup Redis mocks
@@ -137,10 +140,13 @@ describe('API Key Hashing Security', () => {
     const REMAINING_TTL = 9876;
     mockRedis.ttl.mockResolvedValue(REMAINING_TTL);
 
-    await getApiKeyValidation(key);
+    await validateApiKey(key);
 
-    // Verify migration
+    // Verify migration logic
+    // 1. Should check new key first
     expect(mockRedis.get).toHaveBeenCalledWith(newRedisKey);
+
+    // 2. After validation success (axios mock), it should attempt migration
     expect(mockRedis.get).toHaveBeenCalledWith(legacyRedisKey);
     expect(mockRedis.ttl).toHaveBeenCalledWith(legacyRedisKey);
 
@@ -156,4 +162,42 @@ describe('API Key Hashing Security', () => {
     // Should delete old key
     expect(mockRedis.del).toHaveBeenCalledWith(legacyRedisKey);
   });
+
+  it('should NOT migrate legacy keys on GET status (DoS protection)', async () => {
+    const TEST_SALT = 'dos-protection-salt';
+
+   // Mock config
+   jest.doMock('../../src/config', () => ({
+     ...jest.requireActual('../../src/config'),
+     REDIS_KEY_SALT: TEST_SALT,
+   }));
+
+   const { getApiKeyValidation } = require('../../src/services/apiKeyManager');
+   const key = '55555555-4444-3333-2222-111111111111';
+
+   // Compute new Scrypt hash (Gen 3)
+   const newHash = scryptSync(key, TEST_SALT, 16, { N: 16, r: 1, p: 1 }).toString('hex');
+   const newRedisKey = `apikey:${newHash}`;
+
+   // Compute legacy PBKDF2 hash (Gen 2)
+   const legacyHash = pbkdf2Sync(key, TEST_SALT, 100_000, 16, 'sha256').toString('hex');
+   const legacyRedisKey = `apikey:${legacyHash}`;
+
+   // Setup Redis mocks - Miss on new key, Hit on old key
+   mockRedis.get.mockImplementation((k) => {
+       if (k === newRedisKey) return Promise.resolve(null);
+       if (k === legacyRedisKey) return Promise.resolve(JSON.stringify({ some: 'data' }));
+       return Promise.resolve(null);
+   });
+
+   const result = await getApiKeyValidation(key);
+
+   // Verify behavior
+   expect(mockRedis.get).toHaveBeenCalledWith(newRedisKey);
+   // Should NOT check legacy key (which requires slow PBKDF2)
+   expect(mockRedis.get).not.toHaveBeenCalledWith(legacyRedisKey);
+
+   // Should return null (not found)
+   expect(result).toBeNull();
+ });
 });
