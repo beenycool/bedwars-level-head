@@ -14,3 +14,7 @@
 ## 2024-05-26 - Consistent Command Suggestions
 **Learning:** In Minecraft mods, consistent interactive feedback (e.g., clickable command suggestions) is crucial for complex configuration commands. If one error message offers a clickable fix, all similar messages should too.
 **Action:** When updating command handlers, audit all error paths and usage help messages to ensure they leverage `createClickableCommand` or similar helpers for a uniform UX.
+
+## 2024-05-27 - Actionable Confirmation Messages
+**Learning:** Success messages (like "Copied UUID") are prime real estate for follow-up actions. Users often copy an identifier to immediately use it elsewhere. Providing a direct action (e.g., "Click to lookup") reduces friction.
+**Action:** Attach `ClickEvent.RUN_COMMAND` to identifiers in success messages to allow immediate processing of the copied data.
