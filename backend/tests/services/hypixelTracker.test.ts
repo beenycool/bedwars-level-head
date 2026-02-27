@@ -58,12 +58,16 @@ describe('hypixelTracker', () => {
 
     // Re-import the module to get fresh internal state (arrays)
     hypixelTracker = require('../../src/services/hypixelTracker');
+
+    // Use fake timers to control flush interval
+    jest.useFakeTimers();
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     if (hypixelTracker) {
         await hypixelTracker.shutdown();
     }
+    jest.useRealTimers();
   });
 
   it('should use Redis for counting when available', async () => {
@@ -117,24 +121,52 @@ describe('hypixelTracker', () => {
     rs.isRedisAvailable.mockReturnValue(false);
 
     const { pool: mockPool } = require('../../src/services/cache');
-    mockPool.query.mockResolvedValue({ rows: [{ count: 0 }] });
 
-    // Add multiple items to the buffer
+    // 1. Setup delayed DB response
+    let resolveQuery: (value: any) => void;
+    const queryPromise = new Promise((resolve) => {
+        resolveQuery = resolve;
+    });
+    // First call (from flush) will hang
+    // Second call (from getHypixelCallCount) should return immediately or also hang?
+    // Usually getHypixelCallCount calls a SELECT COUNT. flush calls INSERT.
+    // We need to distinguish them.
+    mockPool.query.mockImplementation((sql: string) => {
+        if (sql.includes('INSERT INTO')) {
+            return queryPromise;
+        }
+        if (sql.includes('SELECT COUNT')) {
+            return Promise.resolve({ rows: [{ count: 0 }] });
+        }
+        return Promise.resolve({ rows: [] });
+    });
+
+    // 2. Add items to buffer
     await hypixelTracker.recordHypixelApiCall('uuid-1');
     await hypixelTracker.recordHypixelApiCall('uuid-2');
     await hypixelTracker.recordHypixelApiCall('uuid-3');
 
-    // Simulate a scenario where flush has started and moved items to inflightBatch,
-    // but DB insertion hasn't finished or offset hasn't updated yet.
-    // However, recordHypixelApiCall triggers flush asynchronously.
-    // We can rely on getHypixelCallCount to check the sum of DB + buffer + inflight.
+    // 3. Trigger flush via interval
+    jest.advanceTimersByTime(5000); // FLUSH_INTERVAL_MS = 5000
 
-    // With test isolation, we know exactly 3 items were added.
+    // At this point:
+    // - flushHypixelCallBuffer should be running
+    // - items moved from buffer to inflightBatch
+    // - pool.query(INSERT) is awaited (hanging on queryPromise)
+    // - inflightOffset is 0 (hasn't incremented yet)
+
+    // 4. Check count while flush is pending
     const count = await hypixelTracker.getHypixelCallCount();
 
-    // We added 3 items.
-    // DB reports 0 (mocked).
-    // Buffer/Inflight should account for exactly 3.
+    // DB = 0 (mocked)
+    // Buffer = 0 (moved to inflight)
+    // Inflight = 3 (all items pending)
+    // Snapshot logic should capture inflightBatch items
     expect(count).toBe(3);
+
+    // 5. Cleanup: resolve the pending flush to avoid open handles
+    resolveQuery!({ rowCount: 3 });
+    // Allow flush promise to resolve (might need next tick)
+    await Promise.resolve();
   });
 });
