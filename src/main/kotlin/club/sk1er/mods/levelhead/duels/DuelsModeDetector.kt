@@ -17,7 +17,7 @@ import java.util.Locale
  * Similar to BedwarsModeDetector but for Duels game mode.
  */
 object DuelsModeDetector {
-    private val WHITESPACE_PATTERN = Regex("\s+")
+    private val WHITESPACE_PATTERN = Regex("\\s+")
 
     private var cachedContext: Context = Context.UNKNOWN
     private var lastDetectionTime: Long = 0L
