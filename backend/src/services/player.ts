@@ -416,6 +416,12 @@ export async function resolvePlayer(
   identifier: string,
   options?: PlayerResolutionOptions,
 ): Promise<ResolvedPlayer> {
+  // Prevent DoS via excessively long identifiers
+  // UUID (36) or IGN (16) are well within this limit. 64 allows for some leeway/future formats.
+  if (identifier.length > 64) {
+    throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier is too long (max 64 characters).');
+  }
+
   // Fast normalization: combine length gate with structural dash check
   
   let key = identifier;
