@@ -139,7 +139,7 @@ class LevelheadCommand {
         }
 
         LevelheadConfig.updateApiKey(sanitized)
-        sendMessage("${ChatColor.GREEN}Saved Hypixel API key for BedWars stat fetching.")
+        sendSuccessWithStatusLink("${ChatColor.GREEN}Saved Hypixel API key for BedWars stat fetching.")
         resetBedwarsFetcher()
 
         // Background validation of the API key
@@ -270,7 +270,7 @@ class LevelheadCommand {
         val clamped = parsed.coerceIn(LevelheadConfig.MIN_STAR_CACHE_TTL_MINUTES, LevelheadConfig.MAX_STAR_CACHE_TTL_MINUTES)
         LevelheadConfig.updateStarCacheTtlMinutes(clamped)
         Levelhead.clearCachedStats()
-        sendMessage("${ChatColor.GREEN}Updated BedWars star cache TTL to ${ChatColor.GOLD}${clamped} minutes${ChatColor.GREEN}.")
+        sendSuccessWithStatusLink("${ChatColor.GREEN}Updated BedWars star cache TTL to ${ChatColor.GOLD}${clamped} minutes${ChatColor.GREEN}.")
     }
 
     @SubCommand
@@ -313,7 +313,7 @@ class LevelheadCommand {
         when (parsedArgs[0].lowercase(Locale.ROOT)) {
             "enable", "on" -> {
                 LevelheadConfig.updateProxyEnabled(true)
-                sendMessage("${ChatColor.GREEN}Enabled proxy usage for BedWars stats.")
+                sendSuccessWithStatusLink("${ChatColor.GREEN}Enabled proxy usage for BedWars stats.")
                 resetBedwarsFetcher()
             }
             "disable", "off" -> {
@@ -350,7 +350,7 @@ class LevelheadCommand {
                     .toString()
                     .trimEnd('/')
                 LevelheadConfig.updateProxyBaseUrl(sanitized)
-                sendMessage("${ChatColor.GREEN}Updated proxy base URL to ${ChatColor.GOLD}$sanitized${ChatColor.GREEN}.")
+                sendSuccessWithStatusLink("${ChatColor.GREEN}Updated proxy base URL to ${ChatColor.GOLD}$sanitized${ChatColor.GREEN}.")
                 resetBedwarsFetcher()
             }
             "token" -> {
@@ -364,7 +364,7 @@ class LevelheadCommand {
                     return
                 }
                 LevelheadConfig.updateProxyAuthToken(token)
-                sendMessage("${ChatColor.GREEN}Updated proxy token.")
+                sendSuccessWithStatusLink("${ChatColor.GREEN}Updated proxy token.")
                 resetBedwarsFetcher()
             }
             else -> {
@@ -748,6 +748,17 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
             chatStyle.chatClickEvent = ClickEvent(action, command)
             chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText(hoverText))
         }
+    }
+
+
+    private fun sendSuccessWithStatusLink(message: String) {
+        val msg = ChatComponentText(message).appendSibling(
+            ChatComponentText(" ${ChatColor.GRAY}[Check Status]").apply {
+                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead status")
+                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to check status"))
+            }
+        )
+        sendMessage(msg)
     }
 
     private fun sendMessage(message: String) {
