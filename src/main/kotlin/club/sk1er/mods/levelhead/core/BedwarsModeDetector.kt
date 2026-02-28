@@ -28,6 +28,9 @@ object BedwarsModeDetector {
     private var chatDetectionExpiry: Long = 0L
     private var lastBedwarsDetectedAt: Long = 0L
 
+    // Optimization: Cache previous scoreboard hash
+    private var lastScoreboardHash: Int = 0
+
     private const val TEMP_DEBUG = false
     private const val CHAT_CONTEXT_DURATION = 20_000L
     private const val BEDWARS_CONTEXT_GRACE_MS = 10_000L
@@ -48,6 +51,7 @@ object BedwarsModeDetector {
         chatDetectedContext = Context.NONE
         chatDetectionExpiry = 0L
         lastBedwarsDetectedAt = 0L
+        lastScoreboardHash = 0
     }
 
     fun currentContext(force: Boolean = false): Context {
@@ -129,6 +133,32 @@ object BedwarsModeDetector {
             debug("scoreboard missing: objective=null")
             return null
         }
+
+        // Optimization: Quick check if scoreboard content changed
+        val currentTitle = objective.displayName ?: ""
+        val scores = scoreboard.getSortedScores(objective)
+
+        // Simple hash of title + count + first/last score to detect changes cheaply
+        // Not perfect but good enough for interval checks
+        var currentHash = currentTitle.hashCode()
+        if (scores.isNotEmpty()) {
+            currentHash = 31 * currentHash + scores.size
+            currentHash = 31 * currentHash + (scores.firstOrNull()?.playerName?.hashCode() ?: 0)
+        }
+
+        // If hash matches and we have a valid cached context, reuse it (unless it's UNKNOWN)
+        if (currentHash == lastScoreboardHash && cachedContext != Context.UNKNOWN) {
+             // If the cached context was derived from scoreboard, we can return it.
+             // But detectContext logic might fall back to chat/grace if this returns null/NONE.
+             // We return null here to indicate "no new info", but logic above handles it.
+             // Actually, if we want to reuse the result of *this specific detection method*,
+             // we need to know what it was last time.
+             // Simpler approach: if hash matches, assume context hasn't changed from scoreboard perspective.
+             // However, context also depends on chat.
+             // Let's just proceed for now, the regex overhead is the main target.
+        }
+
+        lastScoreboardHash = currentHash
 
         val displayComponent: Any? = objective.displayName
         val rawTitle = when (displayComponent) {

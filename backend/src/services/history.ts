@@ -1,5 +1,6 @@
 import pLimit from 'p-limit';
-import { pool } from './cache';
+import { db, dbType } from './database/db';
+import { sql } from 'kysely';
 import { DatabaseType } from './database/adapter';
 import { getRedisCacheStats } from './redis';
 import { getCurrentResourceMetrics, CurrentResourceMetrics } from './resourceMetrics';
@@ -96,13 +97,11 @@ const BATCH_FLUSH_INTERVAL = 5000; // 5 seconds
 let flushInterval: NodeJS.Timeout | null = null;
 let supportsPgTotalRelationSize: boolean | null = null;
 
-// Bolt: Cache large INSERT query strings to avoid O(N) string generation/allocation
-let cachedUniversalQuery: string | null = null;
-
+// Initialization now handled by db.ts implicitly, but table creation still needed if not managed by migrations
 const initialization = (async () => {
   try {
-    if (pool.type === DatabaseType.POSTGRESQL) {
-      await pool.query(`
+    if (dbType === DatabaseType.POSTGRESQL) {
+      await sql`
         CREATE TABLE IF NOT EXISTS player_query_history (
           id BIGSERIAL PRIMARY KEY,
           identifier TEXT NOT NULL,
@@ -120,34 +119,25 @@ const initialization = (async () => {
           latency_ms INTEGER,
           requested_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
-      `);
-      await pool.query(`
-        ALTER TABLE player_query_history
-        ADD COLUMN IF NOT EXISTS latency_ms INTEGER
-      `);
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_player_query_history_requested_at
-        ON player_query_history (requested_at DESC)
-      `);
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_player_query_history_identifier
-        ON player_query_history (normalized_identifier)
-      `);
-      await pool.query(`
-        CREATE INDEX IF NOT EXISTS idx_player_query_history_latency
-        ON player_query_history (latency_ms)
-      `);
+      `.execute(db);
+
+      // Additional columns and indexes
+      await sql`ALTER TABLE player_query_history ADD COLUMN IF NOT EXISTS latency_ms INTEGER`.execute(db);
+      await sql`CREATE INDEX IF NOT EXISTS idx_player_query_history_requested_at ON player_query_history (requested_at DESC)`.execute(db);
+      await sql`CREATE INDEX IF NOT EXISTS idx_player_query_history_identifier ON player_query_history (normalized_identifier)`.execute(db);
+      await sql`CREATE INDEX IF NOT EXISTS idx_player_query_history_latency ON player_query_history (latency_ms)`.execute(db);
 
       // Detect whether pg_total_relation_size exists
       try {
-        await pool.query(`SELECT pg_total_relation_size('player_stats_cache') as size_check`);
+        await sql`SELECT pg_total_relation_size('player_stats_cache') as size_check`.execute(db);
         supportsPgTotalRelationSize = true;
       } catch (err) {
         supportsPgTotalRelationSize = false;
         logger.info('[history] pg_total_relation_size not available; DB size queries will be skipped');
       }
     } else {
-      await pool.query(`
+      // MSSQL
+      await sql`
         IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[player_query_history]') AND type in (N'U'))
         CREATE TABLE player_query_history (
           id BIGINT IDENTITY(1,1) PRIMARY KEY,
@@ -166,11 +156,12 @@ const initialization = (async () => {
           latency_ms INTEGER,
           requested_at DATETIME2 NOT NULL DEFAULT GETDATE()
         )
-      `);
-      await pool.query("IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[player_query_history]') AND name = 'latency_ms') ALTER TABLE player_query_history ADD latency_ms INTEGER");
-      await pool.query("IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_player_query_history_requested_at') CREATE INDEX idx_player_query_history_requested_at ON player_query_history (requested_at DESC)");
-      await pool.query("IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_player_query_history_identifier') CREATE INDEX idx_player_query_history_identifier ON player_query_history (normalized_identifier)");
-      await pool.query("IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_player_query_history_latency') CREATE INDEX idx_player_query_history_latency ON player_query_history (latency_ms)");
+      `.execute(db);
+
+      await sql`IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[player_query_history]') AND name = 'latency_ms') ALTER TABLE player_query_history ADD latency_ms INTEGER`.execute(db);
+      await sql`IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_player_query_history_requested_at') CREATE INDEX idx_player_query_history_requested_at ON player_query_history (requested_at DESC)`.execute(db);
+      await sql`IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_player_query_history_identifier') CREATE INDEX idx_player_query_history_identifier ON player_query_history (normalized_identifier)`.execute(db);
+      await sql`IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_player_query_history_latency') CREATE INDEX idx_player_query_history_latency ON player_query_history (latency_ms)`.execute(db);
       
       supportsPgTotalRelationSize = false;
     }
@@ -194,68 +185,88 @@ async function flushHistoryBuffer(): Promise<void> {
   await ensureInitialized();
 
   try {
-    const maxParams = pool.type === DatabaseType.POSTGRESQL ? 65000 : 2000;
-    const maxRecordsPerChunk = Math.max(1, Math.floor(maxParams / 13));
-    let flushed = 0;
+    if (dbType === DatabaseType.POSTGRESQL) {
+      // PostgreSQL: Use UNNEST optimization
+      // Deconstruct batch into parallel arrays
+      const identifiers = batch.map(r => r.identifier);
+      const normalizedIdentifiers = batch.map(r => r.normalizedIdentifier);
+      const lookupTypes = batch.map(r => r.lookupType);
+      const resolvedUuids = batch.map(r => r.resolvedUuid);
+      const resolvedUsernames = batch.map(r => r.resolvedUsername);
+      const stars = batch.map(r => r.stars);
+      const nickeds = batch.map(r => r.nicked);
+      const cacheSources = batch.map(r => r.cacheSource);
+      const cacheHits = batch.map(r => r.cacheHit);
+      const revalidateds = batch.map(r => r.revalidated);
+      const installIds = batch.map(r => r.installId);
+      const responseStatuses = batch.map(r => r.responseStatus);
+      const latencyMss = batch.map(r => r.latencyMs != null ? Math.round(r.latencyMs) : null);
 
-    const limit = pLimit(CONCURRENT_HISTORY_FETCHES);
-    const promises = [];
+      await sql`
+        INSERT INTO player_query_history (
+          identifier, normalized_identifier, lookup_type, resolved_uuid,
+          resolved_username, stars, nicked, cache_source, cache_hit,
+          revalidated, install_id, response_status, latency_ms
+        )
+        SELECT * FROM UNNEST(
+          ${identifiers}::text[],
+          ${normalizedIdentifiers}::text[],
+          ${lookupTypes}::text[],
+          ${resolvedUuids}::text[],
+          ${resolvedUsernames}::text[],
+          ${stars}::int[],
+          ${nickeds}::boolean[],
+          ${cacheSources}::text[],
+          ${cacheHits}::boolean[],
+          ${revalidateds}::boolean[],
+          ${installIds}::text[],
+          ${responseStatuses}::int[],
+          ${latencyMss}::int[]
+        )
+      `.execute(db);
 
-    for (let offset = 0; offset < batch.length; offset += maxRecordsPerChunk) {
-      const chunk = batch.slice(offset, offset + maxRecordsPerChunk);
-      promises.push(limit(async () => {
-        // Bolt: Optimized from flatMap to reduce array allocations
-        const PARAMS_PER_RECORD = 13;
-        const params = new Array(chunk.length * PARAMS_PER_RECORD);
-        for (let i = 0; i < chunk.length; i++) {
-          const record = chunk[i];
-          const start = i * PARAMS_PER_RECORD;
-          params[start] = record.identifier;
-          params[start + 1] = record.normalizedIdentifier;
-          params[start + 2] = record.lookupType;
-          params[start + 3] = record.resolvedUuid;
-          params[start + 4] = record.resolvedUsername;
-          params[start + 5] = record.stars;
-          params[start + 6] = record.nicked;
-          params[start + 7] = record.cacheSource;
-          params[start + 8] = record.cacheHit;
-          params[start + 9] = record.revalidated;
-          params[start + 10] = record.installId;
-          params[start + 11] = record.responseStatus;
-          params[start + 12] = record.latencyMs != null ? Math.round(record.latencyMs) : null;
-        }
+      logger.info(`[history] Flushed ${batch.length} records using UNNEST`);
 
-        let universalQuery: string;
-        // Optimization: Use cached query string for full chunks
-        if (chunk.length === maxRecordsPerChunk && cachedUniversalQuery) {
-          universalQuery = cachedUniversalQuery;
-        } else {
-          const universalRows = chunk.map((_, i) => {
-            const base = i * 13;
-            return `($${base + 1}, $${base + 2}, $${base + 3}, $${base + 4}, $${base + 5}, $${base + 6}, $${base + 7}, $${base + 8}, $${base + 9}, $${base + 10}, $${base + 11}, $${base + 12}, $${base + 13})`;
-          });
+    } else {
+      // MSSQL: Use Kysely batch insert
+      // Kysely handles batching internally or via simple .values([...])
+      // We can chunk if needed to avoid parameter limits, though Kysely MssqlDialect should handle it mostly.
+      // MSSQL param limit is 2100. 13 params per row -> ~160 rows per chunk safely.
 
-          universalQuery = `
-          INSERT INTO player_query_history (
-            identifier, normalized_identifier, lookup_type, resolved_uuid,
-            resolved_username, stars, nicked, cache_source, cache_hit,
-            revalidated, install_id, response_status, latency_ms
-          ) VALUES ${universalRows.join(', ')}
-        `;
+      const CHUNK_SIZE = 150;
+      const chunks = [];
+      for (let i = 0; i < batch.length; i += CHUNK_SIZE) {
+        chunks.push(batch.slice(i, i + CHUNK_SIZE));
+      }
 
-          if (chunk.length === maxRecordsPerChunk) {
-            cachedUniversalQuery = universalQuery;
-          }
-        }
+      const limit = pLimit(CONCURRENT_HISTORY_FETCHES);
 
-        await pool.query(universalQuery, params);
-        flushed += chunk.length;
-      }));
+      await Promise.all(chunks.map(chunk => limit(async () => {
+        const rows = chunk.map(r => ({
+          identifier: r.identifier,
+          normalized_identifier: r.normalizedIdentifier,
+          lookup_type: r.lookupType,
+          resolved_uuid: r.resolvedUuid,
+          resolved_username: r.resolvedUsername,
+          stars: r.stars,
+          nicked: r.nicked ? 1 : 0, // MSSQL BIT
+          cache_source: r.cacheSource,
+          cache_hit: r.cacheHit ? 1 : 0,
+          revalidated: r.revalidated ? 1 : 0,
+          install_id: r.installId,
+          response_status: r.responseStatus,
+          latency_ms: r.latencyMs != null ? Math.round(r.latencyMs) : null
+        }));
+
+        // Kysely insert with multiple rows generates standard VALUES (...), (...)
+        await db.insertInto('player_query_history')
+          .values(rows as any) // Type casting needed as Kysely strict types expect boolean for bit columns sometimes depending on dialect config
+          .execute();
+      })));
+
+      logger.info(`[history] Flushed ${batch.length} records in ${chunks.length} chunks`);
     }
 
-    await Promise.all(promises);
-
-    logger.info(`[history] Flushed ${flushed} records in batch`);
   } catch (err) {
     logger.error({ err }, '[history] Failed to flush batch');
     // Prepend failed batch to current buffer
@@ -293,32 +304,32 @@ export { flushHistoryBuffer };
 
 export async function getRecentPlayerQueries(limit = 50): Promise<PlayerQuerySummary[]> {
   await ensureInitialized();
-  const sql = pool.type === DatabaseType.POSTGRESQL
-    ? `SELECT identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
-       FROM player_query_history ORDER BY requested_at DESC LIMIT $1`
-    : `SELECT TOP ($1) identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
-       FROM player_query_history ORDER BY requested_at DESC`;
 
-  const result = await pool.query<PlayerQueryHistoryRow>(sql, [limit]);
+  const rows = await db
+    .selectFrom('player_query_history')
+    .selectAll()
+    .orderBy('requested_at', 'desc')
+    .limit(limit)
+    .execute();
 
-  return result.rows.map(mapRowToSummary);
+  return rows.map(mapRowToSummary);
 }
 
-function mapRowToSummary(row: PlayerQueryHistoryRow): PlayerQuerySummary {
+function mapRowToSummary(row: PlayerQueryHistoryRow | any): PlayerQuerySummary {
   const parsedResponseStatus = Number(row.response_status);
   const parsedLatency = row.latency_ms === null ? null : Number(row.latency_ms);
 
   return {
     identifier: row.identifier,
     normalizedIdentifier: row.normalized_identifier,
-    lookupType: row.lookup_type,
+    lookupType: row.lookup_type as 'uuid' | 'ign',
     resolvedUuid: row.resolved_uuid,
     resolvedUsername: row.resolved_username,
     stars: row.stars,
-    nicked: row.nicked,
+    nicked: !!row.nicked,
     cacheSource: row.cache_source as 'cache' | 'network',
-    cacheHit: row.cache_hit,
-    revalidated: row.revalidated,
+    cacheHit: !!row.cache_hit,
+    revalidated: !!row.revalidated,
     installId: row.install_id,
     responseStatus: Number.isFinite(parsedResponseStatus) ? parsedResponseStatus : 0,
     latencyMs: Number.isFinite(parsedLatency) ? parsedLatency : null,
@@ -327,31 +338,18 @@ function mapRowToSummary(row: PlayerQueryHistoryRow): PlayerQuerySummary {
 }
 
 function buildDateRangeClause(
+  query: any,
   startDate: Date | undefined,
   endDate: Date | undefined,
-  startIndex: number,
-): { clause: string; params: (Date | string)[] } {
-  const conditions: string[] = [];
-  const params: (Date | string)[] = [];
-  let paramIndex = startIndex;
-
+): any {
+  let q = query;
   if (startDate) {
-    conditions.push(`requested_at >= $${paramIndex}`);
-    params.push(startDate);
-    paramIndex++;
+    q = q.where('requested_at', '>=', startDate);
   }
-
   if (endDate) {
-    conditions.push(`requested_at <= $${paramIndex}`);
-    params.push(endDate);
-    paramIndex++;
+    q = q.where('requested_at', '<=', endDate);
   }
-
-  if (conditions.length === 0) {
-    return { clause: '', params: [] };
-  }
-
-  return { clause: `WHERE ${conditions.join(' AND ')}`, params };
+  return q;
 }
 
 export async function getPlayerQueriesWithFilters(params: {
@@ -361,39 +359,27 @@ export async function getPlayerQueriesWithFilters(params: {
 }): Promise<PlayerQuerySummary[]> {
   await ensureInitialized();
 
-  const { clause: dateClause, params: dateParams } = buildDateRangeClause(
-    params.startDate,
-    params.endDate,
-    1,
-  );
-
   const hasTimeFilters = params.startDate !== undefined || params.endDate !== undefined;
   const requestedLimit = params.limit !== undefined && params.limit > 0
     ? Math.min(params.limit, MAX_ALLOWED_LIMIT)
     : (hasTimeFilters ? MAX_ALLOWED_LIMIT : DEFAULT_PLAYER_QUERIES_LIMIT);
   
-  const queryParams = [...dateParams, requestedLimit];
-  
-  let sql;
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    sql = `
-      SELECT identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
-      FROM player_query_history
-      ${dateClause}
-      ORDER BY requested_at DESC
-      LIMIT $${dateParams.length + 1}
-    `;
+  let query = db
+    .selectFrom('player_query_history')
+    .selectAll()
+    .orderBy('requested_at', 'desc');
+
+  if (dbType === DatabaseType.POSTGRESQL) {
+     query = query.limit(requestedLimit);
   } else {
-    sql = `
-      SELECT TOP ($${dateParams.length + 1}) identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
-      FROM player_query_history
-      ${dateClause}
-      ORDER BY requested_at DESC
-    `;
+     // MSSQL limit/top support in Kysely depends on dialect, usually .limit() works or translates to TOP
+     query = query.limit(requestedLimit);
   }
 
-  const result = await pool.query<PlayerQueryHistoryRow>(sql, queryParams);
-  return result.rows.map(mapRowToSummary);
+  query = buildDateRangeClause(query, params.startDate, params.endDate);
+
+  const rows = await query.execute();
+  return rows.map(mapRowToSummary);
 }
 
 export async function getPlayerQueriesStats(params: {
@@ -403,49 +389,31 @@ export async function getPlayerQueriesStats(params: {
 }): Promise<PlayerQueryStatsSummary[]> {
   await ensureInitialized();
 
-  const { clause: dateClause, params: dateParams } = buildDateRangeClause(
-    params.startDate,
-    params.endDate,
-    1,
-  );
-
   const hasTimeFilters = params.startDate !== undefined || params.endDate !== undefined;
   const requestedLimit = params.limit !== undefined && params.limit > 0
     ? Math.min(params.limit, MAX_ALLOWED_LIMIT)
     : (hasTimeFilters ? MAX_ALLOWED_LIMIT : DEFAULT_PLAYER_QUERIES_LIMIT);
 
-  const queryParams = [...dateParams, requestedLimit];
+  let query = db
+    .selectFrom('player_query_history')
+    .select(['lookup_type', 'stars', 'cache_hit', 'response_status', 'latency_ms', 'requested_at'])
+    .orderBy('requested_at', 'desc')
+    .limit(requestedLimit);
 
-  let sql;
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    sql = `
-      SELECT lookup_type, stars, cache_hit, response_status, latency_ms, requested_at
-      FROM player_query_history
-      ${dateClause}
-      ORDER BY requested_at DESC
-      LIMIT $${dateParams.length + 1}
-    `;
-  } else {
-    sql = `
-      SELECT TOP ($${dateParams.length + 1}) lookup_type, stars, cache_hit, response_status, latency_ms, requested_at
-      FROM player_query_history
-      ${dateClause}
-      ORDER BY requested_at DESC
-    `;
-  }
+  query = buildDateRangeClause(query, params.startDate, params.endDate);
 
-  const result = await pool.query<PlayerQueryStatsRow>(sql, queryParams);
-  return result.rows.map(mapRowToStatsSummary);
+  const rows = await query.execute();
+  return rows.map(mapRowToStatsSummary);
 }
 
-function mapRowToStatsSummary(row: PlayerQueryStatsRow): PlayerQueryStatsSummary {
+function mapRowToStatsSummary(row: PlayerQueryStatsRow | any): PlayerQueryStatsSummary {
   const parsedResponseStatus = Number(row.response_status);
   const parsedLatency = row.latency_ms === null ? null : Number(row.latency_ms);
 
   return {
-    lookupType: row.lookup_type,
+    lookupType: row.lookup_type as 'uuid' | 'ign',
     stars: row.stars,
-    cacheHit: row.cache_hit,
+    cacheHit: !!row.cache_hit,
     responseStatus: Number.isFinite(parsedResponseStatus) ? parsedResponseStatus : 0,
     latencyMs: Number.isFinite(parsedLatency) ? parsedLatency : null,
     requestedAt: new Date(row.requested_at),
@@ -459,80 +427,55 @@ export async function getTopPlayersByQueryCount(params: {
 }): Promise<TopPlayer[]> {
   await ensureInitialized();
 
-  const { clause: dateClause, params: dateParams } = buildDateRangeClause(
-    params.startDate,
-    params.endDate,
-    1,
-  );
-
   const limit = params.limit ?? 20;
-  const queryParams = [...dateParams, limit];
 
-  let sql;
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    sql = `
-      SELECT normalized_identifier, MAX(resolved_username) as resolved_username, COUNT(*) as query_count
-      FROM player_query_history
-      ${dateClause}
-      GROUP BY normalized_identifier
-      ORDER BY query_count DESC
-      LIMIT $${dateParams.length + 1}
-    `;
-  } else {
-    sql = `
-      SELECT TOP ($${dateParams.length + 1}) normalized_identifier, MAX(resolved_username) as resolved_username, COUNT(*) as query_count
-      FROM player_query_history
-      ${dateClause}
-      GROUP BY normalized_identifier
-      ORDER BY query_count DESC
-    `;
-  }
+  let query = db
+    .selectFrom('player_query_history')
+    .select((eb) => [
+        'normalized_identifier',
+        eb.fn.max('resolved_username').as('resolved_username'),
+        eb.fn.countAll().as('query_count')
+    ])
+    .groupBy('normalized_identifier')
+    .orderBy('query_count', 'desc')
+    .limit(limit);
 
-  const result = await pool.query<{
-    normalized_identifier: string;
-    resolved_username: string | null;
-    query_count: string | number;
-  }>(sql, queryParams);
+  query = buildDateRangeClause(query, params.startDate, params.endDate);
 
-  return result.rows.map((row) => ({
+  const rows = await query.execute();
+
+  return rows.map((row: any) => ({
     identifier: row.normalized_identifier,
     resolvedUsername: row.resolved_username,
-    queryCount: typeof row.query_count === 'string' ? Number.parseInt(row.query_count, 10) : Number(row.query_count),
+    queryCount: Number(row.query_count),
   }));
 }
 
-export function buildSearchClause(searchTerm: string | undefined, startIndex: number): { clause: string; params: string[] } {
+export function buildSearchClause(query: any, searchTerm: string | undefined): any {
   if (!searchTerm) {
-    return { clause: '', params: [] };
+    return query;
   }
-
-  const placeholder = `$${startIndex}`;
-  const searchValue = `%${searchTerm.replace(/[%_\\]/g, (match) => `\\${match}`)}%`;
   
-  let clause;
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    clause = `WHERE normalized_identifier ILIKE ${placeholder} ESCAPE '\\' OR resolved_username ILIKE ${placeholder} ESCAPE '\\' OR resolved_uuid ILIKE ${placeholder} ESCAPE '\\'`;
-  } else {
-    // SQL Server is usually case-insensitive by default with its default collation.
-    // We use [key] notation for identifier if it's a reserved word, but here they aren't.
-    clause = `WHERE normalized_identifier LIKE ${placeholder} ESCAPE '\\' OR resolved_username LIKE ${placeholder} ESCAPE '\\' OR resolved_uuid LIKE ${placeholder} ESCAPE '\\'`;
-  }
-
-  return { clause, params: [searchValue] };
+  const term = `%${searchTerm}%`;
+  return query.where((eb: any) => eb.or([
+    eb('normalized_identifier', 'like', term),
+    eb('resolved_username', 'like', term),
+    eb('resolved_uuid', 'like', term)
+  ]));
 }
 
 export async function getPlayerQueryCount(params: { search?: string }): Promise<number> {
   await ensureInitialized();
   const searchTerm = params.search?.trim();
-  const { clause, params: searchParams } = buildSearchClause(searchTerm, 1);
 
-  const result = await pool.query<{ count: string | number }>(
-    `SELECT COUNT(*) AS count FROM player_query_history ${clause}`,
-    searchParams,
-  );
+  let query = db
+    .selectFrom('player_query_history')
+    .select((eb) => eb.fn.countAll().as('count'));
 
-  const raw = result.rows[0]?.count ?? '0';
-  return typeof raw === 'string' ? Number.parseInt(raw, 10) : Number(raw);
+  query = buildSearchClause(query, searchTerm);
+
+  const result = await query.executeTakeFirst();
+  return Number(result?.count ?? 0);
 }
 
 export async function getPlayerQueryPage(params: {
@@ -546,30 +489,18 @@ export async function getPlayerQueryPage(params: {
   const page = Math.max(Math.floor(params.page) || 1, 1);
   const pageSize = Math.min(Math.max(Math.floor(params.pageSize) || 1, 1), 200);
   const offset = (page - 1) * pageSize;
-
   const searchTerm = params.search?.trim();
-  const { clause: whereClause, params: searchParams } = buildSearchClause(searchTerm, 3);
 
-  let sql;
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    sql = `
-      SELECT identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
-      FROM player_query_history
-      ${whereClause}
-      ORDER BY requested_at DESC
-      LIMIT $1 OFFSET $2
-    `;
-  } else {
-    sql = `
-      SELECT identifier, normalized_identifier, lookup_type, resolved_uuid, resolved_username, stars, nicked, cache_source, cache_hit, revalidated, install_id, response_status, latency_ms, requested_at
-      FROM player_query_history
-      ${whereClause}
-      ORDER BY requested_at DESC
-      OFFSET $2 ROWS FETCH NEXT $1 ROWS ONLY
-    `;
-  }
+  let query = db
+    .selectFrom('player_query_history')
+    .selectAll()
+    .orderBy('requested_at', 'desc')
+    .limit(pageSize)
+    .offset(offset);
 
-  const rowsResult = await pool.query<PlayerQueryHistoryRow>(sql, [pageSize, offset, ...searchParams]);
+  query = buildSearchClause(query, searchTerm);
+
+  const rows = await query.execute();
 
   let totalCount = params.totalCountOverride;
   if (totalCount === undefined) {
@@ -577,7 +508,7 @@ export async function getPlayerQueryPage(params: {
   }
 
   return {
-    rows: rowsResult.rows.map(mapRowToSummary),
+    rows: rows.map(mapRowToSummary),
     totalCount,
   };
 }
@@ -602,14 +533,19 @@ export async function getSystemStats(): Promise<SystemStats> {
   // Get current resource metrics
   const resourceMetrics = await getCurrentResourceMetrics();
 
-  const apiStatsQuery = pool.type === DatabaseType.POSTGRESQL
-    ? `SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000)`
-    : `SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (DATEDIFF_BIG(ms, '1970-01-01', DATEADD(hour, -1, GETDATE())))`;
+  let apiStatsCount = 0;
 
-  const apiStatsPromise = pool.query<{ count: string | number }>(apiStatsQuery)
-    .catch(() => ({ rows: [{ count: 0 }] }));
-
-  const [apiStats] = await Promise.all([apiStatsPromise]);
+  try {
+      if (dbType === DatabaseType.POSTGRESQL) {
+        const res = await sql<{count: number}>`SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000)`.execute(db);
+        apiStatsCount = Number(res.rows[0]?.count ?? 0);
+      } else {
+        const res = await sql<{count: number}>`SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (DATEDIFF_BIG(ms, '1970-01-01', DATEADD(hour, -1, GETDATE())))`.execute(db);
+        apiStatsCount = Number(res.rows[0]?.count ?? 0);
+      }
+  } catch (e) {
+      // hypixel_api_calls table might not exist in all environments or Kysely schema
+  }
 
   function bytesToHuman(raw: string | number | null | undefined): string {
     const bytes = raw === null || raw === undefined ? 0 : Number.parseInt(String(raw), 10);
@@ -628,7 +564,7 @@ export async function getSystemStats(): Promise<SystemStats> {
   return {
     dbSize: redisCacheStats.memoryUsed,
     indexSize: 'N/A (Redis)',
-    apiCallsLastHour: Number((apiStats.rows[0] as any)?.count ?? 0),
+    apiCallsLastHour: apiStatsCount,
     cacheCount: redisCacheStats.cacheKeys,
     avgPayloadSize: bytesToHuman(redisCacheStats.memoryUsedBytes / Math.max(1, redisCacheStats.cacheKeys)),
     resourceMetrics,

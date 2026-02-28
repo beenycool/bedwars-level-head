@@ -31,8 +31,7 @@ object TabRender {
         val stats = Levelhead.getCachedStats(uuid, gameMode) ?: return null
         if (stats.nicked) return null
 
-        val tabString = getTabString(stats, gameMode)
-        return if (tabString.isBlank()) null else tabString
+        return getTabString(stats, gameMode).takeIf { it.isNotBlank() }
     }
 
     @JvmStatic
@@ -42,7 +41,9 @@ object TabRender {
     }
 
     fun getTabString(stats: GameStats, mode: GameMode): String {
-        return when (mode) {
+        stats.cachedTabString?.let { return it }
+
+        val computed = when (mode) {
             GameMode.BEDWARS -> {
                 stats as GameStats.Bedwars
                 val starTag = stats.star?.let { BedwarsStar.formatStarTag(it) }
@@ -75,6 +76,8 @@ object TabRender {
                 "$levelTag §7: ${kdrColor}${String.format(Locale.ROOT, "%.2f", kdr)}"
             }
         }
+        stats.cachedTabString = computed
+        return computed
     }
 
     @JvmStatic

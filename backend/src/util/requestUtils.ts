@@ -1,4 +1,3 @@
-
 import ipaddr from 'ipaddr.js';
 import { recordPlayerQuery } from '../services/history';
 import { ResolvedPlayer } from '../services/player';

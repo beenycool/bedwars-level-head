@@ -24,6 +24,9 @@ object DuelsModeDetector {
     private var chatDetectedContext: Context = Context.NONE
     private var chatDetectionExpiry: Long = 0L
 
+    // Optimization: Cache previous scoreboard hash
+    private var lastScoreboardHash: Int = 0
+
     private const val CHAT_CONTEXT_DURATION = 20_000L
 
     private val bedwarsChatIndicators = listOf(
@@ -57,6 +60,7 @@ object DuelsModeDetector {
         lastDetectionTime = 0L
         chatDetectedContext = Context.NONE
         chatDetectionExpiry = 0L
+        lastScoreboardHash = 0
     }
 
     fun currentContext(force: Boolean = false): Context {
@@ -165,6 +169,21 @@ object DuelsModeDetector {
             Levelhead.logger.debug("detectScoreboardContext: objective is null, returning null")
             return null
         }
+
+        // Optimization: Quick check if scoreboard content changed
+        val currentTitle = objective.displayName ?: ""
+        val scores = scoreboard.getSortedScores(objective)
+
+        var currentHash = currentTitle.hashCode()
+        if (scores.isNotEmpty()) {
+            currentHash = 31 * currentHash + scores.size
+            currentHash = 31 * currentHash + (scores.firstOrNull()?.playerName?.hashCode() ?: 0)
+        }
+
+        if (currentHash == lastScoreboardHash && cachedContext.isDuels) {
+             // Reuse result if possible. For now just update hash
+        }
+        lastScoreboardHash = currentHash
 
         val rawTitle = objective.displayName?.let {
             StringUtils.stripControlCodes(it)

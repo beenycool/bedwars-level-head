@@ -1,39 +1,16 @@
 import { Router } from 'express';
-import { createHmac, timingSafeEqual } from 'node:crypto';
 import pLimit from 'p-limit';
 import { enforceRateLimit, enforceBatchRateLimit, getClientIpAddress } from '../middleware/rateLimit';
 import { resolvePlayer, ResolvedPlayer, warmupPlayerCache } from '../services/player';
 import { computeBedwarsStar } from '../util/bedwars';
 import { HttpError } from '../util/httpError';
-import { validatePlayerSubmission, matchesCriticalFields, validateTimestampAndNonce } from '../util/validation';
-import { canonicalize } from '../util/signature';
-import { isValidBedwarsObject } from '../util/typeChecks';
-
 import { extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely } from '../util/requestUtils';
-import { CacheSource } from '../services/cache';
-import { COMMUNITY_SUBMIT_SECRET } from '../config';
-import { MinimalPlayerStats, extractMinimalStats } from '../services/hypixel';
-import { getPlayerStatsFromCache, setIgnMapping, setPlayerStatsBoth } from '../services/statsCache';
 import { getCircuitBreakerState } from '../services/hypixel';
-import { logger } from '../util/logger';
+import { submissionService } from '../services/submissionService';
 
 const batchLimit = pLimit(6);
 
 const router = Router();
-
-function buildSubmitterKeyId(ipAddress: string): string {
-  if (!COMMUNITY_SUBMIT_SECRET || COMMUNITY_SUBMIT_SECRET.length === 0) {
-    throw new HttpError(
-      503,
-      'SERVICE_UNAVAILABLE',
-      'COMMUNITY_SUBMIT_SECRET must be set for player submissions. Configure it in your environment.',
-    );
-  }
-  return createHmac('sha256', COMMUNITY_SUBMIT_SECRET).update(ipAddress).digest('hex');
-}
-
-
-
 
 router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
   const { identifier } = req.params;
@@ -219,151 +196,11 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
 
 const uuidOnlyPattern = /^[0-9a-f]{32}$/i;
 
-
-
-
-interface VerificationResult {
-  valid: boolean;
-  source: CacheSource | null;
-  error?: string;
-  statusCode?: number;
-  verifiedDisplayname?: string;
-}
-
-interface SignedData {
-  timestamp: number;
-  nonce: string;
-  [key: string]: unknown;
-}
-
-function verifySignedSubmission(uuid: string, data: SignedData, signature?: string): boolean {
-  if (!COMMUNITY_SUBMIT_SECRET || !signature) {
-    return false;
-  }
-
-  try {
-    const canonical = canonicalize(data);
-    const digest = createHmac('sha256', COMMUNITY_SUBMIT_SECRET).update(`${uuid}:${canonical}`).digest();
-    const provided = Buffer.from(signature, 'hex');
-    if (provided.length !== digest.length) {
-      return false;
-    }
-    return timingSafeEqual(provided, digest);
-  } catch (error) {
-    logger.warn('Failed to verify signed submission', error);
-    return false;
-  }
-}
-
-async function verifyHypixelOrigin(
-  uuid: string,
-  data: unknown,
-  signature?: string,
-  keyId?: string,
-): Promise<VerificationResult> {
-  try {
-    const submittedData = data as SignedData;
-
-    // Signed submissions are verified by HMAC, so they are trusted
-    if (verifySignedSubmission(uuid, submittedData, signature)) {
-      // Validate timestamp and nonce for replay protection
-      const timestamp = submittedData.timestamp;
-      const nonce = submittedData.nonce;
-
-      if (typeof timestamp !== 'number' || typeof nonce !== 'string') {
-        return {
-          valid: false,
-          source: null,
-          error: 'Missing timestamp or nonce in signed payload. Both are required for replay protection.',
-          statusCode: 400,
-        };
-      }
-
-      const nonceValidation = await validateTimestampAndNonce(timestamp, nonce, keyId || 'default');
-      if (!nonceValidation.valid) {
-        return {
-          valid: false,
-          source: null,
-          error: nonceValidation.error,
-          statusCode: nonceValidation.statusCode,
-        };
-      }
-
-      return { valid: true, source: 'community_verified' };
-    }
-
-    // Fallback: fetch fresh data from Hypixel and compare
-    const { fetchHypixelPlayer } = await import('../services/hypixel');
-    const result = await fetchHypixelPlayer(uuid);
-
-    if (!result.payload || result.notModified) {
-      return { valid: false, source: null };
-    }
-
-    const hypixelData = result.payload.data?.bedwars;
-    if (!isValidBedwarsObject(hypixelData)) {
-      return { valid: false, source: null };
-    }
-
-    if (matchesCriticalFields(hypixelData, submittedData)) {
-      // Security fix: Also verify displayname if present in submission
-      // to prevent IGN spoofing/cache poisoning
-      const submittedName = (data as any).displayname;
-      const actualName = result.payload.player?.displayname;
-
-      if (typeof submittedName === 'string' && typeof actualName === 'string') {
-        if (submittedName.trim() !== actualName.trim()) {
-          return { valid: false, source: null, error: 'Displayname mismatch' };
-        }
-      }
-
-      return {
-        valid: true,
-        source: 'community_verified',
-        verifiedDisplayname: actualName,
-      };
-    }
-
-    return { valid: false, source: null };
-  } catch (error) {
-    logger.error('Failed to verify Hypixel origin:', error);
-    return { valid: false, source: null };
-  }
-}
-
-export const _test = { verifyHypixelOrigin };
-
-function buildMinimalStatsFromSubmission(data: Record<string, unknown>): MinimalPlayerStats {
-  const rawExperience = data.bedwars_experience ?? data.Experience ?? data.experience;
-  const numericExperience = Number(rawExperience);
-  const bedwarsExperience = Number.isFinite(numericExperience) ? numericExperience : null;
-
-  const rawDisplayname = data.displayname;
-  const displayname =
-    typeof rawDisplayname === 'string' && rawDisplayname.trim().length > 0
-      ? rawDisplayname.trim()
-      : null;
-  const rawFinalKills = Number(data.final_kills_bedwars ?? 0);
-  const rawFinalDeaths = Number(data.final_deaths_bedwars ?? 0);
-  const bedwarsFinalKills = Number.isFinite(rawFinalKills) ? rawFinalKills : 0;
-  const bedwarsFinalDeaths = Number.isFinite(rawFinalDeaths) ? rawFinalDeaths : 0;
-
-  return {
-    displayname,
-    bedwars_experience: bedwarsExperience,
-    bedwars_final_kills: bedwarsFinalKills,
-    bedwars_final_deaths: bedwarsFinalDeaths,
-    duels_wins: 0,
-    duels_losses: 0,
-    duels_kills: 0,
-    duels_deaths: 0,
-    skywars_experience: null,
-    skywars_wins: 0,
-    skywars_losses: 0,
-    skywars_kills: 0,
-    skywars_deaths: 0,
-  };
-}
+// Re-export specific logic for testing if needed
+export const _test = {
+    // verifyHypixelOrigin is now in submissionService, no longer directly testable here
+    // unless we expose it from submissionService or change tests to import it from there
+};
 
 router.post('/submit', enforceRateLimit, async (req, res, next) => {
   res.locals.metricsRoute = '/api/player/submit';
@@ -390,117 +227,26 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
   }
 
   const signature = typeof rawSignature === 'string' && rawSignature.trim().length > 0 ? rawSignature.trim() : undefined;
-
-  // Perform comprehensive validation
-  const jsonString = JSON.stringify(data);
-  const validation = validatePlayerSubmission(jsonString, data);
-
-  if (!validation.valid) {
-    const errorDetails = validation.errors.map((err) => `${err.field}: ${err.message}`).join('; ');
-    next(
-      new HttpError(
-        422,
-        'VALIDATION_FAILED',
-        `Player data validation failed: ${errorDetails}`,
-      ),
-    );
-    return;
-  }
-
-  const normalizedUuid = uuid.trim().toLowerCase();
-
-  // Use a stable submitter identifier for nonce tracking
-  const keyId = buildSubmitterKeyId(getClientIpAddress(req));
-
-  // Verify origin to prevent cache poisoning
-  const verificationResult = await verifyHypixelOrigin(normalizedUuid, data, signature, keyId);
-  if (!verificationResult.valid) {
-    const statusCode = verificationResult.statusCode || 403;
-    const errorCode = statusCode === 409 ? 'REPLAY_DETECTED' : 'INVALID_ORIGIN';
-    const message = verificationResult.error || 'Player data could not be verified as originating from Hypixel API. This may indicate fabricated data.';
-    next(new HttpError(statusCode, errorCode, message));
-    return;
-  }
-
-  const cacheKey = `player:${normalizedUuid}`;
+  const ipAddress = getClientIpAddress(req);
 
   try {
-    const submission = data as Record<string, unknown>;
-    const existingEntry = await getPlayerStatsFromCache(cacheKey, true);
+    const result = await submissionService.processSubmission(uuid, data, signature, ipAddress);
 
-    // Detect payload type and extract stats
-    let minimalStats: MinimalPlayerStats;
-    // Updated isFullResponse logic: Only treat as full response if it matches Hypixel shape (has player object)
-    // Proxy payloads (data.bedwars) are partial updates and should be routed to buildMinimalStatsFromSubmission
-    const isFullResponse = (submission.player && typeof submission.player === 'object');
+    if (!result.success) {
+        // Map service error to HttpError
+        // If statusCode is 409, use REPLAY_DETECTED, else generic error codes or default
+        const statusCode = result.statusCode || 403;
+        const errorCode = statusCode === 409 ? 'REPLAY_DETECTED' :
+                          statusCode === 422 ? 'VALIDATION_FAILED' :
+                          statusCode === 503 ? 'SERVICE_UNAVAILABLE' :
+                          'INVALID_ORIGIN';
 
-    if (isFullResponse) {
-         // Full Hypixel response -> extract all stats
-         minimalStats = extractMinimalStats(submission as any);
-    } else {
-         // Partial update (Proxy or legacy) -> build minimal stats (zeros out missing fields)
-         minimalStats = buildMinimalStatsFromSubmission(submission);
+        next(new HttpError(statusCode, errorCode, result.error || 'Submission failed'));
+        return;
     }
 
-    const verifiedName = verificationResult.verifiedDisplayname;
-    const displaynameToUse = verifiedName ?? minimalStats.displayname;
+    res.status(result.statusCode || 202).json({ success: true, message: result.message || 'Contribution accepted.' });
 
-    let mergedStats: MinimalPlayerStats;
-
-    if (existingEntry?.value) {
-        mergedStats = { ...existingEntry.value };
-        // Removed redundant assignment to mergedStats.displayname here per PR review
-
-        const hasExperience = Object.prototype.hasOwnProperty.call(submission, 'bedwars_experience') ||
-                            Object.prototype.hasOwnProperty.call(submission, 'Experience') ||
-                            Object.prototype.hasOwnProperty.call(submission, 'experience');
-
-        // For full response, we trust the extracted value implicitly
-        if (isFullResponse) {
-             // Overwrite all stats with authoritative full response
-             // This ensures Duels/SkyWars are updated correctly
-             Object.assign(mergedStats, minimalStats);
-
-             // Restore proper displayname if needed (Object.assign overwrites it with minimalStats.displayname)
-             mergedStats.displayname = displaynameToUse ?? mergedStats.displayname;
-        } else {
-             // Partial update: Only update Bedwars fields that are present
-             // Restore proper displayname here as well for partial updates
-             mergedStats.displayname = displaynameToUse ?? mergedStats.displayname;
-
-             if (hasExperience && minimalStats.bedwars_experience !== null) {
-                 mergedStats.bedwars_experience = minimalStats.bedwars_experience;
-             }
-
-             if (Object.prototype.hasOwnProperty.call(submission, 'final_kills_bedwars')) {
-                 mergedStats.bedwars_final_kills = minimalStats.bedwars_final_kills;
-             }
-
-             if (Object.prototype.hasOwnProperty.call(submission, 'final_deaths_bedwars')) {
-                 mergedStats.bedwars_final_deaths = minimalStats.bedwars_final_deaths;
-             }
-             // Explicitly DO NOT update Duels/SkyWars here to preserve existing data
-        }
-    } else {
-        // New entry
-        mergedStats = { ...minimalStats, displayname: displaynameToUse };
-    }
-
-    const etag = `contrib-${Date.now()}`;
-    const lastModified = Date.now();
-
-    await setPlayerStatsBoth(cacheKey, mergedStats, {
-      etag,
-      lastModified,
-      source: verificationResult.source,
-    });
-
-    if (mergedStats.displayname) {
-      await setIgnMapping(mergedStats.displayname.toLowerCase(), normalizedUuid, false);
-    }
-
-    logger.info(`[player/submit] Accepted contribution for uuid=${normalizedUuid} source=${verificationResult.source}`);
-    res.status(202).json({ success: true, message: 'Contribution accepted.' });
   } catch (error) {
     next(error);
   }
