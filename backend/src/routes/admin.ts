@@ -48,6 +48,9 @@ router.post('/cache/purge', enforceAdminRateLimit, enforceAdminAuth, async (req,
   try {
     let purged = 0;
     if (typeof identifier === 'string' && identifier.trim().length > 0) {
+      if (identifier.length > 64) {
+        throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be 64 characters or less.');
+      }
       const keys = await cacheKeysForIdentifier(identifier.trim());
       if (keys.playerKeys.length === 0 && keys.igns.length === 0) {
         throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a UUID (without dashes) or an IGN.');

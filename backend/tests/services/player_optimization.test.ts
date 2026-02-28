@@ -103,6 +103,11 @@ describe('resolvePlayer optimization', () => {
     await expect(resolvePlayer(longIgn)).rejects.toThrow("Identifier must be a valid UUID (no dashes) or Minecraft username.");
   });
 
+  it('should reject identifier that exceeds 64 characters to prevent DoS', async () => {
+    const hugeIgn = 'A'.repeat(65);
+    await expect(resolvePlayer(hugeIgn)).rejects.toThrow("Identifier must be 64 characters or less.");
+  });
+
   it('should handle misplaced dashes if they result in valid UUID (optimization check)', async () => {
     // Original behavior: strict dashedUuidRegex would reject this.
     // Optimized behavior: strips dashes, checks if valid UUID.
@@ -116,20 +121,18 @@ describe('resolvePlayer optimization', () => {
     await expect(resolvePlayer(misplacedDashes)).rejects.toThrow('Identifier must be a valid UUID');
   });
 
-  it('should handle misplaced dashes resulting in 32 chars', async () => {
+  it('should reject misplaced dashes resulting in 32 chars', async () => {
       // '12345678-1234-1234-1234-1234567890ab' is valid.
       // '123456781234123412341234567890ab----' (32 hex + 4 dashes)
       const weird = '123456781234123412341234567890ab----';
-      // If we strip dashes -> 32 hex. -> valid UUID?
-      // Strict regex would fail. Optimized length check (36) -> strip -> 32 hex -> valid.
 
-      // Let's assume we WANT to allow this robustness, or at least accept it as a side effect.
-      // However, if we want to be strict, we can check.
-      // For now, let's see what happens with my proposed implementation. It would pass.
+      // With our new length check, the fast dash-stripping logic expects specific dashes at indices 8, 13, 18, 23.
+      // This weird input doesn't have dashes there, so it isn't stripped.
+      // Length is 36, and it doesn't match uuidRegex.
+      // It also doesn't match ignRegex.
 
       (statsCache.fetchWithDedupe as jest.Mock).mockResolvedValue({ stats: mockStats, etag: 'tag', lastModified: 12345 });
 
-      const result = await resolvePlayer(weird);
-      expect(result.uuid).toBe('123456781234123412341234567890ab');
+      await expect(resolvePlayer(weird)).rejects.toThrow('Identifier must be a valid UUID (no dashes) or Minecraft username.');
   });
 });
