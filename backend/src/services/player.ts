@@ -416,6 +416,10 @@ export async function resolvePlayer(
   identifier: string,
   options?: PlayerResolutionOptions,
 ): Promise<ResolvedPlayer> {
+  if (!identifier || typeof identifier !== 'string' || identifier.length > 64) {
+    throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be 64 characters or less.');
+  }
+
   // Fast normalization: combine length gate with structural dash check
   
   let key = identifier;

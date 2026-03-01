@@ -117,7 +117,8 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
   }
 
   const normalizedInput = uuidsValue
-    .map((value) => (typeof value === 'string' ? value.trim() : ''))
+    .filter((value) => typeof value === 'string' && value.length <= 64)
+    .map((value) => (value as string).trim())
     .filter((value) => value.length > 0);
 
   const uniqueUuids = Array.from(new Set(normalizedInput));
