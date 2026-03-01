@@ -254,27 +254,34 @@ router.get('/', async (req, res, next) => {
     // page defaults to 1 if omitted
     const clearUrl = '?' + clearParams.toString();
 
-    const totalCount = await getPlayerQueryCount({ search });
-    const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-    const page = Math.min(safePage, totalPages);
-    const pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search, totalCountOverride: totalCount });
-
-    // Fetch filtered data for charts
-    const [chartData, topPlayers, sysStats, redisStats, resourceMetricsHistory] = await Promise.all([
-      getPlayerQueriesStats({
-        startDate: validStartDate,
-        endDate: validEndDate,
-        limit: effectiveLimit,
-      }),
-      getTopPlayersByQueryCount({
-        startDate: validStartDate,
-        endDate: validEndDate,
-        limit: 20,
-      }),
-      getSystemStats(),
-      getRedisStats(),
-      getResourceMetricsHistory({ startDate: validStartDate, endDate: validEndDate }),
+    // Run chart data fetch concurrently with pagination queries using a parent Promise.all
+    // to prevent unhandled promise rejections if any query fails while another is pending.
+    const [[chartData, topPlayers, sysStats, redisStats, resourceMetricsHistory], pageDataResult] = await Promise.all([
+      Promise.all([
+        getPlayerQueriesStats({
+          startDate: validStartDate,
+          endDate: validEndDate,
+          limit: effectiveLimit,
+        }),
+        getTopPlayersByQueryCount({
+          startDate: validStartDate,
+          endDate: validEndDate,
+          limit: 20,
+        }),
+        getSystemStats(),
+        getRedisStats(),
+        getResourceMetricsHistory({ startDate: validStartDate, endDate: validEndDate }),
+      ]),
+      (async () => {
+        const totalCount = await getPlayerQueryCount({ search });
+        const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+        const page = Math.min(safePage, totalPages);
+        const pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search, totalCountOverride: totalCount });
+        return { page, totalPages, pageData };
+      })()
     ]);
+
+    const { page, totalPages, pageData } = pageDataResult;
 
     // Serialise the data so the frontend script can use it
     // Securely escape < characters to prevent XSS via script injection

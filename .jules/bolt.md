@@ -11,3 +11,7 @@
 ## 2025-05-15 - Efficient Object Aggregation
 **Learning:** In `backend/src/services/hypixel.ts`, iterating over a large stats object (~10k keys) using `Object.entries(stats)` combined with `key.startsWith(prefix)` inside a loop called multiple times (4x per game mode) was extremely inefficient (O(M*N) + allocation). Switching to a single pass using `for (const key in stats)` reduced execution time by ~10x (29ms -> 2.8ms).
 **Action:** When aggregating data from large objects (like Hypixel API responses), avoid `Object.entries` if you just need to scan keys. Use a single pass `for..in` loop to calculate multiple aggregates simultaneously, avoiding repeated scans and intermediate array allocations.
+
+## 2025-05-16 - Safe Parallelization of Mixed Asynchronous Workflows
+**Learning:** Attempting to parallelize operations by assigning a `Promise.all` to a variable, and later awaiting it after other sequential awaits, can lead to Unhandled Promise Rejections if any promise within the variable rejects while the sequential awaits are still resolving. Node.js views this as an unattached rejection.
+**Action:** When needing to run a sequence of `await` statements concurrently alongside other independent promises, wrap the sequence in an `async` IIFE (Immediately Invoked Function Expression). Place both the IIFE and the other promises inside a single, parent `Promise.all()` so that rejections are immediately caught and handled by the surrounding try/catch block.
