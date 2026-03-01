@@ -182,7 +182,7 @@ router.get('/data', async (req, res, next) => {
     const page = 1;
 
     // Fetch all data in parallel
-    const [chartData, topPlayers, sysStats, redisStats, pageData, totalCount, resourceMetricsHistory] = await Promise.all([
+    const [chartData, topPlayers, sysStats, redisStats, pageData, resourceMetricsHistory] = await Promise.all([
       getPlayerQueriesStats({
         startDate: validStartDate,
         endDate: validEndDate,
@@ -196,7 +196,6 @@ router.get('/data', async (req, res, next) => {
       getSystemStats(),
       getRedisStats(),
       getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search }),
-      getPlayerQueryCount({ search }),
       getResourceMetricsHistory({ startDate: validStartDate, endDate: validEndDate }),
     ]);
 
@@ -205,7 +204,7 @@ router.get('/data', async (req, res, next) => {
       topPlayers,
       sysStats,
       redisStats,
-      pageData: { ...pageData, totalCount },
+      pageData,
       resourceMetricsHistory,
       filters: {
         from: validStartDate?.toISOString(),

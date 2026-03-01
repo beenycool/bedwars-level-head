@@ -12,6 +12,7 @@ import {
   formatTimeAgo,
   summarizeApiKeyStatuses,
   isValidApiKeyFormat,
+  isValidKeyHashFormat,
   type ApiKeyValidation,
 } from '../services/apiKeyManager';
 
@@ -147,7 +148,7 @@ router.delete('/:keyHash', enforceAdminRateLimit, enforceAdminAuth, async (req, 
     return;
   }
 
-  if (!/^[a-fA-F0-9]{16}$/.test(keyHash)) {
+  if (!isValidKeyHashFormat(keyHash)) {
     next(new HttpError(400, 'INVALID_KEY_HASH_FORMAT', 'Key hash format is invalid.'));
     return;
   }
