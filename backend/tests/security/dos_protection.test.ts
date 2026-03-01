@@ -6,6 +6,9 @@ jest.mock('../../src/services/statsCache', () => ({
   getPlayerStatsFromCacheWithSWR: jest.fn().mockResolvedValue(null),
   getIgnMapping: jest.fn().mockResolvedValue(null),
   buildPlayerCacheKey: jest.fn().mockReturnValue('mock-key'),
+  setIgnMapping: jest.fn().mockResolvedValue(undefined),
+  setPlayerStatsBoth: jest.fn().mockResolvedValue(undefined),
+  setPlayerStatsL1: jest.fn().mockResolvedValue(undefined),
 }));
 
 jest.mock('../../src/services/hypixel', () => ({
@@ -40,17 +43,20 @@ describe('DoS Protection - Input Length Limits', () => {
   it('should allow valid length identifiers', async () => {
     // We expect this to fail later in the process (e.g. invalid UUID format)
     // but NOT with "too long".
-    // Since we mocked dependencies to return null, it will likely hit the
-    // "Identifier must be a valid UUID..." error at the end of resolvePlayer.
-    const validLengthIdentifier = 'valid_length_id';
+    // We use a string that matches neither uuidRegex nor ignRegex to trigger the default HttpError.
+    const validLengthIdentifier = 'invalid-format-but-valid-length';
+
+    await expect(resolvePlayer(validLengthIdentifier)).rejects.toThrow(HttpError);
 
     try {
       await resolvePlayer(validLengthIdentifier);
+      fail('Should have thrown an HttpError');
     } catch (error) {
-        if (error instanceof HttpError) {
-            // It should NOT be the length error
-            expect(error.message).not.toContain('too long');
-        }
+      expect(error).toBeInstanceOf(HttpError);
+      if (error instanceof HttpError) {
+        // It should NOT be the length error
+        expect(error.message).not.toContain('too long');
+      }
     }
   });
 });
