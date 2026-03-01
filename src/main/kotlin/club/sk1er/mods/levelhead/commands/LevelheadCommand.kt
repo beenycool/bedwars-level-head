@@ -42,6 +42,20 @@ import kotlin.text.RegexOption
 @Command(value = "levelhead", aliases = ["lh"])
 class LevelheadCommand {
 
+    private var pendingAction: (() -> Unit)? = null
+
+    @SubCommand
+    fun confirm() {
+        val action = pendingAction
+        if (action == null) {
+            sendMessage("§cNo pending action to confirm.")
+            return
+        }
+        pendingAction = null
+        action()
+    }
+
+
     companion object {
         private val API_KEY_PATTERN = Regex("^[a-f0-9]{32}$", RegexOption.IGNORE_CASE)
         private val HEX_COLOR_PATTERN = Regex("^#?[0-9a-fA-F]{6}$")
@@ -138,16 +152,25 @@ class LevelheadCommand {
             return
         }
 
-        LevelheadConfig.updateApiKey(sanitized)
-        sendSuccessWithStatusLink("${ChatColor.GREEN}Saved Hypixel API key for BedWars stat fetching.")
-        resetBedwarsFetcher()
+        val msg = ChatComponentText("${ChatColor.RED}Warning: ${ChatColor.YELLOW}Changing your API key will allow the new key to be used for stat requests. Are you sure? ")
+            .appendSibling(ChatComponentText("${ChatColor.GREEN}[Confirm]").apply {
+                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead confirm")
+                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to confirm"))
+            })
+        sendMessage(msg)
 
-        // Background validation of the API key
-        Levelhead.scope.launch {
-            val valid = validateApiKey(sanitized)
-            if (!valid) {
-                sendMessage("${ChatColor.RED}Warning: That API key appears to be invalid (Hypixel rejected it).")
-                sendMessage(getDeveloperKeyHelpMessage())
+        pendingAction = {
+            LevelheadConfig.updateApiKey(sanitized)
+            sendSuccessWithStatusLink("${ChatColor.GREEN}Saved Hypixel API key for BedWars stat fetching.")
+            resetBedwarsFetcher()
+
+            // Background validation of the API key
+            Levelhead.scope.launch {
+                val valid = validateApiKey(sanitized)
+                if (!valid) {
+                    sendMessage("${ChatColor.RED}Warning: That API key appears to be invalid (Hypixel rejected it).")
+                    sendMessage(getDeveloperKeyHelpMessage())
+                }
             }
         }
     }
@@ -349,9 +372,19 @@ class LevelheadCommand {
                     .build()
                     .toString()
                     .trimEnd('/')
-                LevelheadConfig.updateProxyBaseUrl(sanitized)
-                sendSuccessWithStatusLink("${ChatColor.GREEN}Updated proxy base URL to ${ChatColor.GOLD}$sanitized${ChatColor.GREEN}.")
-                resetBedwarsFetcher()
+
+                val msg = ChatComponentText("${ChatColor.RED}Warning: ${ChatColor.YELLOW}Changing the proxy URL may expose your IP and API key to the new server. Are you sure? ")
+                    .appendSibling(ChatComponentText("${ChatColor.GREEN}[Confirm]").apply {
+                        chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead confirm")
+                        chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to confirm"))
+                    })
+                sendMessage(msg)
+
+                pendingAction = {
+                    LevelheadConfig.updateProxyBaseUrl(sanitized)
+                    sendSuccessWithStatusLink("${ChatColor.GREEN}Updated proxy base URL to ${ChatColor.GOLD}$sanitized${ChatColor.GREEN}.")
+                    resetBedwarsFetcher()
+                }
             }
             "token" -> {
                 val token = parsedArgs.getOrNull(1)?.trim()
