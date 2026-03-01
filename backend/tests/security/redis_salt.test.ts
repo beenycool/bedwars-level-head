@@ -1,4 +1,4 @@
-import { hashIp } from '../../src/services/redis';
+import { hashIp, clearIpHashCache } from '../../src/services/redis';
 import * as config from '../../src/config';
 
 // We use Object.defineProperty because the exports are read-only constants
@@ -22,10 +22,11 @@ describe('IP Hashing Security', () => {
     setSalt('test-salt-A');
     const hashA = hashIp(ip);
 
-    // Bolt: Use a different IP to avoid cache hit (hashIp caches by IP)
-    const ip2 = '127.0.0.2';
+    // Clear cache to ensure the new salt is actually used for the same IP
+    clearIpHashCache();
+
     setSalt('test-salt-B');
-    const hashB = hashIp(ip2);
+    const hashB = hashIp(ip);
 
     expect(hashA).not.toBe(hashB);
     expect(hashA).toHaveLength(32);
@@ -48,10 +49,11 @@ describe('IP Hashing Security', () => {
     setSalt('');
     const hashWithEmpty = hashIp(ip);
 
-    // Bolt: Use a different IP to avoid cache hit
-    const ip2 = '8.8.8.9';
+    // Clear cache to ensure the new salt is actually used
+    clearIpHashCache();
+
     setSalt(oldDefaultSalt);
-    const hashWithOldDefault = hashIp(ip2);
+    const hashWithOldDefault = hashIp(ip);
 
     expect(hashWithEmpty).not.toBe(hashWithOldDefault);
   });

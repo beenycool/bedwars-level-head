@@ -94,6 +94,14 @@ export function hashIp(ip: string): string {
     return result;
 }
 
+/**
+ * Clears the IP hash cache.
+ * Exported strictly for testing purposes to ensure isolation between tests that change the salt.
+ */
+export function clearIpHashCache(): void {
+    ipHashCache.clear();
+}
+
 // ---------------------------------------------------------------------------
 // Lua Scripts (Atomic Operations)
 // ---------------------------------------------------------------------------
