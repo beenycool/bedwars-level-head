@@ -16,6 +16,7 @@ import { MinimalPlayerStats, extractMinimalStats } from '../services/hypixel';
 import { getPlayerStatsFromCache, setIgnMapping, setPlayerStatsBoth } from '../services/statsCache';
 import { getCircuitBreakerState } from '../services/hypixel';
 import { logger } from '../util/logger';
+import { IDENTIFIER_MAX_LENGTH } from '../util/validationConstants';
 
 const batchLimit = pLimit(6);
 
@@ -116,19 +117,25 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
     return;
   }
 
-  const normalizedInput = uuidsValue
-    .filter((value) => typeof value === 'string' && value.length <= 64)
-    .map((value) => (value as string).trim())
-    .filter((value) => value.length > 0);
-
-  const uniqueUuids = Array.from(new Set(normalizedInput));
-  if (uniqueUuids.length === 0) {
-    res.json({ success: true, data: {} });
+  if (uuidsValue.length > 20) {
+    next(new HttpError(400, 'BAD_REQUEST', 'Provide up to 20 UUIDs per batch request.'));
     return;
   }
 
-  if (uniqueUuids.length > 20) {
-    next(new HttpError(400, 'BAD_REQUEST', 'Provide up to 20 UUIDs per batch request.'));
+  const uniqueUuidsSet = new Set<string>();
+  for (let i = 0; i < uuidsValue.length; i++) {
+    const value = uuidsValue[i];
+    if (typeof value === 'string' && value.length <= IDENTIFIER_MAX_LENGTH) {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) {
+        uniqueUuidsSet.add(trimmed);
+      }
+    }
+  }
+
+  const uniqueUuids = Array.from(uniqueUuidsSet);
+  if (uniqueUuids.length === 0) {
+    res.json({ success: true, data: {} });
     return;
   }
 

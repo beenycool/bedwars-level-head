@@ -1,5 +1,6 @@
 import { LRUCache } from 'lru-cache';
 import { HttpError } from '../util/httpError';
+import { IDENTIFIER_MAX_LENGTH } from '../util/validationConstants';
 import { CacheEntry, CacheMetadata } from './cache';
 import { fetchHypixelPlayer, HypixelFetchOptions, extractMinimalStats, MinimalPlayerStats } from './hypixel';
 import { lookupProfileByUsername } from './mojang';
@@ -416,8 +417,8 @@ export async function resolvePlayer(
   identifier: string,
   options?: PlayerResolutionOptions,
 ): Promise<ResolvedPlayer> {
-  if (!identifier || typeof identifier !== 'string' || identifier.length > 64) {
-    throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be 64 characters or less.');
+  if (!identifier || typeof identifier !== 'string' || identifier.length > IDENTIFIER_MAX_LENGTH) {
+    throw new HttpError(400, 'INVALID_IDENTIFIER', `Identifier must be ${IDENTIFIER_MAX_LENGTH} characters or less.`);
   }
 
   // Fast normalization: combine length gate with structural dash check
