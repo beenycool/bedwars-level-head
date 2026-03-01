@@ -47,11 +47,16 @@ router.post('/cache/purge', enforceAdminRateLimit, enforceAdminAuth, async (req,
 
   try {
     let purged = 0;
-    if (typeof identifier === 'string' && identifier.trim().length > 0) {
-      const keys = await cacheKeysForIdentifier(identifier.trim());
-      if (keys.playerKeys.length === 0 && keys.igns.length === 0) {
-        throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a UUID (without dashes) or an IGN.');
-      }
+    if (typeof identifier === 'string') {
+      const normalizedIdentifier = identifier.trim();
+      if (normalizedIdentifier.length > 0) {
+        if (normalizedIdentifier.length > 64) {
+          throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier is too long.');
+        }
+        const keys = await cacheKeysForIdentifier(normalizedIdentifier);
+        if (keys.playerKeys.length === 0 && keys.igns.length === 0) {
+          throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a UUID (without dashes) or an IGN.');
+        }
       if (keys.playerKeys.length > 0) {
         purged += await deletePlayerStatsEntries(keys.playerKeys);
       }
