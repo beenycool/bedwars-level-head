@@ -38,6 +38,7 @@ export interface PlayerQueryRecord {
   installId: string | null;
   responseStatus: number;
   latencyMs?: number | null;
+  retryCount?: number; // Added retryCount for dead-lettering
 }
 
 export interface PlayerQuerySummary {
@@ -94,6 +95,7 @@ const CONCURRENT_HISTORY_FETCHES = 5;
 let historyBuffer: PlayerQueryRecord[] = [];
 const MAX_HISTORY_BUFFER = 5_000;
 const BATCH_FLUSH_INTERVAL = 5000; // 5 seconds
+const MAX_RETRY_ATTEMPTS = 3;
 let flushInterval: NodeJS.Timeout | null = null;
 let supportsPgTotalRelationSize: boolean | null = null;
 
@@ -229,10 +231,6 @@ async function flushHistoryBuffer(): Promise<void> {
 
     } else {
       // MSSQL: Use Kysely batch insert
-      // Kysely handles batching internally or via simple .values([...])
-      // We can chunk if needed to avoid parameter limits, though Kysely MssqlDialect should handle it mostly.
-      // MSSQL param limit is 2100. 13 params per row -> ~160 rows per chunk safely.
-
       const CHUNK_SIZE = 150;
       const chunks = [];
       for (let i = 0; i < batch.length; i += CHUNK_SIZE) {
@@ -258,9 +256,8 @@ async function flushHistoryBuffer(): Promise<void> {
           latency_ms: r.latencyMs != null ? Math.round(r.latencyMs) : null
         }));
 
-        // Kysely insert with multiple rows generates standard VALUES (...), (...)
         await db.insertInto('player_query_history')
-          .values(rows as any) // Type casting needed as Kysely strict types expect boolean for bit columns sometimes depending on dialect config
+          .values(rows as any)
           .execute();
       })));
 
@@ -269,8 +266,23 @@ async function flushHistoryBuffer(): Promise<void> {
 
   } catch (err) {
     logger.error({ err }, '[history] Failed to flush batch');
-    // Prepend failed batch to current buffer
-    historyBuffer = batch.concat(historyBuffer);
+
+    // Handle retries and dead-lettering
+    const retryableBatch = batch.map(record => ({
+        ...record,
+        retryCount: (record.retryCount || 0) + 1
+    }));
+
+    const deadLettered = retryableBatch.filter(r => (r.retryCount || 0) >= MAX_RETRY_ATTEMPTS);
+    const toRetry = retryableBatch.filter(r => (r.retryCount || 0) < MAX_RETRY_ATTEMPTS);
+
+    if (deadLettered.length > 0) {
+        logger.error(`[history] Dropped ${deadLettered.length} records after ${MAX_RETRY_ATTEMPTS} failed attempts`, { sample: deadLettered.slice(0, 3) });
+    }
+
+    if (toRetry.length > 0) {
+        historyBuffer = toRetry.concat(historyBuffer);
+    }
   }
 }
 
@@ -367,14 +379,8 @@ export async function getPlayerQueriesWithFilters(params: {
   let query = db
     .selectFrom('player_query_history')
     .selectAll()
-    .orderBy('requested_at', 'desc');
-
-  if (dbType === DatabaseType.POSTGRESQL) {
-     query = query.limit(requestedLimit);
-  } else {
-     // MSSQL limit/top support in Kysely depends on dialect, usually .limit() works or translates to TOP
-     query = query.limit(requestedLimit);
-  }
+    .orderBy('requested_at', 'desc')
+    .limit(requestedLimit);
 
   query = buildDateRangeClause(query, params.startDate, params.endDate);
 
@@ -543,8 +549,13 @@ export async function getSystemStats(): Promise<SystemStats> {
         const res = await sql<{count: number}>`SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (DATEDIFF_BIG(ms, '1970-01-01', DATEADD(hour, -1, GETDATE())))`.execute(db);
         apiStatsCount = Number(res.rows[0]?.count ?? 0);
       }
-  } catch (e) {
-      // hypixel_api_calls table might not exist in all environments or Kysely schema
+  } catch (e: any) {
+      // Log errors properly, only ignoring "relation does not exist" type errors
+      if (e?.code === '42P01' || (e?.message && e.message.includes('Invalid object name'))) {
+          logger.debug('[history] hypixel_api_calls table does not exist, skipping api calls stat');
+      } else {
+          logger.warn({ err: e }, '[history] Failed to query hypixel_api_calls for stats');
+      }
   }
 
   function bytesToHuman(raw: string | number | null | undefined): string {

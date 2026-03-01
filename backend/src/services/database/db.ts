@@ -11,6 +11,11 @@ const connectionString = process.env.DATABASE_URL;
 const isPostgres = connectionString ? connectionString.startsWith('postgres') : false;
 export const dbType = isPostgres ? DatabaseType.POSTGRESQL : DatabaseType.AZURE_SQL;
 
+// Parse DB pool max from environment, with a default of 10 or 20
+const rawPoolMax = process.env.DB_POOL_MAX || process.env.CACHE_DB_POOL_MAX;
+const dbPoolMax = rawPoolMax ? parseInt(rawPoolMax, 10) : (isPostgres ? 20 : 10);
+const validatedPoolMax = Number.isFinite(dbPoolMax) && dbPoolMax > 0 ? dbPoolMax : 10;
+
 let db: Kysely<Database>;
 
 if (dbType === DatabaseType.POSTGRESQL) {
@@ -20,7 +25,7 @@ if (dbType === DatabaseType.POSTGRESQL) {
 
   const pool = new Pool({
     connectionString,
-    max: 20, // Adjust based on your needs
+    max: validatedPoolMax,
     idleTimeoutMillis: 30000,
   });
 
@@ -35,7 +40,7 @@ if (dbType === DatabaseType.POSTGRESQL) {
     },
   });
 
-  logger.info('[db] Kysely initialized with PostgreSQL');
+  logger.info(`[db] Kysely initialized with PostgreSQL (pool max: ${validatedPoolMax})`);
 
 } else {
   // Azure SQL / MSSQL
@@ -47,12 +52,15 @@ if (dbType === DatabaseType.POSTGRESQL) {
   const tempAdapter = new AzureSqlAdapter(connectionString);
   const pool = tempAdapter.getPool(); // This pool is created but not connected yet
 
+  // Note: the legacy adapter creates a pool using its own config. If we wanted to inject validatedPoolMax
+  // into mssql.config we would modify AzureSqlAdapter. For Kysely's tarn pool wrapping the mssql connection factory:
+
   db = new Kysely<Database>({
     dialect: new MssqlDialect({
       tarn: {
         options: {
           min: 0,
-          max: 10,
+          max: validatedPoolMax,
         },
       },
       // Pass the configured pool factory
@@ -65,7 +73,7 @@ if (dbType === DatabaseType.POSTGRESQL) {
     },
   });
 
-  logger.info('[db] Kysely initialized with Azure SQL');
+  logger.info(`[db] Kysely initialized with Azure SQL (pool max: ${validatedPoolMax})`);
 }
 
 export { db };

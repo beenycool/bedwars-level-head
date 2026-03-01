@@ -17,10 +17,10 @@ object BedwarsModeDetector {
     @Deprecated("Use GameMode.BEDWARS.defaultHeader instead", ReplaceWith("GameMode.BEDWARS.defaultHeader"))
     const val DEFAULT_HEADER = "BedWars Star"
 
-    private val teamPattern = Regex("(?:^|\\s)(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY|GREY)\\s*:", RegexOption.IGNORE_CASE)
-    private val miniServerPattern = Regex("mini\\w+", RegexOption.IGNORE_CASE)
-    private val bedwarsIntroPattern = Regex("protect\\s+your\\s+bed\\s+and\\s+destroy\\s+the\\s+enemy\\s+beds?", RegexOption.IGNORE_CASE)
-    private val WHITESPACE_PATTERN = Regex("\\s+")
+    private val teamPattern = Regex("""(?:^|\s)(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY|GREY)\s*:""", RegexOption.IGNORE_CASE)
+    private val miniServerPattern = Regex("""mini\w+""", RegexOption.IGNORE_CASE)
+    private val bedwarsIntroPattern = Regex("""protect\s+your\s+bed\s+and\s+destroy\s+the\s+enemy\s+beds?""", RegexOption.IGNORE_CASE)
+    private val WHITESPACE_PATTERN = Regex("""\s+""")
 
     private var cachedContext: Context = Context.UNKNOWN
     private var lastDetectionTime: Long = 0L
@@ -30,6 +30,7 @@ object BedwarsModeDetector {
 
     // Optimization: Cache previous scoreboard hash
     private var lastScoreboardHash: Int = 0
+    private var lastScoreboardContext: Context = Context.UNKNOWN
 
     private const val TEMP_DEBUG = false
     private const val CHAT_CONTEXT_DURATION = 20_000L
@@ -52,6 +53,7 @@ object BedwarsModeDetector {
         chatDetectionExpiry = 0L
         lastBedwarsDetectedAt = 0L
         lastScoreboardHash = 0
+        lastScoreboardContext = Context.UNKNOWN
     }
 
     fun currentContext(force: Boolean = false): Context {
@@ -139,26 +141,16 @@ object BedwarsModeDetector {
         val scores = scoreboard.getSortedScores(objective)
 
         // Simple hash of title + count + first/last score to detect changes cheaply
-        // Not perfect but good enough for interval checks
         var currentHash = currentTitle.hashCode()
         if (scores.isNotEmpty()) {
             currentHash = 31 * currentHash + scores.size
             currentHash = 31 * currentHash + (scores.firstOrNull()?.playerName?.hashCode() ?: 0)
         }
 
-        // If hash matches and we have a valid cached context, reuse it (unless it's UNKNOWN)
-        if (currentHash == lastScoreboardHash && cachedContext != Context.UNKNOWN) {
-             // If the cached context was derived from scoreboard, we can return it.
-             // But detectContext logic might fall back to chat/grace if this returns null/NONE.
-             // We return null here to indicate "no new info", but logic above handles it.
-             // Actually, if we want to reuse the result of *this specific detection method*,
-             // we need to know what it was last time.
-             // Simpler approach: if hash matches, assume context hasn't changed from scoreboard perspective.
-             // However, context also depends on chat.
-             // Let's just proceed for now, the regex overhead is the main target.
+        // If hash matches and we have a valid cached context, reuse it
+        if (currentHash == lastScoreboardHash && lastScoreboardContext != Context.UNKNOWN) {
+             return lastScoreboardContext
         }
-
-        lastScoreboardHash = currentHash
 
         val displayComponent: Any? = objective.displayName
         val rawTitle = when (displayComponent) {
@@ -203,15 +195,16 @@ object BedwarsModeDetector {
                 "sample='$sample'"
         )
 
-        if (!hasBedwarsTitle && !hasTeamLines && !hasBedwarsIndicators) {
-            return Context.NONE
+        val result = when {
+            hasTeamLines -> Context.MATCH
+            hasBedwarsTitle || hasBedwarsIndicators -> Context.LOBBY
+            else -> Context.NONE
         }
 
-        if (hasTeamLines) {
-            return Context.MATCH
-        }
+        lastScoreboardHash = currentHash
+        lastScoreboardContext = result
 
-        return Context.LOBBY
+        return result
     }
 
     private fun debug(message: String) {

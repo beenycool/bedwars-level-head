@@ -243,7 +243,7 @@ export function stopAdaptiveTtlRefresh(): void {
 
 // Helper to map DB row to internal cache structure
 function mapRow<T>(row: {
-  payload: string,
+  payload: string | Record<string, unknown>,
   expires_at: number,
   cached_at: number,
   etag: string | null,
@@ -262,6 +262,8 @@ function mapRow<T>(row: {
     } catch {
       return null;
     }
+  } else if (row.payload && typeof row.payload === 'object') {
+     parsedPayload = row.payload;
   }
 
   const source = row.source as CacheSource | null;
@@ -415,21 +417,20 @@ async function setPlayerStatsInDb(
         .execute();
     } else {
       // MSSQL: MERGE (Raw SQL)
-      // Kysely doesn't support MERGE natively yet, so we use sql template.
       await sql`
         MERGE player_stats_cache AS target
-        USING (SELECT ${key} AS cache_key, ${payload} AS payload, ${expiresAt} AS expires_at, ${cachedAt} AS cached_at, ${etag} AS etag, ${lastModified} AS last_modified, ${source} AS source) AS source
-        ON (target.cache_key = source.cache_key)
+        USING (SELECT ${key} AS cache_key, ${payload} AS payload, ${expiresAt} AS expires_at, ${cachedAt} AS cached_at, ${etag} AS etag, ${lastModified} AS last_modified, ${source} AS source) AS src
+        ON (target.cache_key = src.cache_key)
         WHEN MATCHED THEN
-          UPDATE SET payload = source.payload,
-                     expires_at = source.expires_at,
-                     cached_at = source.cached_at,
-                     etag = source.etag,
-                     last_modified = source.last_modified,
-                     source = source.source
+          UPDATE SET payload = src.payload,
+                     expires_at = src.expires_at,
+                     cached_at = src.cached_at,
+                     etag = src.etag,
+                     last_modified = src.last_modified,
+                     source = src.source
         WHEN NOT MATCHED THEN
           INSERT (cache_key, payload, expires_at, cached_at, etag, last_modified, source)
-          VALUES (source.cache_key, source.payload, source.expires_at, source.cached_at, source.etag, source.last_modified, source.source);
+          VALUES (src.cache_key, src.payload, src.expires_at, src.cached_at, src.etag, src.last_modified, src.source);
       `.execute(db);
     }
     markDbAccess();
@@ -503,16 +504,16 @@ async function setIgnMappingInDb(ign: string, uuid: string | null, nicked: boole
         const nickedBit = nicked ? 1 : 0;
         await sql`
         MERGE ign_uuid_cache AS target
-        USING (SELECT ${ign} AS ign, ${uuid} AS uuid, ${nickedBit} AS nicked, ${expiresAt} AS expires_at) AS source
-        ON (target.ign = source.ign)
+        USING (SELECT ${ign} AS ign, ${uuid} AS uuid, ${nickedBit} AS nicked, ${expiresAt} AS expires_at) AS src
+        ON (target.ign = src.ign)
         WHEN MATCHED THEN
-            UPDATE SET uuid = source.uuid,
-                    nicked = source.nicked,
-                    expires_at = source.expires_at,
+            UPDATE SET uuid = src.uuid,
+                    nicked = src.nicked,
+                    expires_at = src.expires_at,
                     updated_at = SYSUTCDATETIME()
         WHEN NOT MATCHED THEN
             INSERT (ign, uuid, nicked, expires_at)
-            VALUES (source.ign, source.uuid, source.nicked, source.expires_at);
+            VALUES (src.ign, src.uuid, src.nicked, src.expires_at);
         `.execute(db);
     }
     markDbAccess();
@@ -1130,10 +1131,10 @@ export async function deletePlayerStatsEntries(keys: string[]): Promise<number> 
   try {
     const result = await db.deleteFrom('player_stats_cache')
         .where('cache_key', 'in', keys)
-        .executeTakeFirst();
+        .execute();
 
     markDbAccess();
-    return Number(result.numDeletedRows);
+    return Number(result[0]?.numDeletedRows ?? 0);
   } catch (error) {
     logger.error('[statsCache] delete L2 stats failed', error);
     return 0;
@@ -1163,9 +1164,9 @@ export async function deleteIgnMappings(igns: string[]): Promise<number> {
   try {
     const result = await db.deleteFrom('ign_uuid_cache')
         .where('ign', 'in', igns)
-        .executeTakeFirst();
+        .execute();
     markDbAccess();
-    return Number(result.numDeletedRows);
+    return Number(result[0]?.numDeletedRows ?? 0);
   } catch (error) {
     logger.error('[statsCache] delete L2 ign mappings failed', error);
     return 0;
@@ -1204,10 +1205,10 @@ export async function clearAllPlayerStatsCaches(): Promise<number> {
   await ensureInitialized();
 
   try {
-    const statsResult = await db.deleteFrom('player_stats_cache').executeTakeFirst();
-    const ignResult = await db.deleteFrom('ign_uuid_cache').executeTakeFirst();
+    const statsResult = await db.deleteFrom('player_stats_cache').execute();
+    const ignResult = await db.deleteFrom('ign_uuid_cache').execute();
     markDbAccess();
-    return deleted + Number(statsResult.numDeletedRows) + Number(ignResult.numDeletedRows);
+    return deleted + Number(statsResult[0]?.numDeletedRows ?? 0) + Number(ignResult[0]?.numDeletedRows ?? 0);
   } catch (error) {
     logger.error('[statsCache] clear L2 caches failed', error);
     return deleted;

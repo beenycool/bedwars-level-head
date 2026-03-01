@@ -61,19 +61,26 @@ object TabRender {
             }
             GameMode.DUELS -> {
                 stats as GameStats.Duels
-                val wins = stats.wins ?: return ""
-                val divisionTag = DuelsStats.formatDivisionTag(wins)
-                val wlr = DuelsStats.calculateWLR(wins, stats.losses) ?: wins.toDouble()
-                val wlrColor = ratioColor(wlr)
-                "$divisionTag §7: ${wlrColor}${String.format(Locale.ROOT, "%.2f", wlr)}"
+                val wins = stats.wins
+                if (wins == null) {
+                    ""
+                } else {
+                    val divisionTag = DuelsStats.formatDivisionTag(wins)
+                    val wlr = DuelsStats.calculateWLR(wins, stats.losses) ?: wins.toDouble()
+                    val wlrColor = ratioColor(wlr)
+                    "$divisionTag §7: ${wlrColor}${String.format(Locale.ROOT, "%.2f", wlr)}"
+                }
             }
             GameMode.SKYWARS -> {
                 stats as GameStats.SkyWars
-                if (stats.level == null) return ""
-                val levelTag = SkyWarsStats.formatLevelTag(stats.levelInt)
-                val kdr = SkyWarsStats.calculateKDR(stats.kills, stats.deaths) ?: (stats.kills ?: 0).toDouble()
-                val kdrColor = ratioColor(kdr)
-                "$levelTag §7: ${kdrColor}${String.format(Locale.ROOT, "%.2f", kdr)}"
+                if (stats.level == null) {
+                    ""
+                } else {
+                    val levelTag = SkyWarsStats.formatLevelTag(stats.levelInt)
+                    val kdr = SkyWarsStats.calculateKDR(stats.kills, stats.deaths) ?: (stats.kills ?: 0).toDouble()
+                    val kdrColor = ratioColor(kdr)
+                    "$levelTag §7: ${kdrColor}${String.format(Locale.ROOT, "%.2f", kdr)}"
+                }
             }
         }
         stats.cachedTabString = computed

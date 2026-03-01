@@ -13,13 +13,8 @@ export interface PlayerStatsCacheTable {
 export interface IgnUuidCacheTable {
   ign: string;
   uuid: string | null;
-  nicked: boolean; // boolean in PG, BIT (0/1) in MSSQL - Kysely handles boolean mapping usually
+  nicked: boolean; // Managed by db driver mapping
   expires_at: number;
-  // updated_at is handled by the database schema (default/on update), but we might want to interact with it
-  // In the current schema, updated_at is not explicitly defined in the create table statements seen,
-  // but let's include it if needed or remove if not present in actual DB schema
-  // Based on statsCache.ts, it uses NOW() or SYSUTCDATETIME() in SQL queries.
-  // We'll omit it from the interface if we don't select/insert it directly, or treat as optional.
 }
 
 export interface PlayerQueryHistoryTable {

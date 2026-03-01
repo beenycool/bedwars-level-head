@@ -1,5 +1,4 @@
 {
   "devDependencies": {
-    "@types/pg": "^8.16.0"
   }
 }

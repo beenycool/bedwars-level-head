@@ -196,12 +196,6 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
 
 const uuidOnlyPattern = /^[0-9a-f]{32}$/i;
 
-// Re-export specific logic for testing if needed
-export const _test = {
-    // verifyHypixelOrigin is now in submissionService, no longer directly testable here
-    // unless we expose it from submissionService or change tests to import it from there
-};
-
 router.post('/submit', enforceRateLimit, async (req, res, next) => {
   res.locals.metricsRoute = '/api/player/submit';
   const body = req.body as { uuid?: unknown; data?: unknown; signature?: unknown } | undefined;
@@ -233,15 +227,18 @@ router.post('/submit', enforceRateLimit, async (req, res, next) => {
     const result = await submissionService.processSubmission(uuid, data, signature, ipAddress);
 
     if (!result.success) {
-        // Map service error to HttpError
-        // If statusCode is 409, use REPLAY_DETECTED, else generic error codes or default
-        const statusCode = result.statusCode || 403;
-        const errorCode = statusCode === 409 ? 'REPLAY_DETECTED' :
-                          statusCode === 422 ? 'VALIDATION_FAILED' :
-                          statusCode === 503 ? 'SERVICE_UNAVAILABLE' :
-                          'INVALID_ORIGIN';
+        let errorCode = result.errorCode;
+        if (!errorCode) {
+            const sc = result.statusCode || 403;
+            if (sc === 400) errorCode = 'BAD_REQUEST';
+            else if (sc === 409) errorCode = 'REPLAY_DETECTED';
+            else if (sc === 422) errorCode = 'VALIDATION_FAILED';
+            else if (sc === 503) errorCode = 'SERVICE_UNAVAILABLE';
+            else if (sc === 500) errorCode = 'INTERNAL_ERROR';
+            else errorCode = 'SUBMISSION_FAILED';
+        }
 
-        next(new HttpError(statusCode, errorCode, result.error || 'Submission failed'));
+        next(new HttpError(result.statusCode || 403, errorCode, result.error || 'Submission failed'));
         return;
     }
 

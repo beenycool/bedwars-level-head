@@ -6,10 +6,11 @@ import { canonicalize } from '../util/signature';
 import { isValidBedwarsObject } from '../util/typeChecks';
 import { MinimalPlayerStats, extractMinimalStats } from './hypixel';
 import { getPlayerStatsFromCache, setIgnMapping, setPlayerStatsBoth } from './statsCache';
+import { CacheSource } from './cache';
 
 interface VerificationResult {
   valid: boolean;
-  source: string | null;
+  source: CacheSource | null;
   error?: string;
   statusCode?: number;
   verifiedDisplayname?: string;
@@ -19,6 +20,12 @@ interface SignedData {
   timestamp: number;
   nonce: string;
   [key: string]: unknown;
+}
+
+function isSignedData(data: unknown): data is SignedData {
+    if (!data || typeof data !== 'object') return false;
+    const obj = data as Record<string, unknown>;
+    return typeof obj.timestamp === 'number' && typeof obj.nonce === 'string';
 }
 
 export class SubmissionService {
@@ -55,32 +62,34 @@ export class SubmissionService {
     keyId?: string,
   ): Promise<VerificationResult> {
     try {
-      const submittedData = data as SignedData;
+      if (signature) {
+          if (!isSignedData(data)) {
+              return {
+                  valid: false,
+                  source: null,
+                  error: 'Missing timestamp or nonce in signed payload. Both are required for replay protection.',
+                  statusCode: 400,
+              };
+          }
 
-      if (this.verifySignedSubmission(uuid, submittedData, signature)) {
-        const timestamp = submittedData.timestamp;
-        const nonce = submittedData.nonce;
+          const submittedData = data as SignedData;
 
-        if (typeof timestamp !== 'number' || typeof nonce !== 'string') {
-          return {
-            valid: false,
-            source: null,
-            error: 'Missing timestamp or nonce in signed payload.',
-            statusCode: 400,
-          };
-        }
+          if (this.verifySignedSubmission(uuid, submittedData, signature)) {
+            const timestamp = submittedData.timestamp;
+            const nonce = submittedData.nonce;
 
-        const nonceValidation = await validateTimestampAndNonce(timestamp, nonce, keyId || 'default');
-        if (!nonceValidation.valid) {
-          return {
-            valid: false,
-            source: null,
-            error: nonceValidation.error,
-            statusCode: nonceValidation.statusCode,
-          };
-        }
+            const nonceValidation = await validateTimestampAndNonce(timestamp, nonce, keyId || 'default');
+            if (!nonceValidation.valid) {
+              return {
+                valid: false,
+                source: null,
+                error: nonceValidation.error,
+                statusCode: nonceValidation.statusCode,
+              };
+            }
 
-        return { valid: true, source: 'community_verified' };
+            return { valid: true, source: 'community_verified' };
+          }
       }
 
       const { fetchHypixelPlayer } = await import('./hypixel');
@@ -95,7 +104,7 @@ export class SubmissionService {
         return { valid: false, source: null };
       }
 
-      if (matchesCriticalFields(hypixelData, submittedData)) {
+      if (matchesCriticalFields(hypixelData, data as Record<string, unknown>)) {
         const submittedName = (data as any).displayname;
         const actualName = result.payload.player?.displayname;
 
@@ -156,7 +165,7 @@ export class SubmissionService {
     data: unknown,
     signature: string | undefined,
     ipAddress: string
-  ): Promise<{ success: boolean; message?: string; statusCode?: number; error?: string }> {
+  ): Promise<{ success: boolean; message?: string; statusCode?: number; error?: string; errorCode?: string }> {
     const normalizedUuid = uuid.trim().toLowerCase();
 
     // Validate submission data structure
@@ -167,6 +176,7 @@ export class SubmissionService {
       return {
         success: false,
         statusCode: 422,
+        errorCode: 'VALIDATION_FAILED',
         error: `Player data validation failed: ${errorDetails}`
       };
     }
@@ -175,7 +185,7 @@ export class SubmissionService {
     try {
         keyId = this.buildSubmitterKeyId(ipAddress);
     } catch (e) {
-        return { success: false, statusCode: 503, error: 'Service unavailable' };
+        return { success: false, statusCode: 503, errorCode: 'SERVICE_UNAVAILABLE', error: 'Service unavailable' };
     }
 
     const verificationResult = await this.verifyHypixelOrigin(normalizedUuid, data, signature, keyId);
@@ -183,7 +193,7 @@ export class SubmissionService {
       const statusCode = verificationResult.statusCode || 403;
       const errorCode = statusCode === 409 ? 'REPLAY_DETECTED' : 'INVALID_ORIGIN';
       const message = verificationResult.error || 'Player data could not be verified as originating from Hypixel API. This may indicate fabricated data.';
-      return { success: false, statusCode, error: message }; // errorCode could be returned separately if needed
+      return { success: false, statusCode, errorCode, error: message };
     }
 
     const cacheKey = `player:${normalizedUuid}`;
@@ -234,17 +244,25 @@ export class SubmissionService {
     const etag = `contrib-${Date.now()}`;
     const lastModified = Date.now();
 
+    // Map source securely
+    let cacheSource: CacheSource = 'hypixel';
+    if (verificationResult.source === 'community_verified') {
+        cacheSource = 'community_verified';
+    } else if (verificationResult.source === 'community_unverified') {
+        cacheSource = 'community_unverified';
+    }
+
     await setPlayerStatsBoth(cacheKey, mergedStats, {
       etag,
       lastModified,
-      source: verificationResult.source as any,
+      source: cacheSource,
     });
 
     if (mergedStats.displayname) {
       await setIgnMapping(mergedStats.displayname.toLowerCase(), normalizedUuid, false);
     }
 
-    logger.info(`[player/submit] Accepted contribution for uuid=${normalizedUuid} source=${verificationResult.source}`);
+    logger.info(`[player/submit] Accepted contribution for uuid=${normalizedUuid} source=${cacheSource}`);
     return { success: true, statusCode: 202, message: 'Contribution accepted.' };
   }
 }
