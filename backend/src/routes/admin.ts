@@ -49,7 +49,7 @@ router.post('/cache/purge', enforceAdminRateLimit, enforceAdminAuth, async (req,
     let purged = 0;
     if (typeof identifier === 'string' && identifier.trim().length > 0) {
       if (identifier.length > 64) {
-        throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier is too long.');
+        throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier is too long (max 64 characters).');
       }
       const keys = await cacheKeysForIdentifier(identifier.trim());
       if (keys.playerKeys.length === 0 && keys.igns.length === 0) {
