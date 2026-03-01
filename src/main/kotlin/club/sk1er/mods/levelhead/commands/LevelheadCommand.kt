@@ -752,10 +752,14 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
 
 
     private fun sendSuccessWithStatusLink(message: String) {
+        val linkText = " ${ChatColor.GRAY}[Check Status]"
+        val linkCommand = "/levelhead status"
+        val linkHover = "${ChatColor.GREEN}Click to check status"
+
         val msg = ChatComponentText(message).appendSibling(
-            ChatComponentText(" ${ChatColor.GRAY}[Check Status]").apply {
-                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead status")
-                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to check status"))
+            ChatComponentText(linkText).apply {
+                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, linkCommand)
+                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText(linkHover))
             }
         )
         sendMessage(msg)
