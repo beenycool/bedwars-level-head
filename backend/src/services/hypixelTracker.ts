@@ -28,6 +28,9 @@ let inflightOffset = 0;
 let flushPromise: Promise<void> | null = null;
 let flushInterval: NodeJS.Timeout | null = null;
 
+// Cache the last generated INSERT query to avoid O(N) string generation
+let cachedQuery: { count: number; type: DatabaseType; sql: string } | null = null;
+
 function buildRedisRollingMember(uuid: string, calledAt: number): string {
   const nonce = Math.random().toString(36).slice(2);
   return `${uuid}:${calledAt}:${nonce}`;
@@ -47,7 +50,7 @@ async function recordHypixelCallInRedis(uuid: string, calledAt: number): Promise
   const member = buildRedisRollingMember(uuid, calledAt);
 
   try {
-    // Bolt: Use pipeline to batch commands and reduce network round-trips
+    // Optimized: Use pipeline to batch commands and reduce network round-trips
     const pipeline = client.pipeline();
     pipeline.zadd(REDIS_ROLLING_KEY, calledAt, member);
     pipeline.zremrangebyscore(REDIS_ROLLING_KEY, '-inf', cutoff);
@@ -78,28 +81,31 @@ async function flushHypixelCallBuffer(): Promise<void> {
       const maxParams = pool.type === DatabaseType.POSTGRESQL ? 65000 : 2000;
       const maxRecordsPerChunk = Math.floor(maxParams / 2);
 
-      // Process chunks from inflightBatch
-      // We slice using inflightOffset to avoid O(N) splice inside the loop
+      // Process chunks from inflightBatch using inflightOffset to avoid O(N) splice inside the loop
       while (inflightOffset < inflightBatch.length) {
         const chunkEnd = Math.min(inflightOffset + maxRecordsPerChunk, inflightBatch.length);
         const chunk = inflightBatch.slice(inflightOffset, chunkEnd);
 
-        // Bolt: Optimized from flatMap to reduce array allocations
+        // Optimized from flatMap to reduce array allocations
         const PARAMS_PER_RECORD = 2;
         const params = new Array(chunk.length * PARAMS_PER_RECORD);
         for (let i = 0; i < chunk.length; i++) {
           params[i * PARAMS_PER_RECORD] = chunk[i].calledAt;
           params[i * PARAMS_PER_RECORD + 1] = chunk[i].uuid;
         }
-        const values = chunk.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ');
+
+        let sql: string;
+        if (cachedQuery && cachedQuery.count === chunk.length && cachedQuery.type === pool.type) {
+          sql = cachedQuery.sql;
+        } else {
+          const placeholders = chunk.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ');
+          sql = `INSERT INTO hypixel_api_calls (called_at, uuid) VALUES ${placeholders}`;
+          cachedQuery = { count: chunk.length, type: pool.type, sql };
+        }
 
         try {
-          await pool.query(
-            `INSERT INTO hypixel_api_calls (called_at, uuid) VALUES ${values}`,
-            params,
-          );
-          // Success: advance offset
-          // Items before offset are in DB; items at/after offset are still pending
+          await pool.query(sql, params);
+          // Success: advance offset. Items before offset are in DB; items at/after offset are pending.
           inflightOffset += chunk.length;
         } catch (error) {
           logger.error('[hypixelTracker] Failed to flush chunk, re-queueing remaining items', error);
@@ -108,29 +114,27 @@ async function flushHypixelCallBuffer(): Promise<void> {
         }
       }
     } finally {
-      // Remove successfully processed items (if any) in one go
+      // Clean up successfully processed items in one single operation
       if (inflightOffset > 0) {
         if (inflightOffset === inflightBatch.length) {
-          // All items were processed, clear the array efficiently.
           inflightBatch.length = 0;
         } else {
-          // Only some items were processed, splice them out.
           inflightBatch.splice(0, inflightOffset);
         }
         inflightOffset = 0;
       }
 
-      // If items remain (due to error), put them back in the buffer to retry later
+      // If items remain (due to error), filter them for retries and put them back in the main buffer
       if (inflightBatch.length > 0) {
         const now = Date.now();
         const eligible = inflightBatch.filter(item => {
-           item.retryCount++;
-           const age = now - item.createdAt;
-           return item.retryCount <= MAX_RETRIES && age <= MAX_AGE_MS;
+          item.retryCount++;
+          const age = now - item.createdAt;
+          return item.retryCount <= MAX_RETRIES && age <= MAX_AGE_MS;
         });
 
         if (eligible.length > 0) {
-            hypixelCallBuffer.unshift(...eligible);
+          hypixelCallBuffer.unshift(...eligible);
         }
         inflightBatch.length = 0;
       }
@@ -144,7 +148,7 @@ async function flushHypixelCallBuffer(): Promise<void> {
 export async function recordHypixelApiCall(uuid: string, calledAt: number = Date.now()): Promise<void> {
   await recordHypixelCallInRedis(uuid, calledAt);
 
-  // Backpressure: If buffer is full, wait for current flush
+  // Backpressure: If buffer is full, wait for current flush to complete
   if (hypixelCallBuffer.length >= MAX_HARD_CAP) {
     if (flushPromise) {
       await flushPromise;
@@ -154,10 +158,10 @@ export async function recordHypixelApiCall(uuid: string, calledAt: number = Date
   }
 
   hypixelCallBuffer.push({
-      uuid,
-      calledAt,
-      retryCount: 0,
-      createdAt: Date.now()
+    uuid,
+    calledAt,
+    retryCount: 0,
+    createdAt: Date.now()
   });
 
   if (hypixelCallBuffer.length >= MAX_BUFFER_SIZE) {
@@ -172,7 +176,10 @@ export async function recordHypixelApiCall(uuid: string, calledAt: number = Date
         logger.error('[hypixelTracker] Flush interval failed', error);
       });
     }, FLUSH_INTERVAL_MS);
-    flushInterval.unref();
+    
+    if (typeof flushInterval.unref === 'function') {
+      flushInterval.unref();
+    }
   }
 }
 
@@ -198,8 +205,7 @@ export async function getHypixelCallCount(
   await ensureInitialized();
   const cutoff = now - windowMs;
 
-  // Snapshot memory state before async DB query to avoid race conditions
-  // where items move from inflight -> DB during the await.
+  // Snapshot memory state before async DB query to avoid race conditions.
   const snapshotOffset = inflightOffset;
   const snapshotInflight = [...inflightBatch];
   const snapshotBuffer = [...hypixelCallBuffer];
@@ -216,10 +222,7 @@ export async function getHypixelCallCount(
   const bufferCount = snapshotBuffer.filter((item) => item.calledAt >= cutoff).length;
 
   // Count items that were pending in memory at the time of the snapshot.
-  // We use the snapshotOffset because if the flush progressed during the await,
-  // the real inflightOffset would have increased, but the DB count (executed before/during)
-  // might not reflect those new inserts yet depending on transaction isolation/timing.
-  // By using the snapshot, we ensure we count everything that was in memory *before* we asked the DB.
+  // We use snapshotOffset because anything before that offset is presumed to be in the DB.
   let inflightCount = 0;
   for (let i = snapshotOffset; i < snapshotInflight.length; i++) {
     if (snapshotInflight[i].calledAt >= cutoff) {
@@ -234,13 +237,12 @@ export async function getHypixelCallCount(
   return dbCount + bufferCount + inflightCount;
 }
 
-// Graceful shutdown
 export async function shutdown(): Promise<void> {
   if (flushInterval) {
     clearInterval(flushInterval);
     flushInterval = null;
   }
   if (hypixelCallBuffer.length > 0 || inflightBatch.length > 0) {
-      await flushHypixelCallBuffer();
+    await flushHypixelCallBuffer();
   }
 }
