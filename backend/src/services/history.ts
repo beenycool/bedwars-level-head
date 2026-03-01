@@ -569,11 +569,21 @@ export async function getPlayerQueryPage(params: {
     `;
   }
 
-  const rowsResult = await pool.query<PlayerQueryHistoryRow>(sql, [pageSize, offset, ...searchParams]);
+  const rowsPromise = pool.query<PlayerQueryHistoryRow>(sql, [pageSize, offset, ...searchParams]);
 
-  let totalCount = params.totalCountOverride;
-  if (totalCount === undefined) {
-    totalCount = await getPlayerQueryCount({ search: searchTerm });
+  let totalCount: number;
+  let rowsResult: import('./database/adapter').QueryResult<PlayerQueryHistoryRow>;
+
+  if (params.totalCountOverride !== undefined) {
+    totalCount = params.totalCountOverride;
+    rowsResult = await rowsPromise;
+  } else {
+    const [rows, count] = await Promise.all([
+      rowsPromise,
+      getPlayerQueryCount({ search: searchTerm }),
+    ]);
+    rowsResult = rows;
+    totalCount = count;
   }
 
   return {
@@ -596,12 +606,6 @@ export interface SystemStats {
 export async function getSystemStats(): Promise<SystemStats> {
   await ensureInitialized();
 
-  // Get Redis cache stats (L1 cache lives in Redis)
-  const redisCacheStats = await getRedisCacheStats();
-
-  // Get current resource metrics
-  const resourceMetrics = await getCurrentResourceMetrics();
-
   const apiStatsQuery = pool.type === DatabaseType.POSTGRESQL
     ? `SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000)`
     : `SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (DATEDIFF_BIG(ms, '1970-01-01', DATEADD(hour, -1, GETDATE())))`;
@@ -609,7 +613,12 @@ export async function getSystemStats(): Promise<SystemStats> {
   const apiStatsPromise = pool.query<{ count: string | number }>(apiStatsQuery)
     .catch(() => ({ rows: [{ count: 0 }] }));
 
-  const [apiStats] = await Promise.all([apiStatsPromise]);
+  // Execute external stats calls and DB query in parallel
+  const [redisCacheStats, resourceMetrics, apiStats] = await Promise.all([
+    getRedisCacheStats(),
+    getCurrentResourceMetrics(),
+    apiStatsPromise,
+  ]);
 
   function bytesToHuman(raw: string | number | null | undefined): string {
     const bytes = raw === null || raw === undefined ? 0 : Number.parseInt(String(raw), 10);
