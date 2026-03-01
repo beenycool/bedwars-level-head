@@ -427,6 +427,8 @@ export async function resolvePlayer(
   let key = identifier;
   if (key.length === 36 && key[8] === '-' && key[13] === '-' && key[18] === '-' && key[23] === '-') {
     key = key.slice(0, 8) + key.slice(9, 13) + key.slice(14, 18) + key.slice(19, 23) + key.slice(24);
+  } else if (key.length === 36 && key.includes('-')) {
+    key = key.replace(/-/g, '');
   }
   key = key.toLowerCase();
 

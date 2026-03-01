@@ -57,11 +57,12 @@ router.post('/cache/purge', enforceAdminRateLimit, enforceAdminAuth, async (req,
         if (keys.playerKeys.length === 0 && keys.igns.length === 0) {
           throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a UUID (without dashes) or an IGN.');
         }
-      if (keys.playerKeys.length > 0) {
-        purged += await deletePlayerStatsEntries(keys.playerKeys);
-      }
-      if (keys.igns.length > 0) {
-        purged += await deleteIgnMappings(keys.igns);
+        if (keys.playerKeys.length > 0) {
+          purged += await deletePlayerStatsEntries(keys.playerKeys);
+        }
+        if (keys.igns.length > 0) {
+          purged += await deleteIgnMappings(keys.igns);
+        }
       }
     } else {
       purged = await clearAllPlayerStatsCaches();
