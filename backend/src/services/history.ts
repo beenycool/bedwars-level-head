@@ -506,15 +506,16 @@ export async function getPlayerQueryPage(params: {
 
   query = buildSearchClause(query, searchTerm);
 
-  const rows = await query.execute();
+  const rowsPromise = query.execute();
 
-  let totalCount: number;
-
+  let totalCountPromise: Promise<number> | number;
   if (params.totalCountOverride !== undefined) {
-    totalCount = params.totalCountOverride;
+    totalCountPromise = params.totalCountOverride;
   } else {
-    totalCount = await getPlayerQueryCount({ search: searchTerm });
+    totalCountPromise = getPlayerQueryCount({ search: searchTerm });
   }
+
+  const [rows, totalCount] = await Promise.all([rowsPromise, totalCountPromise]);
 
   return {
     rows: rows.map(mapRowToSummary),
@@ -536,30 +537,31 @@ export interface SystemStats {
 export async function getSystemStats(): Promise<SystemStats> {
   await ensureInitialized();
 
-  // Get Redis cache stats (L1 cache lives in Redis)
-  const redisCacheStats = await getRedisCacheStats();
+  const getApiStatsCount = async () => {
+    try {
+        if (dbType === DatabaseType.POSTGRESQL) {
+          const res = await sql<{count: number}>`SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000)`.execute(db);
+          return Number(res.rows[0]?.count ?? 0);
+        } else {
+          const res = await sql<{count: number}>`SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (DATEDIFF_BIG(ms, '1970-01-01', DATEADD(hour, -1, GETDATE())))`.execute(db);
+          return Number(res.rows[0]?.count ?? 0);
+        }
+    } catch (e: any) {
+        // Log errors properly, only ignoring "relation does not exist" type errors
+        if (e?.code === '42P01' || (e?.message && e.message.includes('Invalid object name'))) {
+            logger.debug('[history] hypixel_api_calls table does not exist, skipping api calls stat');
+        } else {
+            logger.warn({ err: e }, '[history] Failed to query hypixel_api_calls for stats');
+        }
+        return 0;
+    }
+  };
 
-  // Get current resource metrics
-  const resourceMetrics = await getCurrentResourceMetrics();
-
-  let apiStatsCount = 0;
-
-  try {
-      if (dbType === DatabaseType.POSTGRESQL) {
-        const res = await sql<{count: number}>`SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000)`.execute(db);
-        apiStatsCount = Number(res.rows[0]?.count ?? 0);
-      } else {
-        const res = await sql<{count: number}>`SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (DATEDIFF_BIG(ms, '1970-01-01', DATEADD(hour, -1, GETDATE())))`.execute(db);
-        apiStatsCount = Number(res.rows[0]?.count ?? 0);
-      }
-  } catch (e: any) {
-      // Log errors properly, only ignoring "relation does not exist" type errors
-      if (e?.code === '42P01' || (e?.message && e.message.includes('Invalid object name'))) {
-          logger.debug('[history] hypixel_api_calls table does not exist, skipping api calls stat');
-      } else {
-          logger.warn({ err: e }, '[history] Failed to query hypixel_api_calls for stats');
-      }
-  }
+  const [redisCacheStats, resourceMetrics, apiStatsCount] = await Promise.all([
+    getRedisCacheStats(),
+    getCurrentResourceMetrics(),
+    getApiStatsCount(),
+  ]);
 
   function bytesToHuman(raw: string | number | null | undefined): string {
     const bytes = raw === null || raw === undefined ? 0 : Number.parseInt(String(raw), 10);
