@@ -24,51 +24,23 @@ class WhoisCommand {
         val trimmedIdentifier = identifier.trim()
         if (trimmedIdentifier.isEmpty()) {
             val msg = ChatComponentText("${ChatColor.RED}Tell me who to inspect.${ChatColor.YELLOW} Run ")
-                .appendSibling(createClickableCommand("/whois <player|uuid>", "/whois "))
+                .appendSibling(ChatUtils.createClickableCommand("/whois <player|uuid>", "/whois "))
                 .appendSibling(ChatComponentText("${ChatColor.YELLOW} using an in-game name, UUID, or someone nearby."))
-            sendMessage(msg)
+            ChatUtils.sendMessage(msg)
             return
         }
 
-        sendMessage("${ChatColor.YELLOW}Looking up stats for ${ChatColor.GOLD}$trimmedIdentifier${ChatColor.YELLOW}...")
+        ChatUtils.sendMessage("${ChatColor.YELLOW}Looking up stats for ${ChatColor.GOLD}$trimmedIdentifier${ChatColor.YELLOW}...")
         Levelhead.scope.launch {
             try {
                 val resultMessage = WhoisService.lookupWhoisMessage(trimmedIdentifier)
-                sendMessage(resultMessage)
+                ChatUtils.sendMessage(resultMessage)
             } catch (ex: WhoisService.CommandException) {
-                sendMessage("${ChatColor.RED}${ex.message}")
+                ChatUtils.sendMessage("${ChatColor.RED}${ex.message}")
             } catch (throwable: Throwable) {
                 Levelhead.logger.error("Failed to resolve stats for {}", identifier, throwable)
-                sendMessage("${ChatColor.RED}Unexpected error while fetching stats. Check logs for details.")
+                ChatUtils.sendMessage("${ChatColor.RED}Unexpected error while fetching stats. Check logs for details.")
             }
-        }
-    }
-
-    private fun createClickableCommand(display: String, suggest: String? = null, run: Boolean = false): IChatComponent {
-        val command = suggest ?: display
-        val action = if (run) ClickEvent.Action.RUN_COMMAND else ClickEvent.Action.SUGGEST_COMMAND
-        val hoverText = if (run) "${ChatColor.GREEN}Click to run" else "${ChatColor.GREEN}Click to fill"
-
-        return ChatComponentText("${ChatColor.GOLD}$display").apply {
-            chatStyle.setChatClickEvent(ClickEvent(action, command))
-            chatStyle.setChatHoverEvent(HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText(hoverText)))
-        }
-    }
-
-    private fun sendMessage(message: String) {
-        val minecraft = Minecraft.getMinecraft()
-        val formatted = "${ChatColor.AQUA}[Levelhead] ${ChatColor.RESET}$message"
-        minecraft.addScheduledTask {
-            minecraft.thePlayer?.addChatMessage(ChatComponentText(formatted))
-        }
-    }
-
-    private fun sendMessage(component: IChatComponent) {
-        val minecraft = Minecraft.getMinecraft()
-        val formatted = ChatComponentText("${ChatColor.AQUA}[Levelhead] ${ChatColor.RESET}")
-        formatted.appendSibling(component)
-        minecraft.addScheduledTask {
-            minecraft.thePlayer?.addChatMessage(formatted)
         }
     }
 
