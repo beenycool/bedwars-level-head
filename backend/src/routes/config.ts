@@ -1,6 +1,10 @@
 import { Router } from 'express';
+import { enforcePublicRateLimit } from '../middleware/rateLimitPublic';
 
 const router = Router();
+
+// Apply public rate limit to all configuration endpoints to prevent resource exhaustion/DoS
+router.use(enforcePublicRateLimit);
 
 /**
  * GET /api/config/motd
@@ -28,6 +32,3 @@ router.get('/version', (_req, res) => {
 });
 
 export default router;
-
-
-

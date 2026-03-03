@@ -35,7 +35,7 @@ describe('DoS Protection - Input Length Limits', () => {
       if (error instanceof HttpError) {
         expect(error.status).toBe(400);
         expect(error.causeCode).toBe('INVALID_IDENTIFIER');
-        expect(error.message).toContain('too long');
+        expect(error.message).toContain('64 characters or less');
       }
     }
   });
@@ -55,7 +55,7 @@ describe('DoS Protection - Input Length Limits', () => {
       expect(error).toBeInstanceOf(HttpError);
       if (error instanceof HttpError) {
         // It should NOT be the length error
-        expect(error.message).not.toContain('too long');
+        expect(error.message).not.toContain('64 characters or less');
       }
     }
   });
