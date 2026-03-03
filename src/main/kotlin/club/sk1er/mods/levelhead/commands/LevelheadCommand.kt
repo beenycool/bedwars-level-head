@@ -261,7 +261,7 @@ class LevelheadCommand {
         val parsed = sanitized.toIntOrNull()
         if (parsed == null) {
             val current = LevelheadConfig.starCacheTtlMinutes
-            val msg = ChatComponentText("${ChatColor.RED}Couldn't read '${minutesInput.replace("§", "")}'.${ChatColor.YELLOW} Choose a number of minutes between ${ChatColor.GOLD}${LevelheadConfig.MIN_STAR_CACHE_TTL_MINUTES}${ChatColor.YELLOW} and ${ChatColor.GOLD}${LevelheadConfig.MAX_STAR_CACHE_TTL_MINUTES}${ChatColor.YELLOW}. Use ")
+            val msg = ChatComponentText("${ChatColor.RED}Couldn't read '$minutesInput'.${ChatColor.YELLOW} Choose a number of minutes between ${ChatColor.GOLD}${LevelheadConfig.MIN_STAR_CACHE_TTL_MINUTES}${ChatColor.YELLOW} and ${ChatColor.GOLD}${LevelheadConfig.MAX_STAR_CACHE_TTL_MINUTES}${ChatColor.YELLOW}. Current TTL: ${ChatColor.GOLD}$current${ChatColor.YELLOW}. Use ")
                 .appendSibling(createClickableCommand("/levelhead cachettl "))
                 .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
             sendMessage(msg)
@@ -290,11 +290,11 @@ class LevelheadCommand {
             "showself" -> handleDisplayShowSelf(parsedArgs.drop(1))
             else -> {
                 val msg = ChatComponentText("${ChatColor.RED}Unknown option '${parsedArgs[0]}'. ${ChatColor.YELLOW}Valid options: ")
-                    .appendSibling(createClickableCommand("/levelhead display header <text|color>"))
+                    .appendSibling(createClickableCommand("/levelhead display header <text|color>", suggestedCommand = "/levelhead display header "))
                     .appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
-                    .appendSibling(createClickableCommand("/levelhead display offset <value>"))
+                    .appendSibling(createClickableCommand("/levelhead display offset <value>", suggestedCommand = "/levelhead display offset "))
                     .appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
-                    .appendSibling(createClickableCommand("/levelhead display showself <on|off>"))
+                    .appendSibling(createClickableCommand("/levelhead display showself <on|off>", suggestedCommand = "/levelhead display showself "))
                     .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
                 sendMessage(msg)
                 sendDisplayUsage()
@@ -333,8 +333,8 @@ class LevelheadCommand {
                 val url = parsedArgs.getOrNull(1)?.trim()
                 if (url.isNullOrEmpty()) {
                     val current = LevelheadConfig.proxyBaseUrl.ifBlank { "not set" }
-                    val msg = ChatComponentText("${ChatColor.RED}Provide the proxy base URL.${ChatColor.YELLOW} Current URL: ${ChatColor.GOLD}${current.replace("§", "")}${ChatColor.YELLOW}. Try ")
-                        .appendSibling(createClickableCommand("/levelhead proxy url <url>"))
+                    val msg = ChatComponentText("${ChatColor.RED}Provide the proxy base URL.${ChatColor.YELLOW} Current URL: ${ChatColor.GOLD}$current${ChatColor.YELLOW}. Try ")
+                        .appendSibling(createClickableCommand("/levelhead proxy url <url>", suggestedCommand = "/levelhead proxy url "))
                         .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
                     sendMessage(msg)
                     return
@@ -504,7 +504,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                     it.displayName.equals(presetName, ignoreCase = true) || it.name.equals(presetName, ignoreCase = true)
                 }
                 if (preset == null) {
-                    val msg = ChatComponentText("${ChatColor.RED}Unknown preset '${presetName.replace("§", "")}'.${ChatColor.YELLOW} Use ")
+                    val msg = ChatComponentText("${ChatColor.RED}Unknown preset '$presetName'.${ChatColor.YELLOW} Use ")
                         .appendSibling(createClickableCommand("/levelhead profile list", run = true))
                         .appendSibling(ChatComponentText("${ChatColor.YELLOW} to see available presets."))
                     sendMessage(msg)
@@ -564,7 +564,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 val text = args.drop(1).joinToString(" ").trim()
                 if (text.isEmpty()) {
                     val msg = ChatComponentText("${ChatColor.RED}Header text cannot be empty.${ChatColor.YELLOW} Current header: ${ChatColor.GOLD}${currentHeaderText()}${ChatColor.YELLOW}. Use ")
-                        .appendSibling(createClickableCommand("/levelhead display header text <value>"))
+                        .appendSibling(createClickableCommand("/levelhead display header text <value>", suggestedCommand = "/levelhead display header text "))
                         .appendSibling(ChatComponentText("${ChatColor.YELLOW} to change it."))
                     sendMessage(msg)
                     return
@@ -602,10 +602,10 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 }
             }
             else -> {
-                val msg = ChatComponentText("${ChatColor.RED}Unknown option '${args[0].replace("§", "")}'. ${ChatColor.YELLOW}Valid options: ")
-                    .appendSibling(createClickableCommand("/levelhead display header text <value>"))
+                val msg = ChatComponentText("${ChatColor.RED}Unknown option '${args[0]}'. ${ChatColor.YELLOW}Valid options: ")
+                    .appendSibling(createClickableCommand("/levelhead display header text <value>", suggestedCommand = "/levelhead display header text "))
                     .appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
-                    .appendSibling(createClickableCommand("/levelhead display header color <color>"))
+                    .appendSibling(createClickableCommand("/levelhead display header color <color>", suggestedCommand = "/levelhead display header color "))
                     .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
                 sendMessage(msg)
                 sendDisplayHeaderDetails()
@@ -640,7 +640,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         val toggle = args.getOrNull(0)?.let { parseToggle(it) }
         if (toggle == null) {
             val msg = ChatComponentText("${ChatColor.RED}Couldn't understand '${args[0]}'.${ChatColor.YELLOW} Use ")
-                .appendSibling(createClickableCommand("/levelhead display showself <on|off>"))
+                .appendSibling(createClickableCommand("/levelhead display showself <on|off>", suggestedCommand = "/levelhead display showself "))
                 .appendSibling(ChatComponentText("${ChatColor.YELLOW}. Current setting: ${formatToggle(currentShowSelf())}${ChatColor.YELLOW}."))
             sendMessage(msg)
             return
@@ -707,7 +707,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
             .appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
             .appendSibling(createClickableCommand("/levelhead proxy url https://example.com"))
             .appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
-            .appendSibling(createClickableCommand("/levelhead proxy token <token>"))
+            .appendSibling(createClickableCommand("/levelhead proxy token <token>", suggestedCommand = "/levelhead proxy token "))
             .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
         sendMessage(msg)
     }
@@ -755,12 +755,12 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         }
     }
 
-    private fun createClickableCommand(command: String, run: Boolean = false): IChatComponent {
+    private fun createClickableCommand(command: String, run: Boolean = false, suggestedCommand: String = command): IChatComponent {
         val action = if (run) ClickEvent.Action.RUN_COMMAND else ClickEvent.Action.SUGGEST_COMMAND
         val hoverText = if (run) "${ChatColor.GREEN}Click to run" else "${ChatColor.GREEN}Click to fill"
 
         return ChatComponentText("${ChatColor.GOLD}$command").apply {
-            chatStyle.chatClickEvent = ClickEvent(action, command)
+            chatStyle.chatClickEvent = ClickEvent(action, suggestedCommand)
             chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText(hoverText))
         }
     }
@@ -814,18 +814,18 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
 
     private fun sendDisplayUsage() {
         val msg = ChatComponentText("${ChatColor.GRAY}Use ")
-            .appendSibling(createClickableCommand("/levelhead display header <text|color>"))
+            .appendSibling(createClickableCommand("/levelhead display header <text|color>", suggestedCommand = "/levelhead display header "))
             .appendSibling(ChatComponentText("${ChatColor.GRAY}, "))
-            .appendSibling(createClickableCommand("/levelhead display offset <value>"))
+            .appendSibling(createClickableCommand("/levelhead display offset <value>", suggestedCommand = "/levelhead display offset "))
             .appendSibling(ChatComponentText("${ChatColor.GRAY}, "))
-            .appendSibling(createClickableCommand("/levelhead display showself <on|off>"))
+            .appendSibling(createClickableCommand("/levelhead display showself <on|off>", suggestedCommand = "/levelhead display showself "))
             .appendSibling(ChatComponentText("${ChatColor.GRAY} to make changes."))
         sendMessage(msg)
     }
 
     private fun sendDisplayHeaderDetails() {
         val msg = ChatComponentText("${ChatColor.YELLOW}Current header text: ${ChatColor.GOLD}${currentHeaderText()}${ChatColor.YELLOW}. Use ")
-            .appendSibling(createClickableCommand("/levelhead display header text <value>"))
+            .appendSibling(createClickableCommand("/levelhead display header text <value>", suggestedCommand = "/levelhead display header text "))
             .appendSibling(ChatComponentText("${ChatColor.YELLOW} to change it."))
         sendMessage(msg)
         sendDisplayHeaderColorHelp()
@@ -833,7 +833,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
 
     private fun sendDisplayHeaderColorHelp() {
         val msg = ChatComponentText("${ChatColor.YELLOW}Current header color: ${ChatColor.GOLD}${formatColor(currentHeaderColor())}${ChatColor.YELLOW}. Use ")
-            .appendSibling(createClickableCommand("/levelhead display header color <color>"))
+            .appendSibling(createClickableCommand("/levelhead display header color <color>", suggestedCommand = "/levelhead display header color "))
             .appendSibling(ChatComponentText("${ChatColor.YELLOW} with a hex code, RGB value, or "))
             .appendSibling(getMinecraftColorNameHelpComponent())
             .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
@@ -843,7 +843,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
     private fun sendDisplayOffsetDetails() {
         val offset = Levelhead.displayManager.config.offset
         val msg = ChatComponentText("${ChatColor.YELLOW}Current display offset: ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", offset)}${ChatColor.YELLOW}. Use ")
-            .appendSibling(createClickableCommand("/levelhead display offset <value>"))
+            .appendSibling(createClickableCommand("/levelhead display offset <value>", suggestedCommand = "/levelhead display offset "))
             .appendSibling(ChatComponentText("${ChatColor.YELLOW} with a value between "))
             .appendSibling(ChatComponentText(String.format(Locale.ROOT, "%.1f", MIN_DISPLAY_OFFSET)).apply { chatStyle.color = ChatColor.GOLD })
             .appendSibling(ChatComponentText("${ChatColor.YELLOW} and "))
@@ -854,7 +854,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
 
     private fun sendDisplayShowSelfDetails() {
         val msg = ChatComponentText("${ChatColor.YELLOW}Self display visibility is currently ${formatToggle(currentShowSelf())}${ChatColor.YELLOW}. Use ")
-            .appendSibling(createClickableCommand("/levelhead display showself <on|off>"))
+            .appendSibling(createClickableCommand("/levelhead display showself <on|off>", suggestedCommand = "/levelhead display showself "))
             .appendSibling(ChatComponentText("${ChatColor.YELLOW} to change it."))
         sendMessage(msg)
     }
