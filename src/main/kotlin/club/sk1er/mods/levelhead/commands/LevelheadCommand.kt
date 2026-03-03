@@ -333,7 +333,7 @@ class LevelheadCommand {
                 val url = parsedArgs.getOrNull(1)?.trim()
                 if (url.isNullOrEmpty()) {
                     val current = LevelheadConfig.proxyBaseUrl.ifBlank { "not set" }
-                    val msg = ChatComponentText("${ChatColor.RED}Provide the proxy base URL.${ChatColor.YELLOW} Current URL: ${ChatColor.GOLD}$current${ChatColor.YELLOW}. Try ")
+                    val msg = ChatComponentText("${ChatColor.RED}Provide the proxy base URL.${ChatColor.YELLOW} Current URL: ${ChatColor.GOLD}${current.replace("§", "")}${ChatColor.YELLOW}. Try ")
                         .appendSibling(createClickableCommand("/levelhead proxy url <url>"))
                         .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
                     sendMessage(msg)
