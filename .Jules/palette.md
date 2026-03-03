@@ -22,3 +22,7 @@
 ## 2024-05-28 - Actionable Configuration Feedback
 **Learning:** Success messages for configuration changes are often a dead end. Providing a quick, clickable way to verify the new configuration (like a "[Check Status]" link) significantly improves the UX by allowing immediate validation without the user needing to type a follow-up command.
 **Action:** When saving configuration settings or API keys, use a helper like `sendSuccessWithStatusLink` to append a clickable link that executes the relevant status or diagnostic command.
+
+## 2025-03-03 - Clean Command Suggestions
+**Learning:** In Minecraft mods, command suggestions using `ClickEvent.Action.SUGGEST_COMMAND` often include placeholder arguments (like `<url>` or `<value>`) for documentation purposes. If these placeholders are filled into the chat input, users have to manually delete them before typing their value, which is poor UX.
+**Action:** Update command suggestion helpers to accept a `suggestedCommand` parameter that strips placeholders (e.g. suggesting `/levelhead proxy url ` instead of `/levelhead proxy url <url>`), and update all help messages to use this cleaner suggestion.
