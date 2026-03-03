@@ -254,13 +254,8 @@ router.get('/', async (req, res, next) => {
     // page defaults to 1 if omitted
     const clearUrl = '?' + clearParams.toString();
 
-    const totalCount = await getPlayerQueryCount({ search });
-    const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-    const page = Math.min(safePage, totalPages);
-    const pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search, totalCountOverride: totalCount });
-
-    // Fetch filtered data for charts
-    const [chartData, topPlayers, sysStats, redisStats, resourceMetricsHistory] = await Promise.all([
+    // Fetch filtered data for charts and page data in parallel
+    const [chartData, topPlayers, sysStats, redisStats, resourceMetricsHistory, { pageData, totalPages, page, totalCount }] = await Promise.all([
       getPlayerQueriesStats({
         startDate: validStartDate,
         endDate: validEndDate,
@@ -274,6 +269,13 @@ router.get('/', async (req, res, next) => {
       getSystemStats(),
       getRedisStats(),
       getResourceMetricsHistory({ startDate: validStartDate, endDate: validEndDate }),
+      (async () => {
+        const totalCount = await getPlayerQueryCount({ search });
+        const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
+        const page = Math.min(safePage, totalPages);
+        const pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search, totalCountOverride: totalCount });
+        return { pageData, totalPages, page, totalCount };
+      })()
     ]);
 
     // Serialise the data so the frontend script can use it

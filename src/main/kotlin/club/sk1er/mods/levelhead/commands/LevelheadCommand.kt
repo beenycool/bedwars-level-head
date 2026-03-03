@@ -42,6 +42,37 @@ import kotlin.text.RegexOption
 @Command(value = "levelhead", aliases = ["lh"])
 class LevelheadCommand {
 
+    private var pendingAction: (() -> Unit)? = null
+
+    @SubCommand
+    private fun requireConfirmation(warningMessage: String, action: () -> Unit) {
+        if (pendingAction != null) {
+            sendMessage("§cAn action is already pending. Please §a/levelhead confirm§c or wait.")
+            return
+        }
+
+        val msg = ChatComponentText("${ChatColor.RED}Warning: ${ChatColor.YELLOW}$warningMessage Are you sure? ")
+            .appendSibling(ChatComponentText("${ChatColor.GREEN}[Confirm]").apply {
+                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead confirm")
+                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to confirm"))
+            })
+        sendMessage(msg)
+
+        pendingAction = action
+    }
+
+    @SubCommand
+    fun confirm() {
+        val action = pendingAction
+        if (action == null) {
+            sendMessage("§cNo pending action to confirm.")
+            return
+        }
+        pendingAction = null
+        action()
+    }
+
+
     companion object {
         private val API_KEY_PATTERN = Regex("^[a-f0-9]{32}$", RegexOption.IGNORE_CASE)
         private val HEX_COLOR_PATTERN = Regex("^#?[0-9a-fA-F]{6}$")
@@ -138,25 +169,29 @@ class LevelheadCommand {
             return
         }
 
-        LevelheadConfig.updateApiKey(sanitized)
-        sendMessage("${ChatColor.GREEN}Saved Hypixel API key for BedWars stat fetching.")
-        resetBedwarsFetcher()
+        requireConfirmation("Changing your API key will allow the new key to be used for stat requests.") {
+            LevelheadConfig.updateApiKey(sanitized)
+            sendSuccessWithStatusLink("${ChatColor.GREEN}Saved Hypixel API key for BedWars stat fetching.")
+            resetBedwarsFetcher()
 
-        // Background validation of the API key
-        Levelhead.scope.launch {
-            val valid = validateApiKey(sanitized)
-            if (!valid) {
-                sendMessage("${ChatColor.RED}Warning: That API key appears to be invalid (Hypixel rejected it).")
-                sendMessage(getDeveloperKeyHelpMessage())
+            // Background validation of the API key
+            Levelhead.scope.launch {
+                val valid = validateApiKey(sanitized)
+                if (!valid) {
+                    sendMessage("${ChatColor.RED}Warning: That API key appears to be invalid (Hypixel rejected it).")
+                    sendMessage(getDeveloperKeyHelpMessage())
+                }
             }
         }
     }
 
     @SubCommand
     fun clearapikey() {
-        LevelheadConfig.clearApiKey()
-        sendMessage("${ChatColor.GREEN}Cleared stored Hypixel API key.")
-        resetBedwarsFetcher()
+        requireConfirmation("Clearing your API key will disable stat fetching.") {
+            LevelheadConfig.clearApiKey()
+            sendMessage("${ChatColor.GREEN}Cleared stored Hypixel API key.")
+            resetBedwarsFetcher()
+        }
     }
 
     @SubCommand
@@ -270,7 +305,7 @@ class LevelheadCommand {
         val clamped = parsed.coerceIn(LevelheadConfig.MIN_STAR_CACHE_TTL_MINUTES, LevelheadConfig.MAX_STAR_CACHE_TTL_MINUTES)
         LevelheadConfig.updateStarCacheTtlMinutes(clamped)
         Levelhead.clearCachedStats()
-        sendMessage("${ChatColor.GREEN}Updated BedWars star cache TTL to ${ChatColor.GOLD}${clamped} minutes${ChatColor.GREEN}.")
+        sendSuccessWithStatusLink("${ChatColor.GREEN}Updated BedWars star cache TTL to ${ChatColor.GOLD}${clamped} minutes${ChatColor.GREEN}.")
     }
 
     @SubCommand
@@ -313,7 +348,7 @@ class LevelheadCommand {
         when (parsedArgs[0].lowercase(Locale.ROOT)) {
             "enable", "on" -> {
                 LevelheadConfig.updateProxyEnabled(true)
-                sendMessage("${ChatColor.GREEN}Enabled proxy usage for BedWars stats.")
+                sendSuccessWithStatusLink("${ChatColor.GREEN}Enabled proxy usage for BedWars stats.")
                 resetBedwarsFetcher()
             }
             "disable", "off" -> {
@@ -349,9 +384,12 @@ class LevelheadCommand {
                     .build()
                     .toString()
                     .trimEnd('/')
-                LevelheadConfig.updateProxyBaseUrl(sanitized)
-                sendMessage("${ChatColor.GREEN}Updated proxy base URL to ${ChatColor.GOLD}$sanitized${ChatColor.GREEN}.")
-                resetBedwarsFetcher()
+
+                requireConfirmation("Changing the proxy URL may expose your IP and API key to the new server.") {
+                    LevelheadConfig.updateProxyBaseUrl(sanitized)
+                    sendSuccessWithStatusLink("${ChatColor.GREEN}Updated proxy base URL to ${ChatColor.GOLD}$sanitized${ChatColor.GREEN}.")
+                    resetBedwarsFetcher()
+                }
             }
             "token" -> {
                 val token = parsedArgs.getOrNull(1)?.trim()
@@ -363,9 +401,11 @@ class LevelheadCommand {
                     sendMessage(msg)
                     return
                 }
-                LevelheadConfig.updateProxyAuthToken(token)
-                sendMessage("${ChatColor.GREEN}Updated proxy token.")
-                resetBedwarsFetcher()
+                requireConfirmation("Changing the proxy token will update your authentication credentials.") {
+                    LevelheadConfig.updateProxyAuthToken(token)
+                    sendSuccessWithStatusLink("${ChatColor.GREEN}Updated proxy token.")
+                    resetBedwarsFetcher()
+                }
             }
             else -> {
                 sendMessage("${ChatColor.RED}Unknown proxy option '${parsedArgs[0]}'.")
@@ -748,6 +788,21 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
             chatStyle.chatClickEvent = ClickEvent(action, command)
             chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText(hoverText))
         }
+    }
+
+
+    private fun sendSuccessWithStatusLink(message: String) {
+        val linkText = " ${ChatColor.GRAY}[Check Status]"
+        val linkCommand = "/levelhead status"
+        val linkHover = "${ChatColor.GREEN}Click to check status"
+
+        val msg = ChatComponentText(message).appendSibling(
+            ChatComponentText(linkText).apply {
+                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, linkCommand)
+                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText(linkHover))
+            }
+        )
+        sendMessage(msg)
     }
 
     private fun sendMessage(message: String) {

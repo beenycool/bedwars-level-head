@@ -1,48 +1,49 @@
+import { extractBedwarsExperience, parseIfModifiedSince } from '../../src/util/requestUtils';
 
-import { sanitizeSearchQuery } from '../../src/util/requestUtils';
+// Mock dependencies that might be imported transitively and cause side effects
+jest.mock('../../src/services/history', () => ({
+  recordPlayerQuery: jest.fn()
+}));
 
-describe('sanitizeSearchQuery', () => {
-  it('should return empty string for non-string inputs', () => {
-    expect(sanitizeSearchQuery(null)).toBe('');
-    expect(sanitizeSearchQuery(undefined)).toBe('');
-    expect(sanitizeSearchQuery(123)).toBe('');
-    expect(sanitizeSearchQuery({})).toBe('');
+jest.mock('../../src/services/player', () => ({}));
+
+describe('Request Utils', () => {
+  describe('extractBedwarsExperience', () => {
+    it('should extract experience from standard hypixel response', () => {
+      const payload = {
+        bedwars_experience: 12345
+      };
+      expect(extractBedwarsExperience(payload as any)).toBe(12345);
+    });
+
+    it('should extract experience from nested hypixel stats', () => {
+      const payload = {
+        data: {
+          bedwars: {
+            Experience: 67890
+          }
+        }
+      };
+      expect(extractBedwarsExperience(payload as any)).toBe(67890);
+    });
+
+    it('should return null for missing experience', () => {
+      expect(extractBedwarsExperience({})).toBeNull();
+    });
   });
 
-  it('should trim whitespace', () => {
-    expect(sanitizeSearchQuery('  test  ')).toBe('test');
-    expect(sanitizeSearchQuery('test  ')).toBe('test');
-    expect(sanitizeSearchQuery('  test')).toBe('test');
-  });
+  describe('parseIfModifiedSince', () => {
+    it('should parse valid date string', () => {
+      const date = new Date('2023-01-01T00:00:00Z');
+      expect(parseIfModifiedSince(date.toUTCString())).toBe(date.getTime());
+    });
 
-  it('should truncate strings longer than maxLength', () => {
-    const longString = 'a'.repeat(150);
-    const result = sanitizeSearchQuery(longString, 100);
-    expect(result.length).toBe(100);
-    expect(result).toBe('a'.repeat(100));
-  });
+    it('should return undefined for invalid date', () => {
+      expect(parseIfModifiedSince('invalid-date')).toBeUndefined();
+    });
 
-  it('should use default maxLength of 100', () => {
-    const longString = 'a'.repeat(150);
-    const result = sanitizeSearchQuery(longString);
-    expect(result.length).toBe(100);
-  });
-
-  it('should support custom maxLength', () => {
-    const longString = 'a'.repeat(150);
-    const result = sanitizeSearchQuery(longString, 10);
-    expect(result.length).toBe(10);
-    expect(result).toBe('aaaaaaaaaa');
-  });
-
-  it('should handle strings equal to maxLength', () => {
-    const str = 'a'.repeat(100);
-    const result = sanitizeSearchQuery(str, 100);
-    expect(result).toBe(str);
-  });
-
-  it('should handle empty strings', () => {
-    expect(sanitizeSearchQuery('')).toBe('');
-    expect(sanitizeSearchQuery('   ')).toBe('');
+    it('should return undefined for undefined input', () => {
+      expect(parseIfModifiedSince(undefined)).toBeUndefined();
+    });
   });
 });

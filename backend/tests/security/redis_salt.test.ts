@@ -1,4 +1,4 @@
-import { hashIp } from '../../src/services/redis';
+import { hashIp, clearIpHashCache } from '../../src/services/redis';
 import * as config from '../../src/config';
 
 // We use Object.defineProperty because the exports are read-only constants
@@ -21,6 +21,9 @@ describe('IP Hashing Security', () => {
 
     setSalt('test-salt-A');
     const hashA = hashIp(ip);
+
+    // Clear cache to ensure the new salt is actually used for the same IP
+    clearIpHashCache();
 
     setSalt('test-salt-B');
     const hashB = hashIp(ip);
@@ -45,6 +48,9 @@ describe('IP Hashing Security', () => {
     // If we set the salt to empty, it should NOT produce the same hash as if it used the old default
     setSalt('');
     const hashWithEmpty = hashIp(ip);
+
+    // Clear cache to ensure the new salt is actually used
+    clearIpHashCache();
 
     setSalt(oldDefaultSalt);
     const hashWithOldDefault = hashIp(ip);

@@ -65,10 +65,41 @@ export function isRedisAvailable(): boolean {
 // IP Hashing
 // ---------------------------------------------------------------------------
 
+// Simple LRU cache for IP hashing to avoid expensive HMAC recalculations
+const ipHashCache = new Map<string, string>();
+const MAX_IP_HASH_CACHE_SIZE = 10000;
+
 export function hashIp(ip: string): string {
+    const cached = ipHashCache.get(ip);
+    if (cached) {
+        // Move to end (recently used) to keep it fresh
+        ipHashCache.delete(ip);
+        ipHashCache.set(ip, cached);
+        return cached;
+    }
+
     const hash = createHmac('sha256', REDIS_KEY_SALT).update(ip).digest('hex');
     // Use first 32 chars (128 bits) for collision resistance while keeping keys short
-    return hash.slice(0, 32);
+    const result = hash.slice(0, 32);
+
+    if (ipHashCache.size >= MAX_IP_HASH_CACHE_SIZE) {
+        // Evict oldest entry (first inserted)
+        const firstKey = ipHashCache.keys().next().value;
+        if (firstKey !== undefined) {
+            ipHashCache.delete(firstKey);
+        }
+    }
+
+    ipHashCache.set(ip, result);
+    return result;
+}
+
+/**
+ * Clears the IP hash cache.
+ * Exported strictly for testing purposes to ensure isolation between tests that change the salt.
+ */
+export function clearIpHashCache(): void {
+    ipHashCache.clear();
 }
 
 // ---------------------------------------------------------------------------

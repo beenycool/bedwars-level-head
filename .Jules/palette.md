@@ -18,3 +18,7 @@
 ## 2024-05-27 - Actionable Confirmation Messages
 **Learning:** Success messages (like "Copied UUID") are prime real estate for follow-up actions. Users often copy an identifier to immediately use it elsewhere. Providing a direct action (e.g., "Click to lookup") reduces friction.
 **Action:** Attach `ClickEvent.RUN_COMMAND` to identifiers in success messages to allow immediate processing of the copied data.
+
+## 2024-05-28 - Actionable Configuration Feedback
+**Learning:** Success messages for configuration changes are often a dead end. Providing a quick, clickable way to verify the new configuration (like a "[Check Status]" link) significantly improves the UX by allowing immediate validation without the user needing to type a follow-up command.
+**Action:** When saving configuration settings or API keys, use a helper like `sendSuccessWithStatusLink` to append a clickable link that executes the relevant status or diagnostic command.
