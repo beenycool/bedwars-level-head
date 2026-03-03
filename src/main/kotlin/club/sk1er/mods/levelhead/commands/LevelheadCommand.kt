@@ -504,7 +504,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                     it.displayName.equals(presetName, ignoreCase = true) || it.name.equals(presetName, ignoreCase = true)
                 }
                 if (preset == null) {
-                    val msg = ChatComponentText("${ChatColor.RED}Unknown preset '$presetName'.${ChatColor.YELLOW} Use ")
+                    val msg = ChatComponentText("${ChatColor.RED}Unknown preset '${presetName.replace("§", "")}'.${ChatColor.YELLOW} Use ")
                         .appendSibling(createClickableCommand("/levelhead profile list", run = true))
                         .appendSibling(ChatComponentText("${ChatColor.YELLOW} to see available presets."))
                     sendMessage(msg)
