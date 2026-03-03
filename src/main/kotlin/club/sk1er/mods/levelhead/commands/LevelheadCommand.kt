@@ -602,7 +602,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 }
             }
             else -> {
-                val msg = ChatComponentText("${ChatColor.RED}Unknown option '${args[0]}'. ${ChatColor.YELLOW}Valid options: ")
+                val msg = ChatComponentText("${ChatColor.RED}Unknown option '${args[0].replace("§", "")}'. ${ChatColor.YELLOW}Valid options: ")
                     .appendSibling(createClickableCommand("/levelhead display header text <value>"))
                     .appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
                     .appendSibling(createClickableCommand("/levelhead display header color <color>"))
