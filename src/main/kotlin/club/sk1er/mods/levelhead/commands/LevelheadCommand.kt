@@ -45,6 +45,23 @@ class LevelheadCommand {
     private var pendingAction: (() -> Unit)? = null
 
     @SubCommand
+    private fun requireConfirmation(warningMessage: String, action: () -> Unit) {
+        if (pendingAction != null) {
+            sendMessage("§cAn action is already pending. Please §a/levelhead confirm§c or wait.")
+            return
+        }
+
+        val msg = ChatComponentText("${ChatColor.RED}Warning: ${ChatColor.YELLOW}$warningMessage Are you sure? ")
+            .appendSibling(ChatComponentText("${ChatColor.GREEN}[Confirm]").apply {
+                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead confirm")
+                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to confirm"))
+            })
+        sendMessage(msg)
+
+        pendingAction = action
+    }
+
+    @SubCommand
     fun confirm() {
         val action = pendingAction
         if (action == null) {
@@ -152,14 +169,7 @@ class LevelheadCommand {
             return
         }
 
-        val msg = ChatComponentText("${ChatColor.RED}Warning: ${ChatColor.YELLOW}Changing your API key will allow the new key to be used for stat requests. Are you sure? ")
-            .appendSibling(ChatComponentText("${ChatColor.GREEN}[Confirm]").apply {
-                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead confirm")
-                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to confirm"))
-            })
-        sendMessage(msg)
-
-        pendingAction = {
+        requireConfirmation("Changing your API key will allow the new key to be used for stat requests.") {
             LevelheadConfig.updateApiKey(sanitized)
             sendSuccessWithStatusLink("${ChatColor.GREEN}Saved Hypixel API key for BedWars stat fetching.")
             resetBedwarsFetcher()
@@ -177,9 +187,11 @@ class LevelheadCommand {
 
     @SubCommand
     fun clearapikey() {
-        LevelheadConfig.clearApiKey()
-        sendMessage("${ChatColor.GREEN}Cleared stored Hypixel API key.")
-        resetBedwarsFetcher()
+        requireConfirmation("Clearing your API key will disable stat fetching.") {
+            LevelheadConfig.clearApiKey()
+            sendMessage("${ChatColor.GREEN}Cleared stored Hypixel API key.")
+            resetBedwarsFetcher()
+        }
     }
 
     @SubCommand
@@ -373,14 +385,7 @@ class LevelheadCommand {
                     .toString()
                     .trimEnd('/')
 
-                val msg = ChatComponentText("${ChatColor.RED}Warning: ${ChatColor.YELLOW}Changing the proxy URL may expose your IP and API key to the new server. Are you sure? ")
-                    .appendSibling(ChatComponentText("${ChatColor.GREEN}[Confirm]").apply {
-                        chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead confirm")
-                        chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to confirm"))
-                    })
-                sendMessage(msg)
-
-                pendingAction = {
+                requireConfirmation("Changing the proxy URL may expose your IP and API key to the new server.") {
                     LevelheadConfig.updateProxyBaseUrl(sanitized)
                     sendSuccessWithStatusLink("${ChatColor.GREEN}Updated proxy base URL to ${ChatColor.GOLD}$sanitized${ChatColor.GREEN}.")
                     resetBedwarsFetcher()
@@ -396,9 +401,11 @@ class LevelheadCommand {
                     sendMessage(msg)
                     return
                 }
-                LevelheadConfig.updateProxyAuthToken(token)
-                sendSuccessWithStatusLink("${ChatColor.GREEN}Updated proxy token.")
-                resetBedwarsFetcher()
+                requireConfirmation("Changing the proxy token will update your authentication credentials.") {
+                    LevelheadConfig.updateProxyAuthToken(token)
+                    sendSuccessWithStatusLink("${ChatColor.GREEN}Updated proxy token.")
+                    resetBedwarsFetcher()
+                }
             }
             else -> {
                 sendMessage("${ChatColor.RED}Unknown proxy option '${parsedArgs[0]}'.")
