@@ -506,12 +506,16 @@ export async function getPlayerQueryPage(params: {
 
   query = buildSearchClause(query, searchTerm);
 
-  const [rows, totalCount] = await Promise.all([
-    query.execute(),
-    params.totalCountOverride !== undefined
-      ? Promise.resolve(params.totalCountOverride)
-      : getPlayerQueryCount({ search: searchTerm })
-  ]);
+  const rowsPromise = query.execute();
+
+  let totalCountPromise: Promise<number> | number;
+  if (params.totalCountOverride !== undefined) {
+    totalCountPromise = params.totalCountOverride;
+  } else {
+    totalCountPromise = getPlayerQueryCount({ search: searchTerm });
+  }
+
+  const [rows, totalCount] = await Promise.all([rowsPromise, totalCountPromise]);
 
   return {
     rows: rows.map(mapRowToSummary),
@@ -533,7 +537,7 @@ export interface SystemStats {
 export async function getSystemStats(): Promise<SystemStats> {
   await ensureInitialized();
 
-  const apiStatsQuery = async () => {
+  const getApiStatsCount = async () => {
     try {
         if (dbType === DatabaseType.POSTGRESQL) {
           const res = await sql<{count: number}>`SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000)`.execute(db);
@@ -553,11 +557,10 @@ export async function getSystemStats(): Promise<SystemStats> {
     }
   };
 
-  // Fetch all stats in parallel
   const [redisCacheStats, resourceMetrics, apiStatsCount] = await Promise.all([
     getRedisCacheStats(),
     getCurrentResourceMetrics(),
-    apiStatsQuery(),
+    getApiStatsCount(),
   ]);
 
   function bytesToHuman(raw: string | number | null | undefined): string {

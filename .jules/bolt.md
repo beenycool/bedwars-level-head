@@ -11,3 +11,7 @@
 ## 2025-05-15 - Efficient Object Aggregation
 **Learning:** In `backend/src/services/hypixel.ts`, iterating over a large stats object (~10k keys) using `Object.entries(stats)` combined with `key.startsWith(prefix)` inside a loop called multiple times (4x per game mode) was extremely inefficient (O(M*N) + allocation). Switching to a single pass using `for (const key in stats)` reduced execution time by ~10x (29ms -> 2.8ms).
 **Action:** When aggregating data from large objects (like Hypixel API responses), avoid `Object.entries` if you just need to scan keys. Use a single pass `for..in` loop to calculate multiple aggregates simultaneously, avoiding repeated scans and intermediate array allocations.
+
+## 2025-05-16 - Pagination Refactoring Pitfall
+**Learning:** Refactoring sequential database calls into parallel executions (using `Promise.all`) inside controllers can sometimes silently break business logic if one call depends on the other. For instance, computing the correct database `OFFSET` for pagination relies on querying the total count first to clamp out-of-bounds `page` arguments. Parallelizing them broke the clamping, returning empty queries for invalid pages.
+**Action:** When attempting to parallelize database queries, meticulously check if variables derived from one query are being passed as arguments to another query, even indirectly (like pagination offsets). Use `Promise.all` inside nested async IIFEs if partial dependency is present.
