@@ -3,6 +3,7 @@ import { enforceAdminRateLimit } from '../middleware/rateLimit';
 import { enforceAdminAuth } from '../middleware/adminAuth';
 import { clearInMemoryPlayerCache } from '../services/player';
 import { HttpError } from '../util/httpError';
+import { IDENTIFIER_MAX_LENGTH } from '../util/validationConstants';
 import {
   buildPlayerCacheKey,
   clearAllPlayerStatsCaches,
@@ -48,20 +49,23 @@ router.post('/cache/purge', enforceAdminRateLimit, enforceAdminAuth, async (req,
   try {
     let purged = 0;
     if (typeof identifier === 'string') {
-      const normalizedIdentifier = identifier.trim();
-      if (normalizedIdentifier.length > 0) {
-        if (normalizedIdentifier.length > 64) {
-          throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier is too long.');
-        }
-        const keys = await cacheKeysForIdentifier(normalizedIdentifier);
+      if (identifier.length > IDENTIFIER_MAX_LENGTH) {
+        throw new HttpError(400, 'INVALID_IDENTIFIER', `Identifier must be ${IDENTIFIER_MAX_LENGTH} characters or less.`);
+      }
+      const trimmed = identifier.trim();
+      if (trimmed.length > 0) {
+        const keys = await cacheKeysForIdentifier(trimmed);
         if (keys.playerKeys.length === 0 && keys.igns.length === 0) {
           throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a UUID (without dashes) or an IGN.');
         }
-      if (keys.playerKeys.length > 0) {
-        purged += await deletePlayerStatsEntries(keys.playerKeys);
-      }
-      if (keys.igns.length > 0) {
-        purged += await deleteIgnMappings(keys.igns);
+        if (keys.playerKeys.length > 0) {
+          purged += await deletePlayerStatsEntries(keys.playerKeys);
+        }
+        if (keys.igns.length > 0) {
+          purged += await deleteIgnMappings(keys.igns);
+        }
+      } else {
+        purged = await clearAllPlayerStatsCaches();
       }
     } else {
       purged = await clearAllPlayerStatsCaches();
