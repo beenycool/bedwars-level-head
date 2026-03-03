@@ -261,7 +261,7 @@ class LevelheadCommand {
         val parsed = sanitized.toIntOrNull()
         if (parsed == null) {
             val current = LevelheadConfig.starCacheTtlMinutes
-            val msg = ChatComponentText("${ChatColor.RED}Couldn't read '$minutesInput'.${ChatColor.YELLOW} Choose a number of minutes between ${ChatColor.GOLD}${LevelheadConfig.MIN_STAR_CACHE_TTL_MINUTES}${ChatColor.YELLOW} and ${ChatColor.GOLD}${LevelheadConfig.MAX_STAR_CACHE_TTL_MINUTES}${ChatColor.YELLOW}. Current TTL: ${ChatColor.GOLD}$current${ChatColor.YELLOW}. Use ")
+            val msg = ChatComponentText("${ChatColor.RED}Couldn't read '${minutesInput.replace("§", "")}'.${ChatColor.YELLOW} Choose a number of minutes between ${ChatColor.GOLD}${LevelheadConfig.MIN_STAR_CACHE_TTL_MINUTES}${ChatColor.YELLOW} and ${ChatColor.GOLD}${LevelheadConfig.MAX_STAR_CACHE_TTL_MINUTES}${ChatColor.YELLOW}. Use ")
                 .appendSibling(createClickableCommand("/levelhead cachettl "))
                 .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
             sendMessage(msg)
