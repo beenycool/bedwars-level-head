@@ -90,7 +90,7 @@ describe('resolvePlayer optimization', () => {
 
   it('should reject invalid UUID format (invalid characters)', async () => {
     const invalidUuid = '123456781234123412341234567890az'; // z is invalid hex
-    await expect(resolvePlayer(invalidUuid)).rejects.toThrow('Identifier must be a valid UUID');
+    await expect(resolvePlayer(invalidUuid)).rejects.toThrow('Identifier must be a valid UUID (no dashes) or Minecraft username.');
   });
 
   it('should reject dashed UUID with invalid length', async () => {
