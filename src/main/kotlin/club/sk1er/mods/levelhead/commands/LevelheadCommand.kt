@@ -44,7 +44,6 @@ class LevelheadCommand {
 
     private var pendingAction: (() -> Unit)? = null
 
-    @SubCommand
     private fun requireConfirmation(warningMessage: String, action: () -> Unit) {
         if (pendingAction != null) {
             sendMessage("§cAn action is already pending. Please §a/levelhead confirm§c or wait.")
