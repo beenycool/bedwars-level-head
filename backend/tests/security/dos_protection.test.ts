@@ -55,7 +55,7 @@ describe('DoS Protection - Input Length Limits', () => {
       expect(error).toBeInstanceOf(HttpError);
       if (error instanceof HttpError) {
         // It should NOT be the length error
-        expect(error.message).not.toContain('too long');
+        expect(error.message).not.toMatch(/too long|64 characters/);
       }
     }
   });
