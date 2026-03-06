@@ -341,9 +341,12 @@ async function fetchByIgn(ign: string, conditional?: HypixelFetchOptions): Promi
   }
 
   const normalizedUuid = profile.id.replace(/-/g, '').toLowerCase();
-  await setIgnMapping(normalizedIgn, normalizedUuid, false);
 
-  const resolvedUuid = await fetchByUuid(normalizedUuid, conditional);
+  const [_, resolvedUuid] = await Promise.all([
+    setIgnMapping(normalizedIgn, normalizedUuid, false),
+    fetchByUuid(normalizedUuid, conditional),
+  ]);
+
   const resolved: ResolvedPlayer = {
     ...resolvedUuid,
     lookupType: 'ign',

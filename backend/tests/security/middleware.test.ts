@@ -48,7 +48,7 @@ describe('Middleware Integration', () => {
       frameguard: { action: 'deny' }
     }));
     app.use((_req, res, next) => {
-      res.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=(), interest-cohort=()');
+      res.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=(), browsing-topics=()');
       next();
     });
     app.get('/test', (_req, res) => res.send('ok'));
@@ -56,6 +56,6 @@ describe('Middleware Integration', () => {
     const response = await makeRequest(app, 'GET', '/test');
     expect(response.headers['x-content-type-options']).toBe('nosniff');
     expect(response.headers['x-frame-options']).toBe('DENY');
-    expect(response.headers['permissions-policy']).toBe('geolocation=(), microphone=(), camera=(), payment=(), interest-cohort=()');
+    expect(response.headers['permissions-policy']).toBe('geolocation=(), microphone=(), camera=(), payment=(), browsing-topics=()');
   });
 });

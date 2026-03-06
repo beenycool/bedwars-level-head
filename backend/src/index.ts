@@ -117,7 +117,7 @@ app.use(helmet({
 }));
 
 app.use((_req, res, next) => {
-  res.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=(), interest-cohort=()');
+  res.set('Permissions-Policy', 'geolocation=(), microphone=(), camera=(), payment=(), browsing-topics=()');
   next();
 });
 

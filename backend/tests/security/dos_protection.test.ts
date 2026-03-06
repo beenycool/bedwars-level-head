@@ -35,14 +35,14 @@ describe('DoS Protection - Input Length Limits', () => {
       if (error instanceof HttpError) {
         expect(error.status).toBe(400);
         expect(error.causeCode).toBe('INVALID_IDENTIFIER');
-        expect(error.message).toContain('too long');
+        expect(error.message).toContain('64 characters or less');
       }
     }
   });
 
   it('should allow valid length identifiers', async () => {
     // We expect this to fail later in the process (e.g. invalid UUID format)
-    // but NOT with "too long".
+    // but NOT with "64 characters or less".
     // We use a string that matches neither uuidRegex nor ignRegex to trigger the default HttpError.
     const validLengthIdentifier = 'invalid-format-but-valid-length';
 
@@ -55,7 +55,7 @@ describe('DoS Protection - Input Length Limits', () => {
       expect(error).toBeInstanceOf(HttpError);
       if (error instanceof HttpError) {
         // It should NOT be the length error
-        expect(error.message).not.toContain('too long');
+        expect(error.message).not.toContain('64 characters or less');
       }
     }
   });
