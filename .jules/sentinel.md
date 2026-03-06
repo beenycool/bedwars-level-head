@@ -40,6 +40,6 @@
 
 ## 2026-06-12 - Missing Rate Limiting on Static Configuration Routes
 
-**Vulnerability:** Public-facing configuration routes (e.g., `/api/config/motd` and `/api/config/version`) were missing rate limiting middleware. An attacker could flood these endpoints with excessive requests, potentially leading to Resource Exhaustion or Denial of Service (DoS) attacks.
-**Learning:** Even endpoints that only serve static JSON responses can be exploited to exhaust server resources (CPU, memory, network bandwidth) if left unprotected by rate limiting mechanisms.
-**Prevention:** All public-facing routes, regardless of their complexity or the type of data they serve, must be explicitly protected with rate limiting middleware (like `enforcePublicRateLimit`) to mitigate DoS risks.
+**Vulnerability:** Public-facing configuration routes (e.g., `/api/config/motd` and `/api/config/version`) were missing rate-limiting middleware. An attacker could flood these endpoints with excessive requests, potentially leading to Resource Exhaustion or Denial of Service (DoS) attacks.
+**Learning:** Even endpoints that only serve static JSON responses can be exploited to exhaust server resources (CPU, memory, network bandwidth) if left unprotected by rate-limiting mechanisms.
+**Prevention:** All public-facing routes, regardless of their complexity or the type of data they serve, must be explicitly protected with rate-limiting middleware (like `enforcePublicRateLimit`) to mitigate DoS risks.

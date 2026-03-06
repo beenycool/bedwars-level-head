@@ -96,7 +96,7 @@ describe('Player Service Optimization', () => {
     const result = await resolvePlayer(uuid);
 
     expect(result.uuid).toBe(uuid);
-    expect(fetchHypixelPlayer).toHaveBeenCalledWith(uuid);
+    expect(statsCache.fetchWithDedupe).toHaveBeenCalledWith(uuid);
   });
 
   it('should resolve player using IGN', async () => {
@@ -107,7 +107,7 @@ describe('Player Service Optimization', () => {
 
     expect(result.lookupType).toBe('ign');
     expect(result.lookupValue).toBe('testplayer');
-    expect(fetchHypixelPlayer).toHaveBeenCalledWith('530fa96a303d42199b5a329d493a5573');
+    expect(statsCache.fetchWithDedupe).toHaveBeenCalledWith('530fa96a303d42199b5a329d493a5573');
   });
 
   it('should normalize dashed UUIDs', async () => {
@@ -117,7 +117,7 @@ describe('Player Service Optimization', () => {
     const result = await resolvePlayer(uuidWithDashes);
 
     expect(result.uuid).toBe('530fa96a303d42199b5a329d493a5573');
-    expect(fetchHypixelPlayer).toHaveBeenCalledWith('530fa96a303d42199b5a329d493a5573');
+    expect(statsCache.fetchWithDedupe).toHaveBeenCalledWith('530fa96a303d42199b5a329d493a5573');
   });
 
   it('should return cached player and not fetch if SWR cache is fresh', async () => {
