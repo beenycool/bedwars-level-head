@@ -1,5 +1,6 @@
 import { LRUCache } from 'lru-cache';
 import { HttpError } from '../util/httpError';
+import { IDENTIFIER_MAX_LENGTH } from '../util/validationConstants';
 import { CacheEntry, CacheMetadata } from './cache';
 import { fetchHypixelPlayer, HypixelFetchOptions, extractMinimalStats, MinimalPlayerStats } from './hypixel';
 import { lookupProfileByUsername } from './mojang';
@@ -340,9 +341,12 @@ async function fetchByIgn(ign: string, conditional?: HypixelFetchOptions): Promi
   }
 
   const normalizedUuid = profile.id.replace(/-/g, '').toLowerCase();
-  await setIgnMapping(normalizedIgn, normalizedUuid, false);
 
-  const resolvedUuid = await fetchByUuid(normalizedUuid, conditional);
+  const [_, resolvedUuid] = await Promise.all([
+    setIgnMapping(normalizedIgn, normalizedUuid, false),
+    fetchByUuid(normalizedUuid, conditional),
+  ]);
+
   const resolved: ResolvedPlayer = {
     ...resolvedUuid,
     lookupType: 'ign',
@@ -416,10 +420,8 @@ export async function resolvePlayer(
   identifier: string,
   options?: PlayerResolutionOptions,
 ): Promise<ResolvedPlayer> {
-  // Prevent DoS via excessively long identifiers
-  // UUID (36) or IGN (16) are well within this limit. 64 allows for some leeway/future formats.
-  if (identifier.length > 64) {
-    throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier is too long (max 64 characters).');
+  if (!identifier || typeof identifier !== 'string' || identifier.length > IDENTIFIER_MAX_LENGTH) {
+    throw new HttpError(400, 'INVALID_IDENTIFIER', `Identifier must be ${IDENTIFIER_MAX_LENGTH} characters or less.`);
   }
 
   // Fast normalization: combine length gate with structural dash check

@@ -17,16 +17,20 @@ object BedwarsModeDetector {
     @Deprecated("Use GameMode.BEDWARS.defaultHeader instead", ReplaceWith("GameMode.BEDWARS.defaultHeader"))
     const val DEFAULT_HEADER = "BedWars Star"
 
-    private val teamPattern = Regex("(?:^|\\s)(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY|GREY)\\s*:", RegexOption.IGNORE_CASE)
-    private val miniServerPattern = Regex("mini\\w+", RegexOption.IGNORE_CASE)
-    private val bedwarsIntroPattern = Regex("protect\\s+your\\s+bed\\s+and\\s+destroy\\s+the\\s+enemy\\s+beds?", RegexOption.IGNORE_CASE)
-    private val WHITESPACE_PATTERN = Regex("\\s+")
+    private val teamPattern = Regex("""(?:^|\s)(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY|GREY)\s*:""", RegexOption.IGNORE_CASE)
+    private val miniServerPattern = Regex("""mini\w+""", RegexOption.IGNORE_CASE)
+    private val bedwarsIntroPattern = Regex("""protect\s+your\s+bed\s+and\s+destroy\s+the\s+enemy\s+beds?""", RegexOption.IGNORE_CASE)
+    private val WHITESPACE_PATTERN = Regex("""\s+""")
 
     private var cachedContext: Context = Context.UNKNOWN
     private var lastDetectionTime: Long = 0L
     private var chatDetectedContext: Context = Context.NONE
     private var chatDetectionExpiry: Long = 0L
     private var lastBedwarsDetectedAt: Long = 0L
+
+    // Optimization: Cache previous scoreboard hash
+    private var lastScoreboardHash: Int = 0
+    private var lastScoreboardContext: Context = Context.UNKNOWN
 
     private const val TEMP_DEBUG = false
     private const val CHAT_CONTEXT_DURATION = 20_000L
@@ -48,6 +52,8 @@ object BedwarsModeDetector {
         chatDetectedContext = Context.NONE
         chatDetectionExpiry = 0L
         lastBedwarsDetectedAt = 0L
+        lastScoreboardHash = 0
+        lastScoreboardContext = Context.UNKNOWN
     }
 
     fun currentContext(force: Boolean = false): Context {
@@ -130,6 +136,22 @@ object BedwarsModeDetector {
             return null
         }
 
+        // Optimization: Quick check if scoreboard content changed
+        val currentTitle = objective.displayName ?: ""
+        val scores = scoreboard.getSortedScores(objective)
+
+        // Simple hash of title + count + first/last score to detect changes cheaply
+        var currentHash = currentTitle.hashCode()
+        if (scores.isNotEmpty()) {
+            currentHash = 31 * currentHash + scores.size
+            currentHash = 31 * currentHash + (scores.firstOrNull()?.playerName?.hashCode() ?: 0)
+        }
+
+        // If hash matches and we have a valid cached context, reuse it
+        if (currentHash == lastScoreboardHash && lastScoreboardContext != Context.UNKNOWN) {
+             return lastScoreboardContext
+        }
+
         val displayComponent: Any? = objective.displayName
         val rawTitle = when (displayComponent) {
             null -> ""
@@ -173,15 +195,16 @@ object BedwarsModeDetector {
                 "sample='$sample'"
         )
 
-        if (!hasBedwarsTitle && !hasTeamLines && !hasBedwarsIndicators) {
-            return Context.NONE
+        val result = when {
+            hasTeamLines -> Context.MATCH
+            hasBedwarsTitle || hasBedwarsIndicators -> Context.LOBBY
+            else -> Context.NONE
         }
 
-        if (hasTeamLines) {
-            return Context.MATCH
-        }
+        lastScoreboardHash = currentHash
+        lastScoreboardContext = result
 
-        return Context.LOBBY
+        return result
     }
 
     private fun debug(message: String) {
