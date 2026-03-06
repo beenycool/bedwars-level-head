@@ -3,6 +3,9 @@ import { enforcePublicRateLimit } from '../middleware/rateLimitPublic';
 
 const router = Router();
 
+// Apply public rate limit to all configuration endpoints to prevent resource exhaustion/DoS
+router.use(enforcePublicRateLimit);
+
 /**
  * GET /api/config/motd
  * Returns the current Message of the Day configuration for the mod.
@@ -29,6 +32,3 @@ router.get('/version', enforcePublicRateLimit, (_req, res) => {
 });
 
 export default router;
-
-
-
