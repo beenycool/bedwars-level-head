@@ -17,12 +17,16 @@ import java.util.Locale
  * Similar to BedwarsModeDetector but for Duels game mode.
  */
 object DuelsModeDetector {
-    private val WHITESPACE_PATTERN = Regex("\\s+")
+    private val WHITESPACE_PATTERN = Regex("""\s+""")
 
     private var cachedContext: Context = Context.UNKNOWN
     private var lastDetectionTime: Long = 0L
     private var chatDetectedContext: Context = Context.NONE
     private var chatDetectionExpiry: Long = 0L
+
+    // Optimization: Cache previous scoreboard hash
+    private var lastScoreboardHash: Int = 0
+    private var lastScoreboardContext: Context = Context.UNKNOWN
 
     private const val CHAT_CONTEXT_DURATION = 20_000L
 
@@ -57,6 +61,8 @@ object DuelsModeDetector {
         lastDetectionTime = 0L
         chatDetectedContext = Context.NONE
         chatDetectionExpiry = 0L
+        lastScoreboardHash = 0
+        lastScoreboardContext = Context.UNKNOWN
     }
 
     fun currentContext(force: Boolean = false): Context {
@@ -166,6 +172,20 @@ object DuelsModeDetector {
             return null
         }
 
+        // Optimization: Quick check if scoreboard content changed
+        val currentTitle = objective.displayName ?: ""
+        val scores = scoreboard.getSortedScores(objective)
+
+        var currentHash = currentTitle.hashCode()
+        if (scores.isNotEmpty()) {
+            currentHash = 31 * currentHash + scores.size
+            currentHash = 31 * currentHash + (scores.firstOrNull()?.playerName?.hashCode() ?: 0)
+        }
+
+        if (currentHash == lastScoreboardHash && lastScoreboardContext != Context.UNKNOWN) {
+             return lastScoreboardContext
+        }
+
         val rawTitle = objective.displayName?.let {
             StringUtils.stripControlCodes(it)
         } ?: ""
@@ -177,6 +197,8 @@ object DuelsModeDetector {
         // If the title explicitly says BEDWARS or SKYWARS, we let those detectors handle it
         if (normalizedTitle.contains("BEDWARS") || normalizedTitle.contains("SKYWARS")) {
             Levelhead.logger.debug("detectScoreboardContext: title contains BEDWARS/SKYWARS, returning NONE")
+            lastScoreboardHash = currentHash
+            lastScoreboardContext = Context.NONE
             return Context.NONE
         }
         
@@ -205,6 +227,8 @@ object DuelsModeDetector {
 
         if (isBedwarsDuels) {
             Levelhead.logger.debug("detectScoreboardContext: isBedwarsDuels=true, returning NONE")
+            lastScoreboardHash = currentHash
+            lastScoreboardContext = Context.NONE
             return Context.NONE
         }
 
@@ -214,6 +238,8 @@ object DuelsModeDetector {
         
         if (!isDuelScoreboard) {
             Levelhead.logger.debug("detectScoreboardContext: not detected as Duels scoreboard, returning NONE")
+            lastScoreboardHash = currentHash
+            lastScoreboardContext = Context.NONE
             return Context.NONE
         }
 
@@ -244,18 +270,16 @@ object DuelsModeDetector {
         }
         Levelhead.logger.debug("detectScoreboardContext: mainLobbyIndicators={}", mainLobbyIndicators)
 
-        if (matchIndicators) {
-            Levelhead.logger.debug("detectScoreboardContext: returning MATCH")
-            return Context.MATCH
+        val result = when {
+            matchIndicators -> Context.MATCH
+            preGameIndicators || mainLobbyIndicators -> Context.LOBBY
+            else -> Context.NONE
         }
 
-        if (preGameIndicators || mainLobbyIndicators) {
-            Levelhead.logger.debug("detectScoreboardContext: returning LOBBY")
-            return Context.LOBBY
-        }
-
-        Levelhead.logger.debug("detectScoreboardContext: falling through to NONE")
-        return Context.NONE
+        Levelhead.logger.debug("detectScoreboardContext: returning result {}", result)
+        lastScoreboardHash = currentHash
+        lastScoreboardContext = result
+        return result
     }
 
     private fun formatScoreLine(score: Score, scoreboard: net.minecraft.scoreboard.Scoreboard): String {

@@ -25,3 +25,15 @@
 **Vulnerability:** The `validateAdminToken` and `validateCronToken` functions used `crypto.pbkdf2Sync` with 10,000 iterations for *every* request to validate API keys. This allowed an attacker to exhaust server CPU resources by sending many requests with invalid tokens, causing a Denial of Service (DoS).
 **Learning:** While PBKDF2 is excellent for password storage (where slowness is a feature), it is inappropriate for high-throughput API key validation. API keys are typically high-entropy random strings that don't need salt/iterations to prevent rainbow table attacks in the same way user passwords do.
 **Prevention:** Use fast cryptographic hashes for API key validation. We initially tried **HMAC-SHA256**, but static analysis tools (CodeQL) flagged it as insecure password hashing. We switched to **Scrypt** with minimal parameters (`N=16`), which is a recognized password hashing function (satisfying CodeQL) but tuned to be extremely fast (~0.03ms) to prevent CPU DoS.
+
+## 2026-02-28 - Regex and Object Allocation DoS via Unbounded Input Limits
+
+**Vulnerability:** Core functions and route handlers processing external identifiers (`resolvePlayer`, `/batch`, and `/cache/purge`) lacked explicit input length validation *before* operations like regex matching, string transformation (`.toLowerCase()`), or array `.map()` / `.trim()`. An attacker could exploit this by sending arbitrarily large string payloads (e.g. up to Express limit, ~64kb to 1MB) which exponentially ties up Node.js single-threaded event loop.
+**Learning:** Checking payload size on raw HTTP requests is not a silver bullet because nested data or array inputs might bypass simple global filters. Validation limits on string length must be explicitly asserted in specific routing context logic and individual core domain handlers before expensive runtime allocations occur.
+**Prevention:** Always enforce strict length bounding directly on parameter inputs prior to data manipulation, such as standardizing maximum characters (e.g., 64 characters) for player identifiers.
+
+## 2024-05-22 - CSRF/1-Click Exploit via Chat RUN_COMMAND in Minecraft Mod
+
+**Vulnerability:** The `/levelhead apikey` and `/levelhead proxy url` commands allowed changing sensitive configuration states without confirmation. A malicious server could exploit the `RUN_COMMAND` chat click event by tricking a user into clicking a seemingly innocuous link that actually executed these commands, pointing the mod to an attacker-controlled backend or API key.
+**Learning:** Commands that mutate sensitive state must never be triggerable via a single click in a potentially untrusted environment (like a Minecraft server chat).
+**Prevention:** Implement a confirmation mechanism (e.g., a `pendingAction` state and a `/levelhead confirm` command) for sensitive configuration changes so that users must explicitly authorize the action after reading a warning.
