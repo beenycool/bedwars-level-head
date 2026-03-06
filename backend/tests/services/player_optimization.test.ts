@@ -2,6 +2,7 @@ import { clearInMemoryPlayerCache, resolvePlayer } from '../../src/services/play
 import { fetchHypixelPlayer, extractMinimalStats } from '../../src/services/hypixel';
 import { getPlayerStatsFromCache, setPlayerStatsBoth } from '../../src/services/statsCache';
 import { DatabaseType } from '../../src/services/database/adapter';
+import * as statsCache from '../../src/services/statsCache';
 
 // Mock dependencies
 jest.mock('../../src/services/database/db', () => {
@@ -41,7 +42,8 @@ jest.mock('../../src/services/statsCache', () => ({
   getManyPlayerStatsFromCacheWithSWR: jest.fn().mockResolvedValue(new Map()),
   getPlayerStatsFromCacheWithSWR: jest.fn().mockResolvedValue(null),
   setIgnMapping: jest.fn().mockResolvedValue(undefined),
-  getIgnMapping: jest.fn().mockResolvedValue(null)
+  getIgnMapping: jest.fn().mockResolvedValue(null),
+  fetchWithDedupe: jest.fn()
 }));
 
 jest.mock('../../src/services/mojang', () => ({
@@ -77,6 +79,14 @@ describe('Player Service Optimization', () => {
     clearInMemoryPlayerCache(); // Clear in-memory cache before each test
     (fetchHypixelPlayer as jest.Mock).mockResolvedValue(mockResolved);
     (extractMinimalStats as jest.Mock).mockReturnValue(mockStats);
+    (statsCache.fetchWithDedupe as jest.Mock).mockImplementation(async (uuid) => {
+      const response = await fetchHypixelPlayer(uuid);
+      return {
+        stats: extractMinimalStats(response.payload),
+        etag: response.etag,
+        lastModified: response.lastModified
+      };
+    });
   });
 
   it('should efficiently resolve player without regex overhead for clean UUIDs', async () => {
@@ -86,7 +96,7 @@ describe('Player Service Optimization', () => {
     const result = await resolvePlayer(uuid);
 
     expect(result.uuid).toBe(uuid);
-    expect(fetchHypixelPlayer).toHaveBeenCalledWith(uuid, undefined);
+    expect(statsCache.fetchWithDedupe).toHaveBeenCalledWith(uuid);
   });
 
   it('should resolve player using IGN', async () => {
@@ -97,7 +107,7 @@ describe('Player Service Optimization', () => {
 
     expect(result.lookupType).toBe('ign');
     expect(result.lookupValue).toBe('testplayer');
-    expect(fetchHypixelPlayer).toHaveBeenCalledWith('530fa96a303d42199b5a329d493a5573', undefined);
+    expect(statsCache.fetchWithDedupe).toHaveBeenCalledWith('530fa96a303d42199b5a329d493a5573');
   });
 
   it('should normalize dashed UUIDs', async () => {
@@ -107,7 +117,7 @@ describe('Player Service Optimization', () => {
     const result = await resolvePlayer(uuidWithDashes);
 
     expect(result.uuid).toBe('530fa96a303d42199b5a329d493a5573');
-    expect(fetchHypixelPlayer).toHaveBeenCalledWith('530fa96a303d42199b5a329d493a5573', undefined);
+    expect(statsCache.fetchWithDedupe).toHaveBeenCalledWith('530fa96a303d42199b5a329d493a5573');
   });
 
   it('should return cached player and not fetch if SWR cache is fresh', async () => {
@@ -138,6 +148,7 @@ describe('Player Service Optimization', () => {
 
     const mockError = new Error('Network Failure');
     (fetchHypixelPlayer as jest.Mock).mockRejectedValueOnce(mockError);
+    (statsCache.fetchWithDedupe as jest.Mock).mockRejectedValueOnce(mockError);
 
     await expect(resolvePlayer(uuid)).rejects.toThrow('Network Failure');
   });

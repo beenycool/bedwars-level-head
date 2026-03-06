@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { enforcePublicRateLimit } from '../middleware/rateLimitPublic';
 
 const router = Router();
 
@@ -7,7 +8,7 @@ const router = Router();
  * Returns the current Message of the Day configuration for the mod.
  * This can be used to display announcements or welcome messages to users.
  */
-router.get('/motd', (_req, res) => {
+router.get('/motd', enforcePublicRateLimit, (_req, res) => {
   res.json({
     enabled: true,
     message: 'Welcome to the Levelhead 8.3 Custom Build!',
@@ -19,7 +20,7 @@ router.get('/motd', (_req, res) => {
  * GET /api/config/version
  * Returns the current recommended version information.
  */
-router.get('/version', (_req, res) => {
+router.get('/version', enforcePublicRateLimit, (_req, res) => {
   res.json({
     latestVersion: '8.3.0',
     minVersion: '8.0.0',
