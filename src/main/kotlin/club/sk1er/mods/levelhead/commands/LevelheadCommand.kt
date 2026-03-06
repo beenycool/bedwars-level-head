@@ -568,8 +568,9 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
     private fun sendProfileHelp() {
         sendMessage("${ChatColor.YELLOW}Profile commands:")
         fun sendLine(command: String, desc: String, run: Boolean) {
+            val suggested = command.substringBefore(" <")
             val line = ChatComponentText("  ")
-                .appendSibling(createClickableCommand(command, run))
+                .appendSibling(createClickableCommand(command, run, suggestedCommand = if (run) command else suggested + " "))
                 .appendSibling(ChatComponentText(" ${ChatColor.GRAY}- $desc"))
             sendMessage(line)
         }
@@ -659,7 +660,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         val toggle = args.getOrNull(0)?.let { parseToggle(it) }
         if (toggle == null) {
             val msg = ChatComponentText("${ChatColor.RED}Couldn't understand '${args[0]}'.${ChatColor.YELLOW} Use ")
-                .appendSibling(createClickableCommand("/levelhead display showself <on|off>"))
+            .appendSibling(createClickableCommand("/levelhead display showself <on|off>", suggestedCommand = "/levelhead display showself "))
                 .appendSibling(ChatComponentText("${ChatColor.YELLOW}. Current setting: ${formatToggle(currentShowSelf())}${ChatColor.YELLOW}."))
             sendMessage(msg)
             return
@@ -722,12 +723,12 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         )
         val toggleCmd = if (LevelheadConfig.proxyEnabled) "/levelhead proxy disable" else "/levelhead proxy enable"
         val msg = ChatComponentText("${ChatColor.GRAY}Try: ")
-            .appendSibling(createClickableCommand(toggleCmd, run = true))
-            .appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
-            .appendSibling(createClickableCommand("/levelhead proxy url <url>", run = false, suggestedCommand = "/levelhead proxy url "))
-            .appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
-            .appendSibling(createClickableCommand("/levelhead proxy token <token>", run = false, suggestedCommand = "/levelhead proxy token "))
-            .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
+.appendSibling(createClickableCommand(toggleCmd, run = true))
+.appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
+.appendSibling(createClickableCommand("/levelhead proxy url <url>", run = false, suggestedCommand = "/levelhead proxy url "))
+.appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
+.appendSibling(createClickableCommand("/levelhead proxy token <token>", run = false, suggestedCommand = "/levelhead proxy token "))
+.appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
         sendMessage(msg)
     }
 
@@ -831,39 +832,39 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         )
     }
 
-    private fun sendDisplayUsage() {
-        val msg = ChatComponentText("${ChatColor.GRAY}Use ")
-            .appendSibling(createClickableCommand("/levelhead display header <text|color>", run = false, suggestedCommand = "/levelhead display header "))
-            .appendSibling(ChatComponentText("${ChatColor.GRAY}, "))
-            .appendSibling(createClickableCommand("/levelhead display offset <value>", run = false, suggestedCommand = "/levelhead display offset "))
-            .appendSibling(ChatComponentText("${ChatColor.GRAY}, "))
-            .appendSibling(createClickableCommand("/levelhead display showself <on|off>", run = false, suggestedCommand = "/levelhead display showself "))
-            .appendSibling(ChatComponentText("${ChatColor.GRAY} to make changes."))
+private fun sendDisplayUsage() {
+    val msg = ChatComponentText("${ChatColor.GRAY}Use ")
+    .appendSibling(createClickableCommand("/levelhead display header <text|color>", run = false, suggestedCommand = "/levelhead display header "))
+    .appendSibling(ChatComponentText("${ChatColor.GRAY}, "))
+    .appendSibling(createClickableCommand("/levelhead display offset <value>", run = false, suggestedCommand = "/levelhead display offset "))
+    .appendSibling(ChatComponentText("${ChatColor.GRAY}, "))
+    .appendSibling(createClickableCommand("/levelhead display showself <on|off>", run = false, suggestedCommand = "/levelhead display showself "))
+    .appendSibling(ChatComponentText("${ChatColor.GRAY} to make changes."))
         sendMessage(msg)
     }
 
-    private fun sendDisplayHeaderDetails() {
-        val msg = ChatComponentText("${ChatColor.YELLOW}Current header text: ${ChatColor.GOLD}${currentHeaderText()}${ChatColor.YELLOW}. Use ")
-            .appendSibling(createClickableCommand("/levelhead display header text <value>", run = false, suggestedCommand = "/levelhead display header text "))
-            .appendSibling(ChatComponentText("${ChatColor.YELLOW} to change it."))
+private fun sendDisplayHeaderDetails() {
+    val msg = ChatComponentText("${ChatColor.YELLOW}Current header text: ${ChatColor.GOLD}${currentHeaderText()}${ChatColor.YELLOW}. Use ")
+    .appendSibling(createClickableCommand("/levelhead display header text <value>", run = false, suggestedCommand = "/levelhead display header text "))
+    .appendSibling(ChatComponentText("${ChatColor.YELLOW} to change it."))
         sendMessage(msg)
         sendDisplayHeaderColorHelp()
     }
 
-    private fun sendDisplayHeaderColorHelp() {
-        val msg = ChatComponentText("${ChatColor.YELLOW}Current header color: ${ChatColor.GOLD}${formatColor(currentHeaderColor())}${ChatColor.YELLOW}. Use ")
-            .appendSibling(createClickableCommand("/levelhead display header color <color>", run = false, suggestedCommand = "/levelhead display header color "))
-            .appendSibling(ChatComponentText("${ChatColor.YELLOW} with a hex code, RGB value, or "))
+private fun sendDisplayHeaderColorHelp() {
+    val msg = ChatComponentText("${ChatColor.YELLOW}Current header color: ${ChatColor.GOLD}${formatColor(currentHeaderColor())}${ChatColor.YELLOW}. Use ")
+    .appendSibling(createClickableCommand("/levelhead display header color <color>", run = false, suggestedCommand = "/levelhead display header color "))
+    .appendSibling(ChatComponentText("${ChatColor.YELLOW} with a hex code, RGB value, or "))
             .appendSibling(getMinecraftColorNameHelpComponent())
             .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
         sendMessage(msg)
     }
 
-    private fun sendDisplayOffsetDetails() {
-        val offset = Levelhead.displayManager.config.offset
-        val msg = ChatComponentText("${ChatColor.YELLOW}Current display offset: ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", offset)}${ChatColor.YELLOW}. Use ")
-            .appendSibling(createClickableCommand("/levelhead display offset <value>", run = false, suggestedCommand = "/levelhead display offset "))
-            .appendSibling(ChatComponentText("${ChatColor.YELLOW} with a value between "))
+private fun sendDisplayOffsetDetails() {
+    val offset = Levelhead.displayManager.config.offset
+    val msg = ChatComponentText("${ChatColor.YELLOW}Current display offset: ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", offset)}${ChatColor.YELLOW}. Use ")
+    .appendSibling(createClickableCommand("/levelhead display offset <value>", run = false, suggestedCommand = "/levelhead display offset "))
+    .appendSibling(ChatComponentText("${ChatColor.YELLOW} with a value between "))
             .appendSibling(ChatComponentText(String.format(Locale.ROOT, "%.1f", MIN_DISPLAY_OFFSET)).apply { chatStyle.color = ChatColor.GOLD })
             .appendSibling(ChatComponentText("${ChatColor.YELLOW} and "))
             .appendSibling(ChatComponentText(String.format(Locale.ROOT, "%.1f", MAX_DISPLAY_OFFSET)).apply { chatStyle.color = ChatColor.GOLD })
@@ -871,127 +872,10 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         sendMessage(msg)
     }
 
-    private fun sendDisplayShowSelfDetails() {
-        val msg = ChatComponentText("${ChatColor.YELLOW}Self display visibility is currently ${formatToggle(currentShowSelf())}${ChatColor.YELLOW}. Use ")
-            .appendSibling(createClickableCommand("/levelhead display showself <on|off>", run = false, suggestedCommand = "/levelhead display showself "))
-            .appendSibling(ChatComponentText("${ChatColor.YELLOW} to change it."))
-        sendMessage(msg)
-    }
-
-    private fun currentHeaderText(): String {
-        return Levelhead.displayManager.primaryDisplay()?.config?.headerString ?: GameMode.BEDWARS.defaultHeader
-    }
-
-    private fun currentHeaderColor(): Color {
-        return Levelhead.displayManager.primaryDisplay()?.config?.headerColor ?: Color(85, 255, 255)
-    }
-
-    private fun currentShowSelf(): Boolean {
-        return Levelhead.displayManager.primaryDisplay()?.config?.showSelf ?: true
-    }
-
-    private fun formatToggle(value: Boolean): String {
-        return if (value) "${ChatColor.GREEN}on" else "${ChatColor.RED}off"
-    }
-
-    private fun parseToggle(value: String): Boolean? {
-        return when (value.lowercase(Locale.ROOT)) {
-            "on", "enable", "enabled", "true", "yes", "1" -> true
-            "off", "disable", "disabled", "false", "no", "0" -> false
-            else -> null
-        }
-    }
-
-    private fun parseColor(input: String): Color? {
-        val normalized = input.trim()
-        if (HEX_COLOR_PATTERN.matches(normalized)) {
-            val hex = normalized.removePrefix("#")
-            return runCatching { Color(Integer.parseInt(hex, 16)) }.getOrNull()
-        }
-        RGB_COLOR_PATTERN.find(normalized)?.let { match ->
-            val (r, g, b) = match.destructured
-            val red = r.toInt().coerceIn(0, 255)
-            val green = g.toInt().coerceIn(0, 255)
-            val blue = b.toInt().coerceIn(0, 255)
-            return Color(red, green, blue)
-        }
-        val key = normalized.replace(" ", "_").lowercase(Locale.ROOT)
-        return NAMED_COLORS[key]
-    }
-
-    private fun formatColor(color: Color): String = "#%06X".format(Locale.ROOT, color.rgb and 0xFFFFFF)
-
-    private suspend fun validateApiKey(key: String): Boolean = withContext(Dispatchers.IO) {
-        val url = HttpUrl.parse("https://api.hypixel.net/key") ?: return@withContext false
-
-        val request = Request.Builder()
-            .url(url)
-            .header("API-Key", key)
-            .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
-            .header("Accept", "application/json")
-            .get()
-            .build()
-
-        runCatching {
-            Levelhead.okHttpClient.newCall(request).await().use { response ->
-                response.isSuccessful
-            }
-        }.getOrDefault(false)
-    }
-
-    private fun isProxyFullyConfigured(): Boolean {
-        return LevelheadConfig.proxyEnabled && LevelheadConfig.proxyBaseUrl.isNotBlank() && LevelheadConfig.proxyAuthToken.isNotBlank()
-    }
-
-    private suspend fun purgeProxyCache(identifier: String?): Int = withContext(Dispatchers.IO) {
-        val baseUrl = LevelheadConfig.proxyBaseUrl.trim()
-        val url = HttpUrl.parse(baseUrl)
-            ?.newBuilder()
-            ?.addPathSegment("api")
-            ?.addPathSegment("admin")
-            ?.addPathSegment("cache")
-            ?.addPathSegment("purge")
-            ?.build()
-            ?: throw CommandException("Invalid proxy URL configured. Update it via /levelhead proxy url.")
-
-        val payload = JsonObject().apply {
-            identifier?.let { addProperty("identifier", it) }
-        }
-        val requestBody = RequestBody.create(JSON_MEDIA_TYPE, payload.toString())
-        val request = Request.Builder()
-            .url(url)
-            .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
-            .header("Accept", "application/json")
-            .header("X-Levelhead-Install", LevelheadConfig.installId)
-            .header("Authorization", "Bearer ${LevelheadConfig.proxyAuthToken}")
-            .post(requestBody)
-            .build()
-
-        Levelhead.okHttpClient.newCall(request).await().use { response ->
-            val body = response.body()?.string().orEmpty()
-            if (!response.isSuccessful) {
-                val message = runCatching {
-                    JsonParser.parseString(body).asJsonObject.get("message")?.asString
-                }.getOrNull()
-                throw CommandException(message ?: "Proxy returned HTTP ${response.code()} while purging cache.")
-            }
-
-            val json = runCatching { JsonParser.parseString(body).asJsonObject }.getOrElse {
-                throw CommandException("Proxy responded with unexpected body.")
-            }
-            json.get("purged")?.asInt ?: 0
-        }
-    }
-
-    private fun getDeveloperKeyHelpMessage(): IChatComponent {
-        val developerUrl = "https://developer.hypixel.net"
-        val developerHost = "developer.hypixel.net"
-        return ChatComponentText("${ChatColor.YELLOW}Get a new key at ")
-            .appendSibling(ChatComponentText("${ChatColor.GOLD}$developerHost").apply {
-                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.OPEN_URL, developerUrl)
-                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to open"))
-            })
-            .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
+private fun sendDisplayShowSelfDetails() {
+    val msg = ChatComponentText("${ChatColor.YELLOW}Self display visibility is currently ${formatToggle(currentShowSelf())}${ChatColor.YELLOW}. Use ")
+    .appendSibling(createClickableCommand("/levelhead display showself <on|off>", run = false, suggestedCommand = "/levelhead display showself "))
+    .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
     }
 
     private fun getMinecraftColorNameHelpComponent(): IChatComponent {
