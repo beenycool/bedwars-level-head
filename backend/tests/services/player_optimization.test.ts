@@ -175,8 +175,6 @@ describe('Player Service Optimization', () => {
       // Length is 36, and it doesn't match uuidRegex.
       // It also doesn't match ignRegex.
 
-      (statsCache.fetchWithDedupe as jest.Mock).mockResolvedValue({ stats: mockStats, etag: 'tag', lastModified: 12345 });
-
       await expect(resolvePlayer(weird)).rejects.toThrow('Identifier must be a valid UUID (no dashes) or Minecraft username.');
   });
 });
