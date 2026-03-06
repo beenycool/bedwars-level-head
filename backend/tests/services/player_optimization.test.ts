@@ -2,6 +2,7 @@ import { clearInMemoryPlayerCache, resolvePlayer } from '../../src/services/play
 import { fetchHypixelPlayer, extractMinimalStats } from '../../src/services/hypixel';
 import { getPlayerStatsFromCache, setPlayerStatsBoth } from '../../src/services/statsCache';
 import { DatabaseType } from '../../src/services/database/adapter';
+import * as statsCache from '../../src/services/statsCache';
 
 // Mock dependencies
 jest.mock('../../src/services/database/db', () => {
@@ -79,6 +80,14 @@ describe('Player Service Optimization', () => {
     const statsCache = require('../../src/services/statsCache');
     (statsCache.fetchWithDedupe as jest.Mock).mockResolvedValue(mockResolved);
     (extractMinimalStats as jest.Mock).mockReturnValue(mockStats);
+    (statsCache.fetchWithDedupe as jest.Mock).mockImplementation(async (uuid) => {
+      const response = await fetchHypixelPlayer(uuid);
+      return {
+        stats: extractMinimalStats(response.payload),
+        etag: response.etag,
+        lastModified: response.lastModified
+      };
+    });
   });
 
   it('should efficiently resolve player without regex overhead for clean UUIDs', async () => {
@@ -166,10 +175,10 @@ describe('Player Service Optimization', () => {
   });
 
   it('should reject misplaced dashes resulting in 32 chars', async () => {
-      const weird = '123456781234123412341234567890ab----';
-      const statsCache = require('../../src/services/statsCache');
-      (statsCache.fetchWithDedupe as jest.Mock).mockResolvedValue({ stats: mockStats, etag: 'tag', lastModified: 12345 });
+    const weird = '123456781234123412341234567890ab----';
+    const statsCache = require('../../src/services/statsCache');
+    (statsCache.fetchWithDedupe as jest.Mock).mockResolvedValue({ stats: mockStats, etag: 'tag', lastModified: 12345 });
 
-      await expect(resolvePlayer(weird)).rejects.toThrow('Identifier must be a valid UUID (no dashes) or Minecraft username.');
+    await expect(resolvePlayer(weird)).rejects.toThrow('Identifier must be a valid UUID (no dashes) or Minecraft username.');
   });
 });

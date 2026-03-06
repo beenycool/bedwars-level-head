@@ -42,7 +42,7 @@ describe('DoS Protection - Input Length Limits', () => {
 
   it('should allow valid length identifiers', async () => {
     // We expect this to fail later in the process (e.g. invalid UUID format)
-    // but NOT with "too long".
+    // but NOT with "64 characters or less".
     // We use a string that matches neither uuidRegex nor ignRegex to trigger the default HttpError.
     const validLengthIdentifier = 'invalid-format-but-valid-length';
 
