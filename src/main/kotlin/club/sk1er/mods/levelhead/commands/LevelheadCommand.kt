@@ -731,7 +731,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         val msg = ChatComponentText("${ChatColor.GRAY}Try: ")
             .appendSibling(createClickableCommand(toggleCmd, run = true))
             .appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
-            .appendSibling(createClickableCommand("/levelhead proxy url https://example.com"))
+            .appendSibling(createClickableCommand("/levelhead proxy url https://example.com", suggestedCommand = "/levelhead proxy url "))
             .appendSibling(ChatComponentText("${ChatColor.YELLOW}, "))
             .appendSibling(createClickableCommand("/levelhead proxy token <token>", suggestedCommand = "/levelhead proxy token "))
             .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))

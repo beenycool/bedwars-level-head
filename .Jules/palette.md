@@ -24,5 +24,6 @@
 **Action:** When saving configuration settings or API keys, use a helper like `sendSuccessWithStatusLink` to append a clickable link that executes the relevant status or diagnostic command.
 
 ## 2024-05-29 - Clean Command Suggestions
+
 **Learning:** Command suggestions with placeholders (`<token>`, `<value>`) are confusing when inserted directly into chat input, as users must manually delete the placeholder text before typing.
 **Action:** When using `createClickableCommand` with `SUGGEST_COMMAND` click events, explicitly provide a `suggestedCommand` parameter with the placeholder stripped (leaving a trailing space) to ensure users can type immediately upon clicking.
