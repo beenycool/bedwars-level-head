@@ -23,8 +23,13 @@
 **Learning:** Success messages for configuration changes are often a dead end. Providing a quick, clickable way to verify the new configuration (like a "[Check Status]" link) significantly improves the UX by allowing immediate validation without the user needing to type a follow-up command.
 **Action:** When saving configuration settings or API keys, use a helper like `sendSuccessWithStatusLink` to append a clickable link that executes the relevant status or diagnostic command.
 
+<<<<<<< HEAD
 ## 2024-05-29 - Frictionless Command Suggestions
-
 **Learning:** Providing command suggestions in chat with visual placeholders (like `/levelhead proxy url <url>`) is helpful, but if the `<url>` part is literally pasted into the user's input box when clicked, it adds friction because they have to manually delete the placeholder text before typing.
+**Action:** Use the `suggestedCommand` parameter in helpers like `createClickableCommand` to display the helpful placeholder text in chat but strip it from the actual string that fills the user's chat input when clicked (e.g., pasting just `/levelhead proxy url `).
+=======
+## 2024-05-29 - Clean Command Suggestions
 
-**Action:** Use the `suggestedCommand` parameter in helpers like `createClickableCommand` to display the helpful placeholder text in chat but strip it from the actual string that fills the user's chat input when clicked (e.g., pasting just `/levelhead proxy url ` with a trailing space). When using `SUGGEST_COMMAND` click events, explicitly provide a `suggestedCommand` parameter with the placeholder stripped to ensure users can type immediately upon clicking.
+**Learning:** Command suggestions with placeholders (`<token>`, `<value>`) are confusing when inserted directly into chat input, as users must manually delete the placeholder text before typing.
+**Action:** When using `createClickableCommand` with `SUGGEST_COMMAND` click events, explicitly provide a `suggestedCommand` parameter with the placeholder stripped (leaving a trailing space) to ensure users can type immediately upon clicking.
+>>>>>>> origin/master
