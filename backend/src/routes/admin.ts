@@ -53,22 +53,23 @@ router.post('/cache/purge', enforceAdminRateLimit, enforceAdminAuth, async (req,
         throw new HttpError(400, 'INVALID_IDENTIFIER', `Identifier must be ${IDENTIFIER_MAX_LENGTH} characters or less.`);
       }
       const trimmed = identifier.trim();
-      if (trimmed.length > 0) {
-        const keys = await cacheKeysForIdentifier(trimmed);
-        if (keys.playerKeys.length === 0 && keys.igns.length === 0) {
-          throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a UUID (without dashes) or an IGN.');
-        }
-        if (keys.playerKeys.length > 0) {
-          purged += await deletePlayerStatsEntries(keys.playerKeys);
-        }
-        if (keys.igns.length > 0) {
-          purged += await deleteIgnMappings(keys.igns);
-        }
-      } else {
-        purged = await clearAllPlayerStatsCaches();
+      if (trimmed.length === 0) {
+        throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a valid UUID (no dashes) or Minecraft username.');
       }
-    } else {
+      const keys = await cacheKeysForIdentifier(trimmed);
+      if (keys.playerKeys.length === 0 && keys.igns.length === 0) {
+        throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a valid UUID (no dashes) or Minecraft username.');
+      }
+      if (keys.playerKeys.length > 0) {
+        purged += await deletePlayerStatsEntries(keys.playerKeys);
+      }
+      if (keys.igns.length > 0) {
+        purged += await deleteIgnMappings(keys.igns);
+      }
+    } else if (identifier == null) {
       purged = await clearAllPlayerStatsCaches();
+    } else {
+      throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a valid UUID (no dashes) or Minecraft username.');
     }
 
     clearInMemoryPlayerCache();

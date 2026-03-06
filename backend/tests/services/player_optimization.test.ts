@@ -75,10 +75,15 @@ describe('Player Service Optimization', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+<<<<<<< HEAD
+    clearInMemoryPlayerCache();
+    (fetchHypixelPlayer as jest.Mock).mockResolvedValue(mockResolved);
+=======
     clearInMemoryPlayerCache(); // Clear in-memory cache before each test
 
     const statsCache = require('../../src/services/statsCache');
     (statsCache.fetchWithDedupe as jest.Mock).mockResolvedValue(mockResolved);
+>>>>>>> origin/master
     (extractMinimalStats as jest.Mock).mockReturnValue(mockStats);
     (statsCache.fetchWithDedupe as jest.Mock).mockImplementation(async (uuid) => {
       const response = await fetchHypixelPlayer(uuid);
@@ -127,7 +132,6 @@ describe('Player Service Optimization', () => {
   it('should return cached player and not fetch if SWR cache is fresh', async () => {
     const uuid = '530fa96a303d42199b5a329d493a5573';
 
-    // Mock getPlayerStatsFromCacheWithSWR to return a fresh cache hit
     const { getPlayerStatsFromCacheWithSWR } = require('../../src/services/statsCache');
     getPlayerStatsFromCacheWithSWR.mockResolvedValueOnce({
       value: mockStats,
@@ -159,6 +163,11 @@ describe('Player Service Optimization', () => {
     await expect(resolvePlayer(uuid)).rejects.toThrow('Network Failure');
   });
 
+  it('should reject invalid UUID format (invalid characters)', async () => {
+    const invalidUuid = '123456781234123412341234567890az';
+    await expect(resolvePlayer(invalidUuid)).rejects.toThrow('Identifier must be a valid UUID (no dashes) or Minecraft username.');
+  });
+
   it('should reject IGN that is too long', async () => {
     const longIgn = 'ThisIgnIsWayTooLongForMinecraft';
     await expect(resolvePlayer(longIgn)).rejects.toThrow("Identifier must be a valid UUID (no dashes) or Minecraft username.");
@@ -170,15 +179,22 @@ describe('Player Service Optimization', () => {
   });
 
   it('should handle misplaced dashes if they result in valid UUID (optimization check)', async () => {
+<<<<<<< HEAD
+    const misplacedDashes = '123456781234123412341234-567890ab-';
+=======
     const misplacedDashes = '123456781234123412341234-567890ab-'; // Length 36, but dashes at end
+>>>>>>> origin/master
     await expect(resolvePlayer(misplacedDashes)).rejects.toThrow('Identifier must be a valid UUID');
   });
 
   it('should reject misplaced dashes resulting in 32 chars', async () => {
     const weird = '123456781234123412341234567890ab----';
+<<<<<<< HEAD
+=======
     const statsCache = require('../../src/services/statsCache');
     (statsCache.fetchWithDedupe as jest.Mock).mockResolvedValue({ stats: mockStats, etag: 'tag', lastModified: 12345 });
 
+>>>>>>> origin/master
     await expect(resolvePlayer(weird)).rejects.toThrow('Identifier must be a valid UUID (no dashes) or Minecraft username.');
   });
 });
