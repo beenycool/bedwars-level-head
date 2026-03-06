@@ -68,16 +68,17 @@ describe('Player Service Optimization', () => {
   };
 
   const mockResolved = {
-    payload: { player: { displayname: 'TestPlayer', stats: { Bedwars: {} } } },
+    stats: mockStats,
     etag: 'test-etag',
-    lastModified: Date.now(),
-    notModified: false,
+    lastModified: Date.now()
   };
 
   beforeEach(() => {
     jest.clearAllMocks();
     clearInMemoryPlayerCache(); // Clear in-memory cache before each test
-    (fetchHypixelPlayer as jest.Mock).mockResolvedValue(mockResolved);
+
+    const statsCache = require('../../src/services/statsCache');
+    (statsCache.fetchWithDedupe as jest.Mock).mockResolvedValue(mockResolved);
     (extractMinimalStats as jest.Mock).mockReturnValue(mockStats);
     (statsCache.fetchWithDedupe as jest.Mock).mockImplementation(async (uuid) => {
       const response = await fetchHypixelPlayer(uuid);
@@ -92,32 +93,35 @@ describe('Player Service Optimization', () => {
   it('should efficiently resolve player without regex overhead for clean UUIDs', async () => {
     const uuid = '530fa96a303d42199b5a329d493a5573';
     (getPlayerStatsFromCache as jest.Mock).mockResolvedValue(null);
+    const statsCache = require('../../src/services/statsCache');
 
     const result = await resolvePlayer(uuid);
 
     expect(result.uuid).toBe(uuid);
-    expect(statsCache.fetchWithDedupe).toHaveBeenCalledWith(uuid);
+    expect(statsCache.fetchWithDedupe).toHaveBeenCalledWith(uuid, undefined);
   });
 
   it('should resolve player using IGN', async () => {
     const ign = 'TestPlayer';
     (getPlayerStatsFromCache as jest.Mock).mockResolvedValue(null);
+    const statsCache = require('../../src/services/statsCache');
 
     const result = await resolvePlayer(ign);
 
     expect(result.lookupType).toBe('ign');
     expect(result.lookupValue).toBe('testplayer');
-    expect(statsCache.fetchWithDedupe).toHaveBeenCalledWith('530fa96a303d42199b5a329d493a5573');
+    expect(statsCache.fetchWithDedupe).toHaveBeenCalledWith('530fa96a303d42199b5a329d493a5573', undefined);
   });
 
   it('should normalize dashed UUIDs', async () => {
     const uuidWithDashes = '530fa96a-303d-4219-9b5a-329d493a5573';
     (getPlayerStatsFromCache as jest.Mock).mockResolvedValue(null);
+    const statsCache = require('../../src/services/statsCache');
 
     const result = await resolvePlayer(uuidWithDashes);
 
     expect(result.uuid).toBe('530fa96a303d42199b5a329d493a5573');
-    expect(statsCache.fetchWithDedupe).toHaveBeenCalledWith('530fa96a303d42199b5a329d493a5573');
+    expect(statsCache.fetchWithDedupe).toHaveBeenCalledWith('530fa96a303d42199b5a329d493a5573', undefined);
   });
 
   it('should return cached player and not fetch if SWR cache is fresh', async () => {
@@ -135,19 +139,21 @@ describe('Player Service Optimization', () => {
       staleAgeMs: 0
     });
 
+    const statsCache = require('../../src/services/statsCache');
+
     const result = await resolvePlayer(uuid);
 
     expect(result.source).toBe('cache');
     expect(result.uuid).toBe(uuid);
-    expect(fetchHypixelPlayer).not.toHaveBeenCalled();
+    expect(statsCache.fetchWithDedupe).not.toHaveBeenCalled();
   });
 
-  it('should throw error when fetchHypixelPlayer fails on network request', async () => {
+  it('should throw error when fetchWithDedupe fails on network request', async () => {
     const uuid = '530fa96a303d42199b5a329d493a5573';
     (getPlayerStatsFromCache as jest.Mock).mockResolvedValue(null);
 
     const mockError = new Error('Network Failure');
-    (fetchHypixelPlayer as jest.Mock).mockRejectedValueOnce(mockError);
+    const statsCache = require('../../src/services/statsCache');
     (statsCache.fetchWithDedupe as jest.Mock).mockRejectedValueOnce(mockError);
 
     await expect(resolvePlayer(uuid)).rejects.toThrow('Network Failure');
@@ -164,28 +170,15 @@ describe('Player Service Optimization', () => {
   });
 
   it('should handle misplaced dashes if they result in valid UUID (optimization check)', async () => {
-    // Original behavior: strict dashedUuidRegex would reject this.
-    // Optimized behavior: strips dashes, checks if valid UUID.
-    // If we want to maintain strictness, this test should expect failure.
-    // If we relax it, it should pass.
-    // Bolt decision: Relaxing is acceptable and even robust.
-
     const misplacedDashes = '123456781234123412341234-567890ab-'; // Length 36, but dashes at end
-    // stripping dashes -> 34 chars -> not 32. -> fails uuidRegex.
-
     await expect(resolvePlayer(misplacedDashes)).rejects.toThrow('Identifier must be a valid UUID');
   });
 
   it('should reject misplaced dashes resulting in 32 chars', async () => {
-      // '12345678-1234-1234-1234-1234567890ab' is valid.
-      // '123456781234123412341234567890ab----' (32 hex + 4 dashes)
-      const weird = '123456781234123412341234567890ab----';
+    const weird = '123456781234123412341234567890ab----';
+    const statsCache = require('../../src/services/statsCache');
+    (statsCache.fetchWithDedupe as jest.Mock).mockResolvedValue({ stats: mockStats, etag: 'tag', lastModified: 12345 });
 
-      // With our new length check, the fast dash-stripping logic expects specific dashes at indices 8, 13, 18, 23.
-      // This weird input doesn't have dashes there, so it isn't stripped.
-      // Length is 36, and it doesn't match uuidRegex.
-      // It also doesn't match ignRegex.
-
-      await expect(resolvePlayer(weird)).rejects.toThrow('Identifier must be a valid UUID (no dashes) or Minecraft username.');
+    await expect(resolvePlayer(weird)).rejects.toThrow('Identifier must be a valid UUID (no dashes) or Minecraft username.');
   });
 });
