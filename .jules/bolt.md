@@ -15,3 +15,7 @@
 ## 2025-05-16 - Pagination Refactoring Pitfall
 **Learning:** Refactoring sequential database calls into parallel executions (using `Promise.all`) inside controllers can sometimes silently break business logic if one call depends on the other. For instance, computing the correct database `OFFSET` for pagination relies on querying the total count first to clamp out-of-bounds `page` arguments. Parallelizing them broke the clamping, returning empty queries for invalid pages.
 **Action:** When attempting to parallelize database queries, meticulously check if variables derived from one query are being passed as arguments to another query, even indirectly (like pagination offsets). Use `Promise.all` inside nested async IIFEs if partial dependency is present.
+
+## 2025-05-16 - LRU Cache Hit Defeated by Async Abstraction
+**Learning:** `resolvePlayer` wrapped cache checks (`getMemoized`) inside an inner `async executor` function and registered that promise in an `inFlightRequests` Map. While this successfully deduplicated in-flight fetches, it forced immediate, synchronous `LRUCache` hits to undergo Promise allocation, Map insertion, and deferred microtask resolution, nullifying the CPU advantages of the fast path.
+**Action:** When working with synchronous in-memory caches (like `LRUCache`), always evaluate the fast-path check as high up in the call stack as possible, *before* allocating closure states, tracking promises, or entering an `async` execution context.

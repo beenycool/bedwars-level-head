@@ -436,6 +436,18 @@ export async function resolvePlayer(
   const isUuid = key.length === 32 && uuidRegex.test(key);
   const isIgn = !isUuid && ignRegex.test(key);
 
+  // Fast-path: Check in-memory LRU cache synchronously before allocating Promises
+  // or tracking in-flight requests
+  const memoized = isUuid
+    ? getMemoized('player', key)
+    : isIgn
+      ? getMemoized('ign', key)
+      : null;
+
+  if (memoized) {
+    return { ...memoized, source: 'cache' };
+  }
+
   const inFlightKey = isUuid ? `uuid:${key}` : isIgn ? `ign:${key}` : null;
   if (inFlightKey) {
     const pending = inFlightRequests.get(inFlightKey);
