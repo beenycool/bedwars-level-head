@@ -801,20 +801,11 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
     }
 
     private fun sendMessage(message: String) {
-        val minecraft = Minecraft.getMinecraft()
-        val formatted = "${ChatColor.AQUA}[Levelhead] ${ChatColor.RESET}$message"
-        minecraft.addScheduledTask {
-            minecraft.thePlayer?.addChatMessage(ChatComponentText(formatted))
-        }
+        CommandUtils.sendPrefixedChat(ChatComponentText(message))
     }
 
     private fun sendMessage(component: IChatComponent) {
-        val minecraft = Minecraft.getMinecraft()
-        val formatted = ChatComponentText("${ChatColor.AQUA}[Levelhead] ${ChatColor.RESET}")
-        formatted.appendSibling(component)
-        minecraft.addScheduledTask {
-            minecraft.thePlayer?.addChatMessage(formatted)
-        }
+        CommandUtils.sendPrefixedChat(component)
     }
 
     private fun sendDisplayOverview() {
