@@ -980,8 +980,10 @@ private fun sendDisplayShowSelfDetails() {
                     val errorBody = response.body()?.string()
                     val errorMessage = try {
                         errorBody?.let { JsonParser().parse(it).asJsonObject.get("error")?.asString }
-                    } catch (e: Exception) { null } ?: "HTTP ${response.code()}"
-
+                    } catch (e: Exception) {
+                        Levelhead.logger.debug("Failed to parse error response: {}", errorBody, e)
+                        null
+                    } ?: "HTTP ${response.code()}"
                     throw CommandException("Purge failed: $errorMessage")
                 }
 
