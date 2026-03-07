@@ -1006,7 +1006,7 @@ private fun sendDisplayShowSelfDetails() {
                 Levelhead.okHttpClient.newCall(request).await().use { response ->
                     if (response.isSuccessful) {
                         val body = response.body()?.string() ?: return@use false
-                        val json = JsonParser().parse(body).asJsonObject
+                        val json = JsonParser.parseString(body).asJsonObject
                         json.get("success")?.asBoolean == true
                     } else {
                         false
