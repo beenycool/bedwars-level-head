@@ -976,19 +976,19 @@ private fun sendDisplayShowSelfDetails() {
 
         return withContext(Dispatchers.IO) {
             Levelhead.okHttpClient.newCall(request).await().use { response ->
+        return withContext(Dispatchers.IO) {
+            Levelhead.okHttpClient.newCall(request).await().use { response ->
                 if (!response.isSuccessful) {
                     val errorBody = response.body()?.string()
                     val errorMessage = try {
-                        errorBody?.let { JsonParser().parse(it).asJsonObject.get("error")?.asString }
-                    } catch (e: Exception) {
-                        Levelhead.logger.debug("Failed to parse error response: {}", errorBody, e)
-                        null
-                    } ?: "HTTP ${response.code()}"
+                        errorBody?.let { JsonParser.parseString(it).asJsonObject.get("error")?.asString }
+                    } catch (e: Exception) { null } ?: "HTTP ${response.code()}"
+
                     throw CommandException("Purge failed: $errorMessage")
                 }
 
                 val bodyStr = response.body()?.string() ?: "{}"
-                val json = JsonParser().parse(bodyStr).asJsonObject
+                val json = JsonParser.parseString(bodyStr).asJsonObject
                 json.get("purged")?.asInt ?: 0
             }
         }
