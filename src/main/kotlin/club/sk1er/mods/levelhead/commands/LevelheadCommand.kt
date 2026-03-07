@@ -876,7 +876,7 @@ private fun sendDisplayShowSelfDetails() {
     val msg = ChatComponentText("${ChatColor.YELLOW}Self display visibility is currently ${formatToggle(currentShowSelf())}${ChatColor.YELLOW}. Use ")
     .appendSibling(createClickableCommand("/levelhead display showself <on|off>", run = false, suggestedCommand = "/levelhead display showself "))
     .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
-        sendMessage(msg)
+    sendMessage(msg)
     }
 
     private fun getMinecraftColorNameHelpComponent(): IChatComponent {
