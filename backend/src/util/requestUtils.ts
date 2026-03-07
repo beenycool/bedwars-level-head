@@ -143,7 +143,5 @@ export function sanitizeSearchQuery(query: unknown, maxLength = 100): string {
   // Strip '%' which is a SQL multi-character wildcard to prevent slow queries.
   // Underscores '_' are valid in Minecraft usernames so we keep them,
   // but '%' is invalid in both UUIDs and usernames anyway.
-  const sanitized = query.replace(/%/g, '');
-
-  return sanitized.trim().slice(0, maxLength);
+  return query.trim().replace(/%/g, '').slice(0, maxLength);
 }
