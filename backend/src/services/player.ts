@@ -241,12 +241,15 @@ async function refreshIgnMapping(normalizedIgn: string): Promise<void> {
   await setIgnMapping(normalizedIgn, normalizedUuid, false);
 }
 
-async function fetchByUuid(uuid: string, conditional?: HypixelFetchOptions): Promise<ResolvedPlayer> {
+async function fetchByUuid(uuid: string, conditional?: HypixelFetchOptions, skipMemoCheck = false): Promise<ResolvedPlayer> {
   const normalizedUuid = uuid.toLowerCase();
   const cacheKey = buildPlayerCacheKey(normalizedUuid);
-  const memoized = getMemoized('player', normalizedUuid);
-  if (memoized) {
-    return { ...memoized, source: 'cache' };
+
+  if (!skipMemoCheck) {
+    const memoized = getMemoized('player', normalizedUuid);
+    if (memoized) {
+      return { ...memoized, source: 'cache' };
+    }
   }
 
   const cacheEntry = await getPlayerStatsFromCacheWithSWR(cacheKey, normalizedUuid);
@@ -276,10 +279,6 @@ async function fetchByUuid(uuid: string, conditional?: HypixelFetchOptions): Pro
 
 async function fetchByIgn(ign: string, conditional?: HypixelFetchOptions): Promise<ResolvedPlayer> {
   const normalizedIgn = ign.toLowerCase();
-  const memoized = getMemoized('ign', normalizedIgn);
-  if (memoized) {
-    return { ...memoized, source: 'cache' };
-  }
 
   const mapping = await getIgnMapping(normalizedIgn, true);
   const now = Date.now();
@@ -436,6 +435,18 @@ export async function resolvePlayer(
   const isUuid = key.length === 32 && uuidRegex.test(key);
   const isIgn = !isUuid && ignRegex.test(key);
 
+  // Fast-path: Check in-memory LRU cache synchronously before allocating Promises
+  // or tracking in-flight requests
+  const memoized = isUuid
+    ? getMemoized('player', key)
+    : isIgn
+      ? getMemoized('ign', key)
+      : null;
+
+  if (memoized) {
+    return { ...memoized, source: 'cache' };
+  }
+
   const inFlightKey = isUuid ? `uuid:${key}` : isIgn ? `ign:${key}` : null;
   if (inFlightKey) {
     const pending = inFlightRequests.get(inFlightKey);
@@ -449,7 +460,7 @@ export async function resolvePlayer(
 
   const executor = async (): Promise<ResolvedPlayer> => {
     if (isUuid) {
-      return fetchByUuid(key, conditional);
+      return fetchByUuid(key, conditional, true);
     }
 
     if (isIgn) {

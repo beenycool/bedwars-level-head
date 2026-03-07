@@ -5,7 +5,10 @@ import cc.polyfrost.oneconfig.utils.commands.annotations.Command
 import cc.polyfrost.oneconfig.utils.commands.annotations.Greedy
 import cc.polyfrost.oneconfig.utils.commands.annotations.Main
 import net.minecraft.client.Minecraft
+import net.minecraft.event.ClickEvent
+import net.minecraft.event.HoverEvent
 import net.minecraft.util.ChatComponentText
+import net.minecraft.util.IChatComponent
 import net.minecraft.util.EnumChatFormatting as ChatColor
 import kotlinx.coroutines.launch
 
@@ -20,9 +23,10 @@ class WhoisCommand {
     fun handle(@Greedy identifier: String = "") {
         val trimmedIdentifier = identifier.trim()
         if (trimmedIdentifier.isEmpty()) {
-            sendMessage(
-                "${ChatColor.RED}Tell me who to inspect.${ChatColor.YELLOW} Run ${ChatColor.GOLD}/whois <player|uuid>${ChatColor.YELLOW} using an in-game name, UUID, or someone nearby."
-            )
+            val msg = ChatComponentText("${ChatColor.RED}Tell me who to inspect.${ChatColor.YELLOW} Try ")
+                .appendSibling(CommandUtils.createClickableCommand("/whois <player|uuid>", run = false, suggestedCommand = "/whois "))
+                .appendSibling(ChatComponentText("${ChatColor.YELLOW} using an in-game name, UUID, or someone nearby."))
+            sendMessage(msg)
             return
         }
 
@@ -41,11 +45,11 @@ class WhoisCommand {
     }
 
     private fun sendMessage(message: String) {
-        val minecraft = Minecraft.getMinecraft()
-        val formatted = "${ChatColor.AQUA}[Levelhead] ${ChatColor.RESET}$message"
-        minecraft.addScheduledTask {
-            minecraft.thePlayer?.addChatMessage(ChatComponentText(formatted))
-        }
+        CommandUtils.sendPrefixedChat(ChatComponentText(message))
+    }
+
+    private fun sendMessage(component: IChatComponent) {
+        CommandUtils.sendPrefixedChat(component)
     }
 
 }
