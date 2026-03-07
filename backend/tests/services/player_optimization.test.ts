@@ -75,15 +75,10 @@ describe('Player Service Optimization', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-<<<<<<< HEAD
-    clearInMemoryPlayerCache();
-    (fetchHypixelPlayer as jest.Mock).mockResolvedValue(mockResolved);
-=======
     clearInMemoryPlayerCache(); // Clear in-memory cache before each test
 
     const statsCache = require('../../src/services/statsCache');
     (statsCache.fetchWithDedupe as jest.Mock).mockResolvedValue(mockResolved);
->>>>>>> origin/master
     (extractMinimalStats as jest.Mock).mockReturnValue(mockStats);
     (statsCache.fetchWithDedupe as jest.Mock).mockImplementation(async (uuid) => {
       const response = await fetchHypixelPlayer(uuid);
@@ -179,22 +174,20 @@ describe('Player Service Optimization', () => {
   });
 
   it('should handle misplaced dashes if they result in valid UUID (optimization check)', async () => {
-<<<<<<< HEAD
-    const misplacedDashes = '123456781234123412341234-567890ab-';
-=======
     const misplacedDashes = '123456781234123412341234-567890ab-'; // Length 36, but dashes at end
->>>>>>> origin/master
     await expect(resolvePlayer(misplacedDashes)).rejects.toThrow('Identifier must be a valid UUID');
   });
 
   it('should reject misplaced dashes resulting in 32 chars', async () => {
     const weird = '123456781234123412341234567890ab----';
-<<<<<<< HEAD
-=======
     const statsCache = require('../../src/services/statsCache');
     (statsCache.fetchWithDedupe as jest.Mock).mockResolvedValue({ stats: mockStats, etag: 'tag', lastModified: 12345 });
 
->>>>>>> origin/master
+    // With our new length check, the fast dash-stripping logic expects specific dashes at indices 8, 13, 18, 23.
+    // This weird input doesn't have dashes there, so it isn't stripped.
+    // Length is 36, and it doesn't match uuidRegex.
+    // It also doesn't match ignRegex.
+
     await expect(resolvePlayer(weird)).rejects.toThrow('Identifier must be a valid UUID (no dashes) or Minecraft username.');
   });
 });
