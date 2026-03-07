@@ -148,7 +148,7 @@ class LevelheadCommand {
     fun apikey(key: String) {
         if (key.equals("clear", ignoreCase = true)) {
             LevelheadConfig.clearApiKey()
-            sendMessage("${ChatColor.GREEN}Cleared stored Hypixel API key.")
+            sendSuccessWithStatusLink("${ChatColor.GREEN}Cleared stored Hypixel API key.")
             resetBedwarsFetcher()
             return
         }
@@ -188,7 +188,7 @@ class LevelheadCommand {
     fun clearapikey() {
         requireConfirmation("Clearing your API key will disable stat fetching.") {
             LevelheadConfig.clearApiKey()
-            sendMessage("${ChatColor.GREEN}Cleared stored Hypixel API key.")
+            sendSuccessWithStatusLink("${ChatColor.GREEN}Cleared stored Hypixel API key.")
             resetBedwarsFetcher()
         }
     }
@@ -596,7 +596,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 val previous = LevelheadConfig.headerText
                 if (previous != sanitized) {
                     LevelheadConfig.headerText = sanitized
-                    sendMessage("${ChatColor.GREEN}Updated header text to ${ChatColor.GOLD}$sanitized${ChatColor.GREEN}.")
+                    sendSuccessWithStatusLink("${ChatColor.GREEN}Updated header text to ${ChatColor.GOLD}$sanitized${ChatColor.GREEN}.")
                 } else {
                     sendMessage("${ChatColor.YELLOW}Header text is already set to ${ChatColor.GOLD}$sanitized${ChatColor.YELLOW}.")
                 }
@@ -619,7 +619,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 val previous = LevelheadConfig.headerColorHex
                 if (previous != hexColor) {
                     LevelheadConfig.headerColorHex = hexColor
-                    sendMessage("${ChatColor.GREEN}Updated header color to ${ChatColor.GOLD}$hexColor${ChatColor.GREEN}.")
+                    sendSuccessWithStatusLink("${ChatColor.GREEN}Updated header color to ${ChatColor.GOLD}$hexColor${ChatColor.GREEN}.")
                 } else {
                     sendMessage("${ChatColor.YELLOW}Header color is already $hexColor${ChatColor.YELLOW}.")
                 }
@@ -647,7 +647,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
             sendMessage("${ChatColor.YELLOW}Offset already set to ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", clamped)}${ChatColor.YELLOW}.")
         } else {
             LevelheadConfig.verticalOffset = clamped.toFloat()
-            sendMessage("${ChatColor.GREEN}Updated display offset to ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", clamped)}${ChatColor.GREEN}.")
+            sendSuccessWithStatusLink("${ChatColor.GREEN}Updated display offset to ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", clamped)}${ChatColor.GREEN}.")
         }
     }
 
@@ -668,7 +668,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         val previous = LevelheadConfig.showSelf
         if (previous != toggle) {
             LevelheadConfig.showSelf = toggle
-            sendMessage("${ChatColor.GREEN}Self display is now ${formatToggle(toggle)}${ChatColor.GREEN}.")
+            sendSuccessWithStatusLink("${ChatColor.GREEN}Self display is now ${formatToggle(toggle)}${ChatColor.GREEN}.")
         } else {
             sendMessage("${ChatColor.YELLOW}Self display is already ${formatToggle(toggle)}${ChatColor.YELLOW}.")
         }
@@ -876,6 +876,7 @@ private fun sendDisplayShowSelfDetails() {
     val msg = ChatComponentText("${ChatColor.YELLOW}Self display visibility is currently ${formatToggle(currentShowSelf())}${ChatColor.YELLOW}. Use ")
     .appendSibling(createClickableCommand("/levelhead display showself <on|off>", run = false, suggestedCommand = "/levelhead display showself "))
     .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
+        sendMessage(msg)
     }
 
     private fun getMinecraftColorNameHelpComponent(): IChatComponent {
@@ -892,4 +893,127 @@ private fun sendDisplayShowSelfDetails() {
         }
     }
 
+
+
+    private fun currentHeaderText(): String {
+        return Levelhead.displayManager.primaryDisplay()?.config?.headerString ?: GameMode.BEDWARS.defaultHeader
+    }
+
+    private fun currentHeaderColor(): Color {
+        return Levelhead.displayManager.primaryDisplay()?.config?.headerColor ?: Color(85, 255, 255)
+    }
+
+    private fun currentShowSelf(): Boolean {
+        return Levelhead.displayManager.primaryDisplay()?.config?.showSelf ?: true
+    }
+
+    private fun formatToggle(value: Boolean): String {
+        return if (value) "${ChatColor.GREEN}on" else "${ChatColor.RED}off"
+    }
+
+    private fun parseToggle(value: String): Boolean? {
+        return when (value.lowercase(Locale.ROOT)) {
+            "on", "1", "true", "enable" -> true
+            "off", "0", "false", "disable" -> false
+            else -> null
+        }
+    }
+
+    private fun parseColor(input: String): Color? {
+        val lower = input.lowercase(Locale.ROOT)
+        if (NAMED_COLORS.containsKey(lower)) {
+            return NAMED_COLORS[lower]
+        }
+        if (HEX_COLOR_PATTERN.matches(input)) {
+            val hex = if (input.startsWith("#")) input else "#$input"
+            return runCatching { Color.decode(hex) }.getOrNull()
+        }
+        val rgbMatch = RGB_COLOR_PATTERN.matchEntire(input)
+        if (rgbMatch != null) {
+            val r = rgbMatch.groupValues[1].toIntOrNull() ?: return null
+            val g = rgbMatch.groupValues[2].toIntOrNull() ?: return null
+            val b = rgbMatch.groupValues[3].toIntOrNull() ?: return null
+            if (r in 0..255 && g in 0..255 && b in 0..255) {
+                return Color(r, g, b)
+            }
+        }
+        return null
+    }
+
+    private fun formatColor(color: Color): String = "#%06X".format(Locale.ROOT, color.rgb and 0xFFFFFF)
+
+    private fun isProxyFullyConfigured(): Boolean {
+        return LevelheadConfig.proxyEnabled &&
+            LevelheadConfig.proxyBaseUrl.isNotBlank() &&
+            LevelheadConfig.proxyAuthToken.isNotBlank()
+    }
+
+    private fun getDeveloperKeyHelpMessage(): IChatComponent {
+        val hoverContent = ChatComponentText("${ChatColor.GREEN}Hypixel no longer gives out personal developer APIs.\n")
+            .appendSibling(ChatComponentText("${ChatColor.GRAY}You must configure a proxy using ${ChatColor.GOLD}/levelhead proxy${ChatColor.GRAY} to continue viewing stats."))
+
+        return ChatComponentText("${ChatColor.YELLOW}Don't have a key? ")
+            .appendSibling(ChatComponentText("${ChatColor.AQUA}[Learn More]").apply {
+                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead proxy")
+                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, hoverContent)
+            })
+    }
+
+    private suspend fun purgeProxyCache(identifier: String?): Int {
+        val baseUrl = LevelheadConfig.proxyBaseUrl.trimEnd('/')
+        val urlBuilder = HttpUrl.parse("$baseUrl/api/admin/cache")?.newBuilder()
+            ?: throw CommandException("Invalid proxy URL configured.")
+
+        if (identifier != null) {
+            urlBuilder.addQueryParameter("player", identifier)
+        }
+
+        val request = Request.Builder()
+            .url(urlBuilder.build())
+            .delete()
+            .header("Authorization", "Bearer ${LevelheadConfig.proxyAuthToken}")
+            .build()
+
+        return withContext(Dispatchers.IO) {
+            Levelhead.okHttpClient.newCall(request).await().use { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = response.body()?.string()
+                    val errorMessage = try {
+                        errorBody?.let { JsonParser().parse(it).asJsonObject.get("error")?.asString }
+                    } catch (e: Exception) { null } ?: "HTTP ${response.code()}"
+
+                    throw CommandException("Purge failed: $errorMessage")
+                }
+
+                val bodyStr = response.body()?.string() ?: "{}"
+                val json = JsonParser().parse(bodyStr).asJsonObject
+                json.get("purged")?.asInt ?: 0
+            }
+        }
+    }
+
+    private suspend fun validateApiKey(key: String): Boolean {
+        val request = Request.Builder()
+            .url("https://api.hypixel.net/key")
+            .header("API-Key", key)
+            .get()
+            .build()
+
+        return withContext(Dispatchers.IO) {
+            try {
+                Levelhead.okHttpClient.newCall(request).await().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body()?.string() ?: return@use false
+                        val json = JsonParser().parse(body).asJsonObject
+                        json.get("success")?.asBoolean == true
+                    } else {
+                        false
+                    }
+                }
+            } catch (e: Exception) {
+                Levelhead.logger.error("Failed to validate API key", e)
+                false
+            }
+        }
+    }
 }
