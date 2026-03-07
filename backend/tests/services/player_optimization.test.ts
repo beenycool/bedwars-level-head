@@ -75,24 +75,11 @@ describe('Player Service Optimization', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-<<<<<<< HEAD
-    clearInMemoryPlayerCache();
-    (fetchHypixelPlayer as jest.Mock).mockResolvedValue(mockResolved);
-=======
     clearInMemoryPlayerCache(); // Clear in-memory cache before each test
 
     const statsCache = require('../../src/services/statsCache');
     (statsCache.fetchWithDedupe as jest.Mock).mockResolvedValue(mockResolved);
->>>>>>> origin/master
     (extractMinimalStats as jest.Mock).mockReturnValue(mockStats);
-    (statsCache.fetchWithDedupe as jest.Mock).mockImplementation(async (uuid) => {
-      const response = await fetchHypixelPlayer(uuid);
-      return {
-        stats: extractMinimalStats(response.payload),
-        etag: response.etag,
-        lastModified: response.lastModified
-      };
-    });
   });
 
   it('should efficiently resolve player without regex overhead for clean UUIDs', async () => {
@@ -175,26 +162,19 @@ describe('Player Service Optimization', () => {
 
   it('should reject identifier that exceeds 64 characters to prevent DoS', async () => {
     const hugeIgn = 'A'.repeat(65);
-    await expect(resolvePlayer(hugeIgn)).rejects.toThrow("Identifier must be 64 characters or less.");
+    await expect(resolvePlayer(hugeIgn)).rejects.toThrow("64 characters or less");
   });
 
   it('should handle misplaced dashes if they result in valid UUID (optimization check)', async () => {
-<<<<<<< HEAD
-    const misplacedDashes = '123456781234123412341234-567890ab-';
-=======
     const misplacedDashes = '123456781234123412341234-567890ab-'; // Length 36, but dashes at end
->>>>>>> origin/master
     await expect(resolvePlayer(misplacedDashes)).rejects.toThrow('Identifier must be a valid UUID');
   });
 
   it('should reject misplaced dashes resulting in 32 chars', async () => {
     const weird = '123456781234123412341234567890ab----';
-<<<<<<< HEAD
-=======
     const statsCache = require('../../src/services/statsCache');
     (statsCache.fetchWithDedupe as jest.Mock).mockResolvedValue({ stats: mockStats, etag: 'tag', lastModified: 12345 });
 
->>>>>>> origin/master
     await expect(resolvePlayer(weird)).rejects.toThrow('Identifier must be a valid UUID (no dashes) or Minecraft username.');
   });
 });

@@ -20,6 +20,7 @@
     "express": "^4.22.1",
     "helmet": "^8.1.0",
     "ioredis": "^5.8.2",
+    "ipaddr.js": "^2.3.0",
     "kysely": "^0.28.11",
     "lru-cache": "^11.2.4",
     "mssql": "^12.2.0",
