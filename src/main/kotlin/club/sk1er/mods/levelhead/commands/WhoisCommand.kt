@@ -24,7 +24,7 @@ class WhoisCommand {
         val trimmedIdentifier = identifier.trim()
         if (trimmedIdentifier.isEmpty()) {
             val msg = ChatComponentText("${ChatColor.RED}Tell me who to inspect.${ChatColor.YELLOW} Try ")
-                .appendSibling(createClickableCommand("/whois <player|uuid>", run = false, suggestedCommand = "/whois "))
+                .appendSibling(CommandUtils.createClickableCommand("/whois <player|uuid>", run = false, suggestedCommand = "/whois "))
                 .appendSibling(ChatComponentText("${ChatColor.YELLOW} using an in-game name, UUID, or someone nearby."))
             sendMessage(msg)
             return
@@ -50,16 +50,6 @@ class WhoisCommand {
 
     private fun sendMessage(component: IChatComponent) {
         CommandUtils.sendPrefixedChat(component)
-    }
-
-    private fun createClickableCommand(command: String, run: Boolean = false, suggestedCommand: String = command): IChatComponent {
-        val action = if (run) ClickEvent.Action.RUN_COMMAND else ClickEvent.Action.SUGGEST_COMMAND
-        val hoverText = if (run) "${ChatColor.GREEN}Click to run" else "${ChatColor.GREEN}Click to fill"
-
-        return ChatComponentText("${ChatColor.GOLD}$command").apply {
-            chatStyle.chatClickEvent = ClickEvent(action, suggestedCommand)
-            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText(hoverText))
-        }
     }
 
 }
