@@ -976,8 +976,6 @@ private fun sendDisplayShowSelfDetails() {
 
         return withContext(Dispatchers.IO) {
             Levelhead.okHttpClient.newCall(request).await().use { response ->
-        return withContext(Dispatchers.IO) {
-            Levelhead.okHttpClient.newCall(request).await().use { response ->
                 if (!response.isSuccessful) {
                     val errorBody = response.body()?.string()
                     val errorMessage = try {
