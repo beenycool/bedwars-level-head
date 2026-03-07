@@ -128,7 +128,8 @@ export function sanitizeUrlForLogs(target: string): string {
 
 /**
  * Sanitizes and validates a search query parameter.
- * Trims whitespace and truncates to a maximum length to prevent resource exhaustion.
+ * Trims whitespace, truncates to a maximum length, and removes SQL wildcards
+ * to prevent SQL Wildcard Denial of Service attacks on LIKE queries.
  *
  * @param query - The raw query parameter (usually from req.query.q)
  * @param maxLength - Maximum allowed length (default: 100)
@@ -139,5 +140,8 @@ export function sanitizeSearchQuery(query: unknown, maxLength = 100): string {
     return '';
   }
 
-  return query.trim().slice(0, maxLength);
+  // Strip '%' which is a SQL multi-character wildcard to prevent slow queries.
+  // Underscores '_' are valid in Minecraft usernames so we keep them,
+  // but '%' is invalid in both UUIDs and usernames anyway.
+  return query.trim().replace(/%/g, '').slice(0, maxLength);
 }

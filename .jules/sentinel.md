@@ -43,3 +43,8 @@
 **Vulnerability:** Public-facing configuration routes (e.g., `/api/config/motd` and `/api/config/version`) were missing rate-limiting middleware. An attacker could flood these endpoints with excessive requests, potentially leading to Resource Exhaustion or Denial of Service (DoS) attacks.
 **Learning:** Even endpoints that only serve static JSON responses can be exploited to exhaust server resources (CPU, memory, network bandwidth) if left unprotected by rate-limiting mechanisms.
 **Prevention:** All public-facing routes, regardless of their complexity or the type of data they serve, must be explicitly protected with rate-limiting middleware (like `enforcePublicRateLimit`) to mitigate DoS risks.
+
+## 2024-05-22 - SQL Wildcard DoS in Search Queries
+**Vulnerability:** The `sanitizeSearchQuery` function used for searching recent player lookups via database `LIKE` clauses failed to strip or escape SQL wildcard characters (like `%`). This allowed an attacker to send `%%%` payloads, inducing extremely slow full-table scan operations and causing a Database Denial of Service.
+**Learning:** Database libraries and query builders (like Kysely) do not automatically escape wildcard characters within strings used in `LIKE` queries. Sanitization logic must explicitly handle these characters.
+**Prevention:** Explicitly strip dangerous SQL wildcard characters (e.g., `%`) from user-provided search strings before they are incorporated into `LIKE` clauses, or securely escape them if supported by the query builder.

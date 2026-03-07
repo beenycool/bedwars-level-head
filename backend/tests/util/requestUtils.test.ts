@@ -1,4 +1,4 @@
-import { extractBedwarsExperience, parseIfModifiedSince } from '../../src/util/requestUtils';
+import { extractBedwarsExperience, parseIfModifiedSince, sanitizeSearchQuery } from '../../src/util/requestUtils';
 
 // Mock dependencies that might be imported transitively and cause side effects
 jest.mock('../../src/services/history', () => ({
@@ -44,6 +44,33 @@ describe('Request Utils', () => {
 
     it('should return undefined for undefined input', () => {
       expect(parseIfModifiedSince(undefined)).toBeUndefined();
+    });
+  });
+
+  describe('sanitizeSearchQuery', () => {
+    it('should strip SQL wildcards to prevent DoS', () => {
+      expect(sanitizeSearchQuery('%%%')).toBe('');
+      expect(sanitizeSearchQuery('%user%')).toBe('user');
+      expect(sanitizeSearchQuery('hello%world')).toBe('helloworld');
+    });
+
+    it('should allow underscores as they are valid in usernames', () => {
+      expect(sanitizeSearchQuery('user_name')).toBe('user_name');
+    });
+
+    it('should trim whitespace', () => {
+      expect(sanitizeSearchQuery('  user  ')).toBe('user');
+    });
+
+    it('should limit string length', () => {
+      const longString = 'a'.repeat(200);
+      expect(sanitizeSearchQuery(longString).length).toBe(100);
+    });
+
+    it('should return empty string for non-string inputs', () => {
+      expect(sanitizeSearchQuery(null)).toBe('');
+      expect(sanitizeSearchQuery(123)).toBe('');
+      expect(sanitizeSearchQuery({})).toBe('');
     });
   });
 });

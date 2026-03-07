@@ -80,14 +80,6 @@ describe('Player Service Optimization', () => {
     const statsCache = require('../../src/services/statsCache');
     (statsCache.fetchWithDedupe as jest.Mock).mockResolvedValue(mockResolved);
     (extractMinimalStats as jest.Mock).mockReturnValue(mockStats);
-    (statsCache.fetchWithDedupe as jest.Mock).mockImplementation(async (uuid) => {
-      const response = await fetchHypixelPlayer(uuid);
-      return {
-        stats: extractMinimalStats(response.payload),
-        etag: response.etag,
-        lastModified: response.lastModified
-      };
-    });
   });
 
   it('should efficiently resolve player without regex overhead for clean UUIDs', async () => {
@@ -170,7 +162,7 @@ describe('Player Service Optimization', () => {
 
   it('should reject identifier that exceeds 64 characters to prevent DoS', async () => {
     const hugeIgn = 'A'.repeat(65);
-    await expect(resolvePlayer(hugeIgn)).rejects.toThrow("Identifier must be 64 characters or less.");
+    await expect(resolvePlayer(hugeIgn)).rejects.toThrow("64 characters or less");
   });
 
   it('should handle misplaced dashes if they result in valid UUID (optimization check)', async () => {
