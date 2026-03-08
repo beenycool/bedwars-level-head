@@ -982,10 +982,12 @@ private fun sendDisplayShowSelfDetails() {
 }
 
 private var pendingAction: (() -> Unit)? = null
+private var pendingActionTimestamp: Long = 0L
+private const val CONFIRMATION_TIMEOUT_MS = 30_000L // 30 seconds
 
 private fun requireConfirmation(warningMessage: String, action: () -> Unit) {
-    if (pendingAction != null) {
-        CommandUtils.sendPrefixedChat(ChatComponentText("§cAn action is already pending. Please §a/levelhead confirm§c or wait."))
+    if (pendingAction != null && System.currentTimeMillis() - pendingActionTimestamp < CONFIRMATION_TIMEOUT_MS) {
+        CommandUtils.sendPrefixedChat(ChatComponentText("§cAn action is already pending. Please §a/levelhead confirm§c or wait for it to expire."))
         return
     }
 
@@ -997,4 +999,5 @@ private fun requireConfirmation(warningMessage: String, action: () -> Unit) {
     CommandUtils.sendPrefixedChat(msg)
 
     pendingAction = action
+    pendingActionTimestamp = System.currentTimeMillis()
 }
