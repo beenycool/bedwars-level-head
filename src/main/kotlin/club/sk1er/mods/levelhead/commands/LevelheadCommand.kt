@@ -608,9 +608,9 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 if (color == null) {
                     val msg = ChatComponentText("${ChatColor.RED}Unable to parse color '$colorInput'.${ChatColor.YELLOW} Try a hex code (e.g. ${ChatColor.GOLD}#ff00ff${ChatColor.YELLOW}), RGB (r,g,b), or a ")
                         .appendSibling(getMinecraftColorNameHelpComponent())
-                        .appendSibling(ChatComponentText("${ChatColor.YELLOW}. Use "))
+                        .appendSibling(ChatComponentText("${ChatColor.YELLOW}. You can also use "))
                         .appendSibling(CommandUtils.createClickableCommand("/levelhead display header color <color>", suggestedCommand = "/levelhead display header color "))
-                        .appendSibling(ChatComponentText("${ChatColor.YELLOW}. Current header color: ${ChatColor.GOLD}${formatColor(currentHeaderColor())}${ChatColor.YELLOW}."))
+                        .appendSibling(ChatComponentText("${ChatColor.YELLOW} to try again. Current header color: ${ChatColor.GOLD}${formatColor(currentHeaderColor())}${ChatColor.YELLOW}."))
                     sendMessage(msg)
                     return
                 }
