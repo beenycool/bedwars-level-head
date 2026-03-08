@@ -31,6 +31,10 @@ let flushInterval: NodeJS.Timeout | null = null;
 // Cache the last generated INSERT query to avoid O(N) string generation
 let cachedQuery: { count: number; type: DatabaseType; sql: string } | null = null;
 
+// Tracks the last time a Redis write failed or was skipped due to unavailability.
+// This allows the read path to fall back to the SQL source of truth if Redis might be missing data.
+let lastRedisFailureAt = 0;
+
 function buildRedisRollingMember(uuid: string, calledAt: number): string {
   const nonce = Math.random().toString(36).slice(2);
   return `${uuid}:${calledAt}:${nonce}`;
@@ -38,11 +42,13 @@ function buildRedisRollingMember(uuid: string, calledAt: number): string {
 
 async function recordHypixelCallInRedis(uuid: string, calledAt: number): Promise<void> {
   if (!isRedisAvailable()) {
+    lastRedisFailureAt = Date.now();
     return;
   }
 
   const client = getRedisClient();
   if (!client) {
+    lastRedisFailureAt = Date.now();
     return;
   }
 
@@ -57,6 +63,7 @@ async function recordHypixelCallInRedis(uuid: string, calledAt: number): Promise
     pipeline.expire(REDIS_ROLLING_KEY, REDIS_ROLLING_TTL_SECONDS);
     await pipeline.exec();
   } catch (error) {
+    lastRedisFailureAt = Date.now();
     logger.warn('[hypixelTracker] Failed to update Redis rolling counter', error);
   }
 }
@@ -189,7 +196,9 @@ export async function getHypixelCallCount(
 ): Promise<number> {
   if (isRedisAvailable()) {
     const client = getRedisClient();
-    if (client) {
+    // Only use the Redis fast-path if we haven't skipped/failed any writes during the requested window.
+    // If Redis was down recently, it might be missing data, so we must fall back to the SQL source of truth.
+    if (client && (now - lastRedisFailureAt > windowMs)) {
       const cutoff = now - windowMs;
       try {
         const count = await client.zcount(REDIS_ROLLING_KEY, cutoff, '+inf');
