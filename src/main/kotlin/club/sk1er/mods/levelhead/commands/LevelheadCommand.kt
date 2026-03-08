@@ -42,23 +42,6 @@ import kotlin.text.RegexOption
 @Command(value = "levelhead", aliases = ["lh"])
 class LevelheadCommand {
 
-    private var pendingAction: (() -> Unit)? = null
-
-    private fun requireConfirmation(warningMessage: String, action: () -> Unit) {
-        if (pendingAction != null) {
-            sendMessage("§cAn action is already pending. Please §a/levelhead confirm§c or wait.")
-            return
-        }
-
-        val msg = ChatComponentText("${ChatColor.RED}Warning: ${ChatColor.YELLOW}$warningMessage Are you sure? ")
-            .appendSibling(ChatComponentText("${ChatColor.GREEN}[Confirm]").apply {
-                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead confirm")
-                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to confirm"))
-            })
-        sendMessage(msg)
-
-        pendingAction = action
-    }
 
     @SubCommand
     fun confirm() {
@@ -996,4 +979,25 @@ private fun sendDisplayShowSelfDetails() {
             }
         }
     }
+}
+
+private var pendingAction: (() -> Unit)? = null
+private var pendingActionTimestamp: Long = 0L
+private const val CONFIRMATION_TIMEOUT_MS = 30_000L // 30 seconds
+
+private fun requireConfirmation(warningMessage: String, action: () -> Unit) {
+    if (pendingAction != null && System.currentTimeMillis() - pendingActionTimestamp < CONFIRMATION_TIMEOUT_MS) {
+        CommandUtils.sendPrefixedChat(ChatComponentText("§cAn action is already pending. Please §a/levelhead confirm§c or wait for it to expire."))
+        return
+    }
+
+    val msg = ChatComponentText("${ChatColor.RED}Warning: ${ChatColor.YELLOW}$warningMessage Are you sure? ")
+        .appendSibling(ChatComponentText("${ChatColor.GREEN}[Confirm]").apply {
+            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead confirm")
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to confirm"))
+        })
+    CommandUtils.sendPrefixedChat(msg)
+
+    pendingAction = action
+    pendingActionTimestamp = System.currentTimeMillis()
 }
