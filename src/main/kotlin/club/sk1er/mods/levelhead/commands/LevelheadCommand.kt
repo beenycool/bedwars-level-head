@@ -278,9 +278,10 @@ class LevelheadCommand {
         val parsed = sanitized.toIntOrNull()
         if (parsed == null) {
             val current = LevelheadConfig.starCacheTtlMinutes
-            sendMessage(
-                "${ChatColor.RED}Couldn't read '$minutesInput'.${ChatColor.YELLOW} Choose a number of minutes between ${ChatColor.GOLD}${LevelheadConfig.MIN_STAR_CACHE_TTL_MINUTES}${ChatColor.YELLOW} and ${ChatColor.GOLD}${LevelheadConfig.MAX_STAR_CACHE_TTL_MINUTES}${ChatColor.YELLOW}. Current TTL: ${ChatColor.GOLD}$current${ChatColor.YELLOW}."
-            )
+            val msg = ChatComponentText("${ChatColor.RED}Couldn't read '$minutesInput'.${ChatColor.YELLOW} Try ")
+                .appendSibling(CommandUtils.createClickableCommand("/levelhead cachettl <minutes>", suggestedCommand = "/levelhead cachettl "))
+                .appendSibling(ChatComponentText("${ChatColor.YELLOW}. Choose a number between ${ChatColor.GOLD}${LevelheadConfig.MIN_STAR_CACHE_TTL_MINUTES}${ChatColor.YELLOW} and ${ChatColor.GOLD}${LevelheadConfig.MAX_STAR_CACHE_TTL_MINUTES}${ChatColor.YELLOW}. Current TTL: ${ChatColor.GOLD}$current${ChatColor.YELLOW}."))
+            sendMessage(msg)
             return
         }
 
@@ -350,9 +351,10 @@ class LevelheadCommand {
                 }
                 val parsed = HttpUrl.parse(url)
                 if (parsed == null || parsed.scheme() !in setOf("http", "https")) {
-                    sendMessage(
-                        "${ChatColor.RED}Invalid proxy base URL.${ChatColor.YELLOW} Use an http or https address like ${ChatColor.GOLD}https://example.com${ChatColor.YELLOW}."
-                    )
+                    val msg = ChatComponentText("${ChatColor.RED}Invalid proxy base URL.${ChatColor.YELLOW} Try ")
+                        .appendSibling(CommandUtils.createClickableCommand("/levelhead proxy url <url>", suggestedCommand = "/levelhead proxy url "))
+                        .appendSibling(ChatComponentText("${ChatColor.YELLOW} with an http or https address."))
+                    sendMessage(msg)
                     return
                 }
                 val sanitized = parsed.newBuilder()
@@ -464,7 +466,10 @@ class LevelheadCommand {
         sendMessage("${ChatColor.YELLOW}Render sampling debug logging: ${formatToggle(LevelheadConfig.debugRenderSampling)}${ChatColor.YELLOW}")
         sendMessage("${ChatColor.YELLOW}Cache size: ${ChatColor.GOLD}${snapshot.cacheSize}${ChatColor.YELLOW}, display cache entries: ${ChatColor.GOLD}$displayCache")
         sendMessage("${ChatColor.YELLOW}Rate limiter remaining: ${ChatColor.GOLD}${snapshot.rateLimitRemaining}${ChatColor.YELLOW}, proxy: ${if (snapshot.proxyEnabled) ChatColor.GREEN else ChatColor.GRAY}${if (snapshot.proxyEnabled) "enabled" else "disabled"}${ChatColor.YELLOW}")
-        sendMessage("${ChatColor.GRAY}Toggle: ${ChatColor.GOLD}/levelhead debugrender [on|off]${ChatColor.GRAY} to enable/disable render debug (logs header/footer above nametags to latest.log)")
+        val debugRenderMsg = ChatComponentText("${ChatColor.GRAY}Toggle: ")
+            .appendSibling(CommandUtils.createClickableCommand("/levelhead debugrender [on|off]", suggestedCommand = "/levelhead debugrender "))
+            .appendSibling(ChatComponentText("${ChatColor.GRAY} to enable/disable render debug (logs header/footer above nametags to latest.log)"))
+        sendMessage(debugRenderMsg)
     }
 
     @SubCommand(aliases = ["debugrender"])
@@ -508,14 +513,20 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
             "apply" -> {
                 val presetName = parsedArgs.getOrNull(1)?.trim()
                 if (presetName.isNullOrEmpty()) {
-                    sendMessage("${ChatColor.RED}Specify a preset name.${ChatColor.YELLOW} Use ${ChatColor.GOLD}/levelhead profile list${ChatColor.YELLOW} to see available presets.")
+                    val msg = ChatComponentText("${ChatColor.RED}Specify a preset name.${ChatColor.YELLOW} Use ")
+                        .appendSibling(CommandUtils.createClickableCommand("/levelhead profile list", run = true))
+                        .appendSibling(ChatComponentText("${ChatColor.YELLOW} to see available presets."))
+                    sendMessage(msg)
                     return
                 }
                 val preset = ConfigProfiles.Preset.entries.find { 
                     it.displayName.equals(presetName, ignoreCase = true) || it.name.equals(presetName, ignoreCase = true)
                 }
                 if (preset == null) {
-                    sendMessage("${ChatColor.RED}Unknown preset '$presetName'.${ChatColor.YELLOW} Use ${ChatColor.GOLD}/levelhead profile list${ChatColor.YELLOW} to see available presets.")
+                    val msg = ChatComponentText("${ChatColor.RED}Unknown preset '$presetName'.${ChatColor.YELLOW} Use ")
+                        .appendSibling(CommandUtils.createClickableCommand("/levelhead profile list", run = true))
+                        .appendSibling(ChatComponentText("${ChatColor.YELLOW} to see available presets."))
+                    sendMessage(msg)
                     return
                 }
                 val profile = ConfigProfiles.getPreset(preset)
@@ -572,7 +583,10 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
             "text" -> {
                 val text = args.drop(1).joinToString(" ").trim()
                 if (text.isEmpty()) {
-                    sendMessage("${ChatColor.RED}Header text cannot be empty.${ChatColor.YELLOW} Current header: ${ChatColor.GOLD}${currentHeaderText()}${ChatColor.YELLOW}.")
+                    val msg = ChatComponentText("${ChatColor.RED}Header text cannot be empty.${ChatColor.YELLOW} Try ")
+                        .appendSibling(CommandUtils.createClickableCommand("/levelhead display header text <value>", suggestedCommand = "/levelhead display header text "))
+                        .appendSibling(ChatComponentText("${ChatColor.YELLOW}. Current header: ${ChatColor.GOLD}${currentHeaderText()}${ChatColor.YELLOW}."))
+                    sendMessage(msg)
                     return
                 }
                 val sanitized = text.take(48)
@@ -594,6 +608,8 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 if (color == null) {
                     val msg = ChatComponentText("${ChatColor.RED}Unable to parse color '$colorInput'.${ChatColor.YELLOW} Try a hex code (e.g. ${ChatColor.GOLD}#ff00ff${ChatColor.YELLOW}), RGB (r,g,b), or a ")
                         .appendSibling(getMinecraftColorNameHelpComponent())
+                        .appendSibling(ChatComponentText("${ChatColor.YELLOW}. Use "))
+                        .appendSibling(CommandUtils.createClickableCommand("/levelhead display header color <color>", suggestedCommand = "/levelhead display header color "))
                         .appendSibling(ChatComponentText("${ChatColor.YELLOW}. Current header color: ${ChatColor.GOLD}${formatColor(currentHeaderColor())}${ChatColor.YELLOW}."))
                     sendMessage(msg)
                     return
