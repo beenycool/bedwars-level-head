@@ -219,7 +219,13 @@ export async function getHypixelCallCount(
     [cutoff],
   );
 
-  const bufferCount = snapshotBuffer.filter((item) => item.calledAt >= cutoff).length;
+  // ⚡ Bolt: Avoid O(N) memory allocation from Array.filter().length
+  let bufferCount = 0;
+  for (let i = 0; i < snapshotBuffer.length; i++) {
+    if (snapshotBuffer[i].calledAt >= cutoff) {
+      bufferCount++;
+    }
+  }
 
   // Count items that were pending in memory at the time of the snapshot.
   // We use snapshotOffset because anything before that offset is presumed to be in the DB.

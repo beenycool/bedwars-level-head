@@ -1,9 +1,17 @@
 # Bolt learnings
 
-## 2025-05-16 - Sequential Awaits in Stats Queries
+## 2025-05-16 - DB Counting vs In-Memory/Redis Counting
+**Learning:** `getSystemStats` in `backend/src/services/history.ts` executed an unindexed `SELECT COUNT(*)` on `hypixel_api_calls` for the last hour on every call. This bypassed the highly optimized Redis `ZCOUNT` implementation already present in `backend/src/services/hypixelTracker.ts` (`getHypixelCallCount`), creating a significant database bottleneck for the analytics dashboard while also missing buffered/in-flight statistics.
+**Action:** When calculating sliding-window aggregates, always prioritize existing Redis/in-memory abstractions (like `getHypixelCallCount`) over raw database count queries to leverage `O(log N)` complexity and reduce database load.
 
+## 2025-05-16 - Array Processing Memory Allocations
+**Learning:** During high-throughput background processing, like the `flushHistoryBuffer` database `UNNEST` build or buffer counting, combining methods like `.filter().length` or chaining multiple `.map()` functions causes unnecessary O(N) array memory allocations (e.g. 13 arrays for 13 columns).
+**Action:** In Node.js server hot paths or large recurring loops, use a single standard `for` loop to directly compute counters or populate pre-allocated arrays, eliminating expensive intermediate array instantiations and Garbage Collection pressure.
+
+## 2025-05-16 - Sequential Awaits in Stats Queries
 **Learning:** `getSystemStats` and `getPlayerQueryPage` inside `backend/src/services/history.ts` were awaiting independent asynchronous operations sequentially (e.g. executing a query, waiting for it, then executing a count query). Further, `backend/src/routes/stats.ts` was executing `getPlayerQueryCount` in its `Promise.all` array at the exact same time as `getPlayerQueryPage`, completely negating the optimization where the latter could fetch its own count (and running identical count queries in parallel).
 **Action:** Always look for `await` statements inside a function that do not depend on the result of a previous `await` - these should be wrapped in `Promise.all()`. Furthermore, verify if higher-level controllers (like routes) are duplicating work that is already performed by lower-level functions.
+
 ## 2025-05-15 - Double Serialization in Redis Cache
 **Learning:** I discovered that `backend/src/services/statsCache.ts` was stringifying the `payload` object BEFORE adding it to the cache entry wrapper, which was then stringified again. This resulted in double serialization (string inside string), wasting CPU cycles and bytes (escaped quotes). Interestingly, `backend/src/services/redis.ts` already had the optimized implementation, but `statsCache.ts` (which is specific to player stats) re-implemented it inefficiently.
 **Action:** When working with Redis or any storage wrapper, always check if the wrapper handles serialization. If so, pass objects directly. Also, look for "parallel" implementations of similar logic in the codebase (`statsCache.ts` vs `redis.ts`) as they often diverge in quality.
