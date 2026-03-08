@@ -26,4 +26,19 @@ object CommandUtils {
             chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText(hoverText))
         }
     }
+
+    fun buildInteractiveFeedback(
+        messagePrefix: String,
+        command: String,
+        suggestedCommand: String = command,
+        run: Boolean = false,
+        suffix: String = ""
+    ): IChatComponent {
+        val component = ChatComponentText(messagePrefix)
+        component.appendSibling(createClickableCommand(command, run, suggestedCommand))
+        if (suffix.isNotEmpty()) {
+            component.appendSibling(ChatComponentText(suffix))
+        }
+        return component
+    }
 }
