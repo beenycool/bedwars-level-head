@@ -84,7 +84,7 @@ async function stopLeaderScopedServices(): Promise<void> {
 
 app.use(requestId);
 app.use((_req, res, next) => {
-  res.locals.nonce = crypto.randomBytes(16).toString('base64');
+  res.locals.nonce = crypto.randomUUID();
   next();
 });
 

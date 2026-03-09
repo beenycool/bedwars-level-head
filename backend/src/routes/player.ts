@@ -45,6 +45,7 @@ router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
     }
 
     res.set('X-Cache', resolved.source === 'cache' ? 'HIT' : 'MISS');
+    res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
 
     res.statusCode = 200;
     const notModified = req.fresh;

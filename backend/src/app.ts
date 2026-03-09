@@ -24,7 +24,7 @@ export function createApp(): express.Express {
   const app = express();
 
   app.use((_req, res, next) => {
-    res.locals.nonce = crypto.randomBytes(16).toString('base64');
+    res.locals.nonce = crypto.randomUUID();
     next();
   });
 

@@ -23,7 +23,7 @@ const uuidRegex = /^[0-9a-f]{32}$/i;
 const ignRegex = /^[a-zA-Z0-9_]{1,16}$/;
 
 const memoizedResults = new LRUCache<string, ResolvedPlayer>({
-  max: 1000,
+  max: 5000,
   ttl: 5 * 60 * 1000, // 5 minutes
 });
 

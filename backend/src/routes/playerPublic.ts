@@ -34,6 +34,9 @@ router.get('/:identifier', enforcePublicRateLimit, async (req, res, next) => {
       res.set('Last-Modified', new Date(resolved.lastModified).toUTCString());
     }
 
+    res.set('X-Cache', resolved.source === 'cache' ? 'HIT' : 'MISS');
+    res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
+
     res.statusCode = 200;
     const notModified = req.fresh;
     const responseStatus = notModified ? 304 : 200;
