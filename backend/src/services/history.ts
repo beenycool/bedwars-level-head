@@ -4,6 +4,7 @@ import { sql } from 'kysely';
 import { DatabaseType } from './database/adapter';
 import { getRedisCacheStats } from './redis';
 import { getCurrentResourceMetrics, CurrentResourceMetrics } from './resourceMetrics';
+import { getHypixelCallCount } from './hypixelTracker';
 import { logger } from '../util/logger';
 
 interface PlayerQueryHistoryRow {
@@ -189,20 +190,38 @@ async function flushHistoryBuffer(): Promise<void> {
   try {
     if (dbType === DatabaseType.POSTGRESQL) {
       // PostgreSQL: Use UNNEST optimization
-      // Deconstruct batch into parallel arrays
-      const identifiers = batch.map(r => r.identifier);
-      const normalizedIdentifiers = batch.map(r => r.normalizedIdentifier);
-      const lookupTypes = batch.map(r => r.lookupType);
-      const resolvedUuids = batch.map(r => r.resolvedUuid);
-      const resolvedUsernames = batch.map(r => r.resolvedUsername);
-      const stars = batch.map(r => r.stars);
-      const nickeds = batch.map(r => r.nicked);
-      const cacheSources = batch.map(r => r.cacheSource);
-      const cacheHits = batch.map(r => r.cacheHit);
-      const revalidateds = batch.map(r => r.revalidated);
-      const installIds = batch.map(r => r.installId);
-      const responseStatuses = batch.map(r => r.responseStatus);
-      const latencyMss = batch.map(r => r.latencyMs != null ? Math.round(r.latencyMs) : null);
+      // Deconstruct batch into parallel arrays in a single pass to avoid O(13 * N) iteration and allocation
+      const len = batch.length;
+      const identifiers = new Array(len);
+      const normalizedIdentifiers = new Array(len);
+      const lookupTypes = new Array(len);
+      const resolvedUuids = new Array(len);
+      const resolvedUsernames = new Array(len);
+      const stars = new Array(len);
+      const nickeds = new Array(len);
+      const cacheSources = new Array(len);
+      const cacheHits = new Array(len);
+      const revalidateds = new Array(len);
+      const installIds = new Array(len);
+      const responseStatuses = new Array(len);
+      const latencyMss = new Array(len);
+
+      for (let i = 0; i < len; i++) {
+        const r = batch[i];
+        identifiers[i] = r.identifier;
+        normalizedIdentifiers[i] = r.normalizedIdentifier;
+        lookupTypes[i] = r.lookupType;
+        resolvedUuids[i] = r.resolvedUuid;
+        resolvedUsernames[i] = r.resolvedUsername;
+        stars[i] = r.stars;
+        nickeds[i] = r.nicked;
+        cacheSources[i] = r.cacheSource;
+        cacheHits[i] = r.cacheHit;
+        revalidateds[i] = r.revalidated;
+        installIds[i] = r.installId;
+        responseStatuses[i] = r.responseStatus;
+        latencyMss[i] = r.latencyMs != null ? Math.round(r.latencyMs) : null;
+      }
 
       await sql`
         INSERT INTO player_query_history (
@@ -539,21 +558,13 @@ export async function getSystemStats(): Promise<SystemStats> {
 
   const getApiStatsCount = async () => {
     try {
-        if (dbType === DatabaseType.POSTGRESQL) {
-          const res = await sql<{count: number}>`SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (EXTRACT(EPOCH FROM NOW() - INTERVAL '1 hour') * 1000)`.execute(db);
-          return Number(res.rows[0]?.count ?? 0);
-        } else {
-          const res = await sql<{count: number}>`SELECT count(*) as count FROM hypixel_api_calls WHERE called_at >= (DATEDIFF_BIG(ms, '1970-01-01', DATEADD(hour, -1, GETDATE())))`.execute(db);
-          return Number(res.rows[0]?.count ?? 0);
-        }
+      // ⚡ Bolt: Replace unindexed DB COUNT(*) over the last hour with getHypixelCallCount
+      // This uses Redis ZCOUNT internally which is O(log(N)) and avoids blocking database operations,
+      // while also correctly including buffered and inflight calls not yet written to the DB.
+      return await getHypixelCallCount(60 * 60 * 1000);
     } catch (e: any) {
-        // Log errors properly, only ignoring "relation does not exist" type errors
-        if (e?.code === '42P01' || (e?.message && e.message.includes('Invalid object name'))) {
-            logger.debug('[history] hypixel_api_calls table does not exist, skipping api calls stat');
-        } else {
-            logger.warn({ err: e }, '[history] Failed to query hypixel_api_calls for stats');
-        }
-        return 0;
+      logger.warn({ err: e }, '[history] Failed to query hypixel_api_calls for stats');
+      return 0;
     }
   };
 
