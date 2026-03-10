@@ -51,25 +51,21 @@ object WhoisService {
             }
             FetchResult.NotModified -> throw CommandException("No fresh data available for ${resolved.displayName ?: resolved.uuid}.")
             is FetchResult.TemporaryError -> throw CommandException("${gameMode.displayName} stats temporarily unavailable (${result.reason ?: "unknown"}).")
-            is FetchResult.PermanentError -> {
+            is FetchResult.PermanentError -> throw CommandException(
+                when (result.reason) {
+                    "MISSING_KEY" -> "Set your Hypixel API key with /levelhead apikey <key> to query players."
+                    "OFFLINE_MODE" -> "Mod is in offline mode."
+                    else -> "${gameMode.displayName} request failed (${result.reason ?: "unknown"})."
+                },
                 if (result.reason == "MISSING_KEY") {
-                    throw CommandException(
-                        "Set your Hypixel API key with /levelhead apikey <key> to query players.",
-                        CommandUtils.buildInteractiveFeedback(
-                            messagePrefix = "${ChatColor.RED}Set your Hypixel API key with ",
-                            command = "/levelhead apikey <key>",
-                            suggestedCommand = "/levelhead apikey ",
-                            suffix = "${ChatColor.RED} to query players."
-                        )
+                    CommandUtils.buildInteractiveFeedback(
+                        messagePrefix = "${ChatColor.RED}Set your Hypixel API key with ",
+                        command = "/levelhead apikey <key>",
+                        suggestedCommand = "/levelhead apikey ",
+                        suffix = "${ChatColor.RED} to query players."
                     )
-                }
-                throw CommandException(
-                    when (result.reason) {
-                        "OFFLINE_MODE" -> "Mod is in offline mode."
-                        else -> "${gameMode.displayName} request failed (${result.reason ?: "unknown"})."
-                    }
-                )
-            }
+                } else null
+            )
         }
     }
 
