@@ -15,7 +15,7 @@ const batchLimit = pLimit(6);
 
 const router = Router();
 
-router.get('/:identifier', enforceApiKeyAuth, enforceRateLimit, async (req, res, next) => {
+router.get('/:identifier', enforceRateLimit, enforceApiKeyAuth, async (req, res, next) => {
   const { identifier } = req.params;
   const ifNoneMatch = req.header('if-none-match')?.trim();
   const ifModifiedSince = parseIfModifiedSince(req.header('if-modified-since'));
