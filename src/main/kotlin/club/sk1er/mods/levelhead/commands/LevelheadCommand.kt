@@ -31,6 +31,7 @@ import okhttp3.Request
 import okhttp3.RequestBody
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import club.sk1er.mods.levelhead.commands.PlayerIdentifiers
+import club.sk1er.mods.levelhead.commands.CommandUtils
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.awt.Color
@@ -63,6 +64,8 @@ class LevelheadCommand {
         private const val MAX_DISPLAY_OFFSET = 3.0
         private val JSON_MEDIA_TYPE: MediaType = MediaType.parse("application/json; charset=utf-8")
             ?: error("Failed to initialise JSON media type")
+        private const val APIKEY_COMMAND = "/levelhead apikey <key>"
+        private const val APIKEY_SUGGESTION = "/levelhead apikey "
         private val NAMED_COLORS: Map<String, Color> = mapOf(
             "black" to Color(0, 0, 0),
             "dark_blue" to Color(0, 0, 170),
@@ -146,7 +149,13 @@ class LevelheadCommand {
                 "Contains invalid characters"
             }
 
-            sendMessage("${ChatColor.RED}Invalid Hypixel API key. $reason.")
+            val msg = CommandUtils.buildInteractiveFeedback(
+                messagePrefix = "${ChatColor.RED}Invalid Hypixel API key. $reason.${ChatColor.YELLOW} Try ",
+                command = APIKEY_COMMAND,
+                suggestedCommand = APIKEY_SUGGESTION,
+                suffix = "${ChatColor.YELLOW} with a valid 32-character key."
+            )
+            sendMessage(msg)
             sendMessage(getDeveloperKeyHelpMessage())
             return
         }
@@ -160,7 +169,13 @@ class LevelheadCommand {
             Levelhead.scope.launch {
                 val valid = validateApiKey(sanitized)
                 if (!valid) {
-                    sendMessage("${ChatColor.RED}Warning: That API key appears to be invalid (Hypixel rejected it).")
+                    val msg = CommandUtils.buildInteractiveFeedback(
+                        messagePrefix = "${ChatColor.RED}Warning: That API key appears to be invalid (Hypixel rejected it).${ChatColor.YELLOW} Try ",
+                        command = APIKEY_COMMAND,
+                        suggestedCommand = APIKEY_SUGGESTION,
+                        suffix = "${ChatColor.YELLOW} to try again."
+                    )
+                    sendMessage(msg)
                     sendMessage(getDeveloperKeyHelpMessage())
                 }
             }
