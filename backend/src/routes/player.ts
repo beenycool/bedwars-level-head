@@ -207,7 +207,7 @@ router.post('/batch', enforceApiKeyAuth, enforceBatchRateLimit, async (req, res,
 
 const uuidOnlyPattern = /^[0-9a-f]{32}$/i;
 
-router.post('/submit', enforceApiKeyAuth, enforceRateLimit, async (req, res, next) => {
+router.post('/submit', enforceRateLimit, enforceApiKeyAuth, async (req, res, next) => {
   res.locals.metricsRoute = '/api/player/submit';
   const body = req.body as { uuid?: unknown; data?: unknown; signature?: unknown } | undefined;
 
