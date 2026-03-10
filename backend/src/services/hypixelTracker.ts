@@ -1,5 +1,5 @@
 import { pool, ensureInitialized } from './cache';
-import { DatabaseType } from './database/adapter';
+import { DatabaseType } from './database/db';
 import { HYPIXEL_API_CALL_WINDOW_MS } from '../config';
 import { logger } from '../util/logger';
 import { getRedisClient, isRedisAvailable } from './redis';

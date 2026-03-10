@@ -6,7 +6,7 @@ import * as statsCache from '../../src/services/statsCache';
 
 // Mock dependencies
 jest.mock('../../src/services/database/db', () => {
-  const { DatabaseType } = require('../../src/services/database/adapter');
+  const DatabaseType = { POSTGRESQL: 'POSTGRESQL', AZURE_SQL: 'AZURE_SQL' };
   return {
     db: {
       selectFrom: jest.fn().mockReturnThis(),
