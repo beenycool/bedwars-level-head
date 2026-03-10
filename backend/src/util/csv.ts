@@ -6,7 +6,7 @@ const escapeCell = (val: any): string => {
   let sanitized = str;
 
   // Prevent CSV Injection (Formula Injection)
-  if (typeof val === 'string' && /^[\t\r=+\-@]/.test(str)) {
+  if (typeof val === 'string' && /^[ \t\r]*[=+\-@]/.test(str)) {
     sanitized = `'${str}`;
   }
 
