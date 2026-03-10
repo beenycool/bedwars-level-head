@@ -139,6 +139,57 @@ describe('Player Service Optimization', () => {
     expect(statsCache.fetchWithDedupe).not.toHaveBeenCalled();
   });
 
+  it('should mark UUID lookups without a usable displayname as nicked', async () => {
+    const uuid = '530fa96a303d42199b5a329d493a5573';
+    const statsWithoutDisplayname = {
+      ...mockStats,
+      displayname: null,
+    };
+    const statsCache = require('../../src/services/statsCache');
+
+    (statsCache.fetchWithDedupe as jest.Mock).mockResolvedValueOnce({
+      stats: statsWithoutDisplayname,
+      etag: 'nicked-etag',
+      lastModified: Date.now(),
+    });
+
+    const result = await resolvePlayer(uuid);
+
+    expect(result.nicked).toBe(true);
+    expect(result.payload.displayname).toBe('(nicked)');
+    expect(statsCache.setPlayerStatsBoth).toHaveBeenCalledWith(
+      `player:${uuid}`,
+      expect.objectContaining({ displayname: '(nicked)' }),
+      expect.any(Object),
+    );
+    expect(statsCache.setIgnMapping).not.toHaveBeenCalledWith('(nicked)', uuid, false);
+  });
+
+  it('should treat cached UUID entries without a usable displayname as nicked', async () => {
+    const uuid = '530fa96a303d42199b5a329d493a5573';
+    const statsWithoutDisplayname = {
+      ...mockStats,
+      displayname: null,
+    };
+
+    const { getPlayerStatsFromCacheWithSWR } = require('../../src/services/statsCache');
+    getPlayerStatsFromCacheWithSWR.mockResolvedValueOnce({
+      value: statsWithoutDisplayname,
+      etag: 'cached-nicked-etag',
+      lastModified: Date.now() - 1000,
+      expiresAt: Date.now() + 10000,
+      cachedAt: Date.now() - 1000,
+      isStale: false,
+      staleAgeMs: 0,
+    });
+
+    const result = await resolvePlayer(uuid);
+
+    expect(result.source).toBe('cache');
+    expect(result.nicked).toBe(true);
+    expect(result.payload.displayname).toBe('(nicked)');
+  });
+
   it('should throw error when fetchWithDedupe fails on network request', async () => {
     const uuid = '530fa96a303d42199b5a329d493a5573';
     (getPlayerStatsFromCache as jest.Mock).mockResolvedValue(null);

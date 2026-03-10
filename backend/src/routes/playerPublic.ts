@@ -62,7 +62,10 @@ router.get('/:identifier', enforcePublicRateLimit, async (req, res, next) => {
       return;
     }
 
-    res.json(resolved.payload);
+    res.json({
+      ...resolved.payload,
+      nicked: resolved.nicked,
+    });
   } catch (error) {
     next(error);
   }

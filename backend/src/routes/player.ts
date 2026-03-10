@@ -77,6 +77,7 @@ router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
     const isCircuitOpen = circuitBreaker.state === 'open';
     res.json({
       ...resolved.payload,
+      nicked: resolved.nicked,
       ...(resolved.isStale ? { stale: true } : {}),
       ...(isCircuitOpen ? { degradedMode: true } : {}),
     });
@@ -162,6 +163,7 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
             identifier,
             payload: {
               ...resolved.payload,
+              nicked: resolved.nicked,
               ...(resolved.isStale ? { stale: true } : {}),
             },
             source: resolved.source,
@@ -178,7 +180,7 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
       })),
     );
 
-    const payloadMap: Record<string, ResolvedPlayer['payload']> = {};
+    const payloadMap: Record<string, ResolvedPlayer['payload'] & { nicked: boolean; stale?: true }> = {};
     let cacheHits = 0;
     let total = 0;
     results.forEach((result) => {
