@@ -64,6 +64,8 @@ class LevelheadCommand {
         private const val MAX_DISPLAY_OFFSET = 3.0
         private val JSON_MEDIA_TYPE: MediaType = MediaType.parse("application/json; charset=utf-8")
             ?: error("Failed to initialise JSON media type")
+        private const val APIKEY_COMMAND = "/levelhead apikey <key>"
+        private const val APIKEY_SUGGESTION = "/levelhead apikey "
         private val NAMED_COLORS: Map<String, Color> = mapOf(
             "black" to Color(0, 0, 0),
             "dark_blue" to Color(0, 0, 170),
@@ -149,8 +151,8 @@ class LevelheadCommand {
 
             val msg = CommandUtils.buildInteractiveFeedback(
                 messagePrefix = "${ChatColor.RED}Invalid Hypixel API key. $reason.${ChatColor.YELLOW} Try ",
-                command = "/levelhead apikey <key>",
-                suggestedCommand = "/levelhead apikey ",
+                command = APIKEY_COMMAND,
+                suggestedCommand = APIKEY_SUGGESTION,
                 suffix = "${ChatColor.YELLOW} with a valid 32-character key."
             )
             sendMessage(msg)
@@ -169,8 +171,8 @@ class LevelheadCommand {
                 if (!valid) {
                     val msg = CommandUtils.buildInteractiveFeedback(
                         messagePrefix = "${ChatColor.RED}Warning: That API key appears to be invalid (Hypixel rejected it).${ChatColor.YELLOW} Try ",
-                        command = "/levelhead apikey <key>",
-                        suggestedCommand = "/levelhead apikey ",
+                        command = APIKEY_COMMAND,
+                        suggestedCommand = APIKEY_SUGGESTION,
                         suffix = "${ChatColor.YELLOW} to try again."
                     )
                     sendMessage(msg)
