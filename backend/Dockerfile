@@ -9,6 +9,9 @@ WORKDIR /app
 # Copy source code (node_modules already present from base image)
 COPY . .
 
+# Install dependencies (base image may be missing some packages)
+RUN npm install
+
 # Build the application (esbuild creates self-contained bundle)
 RUN npm run bundle
 
