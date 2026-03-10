@@ -7,6 +7,11 @@ import { extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely } fro
 
 const router = Router();
 
+function computeResponseEtag(baseEtag: string | null, nicked: boolean): string | null {
+  if (!baseEtag) return null;
+  return `"player-v2-${nicked ? 'nicked' : 'valid'}-${baseEtag.replace(/^"|"$/g, '')}"`;
+}
+
 
 
 
@@ -26,8 +31,9 @@ router.get('/:identifier', enforcePublicRateLimit, async (req, res, next) => {
 
     const experience = extractBedwarsExperience(resolved.payload);
     const computedStars = experience === null ? null : computeBedwarsStar(experience);
-    if (resolved.etag) {
-      res.set('ETag', resolved.etag);
+    const responseEtag = computeResponseEtag(resolved.etag, resolved.nicked);
+    if (responseEtag) {
+      res.set('ETag', responseEtag);
     }
 
     if (resolved.lastModified) {
