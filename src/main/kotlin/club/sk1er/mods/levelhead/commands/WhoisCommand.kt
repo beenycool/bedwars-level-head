@@ -36,7 +36,7 @@ class WhoisCommand {
                 val resultMessage = WhoisService.lookupWhoisMessage(trimmedIdentifier)
                 sendMessage(resultMessage)
             } catch (ex: WhoisService.CommandException) {
-                sendMessage("${ChatColor.RED}${ex.message}")
+                sendMessage(ex.component ?: ChatComponentText("${ChatColor.RED}${ex.message}"))
             } catch (throwable: Throwable) {
                 Levelhead.logger.error("Failed to resolve stats for {}", identifier, throwable)
                 sendMessage("${ChatColor.RED}Unexpected error while fetching stats. Check logs for details.")
