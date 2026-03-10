@@ -1,8 +1,16 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { HttpError } from '../util/httpError';
-import { validateApiKey, isValidApiKeyFormat } from '../services/apiKeyManager';
+import { validateApiKey, isValidApiKeyFormat, type ApiKeyValidation } from '../services/apiKeyManager';
 import { MAX_TOKEN_LENGTH } from './authConstants';
 import { logger } from '../util/logger';
+
+declare global {
+  namespace Express {
+    interface Request {
+      apiKeyValidation?: ApiKeyValidation;
+    }
+  }
+}
 
 export function extractApiKey(req: Request): string | null {
   const header = req.get('authorization');
@@ -44,6 +52,7 @@ export const enforceApiKeyAuth: RequestHandler = async (req: Request, _res: Resp
       return;
     }
 
+    req.apiKeyValidation = validation;
     next();
   } catch (error) {
     logger.error({ err: error }, 'Error validating API key in middleware');
