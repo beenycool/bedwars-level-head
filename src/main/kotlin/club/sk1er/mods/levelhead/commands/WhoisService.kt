@@ -51,21 +51,20 @@ object WhoisService {
             }
             FetchResult.NotModified -> throw CommandException("No fresh data available for ${resolved.displayName ?: resolved.uuid}.")
             is FetchResult.TemporaryError -> throw CommandException("${gameMode.displayName} stats temporarily unavailable (${result.reason ?: "unknown"}).")
-            is FetchResult.PermanentError -> throw CommandException(
-                when (result.reason) {
-                    "MISSING_KEY" -> "Set your Hypixel API key with /levelhead apikey <key> to query players."
-                    "OFFLINE_MODE" -> "Mod is in offline mode."
-                    else -> "${gameMode.displayName} request failed (${result.reason ?: "unknown"})."
-                },
-                if (result.reason == "MISSING_KEY") {
-                    CommandUtils.buildInteractiveFeedback(
-                        messagePrefix = "${ChatColor.RED}Set your Hypixel API key with ",
-                        command = "/levelhead apikey <key>",
-                        suggestedCommand = "/levelhead apikey ",
-                        suffix = "${ChatColor.RED} to query players."
-                    )
-                } else null
-            )
+            is FetchResult.PermanentError -> {
+                val (errorMessage, interactiveFeedback) = when (result.reason) {
+                    "MISSING_KEY" -> "Set your Hypixel API key with /levelhead apikey <key> to query players." to
+                        CommandUtils.buildInteractiveFeedback(
+                            messagePrefix = "${ChatColor.RED}Set your Hypixel API key with ",
+                            command = "/levelhead apikey <key>",
+                            suggestedCommand = "/levelhead apikey ",
+                            suffix = "${ChatColor.RED} to query players."
+                        )
+                    "OFFLINE_MODE" -> "Mod is in offline mode." to null
+                    else -> "${gameMode.displayName} request failed (${result.reason ?: "unknown"})." to null
+                }
+                throw CommandException(errorMessage, interactiveFeedback)
+            }
         }
     }
 
