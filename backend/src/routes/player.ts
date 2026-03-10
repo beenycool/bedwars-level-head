@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import pLimit from 'p-limit';
 import { enforceRateLimit, enforceBatchRateLimit, getClientIpAddress } from '../middleware/rateLimit';
+import { enforceApiKeyAuth } from '../middleware/apiKeyAuth';
 import { resolvePlayer, ResolvedPlayer, warmupPlayerCache } from '../services/player';
 import { computeBedwarsStar } from '../util/bedwars';
 import { HttpError } from '../util/httpError';
@@ -14,7 +15,7 @@ const batchLimit = pLimit(6);
 
 const router = Router();
 
-router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
+router.get('/:identifier', enforceApiKeyAuth, enforceRateLimit, async (req, res, next) => {
   const { identifier } = req.params;
   const ifNoneMatch = req.header('if-none-match')?.trim();
   const ifModifiedSince = parseIfModifiedSince(req.header('if-modified-since'));
@@ -87,7 +88,7 @@ router.get('/:identifier', enforceRateLimit, async (req, res, next) => {
 
 const identifierPattern = /^(?:[0-9a-f]{32}|[a-zA-Z0-9_]{1,16})$/;
 
-router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
+router.post('/batch', enforceApiKeyAuth, enforceBatchRateLimit, async (req, res, next) => {
   res.locals.metricsRoute = '/api/player/batch';
   const uuidsValue = (req.body as { uuids?: unknown })?.uuids;
 
@@ -206,7 +207,7 @@ router.post('/batch', enforceBatchRateLimit, async (req, res, next) => {
 
 const uuidOnlyPattern = /^[0-9a-f]{32}$/i;
 
-router.post('/submit', enforceRateLimit, async (req, res, next) => {
+router.post('/submit', enforceApiKeyAuth, enforceRateLimit, async (req, res, next) => {
   res.locals.metricsRoute = '/api/player/submit';
   const body = req.body as { uuid?: unknown; data?: unknown; signature?: unknown } | undefined;
 
