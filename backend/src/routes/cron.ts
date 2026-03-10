@@ -34,14 +34,26 @@ router.get('/apikey-status', enforceCronRateLimit, enforceCronAuth, async (_req,
     const now = Date.now();
     const oneHour = 60 * 60 * 1000;
 
+    // ⚡ Bolt: Avoid O(N) memory allocation from Array.filter().length
     const summary = {
       total: keys.length,
-      valid: keys.filter((k) => k.validationStatus === 'valid').length,
-      invalid: keys.filter((k) => k.validationStatus === 'invalid').length,
-      pending: keys.filter((k) => k.validationStatus === 'pending').length,
-      unknown: keys.filter((k) => k.validationStatus === 'unknown').length,
-      stale: keys.filter((k) => k.lastValidatedAt && now - k.lastValidatedAt > oneHour).length,
+      valid: 0,
+      invalid: 0,
+      pending: 0,
+      unknown: 0,
+      stale: 0,
     };
+
+    for (const k of keys) {
+      if (k.validationStatus === 'valid') summary.valid++;
+      else if (k.validationStatus === 'invalid') summary.invalid++;
+      else if (k.validationStatus === 'pending') summary.pending++;
+      else if (k.validationStatus === 'unknown') summary.unknown++;
+
+      if (k.lastValidatedAt && now - k.lastValidatedAt > oneHour) {
+        summary.stale++;
+      }
+    }
 
     res.json({
       success: true,
