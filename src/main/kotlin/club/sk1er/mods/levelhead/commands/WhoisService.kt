@@ -17,6 +17,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import net.minecraft.client.Minecraft
 import net.minecraft.entity.player.EntityPlayer
+import net.minecraft.util.IChatComponent
 import net.minecraft.util.EnumChatFormatting as ChatColor
 import okhttp3.HttpUrl
 import okhttp3.Request
@@ -50,13 +51,25 @@ object WhoisService {
             }
             FetchResult.NotModified -> throw CommandException("No fresh data available for ${resolved.displayName ?: resolved.uuid}.")
             is FetchResult.TemporaryError -> throw CommandException("${gameMode.displayName} stats temporarily unavailable (${result.reason ?: "unknown"}).")
-            is FetchResult.PermanentError -> throw CommandException(
-                when (result.reason) {
-                    "MISSING_KEY" -> "Set your Hypixel API key with /levelhead apikey <key> to query players."
-                    "OFFLINE_MODE" -> "Mod is in offline mode."
-                    else -> "${gameMode.displayName} request failed (${result.reason ?: "unknown"})."
+            is FetchResult.PermanentError -> {
+                if (result.reason == "MISSING_KEY") {
+                    throw CommandException(
+                        "Set your Hypixel API key with /levelhead apikey <key> to query players.",
+                        CommandUtils.buildInteractiveFeedback(
+                            messagePrefix = "${ChatColor.RED}Set your Hypixel API key with ",
+                            command = "/levelhead apikey <key>",
+                            suggestedCommand = "/levelhead apikey ",
+                            suffix = "${ChatColor.RED} to query players."
+                        )
+                    )
                 }
-            )
+                throw CommandException(
+                    when (result.reason) {
+                        "OFFLINE_MODE" -> "Mod is in offline mode."
+                        else -> "${gameMode.displayName} request failed (${result.reason ?: "unknown"})."
+                    }
+                )
+            }
         }
     }
 
@@ -182,7 +195,7 @@ object WhoisService {
 
     data class ResolvedIdentifier(val uuid: UUID, val displayName: String?)
 
-    class CommandException(message: String) : Exception(message)
+    class CommandException(message: String, val component: IChatComponent? = null) : Exception(message)
 
     private fun JsonObject.booleanValue(key: String): Boolean? {
         val element = get(key) ?: return null
