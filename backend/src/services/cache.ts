@@ -193,6 +193,12 @@ const initialization = (async () => {
     );
     await pool.query('CREATE INDEX IF NOT EXISTS idx_hypixel_calls_time ON hypixel_api_calls (called_at)');
     await pool.query('CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits (window_start)');
+    await pool.query(
+      `CREATE TABLE IF NOT EXISTS system_kv (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )`,
+    );
   } else {
     await pool.query(
       `IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[hypixel_api_calls]') AND type in (N'U'))
@@ -204,9 +210,16 @@ const initialization = (async () => {
     );
     await pool.query("IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_hypixel_calls_time') CREATE INDEX idx_hypixel_calls_time ON hypixel_api_calls (called_at)");
     await pool.query("IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_rate_limits_window') CREATE INDEX idx_rate_limits_window ON rate_limits (window_start)");
+    await pool.query(
+      `IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[system_kv]') AND type in (N'U'))
+       CREATE TABLE system_kv (
+         [key] NVARCHAR(128) PRIMARY KEY,
+         [value] NVARCHAR(MAX) NOT NULL
+       )`,
+    );
   }
 
-  logger.info('[cache] hypixel_api_calls table is ready');
+  logger.info('[cache] hypixel_api_calls and system_kv tables are ready');
 })();
 
 export async function ensureInitialized(): Promise<void> {

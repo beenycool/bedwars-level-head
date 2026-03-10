@@ -289,6 +289,9 @@ object Levelhead {
     }
 
     internal fun onRateLimiterBlocked(metrics: RateLimiterMetrics) {
+        if (metrics.serverCooldown != null && metrics.remaining > 0) {
+            return
+        }
         if (rateLimiterNotified.compareAndSet(false, true)) {
             val resetText = formatCooldownDuration(metrics.resetIn)
             sendChat(

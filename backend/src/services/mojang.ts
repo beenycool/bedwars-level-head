@@ -1,5 +1,6 @@
 import axios from 'axios';
 import https from 'node:https';
+import { LRUCache } from 'lru-cache';
 import CacheableLookup from 'cacheable-lookup';
 import { HttpError } from '../util/httpError';
 import { OUTBOUND_USER_AGENT } from '../config';
@@ -24,6 +25,15 @@ const mojangClient = axios.create({
   validateStatus: (status) => status >= 200 && status < 500,
 });
 
+interface MojangCacheEntry {
+  profile: MojangProfileResponse | null;
+}
+
+const mojangCache = new LRUCache<string, MojangCacheEntry>({
+  max: 5000,
+  ttl: 10 * 60 * 1000, // 10 minutes
+});
+
 function normalizeRetryAfter(value: unknown): string | undefined {
   if (Array.isArray(value)) {
     return value.find((entry) => typeof entry === 'string');
@@ -38,6 +48,12 @@ export interface MojangProfileResponse {
 }
 
 export async function lookupProfileByUsername(username: string): Promise<MojangProfileResponse | null> {
+  const cacheKey = username.toLowerCase();
+  const cached = mojangCache.get(cacheKey);
+  if (cached !== undefined) {
+    return cached.profile;
+  }
+
   try {
     const encodedUsername = encodeURIComponent(username);
     const response = await mojangClient.get<MojangProfileResponse>(
@@ -45,10 +61,12 @@ export async function lookupProfileByUsername(username: string): Promise<MojangP
     );
 
     if (response.status === 200 && response.data && response.data.id) {
+      mojangCache.set(cacheKey, { profile: response.data });
       return response.data;
     }
 
     if (response.status === 204 || response.status === 404) {
+      mojangCache.set(cacheKey, { profile: null });
       return null;
     }
 

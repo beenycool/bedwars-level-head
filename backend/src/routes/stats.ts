@@ -1547,36 +1547,48 @@ router.get('/', async (req, res, next) => {
         return sorted[lower] * (1 - weight) + sorted[upper] * weight;
     }
 
-      // 1. Prepare Cache + traffic data
-      const cacheHits = data.filter((d) => d.cacheHit).length;
-      const cacheMisses = data.length - cacheHits;
-
-      // 2. Prepare star data (group by range)
+      // 1. Prepare metrics in a single pass to avoid O(N) intermediate array allocations
+      const totalLookups = data.length;
+      let cacheHits = 0;
+      let successCount = 0;
+      const latencyValues = [];
       const starRanges = { Unknown: 0, '0-10': 0, '11-50': 0, '51-100': 0, '100+': 0 };
+      const statusBuckets = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, Other: 0 };
 
-      data.forEach((d) => {
-        if (d.stars === null || d.stars === undefined || d.stars < 0) {
-          starRanges.Unknown++;
-          return;
+      for (let i = 0; i < totalLookups; i++) {
+        const d = data[i];
+
+        if (d.cacheHit) cacheHits++;
+        if (d.responseStatus >= 200 && d.responseStatus < 400) successCount++;
+        if (typeof d.latencyMs === 'number' && d.latencyMs >= 0) {
+          latencyValues.push(d.latencyMs);
         }
 
-        const s = d.stars;
-        if (s <= 10) starRanges['0-10']++;
-        else if (s <= 50) starRanges['11-50']++;
-        else if (s <= 100) starRanges['51-100']++;
-        else starRanges['100+']++;
-      });
+        // Stars
+        if (d.stars === null || d.stars === undefined || d.stars < 0) {
+          starRanges.Unknown++;
+        } else {
+          const s = d.stars;
+          if (s <= 10) starRanges['0-10']++;
+          else if (s <= 50) starRanges['11-50']++;
+          else if (s <= 100) starRanges['51-100']++;
+          else starRanges['100+']++;
+        }
+
+        // Status buckets
+        if (d.responseStatus >= 200 && d.responseStatus < 300) statusBuckets['2xx']++;
+        else if (d.responseStatus >= 300 && d.responseStatus < 400) statusBuckets['3xx']++;
+        else if (d.responseStatus >= 400 && d.responseStatus < 500) statusBuckets['4xx']++;
+        else if (d.responseStatus >= 500 && d.responseStatus < 600) statusBuckets['5xx']++;
+        else statusBuckets.Other++;
+      }
+
+      const cacheMisses = totalLookups - cacheHits;
 
       // 3. Build headline metrics from recent activity
-      const totalLookups = data.length;
-      const successCount = data.filter((d) => d.responseStatus >= 200 && d.responseStatus < 400).length;
       const successRate = totalLookups === 0 ? 0 : Math.round((successCount / totalLookups) * 1000) / 10;
       const cacheHitRate = totalLookups === 0 ? 0 : Math.round((cacheHits / totalLookups) * 1000) / 10;
 
-      const latencyValues = data
-        .map((d) => (typeof d.latencyMs === 'number' && d.latencyMs >= 0 ? d.latencyMs : null))
-        .filter((v) => v !== null);
-      
       // Calculate all latency metrics
       const latencyMetrics = {
         p50: percentile(latencyValues, 50),
@@ -1591,15 +1603,6 @@ router.get('/', async (req, res, next) => {
       
       const latencyP95 = latencyMetrics.p95;
       const latencyAvg = latencyMetrics.avg;
-
-      const statusBuckets = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, Other: 0 };
-      data.forEach((d) => {
-        if (d.responseStatus >= 200 && d.responseStatus < 300) statusBuckets['2xx']++;
-        else if (d.responseStatus >= 300 && d.responseStatus < 400) statusBuckets['3xx']++;
-        else if (d.responseStatus >= 400 && d.responseStatus < 500) statusBuckets['4xx']++;
-        else if (d.responseStatus >= 500 && d.responseStatus < 600) statusBuckets['5xx']++;
-        else statusBuckets.Other++;
-      });
 
       const sortedByRequestTime = [...data].sort(
         (a, b) => new Date(a.requestedAt).getTime() - new Date(b.requestedAt).getTime(),
@@ -2715,16 +2718,23 @@ router.get('/', async (req, res, next) => {
         const { chartData, topPlayers, sysStats, redisStats, pageData } = json;
         const activeFilters = json.filters || filters;
         
-        // Re-calculate derived metrics
-        const cacheHitsCount = chartData.filter((d) => d.cacheHit).length;
+        // Re-calculate derived metrics in a single pass
         const totalReqs = chartData.length;
+        let cacheHitsCount = 0;
+        let succCount = 0;
+        const latVals = [];
+
+        for (let i = 0; i < totalReqs; i++) {
+          const d = chartData[i];
+          if (d.cacheHit) cacheHitsCount++;
+          if (d.responseStatus >= 200 && d.responseStatus < 400) succCount++;
+          if (typeof d.latencyMs === 'number' && d.latencyMs >= 0) {
+            latVals.push(d.latencyMs);
+          }
+        }
+
         const newCacheHitRate = totalReqs === 0 ? 0 : (cacheHitsCount / totalReqs) * 100;
-        const succCount = chartData.filter((d) => d.responseStatus >= 200 && d.responseStatus < 400).length;
         const newSuccRate = totalReqs === 0 ? 0 : (succCount / totalReqs) * 100;
-        
-        const latVals = chartData
-          .map((d) => (typeof d.latencyMs === 'number' && d.latencyMs >= 0 ? d.latencyMs : null))
-          .filter((v) => v !== null);
         
         // Update global latencyMetrics object
         latencyMetrics.p50 = percentile(latVals, 50);

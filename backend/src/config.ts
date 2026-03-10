@@ -436,4 +436,4 @@ export const SUBMISSION_TTL_MS = Math.max(1000, parseIntEnv('SUBMISSION_TTL_MS',
 // Stale-While-Revalidate (SWR) caching configuration
 // SWR allows serving stale data immediately while refreshing in the background
 export const SWR_ENABLED = parseBooleanEnv('SWR_ENABLED', true);
-export const SWR_STALE_TTL_MS = Math.max(0, parseIntEnv('SWR_STALE_TTL_MS', 5 * 60 * 1000));
+export const SWR_STALE_TTL_MS = Math.max(0, parseIntEnv('SWR_STALE_TTL_MS', 10 * 60 * 1000));

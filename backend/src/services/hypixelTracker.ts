@@ -31,6 +31,60 @@ let flushInterval: NodeJS.Timeout | null = null;
 // Cache the last generated INSERT query to avoid O(N) string generation
 let cachedQuery: { count: number; type: DatabaseType; sql: string } | null = null;
 
+// Tracks the last time a Redis write failed or was skipped due to unavailability.
+// This allows the read path to fall back to the SQL source of truth if Redis might be missing data.
+let inMemoryLastRedisFailureAt = 0;
+let hasLoadedWatermark = false;
+
+async function updateRedisFailureWatermark(): Promise<void> {
+  const now = Date.now();
+  if (now - inMemoryLastRedisFailureAt < 1000) {
+    // Throttle DB updates to once per second to avoid DB spam during a prolonged Redis outage
+    return;
+  }
+  inMemoryLastRedisFailureAt = now;
+  try {
+    await ensureInitialized();
+    if (pool.type === DatabaseType.POSTGRESQL) {
+      await pool.query(
+        `INSERT INTO system_kv (key, value) VALUES ($1, $2)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        ['lastRedisFailureAt', String(now)]
+      );
+    } else {
+      await pool.query(
+        `MERGE system_kv AS target
+         USING (SELECT $1 AS key, $2 AS value) AS source
+         ON (target.key = source.key)
+         WHEN MATCHED THEN
+           UPDATE SET value = source.value
+         WHEN NOT MATCHED THEN
+           INSERT (key, value) VALUES (source.key, source.value);`,
+        ['lastRedisFailureAt', String(now)]
+      );
+    }
+  } catch (error) {
+    logger.error('[hypixelTracker] Failed to persist Redis failure watermark', error);
+  }
+}
+
+async function loadWatermarkIfNeeded(): Promise<void> {
+  if (hasLoadedWatermark) return;
+  try {
+    await ensureInitialized();
+    const res = await pool.query<{ value: string }>('SELECT value FROM system_kv WHERE key = $1', ['lastRedisFailureAt']);
+    if (res.rows.length > 0) {
+      const parsed = Number(res.rows[0].value);
+      if (Number.isFinite(parsed) && parsed > inMemoryLastRedisFailureAt) {
+        inMemoryLastRedisFailureAt = parsed;
+      }
+    }
+    hasLoadedWatermark = true;
+  } catch (error) {
+    logger.error('[hypixelTracker] Failed to load Redis failure watermark', error);
+  }
+}
+
 function buildRedisRollingMember(uuid: string, calledAt: number): string {
   const nonce = Math.random().toString(36).slice(2);
   return `${uuid}:${calledAt}:${nonce}`;
@@ -38,11 +92,13 @@ function buildRedisRollingMember(uuid: string, calledAt: number): string {
 
 async function recordHypixelCallInRedis(uuid: string, calledAt: number): Promise<void> {
   if (!isRedisAvailable()) {
+    void updateRedisFailureWatermark();
     return;
   }
 
   const client = getRedisClient();
   if (!client) {
+    void updateRedisFailureWatermark();
     return;
   }
 
@@ -57,6 +113,7 @@ async function recordHypixelCallInRedis(uuid: string, calledAt: number): Promise
     pipeline.expire(REDIS_ROLLING_KEY, REDIS_ROLLING_TTL_SECONDS);
     await pipeline.exec();
   } catch (error) {
+    void updateRedisFailureWatermark();
     logger.warn('[hypixelTracker] Failed to update Redis rolling counter', error);
   }
 }
@@ -187,9 +244,13 @@ export async function getHypixelCallCount(
   windowMs: number = HYPIXEL_API_CALL_WINDOW_MS,
   now: number = Date.now(),
 ): Promise<number> {
+  await loadWatermarkIfNeeded();
+
   if (isRedisAvailable()) {
     const client = getRedisClient();
-    if (client) {
+    // Only use the Redis fast-path if we haven't skipped/failed any writes during the requested window.
+    // If Redis was down recently, it might be missing data, so we must fall back to the SQL source of truth.
+    if (client && (now - inMemoryLastRedisFailureAt > windowMs)) {
       const cutoff = now - windowMs;
       try {
         const count = await client.zcount(REDIS_ROLLING_KEY, cutoff, '+inf');
@@ -219,7 +280,13 @@ export async function getHypixelCallCount(
     [cutoff],
   );
 
-  const bufferCount = snapshotBuffer.filter((item) => item.calledAt >= cutoff).length;
+  // ⚡ Bolt: Avoid O(N) memory allocation from Array.filter().length
+  let bufferCount = 0;
+  for (let i = 0; i < snapshotBuffer.length; i++) {
+    if (snapshotBuffer[i].calledAt >= cutoff) {
+      bufferCount++;
+    }
+  }
 
   // Count items that were pending in memory at the time of the snapshot.
   // We use snapshotOffset because anything before that offset is presumed to be in the DB.
