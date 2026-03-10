@@ -63,7 +63,7 @@ export function parseMssqlConfig(connString: string): mssql.config {
       });
 
       if (parsedConfig.server) {
-        if (parsedConfig.server.endsWith('.database.windows.net') && parsedConfig.user && !parsedConfig.user.includes('@')) {
+        if (parsedConfig.server.includes('.database.windows.net') && parsedConfig.user && !parsedConfig.user.includes('@')) {
           parsedConfig.user = `${parsedConfig.user}@${parsedConfig.server.split('.')[0]}`;
         }
         return parsedConfig as mssql.config;
@@ -189,7 +189,7 @@ export function parseMssqlConfig(connString: string): mssql.config {
       config.server = config.server.substring(4);
   }
 
-  if (config.server.endsWith('.database.windows.net') && config.user && !config.user.includes('@')) {
+  if (config.server.includes('.database.windows.net') && config.user && !config.user.includes('@')) {
     config.user = `${config.user}@${config.server.split('.')[0]}`;
   }
 

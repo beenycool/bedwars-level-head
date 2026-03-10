@@ -12,7 +12,7 @@ import {
   SWR_STALE_TTL_MS,
 } from '../config';
 import { CacheEntry, CacheMetadata, CacheSource, ensureInitialized, markDbAccess, shouldReadFromDb } from './cache';
-import { DatabaseType } from './database/adapter';
+import { DatabaseType } from './database/db';
 import { recordCacheHit, recordCacheMiss, recordCacheTierHit, recordCacheTierMiss, recordCacheSourceHit, recordCacheRefresh } from './metrics';
 import { fetchHypixelPlayer, HypixelFetchOptions, MinimalPlayerStats, extractMinimalStats } from './hypixel';
 import { getRedisClient, isRedisAvailable } from './redis';
