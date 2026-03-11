@@ -1,9 +1,15 @@
 import { Router } from 'express';
+import pLimit from 'p-limit';
 import { enforcePublicRateLimit } from '../middleware/rateLimitPublic';
-import { resolvePlayer } from '../services/player';
+import { resolvePlayer, ResolvedPlayer, warmupPlayerCache } from '../services/player';
 import { computeBedwarsStar } from '../util/bedwars';
-
+import { HttpError } from '../util/httpError';
 import { extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely } from '../util/requestUtils';
+import { getCircuitBreakerState } from '../services/hypixel';
+import { IDENTIFIER_MAX_LENGTH } from '../util/validationConstants';
+
+const batchLimit = pLimit(6);
+const identifierPattern = /^(?:[0-9a-f]{32}|[a-zA-Z0-9_]{1,16})$/;
 
 const router = Router();
 
@@ -72,6 +78,125 @@ router.get('/:identifier', enforcePublicRateLimit, async (req, res, next) => {
       ...resolved.payload,
       nicked: resolved.nicked,
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post('/batch', enforcePublicRateLimit, async (req, res, next) => {
+  res.locals.metricsRoute = '/api/public/player/batch';
+  const uuidsValue = (req.body as { uuids?: unknown })?.uuids;
+
+  if (!Array.isArray(uuidsValue)) {
+    next(new HttpError(400, 'BAD_REQUEST', 'Expected body.uuids to be an array.'));
+    return;
+  }
+
+  if (uuidsValue.length > 20) {
+    next(new HttpError(400, 'BAD_REQUEST', 'Provide up to 20 UUIDs per batch request.'));
+    return;
+  }
+
+  const uniqueUuidsSet = new Set<string>();
+  for (let i = 0; i < uuidsValue.length; i++) {
+    const value = uuidsValue[i];
+    if (typeof value === 'string' && value.length <= IDENTIFIER_MAX_LENGTH) {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) {
+        uniqueUuidsSet.add(trimmed);
+      }
+    }
+  }
+
+  const uniqueUuids = Array.from(uniqueUuidsSet);
+  if (uniqueUuids.length === 0) {
+    res.json({ success: true, data: {} });
+    return;
+  }
+
+  const invalidIdentifiers = uniqueUuids.filter((identifier) => !identifierPattern.test(identifier));
+  if (invalidIdentifiers.length > 0) {
+    next(
+      new HttpError(
+        400,
+        'INVALID_IDENTIFIER',
+        'All identifiers must be valid Minecraft usernames (<=16 chars) or undashed UUIDs.',
+      ),
+    );
+    return;
+  }
+
+  try {
+    await warmupPlayerCache(uniqueUuids);
+
+    const results = await Promise.all(
+      uniqueUuids.map((identifier) => batchLimit(async () => {
+        try {
+          const startedAt = process.hrtime.bigint();
+          const resolved = await resolvePlayer(identifier);
+          const experience = extractBedwarsExperience(resolved.payload);
+          const stars = experience === null ? null : computeBedwarsStar(experience);
+
+          void recordQuerySafely({
+            identifier,
+            normalizedIdentifier: resolved.lookupValue,
+            lookupType: resolved.lookupType,
+            resolvedUuid: resolved.uuid,
+            resolvedUsername: resolved.username,
+            stars,
+            nicked: resolved.nicked,
+            cacheSource: resolved.source,
+            cacheHit: resolved.source === 'cache',
+            revalidated: resolved.revalidated,
+            installId: null,
+            responseStatus: 200,
+            latencyMs: Number(process.hrtime.bigint() - startedAt) / 1_000_000,
+          });
+
+          return {
+            identifier,
+            payload: {
+              ...resolved.payload,
+              nicked: resolved.nicked,
+              ...(resolved.isStale ? { stale: true } : {}),
+            },
+            source: resolved.source,
+          };
+        } catch (error) {
+          if (error instanceof HttpError) {
+            if (error.status >= 500) {
+              throw error;
+            }
+            return null;
+          }
+          throw error;
+        }
+      })),
+    );
+
+    const payloadMap: Record<string, ResolvedPlayer['payload'] & { nicked: boolean; stale?: true }> = {};
+    let cacheHits = 0;
+    let total = 0;
+    results.forEach((result) => {
+      if (result) {
+        payloadMap[result.identifier] = result.payload;
+        total++;
+        if ((result as any).source === 'cache') {
+          cacheHits++;
+        }
+      }
+    });
+
+    if (total > 0) {
+      res.set('X-Cache', cacheHits === total ? 'HIT' : cacheHits > 0 ? 'PARTIAL' : 'MISS');
+    }
+
+    res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
+
+    const circuitBreaker = getCircuitBreakerState();
+    const isCircuitOpen = circuitBreaker.state === 'open';
+
+    res.json({ success: true, data: payloadMap, ...(isCircuitOpen ? { degradedMode: true } : {}) });
   } catch (error) {
     next(error);
   }

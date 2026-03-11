@@ -219,9 +219,11 @@ object ProxyClient {
             add("uuids", uuidArray)
         }
 
+        val isPublic = LevelheadConfig.proxyAuthToken.isBlank()
         val url = HttpUrl.parse(LevelheadConfig.resolveDbUrl())
             ?.newBuilder()
             ?.addPathSegment("api")
+            ?.apply { if (isPublic) addPathSegment("public") }
             ?.addPathSegment("player")
             ?.addPathSegment("batch")
             ?.build()

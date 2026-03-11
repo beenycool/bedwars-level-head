@@ -13,8 +13,6 @@ sealed class GameStats {
     abstract val etag: String?
     abstract val nicked: Boolean
 
-    @Transient var cachedTabString: String? = null
-    
     /**
      * Check if the cached stats have expired based on the provided TTL.
      */

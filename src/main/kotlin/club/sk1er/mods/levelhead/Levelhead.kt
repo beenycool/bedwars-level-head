@@ -22,6 +22,7 @@ import club.sk1er.mods.levelhead.core.StatsRepository
 import club.sk1er.mods.levelhead.display.LevelheadDisplay
 import club.sk1er.mods.levelhead.duels.DuelsModeDetector
 import club.sk1er.mods.levelhead.render.AboveHeadRender
+import club.sk1er.mods.levelhead.render.TabRender
 import club.sk1er.mods.levelhead.skywars.SkyWarsModeDetector
 import com.google.gson.Gson
 import com.google.gson.JsonParser
@@ -286,6 +287,7 @@ object Levelhead {
         statsRepository.clear()
         statsRepository.resetMetrics()
         requestCoordinator.reset()
+        TabRender.clearTextCache()
     }
 
     internal fun onRateLimiterBlocked(metrics: RateLimiterMetrics) {
