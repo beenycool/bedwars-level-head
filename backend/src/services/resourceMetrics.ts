@@ -1,5 +1,5 @@
 import { pool } from './cache';
-import { DatabaseType } from './database/adapter';
+import { DatabaseType } from './database/db';
 import os from 'os';
 import { logger } from '../util/logger';
 
