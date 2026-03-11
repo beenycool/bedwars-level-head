@@ -1,6 +1,6 @@
 import { pool } from './cache';
 import { sql } from 'kysely';
-import { DatabaseType } from './database/db';
+import { DatabaseType, dbType } from './database/db';
 import os from 'os';
 import { logger } from '../util/logger';
 
@@ -252,7 +252,7 @@ async function pruneOldData(): Promise<void> {
     const cutoff = new Date();
     cutoff.setUTCDate(cutoff.getUTCDate() - RETENTION_DAYS);
 
-    if (pool.type === DatabaseType.POSTGRESQL) {
+    if (dbType === DatabaseType.POSTGRESQL) {
       const result = await sql`DELETE FROM resource_metrics WHERE bucket_start < ${cutoff}`.execute(pool);
       if ((result as any).numDeletedRows > 0) {
         logger.info(`[resourceMetrics] pruned ${(result as any).numDeletedRows} old records`);
@@ -290,7 +290,7 @@ function takeSample(): void {
 
 export async function initializeResourceMetrics(): Promise<void> {
   try {
-    if (pool.type === DatabaseType.POSTGRESQL) {
+    if (dbType === DatabaseType.POSTGRESQL) {
       // Backward compatibility: rename hour_start to bucket_start if it exists
       try {
         await sql`SELECT 1 FROM information_schema.columns WHERE table_name='resource_metrics' AND column_name='hour_start'`.execute(pool).then(async (res: any) => {
