@@ -27,3 +27,7 @@
 ## 2025-05-16 - LRU Cache Hit Defeated by Async Abstraction
 **Learning:** `resolvePlayer` wrapped cache checks (`getMemoized`) inside an inner `async executor` function and registered that promise in an `inFlightRequests` Map. While this successfully deduplicated in-flight fetches, it forced immediate, synchronous `LRUCache` hits to undergo Promise allocation, Map insertion, and deferred microtask resolution, nullifying the CPU advantages of the fast path.
 **Action:** When working with synchronous in-memory caches (like `LRUCache`), always evaluate the fast-path check as high up in the call stack as possible, *before* allocating closure states, tracking promises, or entering an `async` execution context.
+
+## 2025-05-16 - Array Methods in Recursive Tree Serialization
+**Learning:** The `canonicalize` utility (used heavily for payload signature verification) was using `Object.entries().sort().map().join()` to serialize deeply nested JSON objects. This resulted in creating a massive number of intermediate arrays (one for the entries, one for each element mapped, and one for the overall string array to join) at every level of the tree. When processing deep, extensive Hypixel stat payloads, this caused severe V8 Garbage Collection pressure.
+**Action:** In Node.js backend services, avoid using `.map().join()` or `Object.entries()` inside highly recursive payload traversal or serialization functions. Replace them with traditional memory-efficient `for` loops and direct string concatenation to prevent exponential intermediate object allocations.
