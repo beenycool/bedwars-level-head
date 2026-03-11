@@ -25,6 +25,7 @@ class DisplayManager(val file: File) {
     companion object {
         private const val LAST_SEEN_UPDATE_INTERVAL_MS = 5000L
         private const val CACHE_CHECK_INTERVAL_MS = 10000L
+        private const val TAB_FETCH_INTERVAL_MS = 2000L
     }
 
     var config = MasterConfig()
@@ -32,6 +33,7 @@ class DisplayManager(val file: File) {
     private var wasInGame: Boolean = false
     private var lastCacheCheckAt: Long = 0L
     private var lastSeenUpdateAt: Long = 0L
+    private var lastTabFetchAt: Long = 0L
     private val reusableUuidSet = HashSet<UUID>()
 
     init {
@@ -201,6 +203,12 @@ class DisplayManager(val file: File) {
             lastCacheCheckAt = now
         }
 
+        // Periodically fetch stats for tab list players that aren't in the world entity list.
+        if (LevelheadConfig.showTabStats && now - lastTabFetchAt > TAB_FETCH_INTERVAL_MS) {
+            requestTabListPlayers()
+            lastTabFetchAt = now
+        }
+
         if (pendingRequests.isEmpty()) return
         val batch = ArrayList<Levelhead.LevelheadRequest>()
         synchronized(pendingRequests) {
@@ -281,6 +289,27 @@ class DisplayManager(val file: File) {
             displays.forEach { display ->
                 enqueueRequest(playerInfo.uniqueID.trimmed, display, display.config.type, Levelhead.RequestReason.REFRESH_VISIBLE_DISPLAYS)
             }
+        }
+    }
+
+    /**
+     * Request stats for players visible in the tab list but not yet cached.
+     * Tab list players may not be world entities, so requestAllDisplays() misses them.
+     */
+    @OptIn(ExperimentalStdlibApi::class)
+    private fun requestTabListPlayers() {
+        if (!config.enabled) return
+        if (!ModeManager.shouldRequestData()) return
+        val activeMode = ModeManager.getActiveGameMode() ?: return
+        val display = primaryDisplay() ?: return
+        if (!display.config.enabled) return
+
+        val netHandler = Minecraft.getMinecraft().thePlayer?.sendQueue ?: return
+        for (info in netHandler.playerInfoMap) {
+            val uuid = info.gameProfile.id ?: continue
+            if (uuid.version() == 2) continue
+            if (Levelhead.getCachedStats(uuid, activeMode) != null) continue
+            enqueueRequest(uuid.trimmed, display, activeMode.typeId, Levelhead.RequestReason.TAB_LIST)
         }
     }
 
