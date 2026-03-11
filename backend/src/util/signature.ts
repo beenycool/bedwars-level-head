@@ -30,13 +30,13 @@ export function canonicalize(value: unknown): string {
     }
 
     if (typeof value === 'object') {
-        const keys = Object.keys(value as Record<string, unknown>).sort();
+        const obj = value as Record<string, unknown>;
+        const keys = Object.keys(obj).sort();
         let str = '{';
         for (let i = 0; i < keys.length; i++) {
             if (i > 0) str += ',';
             const key = keys[i];
-            const val = (value as Record<string, unknown>)[key];
-            str += JSON.stringify(key) + ':' + canonicalize(val);
+            str += JSON.stringify(key) + ':' + canonicalize(obj[key]);
         }
         str += '}';
         return str;
