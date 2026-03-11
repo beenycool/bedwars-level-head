@@ -60,7 +60,13 @@ object WhoisService {
                             suggestedCommand = "/levelhead apikey ",
                             suffix = "${ChatColor.RED} to query players."
                         )
-                    "OFFLINE_MODE" -> "Mod is in offline mode." to null
+                    "OFFLINE_MODE" -> "Mod is in offline mode. Use /levelhead gui to change the backend." to
+                        CommandUtils.buildInteractiveFeedback(
+                            messagePrefix = "${ChatColor.RED}Mod is in offline mode. Use ",
+                            command = "/levelhead gui",
+                            run = true,
+                            suffix = "${ChatColor.RED} to change the backend."
+                        )
                     else -> "${gameMode.displayName} request failed (${result.reason ?: "unknown"})." to null
                 }
                 throw CommandException(errorMessage, interactiveFeedback)
