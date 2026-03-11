@@ -29,7 +29,7 @@ export function canonicalize(value: unknown): string {
         return str;
     }
 
-    if (value !== null && typeof value === 'object') {
+    if (typeof value === 'object') {
         const keys = Object.keys(value as Record<string, unknown>).sort();
         let str = '{';
         for (let i = 0; i < keys.length; i++) {
