@@ -1,4 +1,5 @@
 import { pool, ensureInitialized } from './cache';
+import { sql } from 'kysely';
 import { DatabaseType } from './database/db';
 import { HYPIXEL_API_CALL_WINDOW_MS } from '../config';
 import { logger } from '../util/logger';
@@ -46,22 +47,17 @@ async function updateRedisFailureWatermark(): Promise<void> {
   try {
     await ensureInitialized();
     if (pool.type === DatabaseType.POSTGRESQL) {
-      await pool.query(
-        `INSERT INTO system_kv (key, value) VALUES ($1, $2)
-         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
-        ['lastRedisFailureAt', String(now)]
-      );
+      await pool.insertInto('system_kv' as any).values({ key: 'lastRedisFailureAt', value: String(now) })
+        .onConflict((oc: any) => oc.column('key').doUpdateSet({ value: String(now) }))
+        .execute();
     } else {
-      await pool.query(
-        `MERGE system_kv AS target
-         USING (SELECT $1 AS key, $2 AS value) AS source
+      await sql`MERGE system_kv AS target
+         USING (SELECT 'lastRedisFailureAt' AS key, ${String(now)} AS value) AS source
          ON (target.key = source.key)
          WHEN MATCHED THEN
            UPDATE SET value = source.value
          WHEN NOT MATCHED THEN
-           INSERT (key, value) VALUES (source.key, source.value);`,
-        ['lastRedisFailureAt', String(now)]
-      );
+           INSERT (key, value) VALUES (source.key, source.value);`.execute(pool);
     }
   } catch (error) {
     logger.error('[hypixelTracker] Failed to persist Redis failure watermark', error);
@@ -72,7 +68,7 @@ async function loadWatermarkIfNeeded(): Promise<void> {
   if (hasLoadedWatermark) return;
   try {
     await ensureInitialized();
-    const res = await pool.query<{ value: string }>('SELECT value FROM system_kv WHERE key = $1', ['lastRedisFailureAt']);
+    const res = await sql<any>`SELECT value FROM system_kv WHERE key = 'lastRedisFailureAt'`.execute(pool);
     if (res.rows.length > 0) {
       const parsed = Number(res.rows[0].value);
       if (Number.isFinite(parsed) && parsed > inMemoryLastRedisFailureAt) {
@@ -151,17 +147,9 @@ async function flushHypixelCallBuffer(): Promise<void> {
           params[i * PARAMS_PER_RECORD + 1] = chunk[i].uuid;
         }
 
-        let sql: string;
-        if (cachedQuery && cachedQuery.count === chunk.length && cachedQuery.type === pool.type) {
-          sql = cachedQuery.sql;
-        } else {
-          const placeholders = chunk.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ');
-          sql = `INSERT INTO hypixel_api_calls (called_at, uuid) VALUES ${placeholders}`;
-          cachedQuery = { count: chunk.length, type: pool.type, sql };
-        }
-
         try {
-          await pool.query(sql, params);
+          const values = chunk.map(item => ({ called_at: item.timestamp, uuid: item.uuid }));
+          await pool.insertInto('hypixel_api_calls' as any).values(values).execute();
           // Success: advance offset. Items before offset are in DB; items at/after offset are pending.
           inflightOffset += chunk.length;
         } catch (error) {
@@ -271,14 +259,10 @@ export async function getHypixelCallCount(
   const snapshotInflight = [...inflightBatch];
   const snapshotBuffer = [...hypixelCallBuffer];
 
-  const result = await pool.query<{ count: string | number }>(
-    `
-    SELECT COUNT(*) AS count
-    FROM hypixel_api_calls
-    WHERE called_at >= $1
-    `,
-    [cutoff],
-  );
+  const result = await pool.selectFrom('hypixel_api_calls' as any)
+    .select(pool.fn.countAll().as('count'))
+    .where('called_at', '>=', cutoff as any)
+    .executeTakeFirst() as any;
 
   // ⚡ Bolt: Avoid O(N) memory allocation from Array.filter().length
   let bufferCount = 0;
@@ -297,7 +281,7 @@ export async function getHypixelCallCount(
     }
   }
 
-  const rawValue = result.rows[0]?.count ?? '0';
+  const rawValue = result?.count ?? '0';
   const parsed = typeof rawValue === 'string' ? Number.parseInt(rawValue, 10) : Number(rawValue);
   const dbCount = Number.isFinite(parsed) ? parsed : 0;
 

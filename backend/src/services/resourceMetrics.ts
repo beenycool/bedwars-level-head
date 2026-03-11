@@ -1,4 +1,5 @@
 import { pool } from './cache';
+import { sql } from 'kysely';
 import { DatabaseType } from './database/db';
 import os from 'os';
 import { logger } from '../util/logger';
@@ -138,52 +139,31 @@ async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
   try {
     for (const aggregate of aggregates) {
       let existing;
-      if (pool.type === DatabaseType.POSTGRESQL) {
-        const res = await pool.query<{ sample_count: number, avg_rss_mb: number, max_rss_mb: number, min_rss_mb: number, p95_rss_mb: number, p99_rss_mb: number, avg_heap_mb: number, max_heap_mb: number, min_heap_mb: number, p95_heap_mb: number, p99_heap_mb: number, avg_cpu_percent: number, max_cpu_percent: number, min_cpu_percent: number, p95_cpu_percent: number, p99_cpu_percent: number }>(
-          'SELECT * FROM resource_metrics WHERE bucket_start = $1',
-          [aggregate.bucketStart]
-        );
-        existing = res.rows[0];
-      } else {
-        const res = await pool.query<any>(
-          'SELECT * FROM resource_metrics WHERE bucket_start = @p1',
-          [aggregate.bucketStart]
-        );
-        existing = res.rows[0];
-      }
+      existing = await pool.selectFrom('resource_metrics' as any)
+        .selectAll()
+        .where('bucket_start', '=', aggregate.bucketStart as any)
+        .executeTakeFirst();
 
       if (!existing) {
-        if (pool.type === DatabaseType.POSTGRESQL) {
-          await pool.query(
-            `INSERT INTO resource_metrics (
-              bucket_start, avg_rss_mb, max_rss_mb, min_rss_mb, p95_rss_mb, p99_rss_mb,
-              avg_heap_mb, max_heap_mb, min_heap_mb, p95_heap_mb, p99_heap_mb,
-              avg_cpu_percent, max_cpu_percent, min_cpu_percent, p95_cpu_percent, p99_cpu_percent,
-              sample_count
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
-            [
-              aggregate.bucketStart, aggregate.avgRssMB, aggregate.maxRssMB, aggregate.minRssMB, aggregate.p95RssMB, aggregate.p99RssMB,
-              aggregate.avgHeapMB, aggregate.maxHeapMB, aggregate.minHeapMB, aggregate.p95HeapMB, aggregate.p99HeapMB,
-              aggregate.avgCpuPercent, aggregate.maxCpuPercent, aggregate.minCpuPercent, aggregate.p95CpuPercent, aggregate.p99CpuPercent,
-              aggregate.sampleCount,
-            ]
-          );
-        } else {
-          await pool.query(
-            `INSERT INTO resource_metrics (
-              bucket_start, avg_rss_mb, max_rss_mb, min_rss_mb, p95_rss_mb, p99_rss_mb,
-              avg_heap_mb, max_heap_mb, min_heap_mb, p95_heap_mb, p99_heap_mb,
-              avg_cpu_percent, max_cpu_percent, min_cpu_percent, p95_cpu_percent, p99_cpu_percent,
-              sample_count
-            ) VALUES (@p1, @p2, @p3, @p4, @p5, @p6, @p7, @p8, @p9, @p10, @p11, @p12, @p13, @p14, @p15, @p16, @p17)`,
-            [
-              aggregate.bucketStart, aggregate.avgRssMB, aggregate.maxRssMB, aggregate.minRssMB, aggregate.p95RssMB, aggregate.p99RssMB,
-              aggregate.avgHeapMB, aggregate.maxHeapMB, aggregate.minHeapMB, aggregate.p95HeapMB, aggregate.p99HeapMB,
-              aggregate.avgCpuPercent, aggregate.maxCpuPercent, aggregate.minCpuPercent, aggregate.p95CpuPercent, aggregate.p99CpuPercent,
-              aggregate.sampleCount,
-            ]
-          );
-        }
+        await pool.insertInto('resource_metrics' as any).values({
+          bucket_start: aggregate.bucketStart,
+          avg_rss_mb: aggregate.avgRssMB,
+          max_rss_mb: aggregate.maxRssMB,
+          min_rss_mb: aggregate.minRssMB,
+          p95_rss_mb: aggregate.p95RssMB,
+          p99_rss_mb: aggregate.p99RssMB,
+          avg_heap_mb: aggregate.avgHeapMB,
+          max_heap_mb: aggregate.maxHeapMB,
+          min_heap_mb: aggregate.minHeapMB,
+          p95_heap_mb: aggregate.p95HeapMB,
+          p99_heap_mb: aggregate.p99HeapMB,
+          avg_cpu_percent: aggregate.avgCpuPercent,
+          max_cpu_percent: aggregate.maxCpuPercent,
+          min_cpu_percent: aggregate.minCpuPercent,
+          p95_cpu_percent: aggregate.p95CpuPercent,
+          p99_cpu_percent: aggregate.p99CpuPercent,
+          sample_count: aggregate.sampleCount
+        }).execute();
       } else {
         const existingSampleCount = existing.sample_count;
         const newTotalCount = existingSampleCount + aggregate.sampleCount;
@@ -209,51 +189,24 @@ async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
         const mergedP95CpuPercent = aggregate.p95CpuPercent;
         const mergedP99CpuPercent = aggregate.p99CpuPercent;
 
-        if (pool.type === DatabaseType.POSTGRESQL) {
-          await pool.query(
-            `UPDATE resource_metrics SET
-              avg_rss_mb = $1, max_rss_mb = $2, min_rss_mb = $3,
-              p95_rss_mb = $4, p99_rss_mb = $5,
-              avg_heap_mb = $6, max_heap_mb = $7, min_heap_mb = $8,
-              p95_heap_mb = $9, p99_heap_mb = $10,
-              avg_cpu_percent = $11, max_cpu_percent = $12, min_cpu_percent = $13,
-              p95_cpu_percent = $14, p99_cpu_percent = $15,
-              sample_count = $16
-            WHERE bucket_start = $17`,
-            [
-              mergedAvgRssMB, mergedMaxRssMB, mergedMinRssMB,
-              mergedP95RssMB, mergedP99RssMB,
-              mergedAvgHeapMB, mergedMaxHeapMB, mergedMinHeapMB,
-              mergedP95HeapMB, mergedP99HeapMB,
-              mergedAvgCpuPercent, mergedMaxCpuPercent, mergedMinCpuPercent,
-              mergedP95CpuPercent, mergedP99CpuPercent,
-              newTotalCount,
-              aggregate.bucketStart,
-            ]
-          );
-        } else {
-          await pool.query(
-            `UPDATE resource_metrics SET
-              avg_rss_mb = @p1, max_rss_mb = @p2, min_rss_mb = @p3,
-              p95_rss_mb = @p4, p99_rss_mb = @p5,
-              avg_heap_mb = @p6, max_heap_mb = @p7, min_heap_mb = @p8,
-              p95_heap_mb = @p9, p99_heap_mb = @p10,
-              avg_cpu_percent = @p11, max_cpu_percent = @p12, min_cpu_percent = @p13,
-              p95_cpu_percent = @p14, p99_cpu_percent = @p15,
-              sample_count = @p16
-            WHERE bucket_start = @p17`,
-            [
-              mergedAvgRssMB, mergedMaxRssMB, mergedMinRssMB,
-              mergedP95RssMB, mergedP99RssMB,
-              mergedAvgHeapMB, mergedMaxHeapMB, mergedMinHeapMB,
-              mergedP95HeapMB, mergedP99HeapMB,
-              mergedAvgCpuPercent, mergedMaxCpuPercent, mergedMinCpuPercent,
-              mergedP95CpuPercent, mergedP99CpuPercent,
-              newTotalCount,
-              aggregate.bucketStart,
-            ]
-          );
-        }
+        await pool.updateTable('resource_metrics' as any).set({
+          avg_rss_mb: mergedAvgRssMB,
+          max_rss_mb: mergedMaxRssMB,
+          min_rss_mb: mergedMinRssMB,
+          p95_rss_mb: mergedP95RssMB,
+          p99_rss_mb: mergedP99RssMB,
+          avg_heap_mb: mergedAvgHeapMB,
+          max_heap_mb: mergedMaxHeapMB,
+          min_heap_mb: mergedMinHeapMB,
+          p95_heap_mb: mergedP95HeapMB,
+          p99_heap_mb: mergedP99HeapMB,
+          avg_cpu_percent: mergedAvgCpuPercent,
+          max_cpu_percent: mergedMaxCpuPercent,
+          min_cpu_percent: mergedMinCpuPercent,
+          p95_cpu_percent: mergedP95CpuPercent,
+          p99_cpu_percent: mergedP99CpuPercent,
+          sample_count: newTotalCount
+        }).where('bucket_start', '=', aggregate.bucketStart as any).execute();
       }
     }
   } catch (err) {
@@ -300,14 +253,14 @@ async function pruneOldData(): Promise<void> {
     cutoff.setUTCDate(cutoff.getUTCDate() - RETENTION_DAYS);
 
     if (pool.type === DatabaseType.POSTGRESQL) {
-      const result = await pool.query('DELETE FROM resource_metrics WHERE bucket_start < $1', [cutoff]);
-      if (result.rowCount > 0) {
-        logger.info(`[resourceMetrics] pruned ${result.rowCount} old records`);
+      const result = await sql`DELETE FROM resource_metrics WHERE bucket_start < ${cutoff}`.execute(pool);
+      if ((result as any).numDeletedRows > 0) {
+        logger.info(`[resourceMetrics] pruned ${(result as any).numDeletedRows} old records`);
       }
     } else {
-      const result = await pool.query('DELETE FROM resource_metrics WHERE bucket_start < @p1', [cutoff]);
-      if (result.rowCount > 0) {
-        logger.info(`[resourceMetrics] pruned ${result.rowCount} old records`);
+      const result = await sql`DELETE FROM resource_metrics WHERE bucket_start < ${cutoff}`.execute(pool);
+      if ((result as any).numDeletedRows > 0) {
+        logger.info(`[resourceMetrics] pruned ${(result as any).numDeletedRows} old records`);
       }
     }
   } catch (err) {
@@ -339,23 +292,21 @@ export async function initializeResourceMetrics(): Promise<void> {
   try {
     if (pool.type === DatabaseType.POSTGRESQL) {
       // Backward compatibility: rename hour_start to bucket_start if it exists
-      const checkColumnResult = await pool.query(`
-        SELECT 1 FROM information_schema.columns
-        WHERE table_name='resource_metrics' AND column_name='hour_start'
-      `);
-      if (checkColumnResult.rowCount > 0) {
-        try {
-          await pool.query('ALTER TABLE resource_metrics RENAME COLUMN hour_start TO bucket_start');
-        } catch (err: any) {
-          // Ignore undefined_column error (42703) - column already renamed by another instance
-          if (err.code !== '42703') {
-            throw err;
+      try {
+        await sql`SELECT 1 FROM information_schema.columns WHERE table_name='resource_metrics' AND column_name='hour_start'`.execute(pool).then(async (res: any) => {
+          if (res.rows && res.rows.length > 0) {
+            try {
+              await sql`ALTER TABLE resource_metrics RENAME COLUMN hour_start TO bucket_start`.execute(pool);
+            } catch (err: any) {
+              if (err.code !== '42703') throw err;
+            }
           }
-        }
+        });
+      } catch (err) {
+        logger.error({ err }, '[resourceMetrics] checkColumnResult failed');
       }
 
-      await pool.query(`
-        CREATE TABLE IF NOT EXISTS resource_metrics (
+      await sql`CREATE TABLE IF NOT EXISTS resource_metrics (
           id BIGSERIAL PRIMARY KEY,
           bucket_start TIMESTAMPTZ NOT NULL UNIQUE,
           avg_rss_mb FLOAT NOT NULL,
@@ -375,17 +326,13 @@ export async function initializeResourceMetrics(): Promise<void> {
           p99_cpu_percent FLOAT NOT NULL,
           sample_count INTEGER NOT NULL,
           created_at TIMESTAMPTZ DEFAULT NOW()
-        )
-      `);
+        )`.execute(pool);
     } else {
       // For Azure SQL
-      await pool.query(`
-        IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[resource_metrics]') AND name = 'hour_start')
-        EXEC sp_rename 'resource_metrics.hour_start', 'bucket_start', 'COLUMN';
-      `);
+      await sql`IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID(N'[dbo].[resource_metrics]') AND name = 'hour_start')
+        EXEC sp_rename 'resource_metrics.hour_start', 'bucket_start', 'COLUMN';`.execute(pool);
 
-      await pool.query(`
-        IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[resource_metrics]') AND type in (N'U'))
+      await sql`IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[resource_metrics]') AND type in (N'U'))
         CREATE TABLE resource_metrics (
           id BIGINT IDENTITY(1,1) PRIMARY KEY,
           bucket_start DATETIME2 NOT NULL,
@@ -406,12 +353,9 @@ export async function initializeResourceMetrics(): Promise<void> {
           p99_cpu_percent FLOAT NOT NULL,
           sample_count INTEGER NOT NULL,
           created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
-        )
-      `);
-      await pool.query(`
-        IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_resource_metrics_bucket')
-        CREATE UNIQUE INDEX idx_resource_metrics_bucket ON resource_metrics (bucket_start)
-      `);
+        )`.execute(pool);
+      await sql`IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_resource_metrics_bucket')
+        CREATE UNIQUE INDEX idx_resource_metrics_bucket ON resource_metrics (bucket_start)`.execute(pool);
     }
     logger.info('[resourceMetrics] table is ready');
   } catch (err) {
@@ -513,47 +457,25 @@ export async function getResourceMetricsHistory(
     })();
 
     let dbRows: ResourceMetricsHistoryRow[] = [];
-    if (pool.type === DatabaseType.POSTGRESQL) {
-      const query = `
-        SELECT 
-          bucket_start as "bucketStart",
-          avg_rss_mb as "avgRssMB",
-          max_rss_mb as "maxRssMB",
-          avg_heap_mb as "avgHeapMB",
-          max_heap_mb as "maxHeapMB",
-          avg_cpu_percent as "avgCpuPercent",
-          max_cpu_percent as "maxCpuPercent",
-          sample_count as "sampleCount"
-        FROM resource_metrics
-        WHERE bucket_start >= $1
-        ${endDate ? 'AND bucket_start <= $2' : ''}
-        ORDER BY bucket_start ASC
-      `;
-      const params: any[] = [cutoff];
-      if (endDate) params.push(endDate);
-      const result = await pool.query<any>(query, params);
-      dbRows = result.rows;
-    } else {
-      const query = `
-        SELECT 
-          bucket_start as bucketStart,
-          avg_rss_mb as avgRssMB,
-          max_rss_mb as maxRssMB,
-          avg_heap_mb as avgHeapMB,
-          max_heap_mb as maxHeapMB,
-          avg_cpu_percent as avgCpuPercent,
-          max_cpu_percent as maxCpuPercent,
-          sample_count as sampleCount
-        FROM resource_metrics
-        WHERE bucket_start >= @p1
-        ${endDate ? 'AND bucket_start <= @p2' : ''}
-        ORDER BY bucket_start ASC
-      `;
-      const params: any[] = [cutoff];
-      if (endDate) params.push(endDate);
-      const result = await pool.query<any>(query, params);
-      dbRows = result.rows;
+    let query = pool.selectFrom('resource_metrics' as any)
+      .select([
+        'bucket_start as bucketStart',
+        'avg_rss_mb as avgRssMB',
+        'max_rss_mb as maxRssMB',
+        'avg_heap_mb as avgHeapMB',
+        'max_heap_mb as maxHeapMB',
+        'avg_cpu_percent as avgCpuPercent',
+        'max_cpu_percent as maxCpuPercent',
+        'sample_count as sampleCount'
+      ])
+      .where('bucket_start', '>=', cutoff as any)
+      .orderBy('bucket_start', 'asc');
+
+    if (endDate) {
+      query = query.where('bucket_start', '<=', endDate as any);
     }
+
+    dbRows = await query.execute() as any[];
 
     // Include current buffer
     const bufferAggregates = aggregateToBuckets(memoryBuffer);

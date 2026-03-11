@@ -6,9 +6,21 @@ let hypixelTracker: typeof import('../../src/services/hypixelTracker');
 
 jest.mock('../../src/services/cache', () => ({
   pool: {
-    query: jest.fn().mockResolvedValue({ rows: [{ count: 0 }] }),
-    type: 'postgresql',
-  },
+      type: 'POSTGRESQL',
+      fn: {
+        countAll: () => ({ as: () => 'count' })
+      },
+      selectFrom: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        executeTakeFirst: jest.fn().mockResolvedValue({ count: 0 })
+      }),
+      insertInto: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnThis(),
+        onConflict: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({})
+      })
+    },
   ensureInitialized: jest.fn().mockResolvedValue(undefined),
 }));
 
@@ -40,9 +52,21 @@ describe('hypixelTracker', () => {
     // We need to re-mock imports because resetModules clears the cache
     jest.mock('../../src/services/cache', () => ({
       pool: {
-        query: jest.fn().mockResolvedValue({ rows: [{ count: 0 }] }),
-        type: 'postgresql',
+      type: 'POSTGRESQL',
+      fn: {
+        countAll: () => ({ as: () => 'count' })
       },
+      selectFrom: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        executeTakeFirst: jest.fn().mockResolvedValue({ count: 0 })
+      }),
+      insertInto: jest.fn().mockReturnValue({
+        values: jest.fn().mockReturnThis(),
+        onConflict: jest.fn().mockReturnThis(),
+        execute: jest.fn().mockResolvedValue({})
+      })
+    },
       ensureInitialized: jest.fn().mockResolvedValue(undefined),
     }));
 
@@ -108,12 +132,16 @@ describe('hypixelTracker', () => {
 
     // Let's grab the mock directly from the re-required module
     const { pool: mockPool } = require('../../src/services/cache');
-    mockPool.query.mockResolvedValue({ rows: [{ count: 10 }] });
+    mockPool.selectFrom.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        executeTakeFirst: jest.fn().mockResolvedValue({ count: 10 })
+    });
 
     const count = await hypixelTracker.getHypixelCallCount();
 
     expect(count).toBe(10);
-    expect(mockPool.query).toHaveBeenCalledWith(expect.stringContaining('SELECT COUNT(*)'), expect.any(Array));
+    expect(mockPool.selectFrom).toHaveBeenCalledWith('hypixel_api_calls');
   });
 
   it('should correctly count inflight items during partial flush', async () => {
@@ -131,14 +159,14 @@ describe('hypixelTracker', () => {
     // Second call (from getHypixelCallCount) should return immediately or also hang?
     // Usually getHypixelCallCount calls a SELECT COUNT. flush calls INSERT.
     // We need to distinguish them.
-    mockPool.query.mockImplementation((sql: string) => {
-        if (sql.includes('INSERT INTO')) {
-            return queryPromise;
-        }
-        if (sql.includes('SELECT COUNT')) {
-            return Promise.resolve({ rows: [{ count: 0 }] });
-        }
-        return Promise.resolve({ rows: [] });
+    mockPool.insertInto.mockReturnValue({
+        values: jest.fn().mockReturnThis(),
+        execute: () => queryPromise
+    });
+    mockPool.selectFrom.mockReturnValue({
+        select: jest.fn().mockReturnThis(),
+        where: jest.fn().mockReturnThis(),
+        executeTakeFirst: jest.fn().mockResolvedValue({ count: 0 })
     });
 
     // 2. Add items to buffer
