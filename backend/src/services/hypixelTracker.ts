@@ -148,7 +148,7 @@ async function flushHypixelCallBuffer(): Promise<void> {
         }
 
         try {
-          const values = chunk.map(item => ({ called_at: item.timestamp, uuid: item.uuid }));
+          const values = chunk.map(item => ({ called_at: item.calledAt, uuid: item.uuid }));
           await pool.insertInto('hypixel_api_calls' as any).values(values).execute();
           // Success: advance offset. Items before offset are in DB; items at/after offset are pending.
           inflightOffset += chunk.length;
