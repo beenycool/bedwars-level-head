@@ -202,37 +202,36 @@ object AboveHeadRender {
     }
 
     private fun renderString(renderer: FontRenderer, tag: LevelheadTag, shadow: Boolean, stringWidthHalf: Int) {
-        var x = -stringWidthHalf
-        //Render header
-        render(renderer, tag.header, x, shadow)
-        x += tag.header.getWidth(renderer)
-        //render footer
-        render(renderer, tag.footer, x, shadow)
-    }
+        val x = -stringWidthHalf
 
-    private fun render(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int, shadow: Boolean) {
+        val headerComp = tag.header
+        val footerComp = tag.footer
+        val headerWidth = headerComp.getWidth(renderer)
+
+        // Pass 1: See-through (no depth)
         UGraphics.disableDepth()
         UGraphics.depthMask(false)
-        if (shadow) {
-            renderer.drawStringWithShadow(component.value, x.toFloat(), 0f, component.color.withAlpha(0.2f).rgb)
-        } else {
-            renderer.drawString(component.value, x, 0, component.color.withAlpha(0.2f).rgb)
-        }
+        renderComponent(renderer, headerComp, x, shadow, true)
+        renderComponent(renderer, footerComp, x + headerWidth, shadow, true)
+
+        // Pass 2: Opaque (with depth)
         UGraphics.enableDepth()
         UGraphics.depthMask(true)
         UGraphics.directColor3f(1.0f, 1.0f, 1.0f)
-        UGraphics.color4f(
-            component.color.red / 255f,
-            component.color.green / 255f,
-            component.color.blue / 255f,
-            .5f
-        )
         UGraphics.GL.translate(0f, 0f, -0.01f)
-        if (shadow) {
-            renderer.drawStringWithShadow(component.value, x.toFloat(), 0f, component.color.rgb)
-        } else {
-            renderer.drawString(component.value, x, 0, component.color.rgb)
-        }
+        renderComponent(renderer, headerComp, x, shadow, false)
+        renderComponent(renderer, footerComp, x + headerWidth, shadow, false)
         UGraphics.GL.translate(0f, 0f, 0.01f)
+    }
+
+    private fun renderComponent(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int, shadow: Boolean, seeThrough: Boolean) {
+        if (shadow) {
+            val cleanText = net.minecraft.util.StringUtils.stripControlCodes(component.value)
+            val shadowColor = java.awt.Color(0, 0, 0, if (seeThrough) 51 else 255).rgb
+            renderer.drawString(cleanText, x + 1, 1, shadowColor)
+        }
+
+        val textColor = if (seeThrough) component.color.withAlpha(0.2f).rgb else component.color.withAlpha(0.5f).rgb
+        renderer.drawString(component.value, x, 0, textColor)
     }
 }

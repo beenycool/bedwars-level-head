@@ -1,7 +1,7 @@
 import pLimit from 'p-limit';
-import { db, dbType } from './database/db';
+import { db, dbType, DatabaseType } from './database/db';
 import { sql } from 'kysely';
-import { DatabaseType } from './database/adapter';
+
 import { getRedisCacheStats } from './redis';
 import { getCurrentResourceMetrics, CurrentResourceMetrics } from './resourceMetrics';
 import { getHypixelCallCount } from './hypixelTracker';

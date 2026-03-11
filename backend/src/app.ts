@@ -1,3 +1,4 @@
+import { sql } from 'kysely';
 import express from 'express';
 import compression from 'compression';
 import playerRouter from './routes/player';
@@ -113,8 +114,7 @@ export function createApp(): express.Express {
     // lgtm[js/missing-rate-limiting]
     res.locals.metricsRoute = '/healthz';
     const [dbHealthy, hypixelHealthy] = await Promise.all([
-      cachePool
-        .query('SELECT 1')
+      sql`SELECT 1`.execute(cachePool)
         .then(() => true)
         .catch((error) => {
           console.error('Database health check failed', error);

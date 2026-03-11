@@ -1,0 +1,12 @@
+--- backend/src/services/database/db.ts
++++ backend/src/services/database/db.ts
+@@ -64,3 +64,3 @@
+       if (parsedConfig.server) {
+-        if (parsedConfig.server.includes('.database.windows.net') && parsedConfig.user && !parsedConfig.user.includes('@')) {
++        if (parsedConfig.server.endsWith('.database.windows.net') && parsedConfig.user && !parsedConfig.user.includes('@')) {
+           parsedConfig.user = `${parsedConfig.user}@${parsedConfig.server.split('.')[0]}`;
+@@ -190,3 +190,3 @@
+
+-  if (config.server.includes('.database.windows.net') && config.user && !config.user.includes('@')) {
++  if (config.server.endsWith('.database.windows.net') && config.user && !config.user.includes('@')) {
+     config.user = `${config.user}@${config.server.split('.')[0]}`;

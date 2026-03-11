@@ -1,39 +1,30 @@
-import { PostgresAdapter } from '../../../src/services/database/postgresAdapter';
-import { AzureSqlAdapter } from '../../../src/services/database/azureSqlAdapter';
-import { DatabaseType } from '../../../src/services/database/adapter';
+import { getDatabaseType, parseMssqlConfig, DatabaseType } from '../../../src/services/database/db';
 
-describe('Database Dialect Abstraction', () => {
-  const pgAdapter = new PostgresAdapter({});
-  const azureAdapter = new AzureSqlAdapter('server=localhost;database=test;user=sa;password=pass');
-
-  describe('PostgresAdapter', () => {
-    it('implements the DatabaseAdapter contract', () => {
-      expect(pgAdapter.type).toBe(DatabaseType.POSTGRESQL);
-      expect(typeof pgAdapter.query).toBe('function');
-      expect(typeof pgAdapter.connect).toBe('function');
-      expect(typeof pgAdapter.close).toBe('function');
-      expect(typeof pgAdapter.getPool).toBe('function');
+describe('Database Configuration Parsers', () => {
+  describe('getDatabaseType', () => {
+    it('correctly identifies PostgreSQL', () => {
+      expect(getDatabaseType('postgresql://user:pass@localhost:5432/test')).toBe(DatabaseType.POSTGRESQL);
+      expect(getDatabaseType('postgres://user:pass@localhost/test')).toBe(DatabaseType.POSTGRESQL);
     });
 
-    it('returns a pg pool-like object', () => {
-      const pool = pgAdapter.getPool() as any;
-      expect(pool).toBeDefined();
-      expect(typeof pool.query).toBe('function');
-      expect(typeof pool.end).toBe('function');
+    it('correctly identifies Azure SQL / MSSQL URLs', () => {
+      expect(getDatabaseType('mssql://user:pass@db.example.com:1433/levelhead')).toBe(DatabaseType.AZURE_SQL);
+      expect(getDatabaseType('sqlserver://user:pass@db.example.com')).toBe(DatabaseType.AZURE_SQL);
+    });
+
+    it('correctly identifies ODBC-style strings', () => {
+      expect(getDatabaseType('Server=localhost;Database=test;User Id=sa;Password=pass')).toBe(DatabaseType.AZURE_SQL);
+      expect(getDatabaseType('Data Source=server;Initial Catalog=test')).toBe(DatabaseType.AZURE_SQL);
+    });
+
+    it('defaults to PostgreSQL for unknown formats', () => {
+      expect(getDatabaseType('mysql://user:pass@localhost/test')).toBe(DatabaseType.POSTGRESQL);
     });
   });
 
-  describe('AzureSqlAdapter', () => {
-    it('implements the DatabaseAdapter contract', () => {
-      expect(azureAdapter.type).toBe(DatabaseType.AZURE_SQL);
-      expect(typeof azureAdapter.query).toBe('function');
-      expect(typeof azureAdapter.connect).toBe('function');
-      expect(typeof azureAdapter.close).toBe('function');
-      expect(typeof azureAdapter.getPool).toBe('function');
-    });
-
+  describe('parseMssqlConfig', () => {
     it('parses URL-style connection strings', () => {
-      const parsed = (azureAdapter as any).parseUrlFormat('mssql://user:pass@db.example.com:1433/levelhead?encrypt=true');
+      const parsed = parseMssqlConfig('mssql://user:pass@db.example.com:1433/levelhead?encrypt=true');
       expect(parsed).not.toBeNull();
       expect(parsed.server).toBe('db.example.com');
       expect(parsed.port).toBe(1433);
@@ -43,12 +34,20 @@ describe('Database Dialect Abstraction', () => {
       expect(parsed.options.encrypt).toBe(true);
     });
 
-    it('returns an mssql pool-like object', () => {
-      const pool = azureAdapter.getPool() as any;
-      expect(pool).toBeDefined();
-      expect(typeof pool.request).toBe('function');
-      expect(typeof pool.connect).toBe('function');
-      expect(typeof pool.close).toBe('function');
+    it('parses ODBC-style connection strings', () => {
+      const parsed = parseMssqlConfig('server=localhost,1433;database=test;user=sa;password=pass;encrypt=true');
+      expect(parsed).not.toBeNull();
+      expect(parsed.server).toBe('localhost');
+      expect(parsed.port).toBe(1433);
+      expect(parsed.database).toBe('test');
+      expect(parsed.user).toBe('sa');
+      expect(parsed.password).toBe('pass');
+      expect(parsed.options.encrypt).toBe(true);
+    });
+
+    it('handles azure sql username fix', () => {
+      const parsed = parseMssqlConfig('server=mydb.database.windows.net;database=test;user=admin;password=pass');
+      expect(parsed.user).toBe('admin@mydb');
     });
   });
 });

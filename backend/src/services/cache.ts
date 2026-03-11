@@ -1,7 +1,9 @@
 import { CACHE_DB_ALLOW_COLD_READS, CACHE_DB_WARM_WINDOW_MS, HYPIXEL_API_CALL_WINDOW_MS } from '../config';
 import { recordCacheHit, recordCacheMiss } from './metrics';
-import { database as pool } from './database/factory';
-import { DatabaseType } from './database/adapter';
+import { db, dbType } from './database/db';
+import { sql } from 'kysely';
+import { DatabaseType } from './database/db';
+
 import { logger } from '../util/logger';
 import {
     getPlayerCacheEntry,
@@ -63,12 +65,12 @@ export function shouldReadFromDb(): boolean {
 }
 
 // Re-export pool for other services
-export { pool };
+export { db as pool };
 
 async function ensureRateLimitTable(): Promise<void> {
   try {
-    if (pool.type === DatabaseType.POSTGRESQL) {
-      await pool.query(
+    if (dbType === DatabaseType.POSTGRESQL) {
+      await sql.raw(
         `CREATE TABLE IF NOT EXISTS rate_limits (
           key TEXT PRIMARY KEY,
           count BIGINT NOT NULL,
@@ -76,7 +78,7 @@ async function ensureRateLimitTable(): Promise<void> {
         )`,
       );
     } else {
-      await pool.query(
+      await sql.raw(
         `IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[rate_limits]') AND type in (N'U'))
          CREATE TABLE rate_limits (
            [key] NVARCHAR(450) PRIMARY KEY,
@@ -92,22 +94,19 @@ async function ensureRateLimitTable(): Promise<void> {
     }
   }
 
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    const columnInfo = await pool.query<{ data_type: string }>(
-      `SELECT data_type FROM information_schema.columns
-       WHERE table_name = 'rate_limits' AND table_schema = current_schema() AND column_name = 'count'`,
-    );
+  if (dbType === DatabaseType.POSTGRESQL) {
+    const columnInfo = await sql<{ data_type: string }>`SELECT data_type FROM information_schema.columns WHERE table_name = 'rate_limits' AND table_schema = current_schema() AND column_name = 'count'`.execute(db);
     const dataType = columnInfo.rows[0]?.data_type;
     if (dataType && dataType.toLowerCase() !== 'bigint') {
-      await pool.query('ALTER TABLE rate_limits ALTER COLUMN count TYPE BIGINT USING count::BIGINT');
+      await sql`ALTER TABLE rate_limits ALTER COLUMN count TYPE BIGINT USING count::BIGINT`.execute(db);
       logger.info('[cache] migrated rate_limits.count column to BIGINT');
     }
   }
 }
 
 async function ensurePlayerStatsTables(): Promise<void> {
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    await pool.query(
+  if (dbType === DatabaseType.POSTGRESQL) {
+    await sql.raw(
       `CREATE TABLE IF NOT EXISTS player_stats_cache (
         cache_key TEXT PRIMARY KEY,
         payload JSONB NOT NULL,
@@ -119,12 +118,12 @@ async function ensurePlayerStatsTables(): Promise<void> {
         created_at TIMESTAMPTZ DEFAULT NOW()
       )`,
     );
-    await pool.query('ALTER TABLE player_stats_cache ADD COLUMN IF NOT EXISTS cached_at BIGINT');
-    await pool.query(
+    await sql`ALTER TABLE player_stats_cache ADD COLUMN IF NOT EXISTS cached_at BIGINT`.execute(db);
+    await sql.raw(
       `CREATE INDEX IF NOT EXISTS idx_player_stats_expires ON player_stats_cache (expires_at)`,
     );
 
-    await pool.query(
+    await sql.raw(
       `CREATE TABLE IF NOT EXISTS ign_uuid_cache (
         ign TEXT PRIMARY KEY,
         uuid TEXT,
@@ -133,11 +132,11 @@ async function ensurePlayerStatsTables(): Promise<void> {
         updated_at TIMESTAMPTZ DEFAULT NOW()
       )`,
     );
-    await pool.query(
+    await sql.raw(
       `CREATE INDEX IF NOT EXISTS idx_ign_uuid_expires ON ign_uuid_cache (expires_at)`,
     );
   } else {
-    await pool.query(
+    await sql.raw(
       `IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[player_stats_cache]') AND type in (N'U'))
        CREATE TABLE player_stats_cache (
          cache_key NVARCHAR(450) PRIMARY KEY,
@@ -150,15 +149,15 @@ async function ensurePlayerStatsTables(): Promise<void> {
          created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
        )`,
     );
-    await pool.query(
+    await sql.raw(
       `IF COL_LENGTH('player_stats_cache', 'cached_at') IS NULL
        ALTER TABLE player_stats_cache ADD cached_at BIGINT`,
     );
-    await pool.query(
+    await sql.raw(
       "IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_player_stats_expires') CREATE INDEX idx_player_stats_expires ON player_stats_cache (expires_at)",
     );
 
-    await pool.query(
+    await sql.raw(
       `IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[ign_uuid_cache]') AND type in (N'U'))
        CREATE TABLE ign_uuid_cache (
          ign NVARCHAR(32) PRIMARY KEY,
@@ -168,7 +167,7 @@ async function ensurePlayerStatsTables(): Promise<void> {
          updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
        )`,
     );
-    await pool.query(
+    await sql.raw(
       "IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_ign_uuid_expires') CREATE INDEX idx_ign_uuid_expires ON ign_uuid_cache (expires_at)",
     );
   }
@@ -183,24 +182,24 @@ const initialization = (async () => {
   await ensurePlayerStatsTables();
   logger.info('[cache] player_stats_cache tables are ready');
 
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    await pool.query(
+  if (dbType === DatabaseType.POSTGRESQL) {
+    await sql.raw(
       `CREATE TABLE IF NOT EXISTS hypixel_api_calls (
         id BIGSERIAL PRIMARY KEY,
         called_at BIGINT NOT NULL,
         uuid TEXT NOT NULL
       )`,
     );
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_hypixel_calls_time ON hypixel_api_calls (called_at)');
-    await pool.query('CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits (window_start)');
-    await pool.query(
+    await sql`CREATE INDEX IF NOT EXISTS idx_hypixel_calls_time ON hypixel_api_calls (called_at)`.execute(db);
+    await sql`CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits (window_start)`.execute(db);
+    await sql.raw(
       `CREATE TABLE IF NOT EXISTS system_kv (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       )`,
     );
   } else {
-    await pool.query(
+    await sql.raw(
       `IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[hypixel_api_calls]') AND type in (N'U'))
        CREATE TABLE hypixel_api_calls (
          id BIGINT IDENTITY(1,1) PRIMARY KEY,
@@ -208,9 +207,9 @@ const initialization = (async () => {
          uuid NVARCHAR(MAX) NOT NULL
        )`,
     );
-    await pool.query("IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_hypixel_calls_time') CREATE INDEX idx_hypixel_calls_time ON hypixel_api_calls (called_at)");
-    await pool.query("IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_rate_limits_window') CREATE INDEX idx_rate_limits_window ON rate_limits (window_start)");
-    await pool.query(
+    await sql`IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_hypixel_calls_time') CREATE INDEX idx_hypixel_calls_time ON hypixel_api_calls (called_at)`.execute(db);
+    await sql`IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_rate_limits_window') CREATE INDEX idx_rate_limits_window ON rate_limits (window_start)`.execute(db);
+    await sql.raw(
       `IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[system_kv]') AND type in (N'U'))
        CREATE TABLE system_kv (
          [key] NVARCHAR(128) PRIMARY KEY,
@@ -230,42 +229,38 @@ export async function purgeExpiredEntries(now: number = Date.now()): Promise<voi
   await ensureInitialized();
 
   // Redis L1 handles TTL automatically - purge SQL L2 entries only
-  const statsResult = await pool.query('DELETE FROM player_stats_cache WHERE expires_at <= $1', [now]);
-  const purgedStats = statsResult.rowCount;
+  const statsResult = await sql`DELETE FROM player_stats_cache WHERE expires_at <= ${now}`.execute(db);
+  const purgedStats = Number(statsResult.numAffectedRows ?? 0);
   if (purgedStats > 0) {
     logger.info(`[cache] purged ${purgedStats} expired player_stats_cache entries`);
   }
 
-  const ignResult = await pool.query('DELETE FROM ign_uuid_cache WHERE expires_at <= $1', [now]);
-  const purgedIgn = ignResult.rowCount;
+  const ignResult = await sql`DELETE FROM ign_uuid_cache WHERE expires_at <= ${now}`.execute(db);
+  const purgedIgn = Number(ignResult.numAffectedRows ?? 0);
   if (purgedIgn > 0) {
     logger.info(`[cache] purged ${purgedIgn} expired ign_uuid_cache entries`);
   }
   markDbAccess();
 
-  const historyQuery = pool.type === DatabaseType.POSTGRESQL
+  const historyQuery = dbType === DatabaseType.POSTGRESQL
     ? "DELETE FROM player_query_history WHERE requested_at < NOW() - INTERVAL '30 days'"
     : "DELETE FROM player_query_history WHERE requested_at < DATEADD(day, -30, GETDATE())";
 
-  const historyResult = await pool.query(historyQuery);
-  const purgedHistory = historyResult.rowCount;
+  const historyResult = await sql.raw(historyQuery).execute(db);
+  const purgedHistory = Number(historyResult.numAffectedRows ?? 0);
   if (purgedHistory > 0) {
     logger.info(`[cache] purged ${purgedHistory} historical query entries older than 30 days`);
   }
 
   const staleRateLimitThreshold = now - 60 * 60 * 1000;
-  const rateLimitResult = await pool.query('DELETE FROM rate_limits WHERE window_start <= $1', [
-    staleRateLimitThreshold,
-  ]);
-  const purgedBuckets = rateLimitResult.rowCount;
+  const rateLimitResult = await sql`DELETE FROM rate_limits WHERE window_start <= ${staleRateLimitThreshold}`.execute(db);
+  const purgedBuckets = Number(rateLimitResult.numAffectedRows ?? 0);
   if (purgedBuckets > 0) {
     logger.info(`[cache] purged ${purgedBuckets} expired rate limit entries`);
   }
   const hypixelCutoff = now - HYPIXEL_API_CALL_WINDOW_MS;
-  const hypixelResult = await pool.query('DELETE FROM hypixel_api_calls WHERE called_at <= $1', [
-    hypixelCutoff,
-  ]);
-  const purgedCalls = hypixelResult.rowCount;
+  const hypixelResult = await sql`DELETE FROM hypixel_api_calls WHERE called_at <= ${hypixelCutoff}`.execute(db);
+  const purgedCalls = Number(hypixelResult.numAffectedRows ?? 0);
   if (purgedCalls > 0) {
     logger.info(`[cache] purged ${purgedCalls} expired hypixel_api_calls entries`);
   }
@@ -314,10 +309,7 @@ export async function getCacheEntry<T>(key: string, includeExpired = false): Pro
   }
 
   // Fallback to SQL
-  const result = await pool.query<CacheRow>(
-    'SELECT payload, expires_at, cached_at, etag, last_modified, source FROM player_stats_cache WHERE cache_key = $1',
-    [key],
-  );
+  const result = await sql<CacheRow>`SELECT payload, expires_at, cached_at, etag, last_modified, source FROM player_stats_cache WHERE cache_key = ${key}`.execute(db);
   markDbAccess();
   const row = result.rows[0];
   if (!row) {
@@ -330,7 +322,7 @@ export async function getCacheEntry<T>(key: string, includeExpired = false): Pro
     entry = mapRow<T>(row);
   } catch (error) {
     if (!includeExpired) {
-      await pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [key]);
+      await sql`DELETE FROM player_stats_cache WHERE cache_key = ${key}`.execute(db);
     }
     recordCacheMiss('deserialization');
     return null;
@@ -338,7 +330,7 @@ export async function getCacheEntry<T>(key: string, includeExpired = false): Pro
   const now = Date.now();
   if (Number.isNaN(entry.expiresAt) || entry.expiresAt <= now) {
     if (!includeExpired) {
-      await pool.query('DELETE FROM player_stats_cache WHERE cache_key = $1', [key]);
+      await sql`DELETE FROM player_stats_cache WHERE cache_key = ${key}`.execute(db);
     }
     recordCacheMiss('expired');
     return includeExpired ? entry : null;
@@ -367,23 +359,19 @@ export async function setCachedPayload<T>(
   const expiresAt = cachedAt + ttlMs;
   const payload = JSON.stringify(value);
 
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    await pool.query(
-      `INSERT INTO player_stats_cache (cache_key, payload, expires_at, cached_at, etag, last_modified, source)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
+  if (dbType === DatabaseType.POSTGRESQL) {
+    await sql`INSERT INTO player_stats_cache (cache_key, payload, expires_at, cached_at, etag, last_modified, source)
+       VALUES (${key}, ${payload}, ${expiresAt}, ${cachedAt}, ${metadata.etag ?? null}, ${metadata.lastModified ?? null}, ${metadata.source ?? null})
        ON CONFLICT (cache_key) DO UPDATE
        SET payload = EXCLUDED.payload,
            expires_at = EXCLUDED.expires_at,
            cached_at = EXCLUDED.cached_at,
            etag = EXCLUDED.etag,
            last_modified = EXCLUDED.last_modified,
-           source = EXCLUDED.source`,
-      [key, payload, expiresAt, cachedAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
-    );
+           source = EXCLUDED.source`.execute(db);
   } else {
-    await pool.query(
-      `MERGE player_stats_cache AS target
-       USING (SELECT $1 AS cache_key, $2 AS payload, $3 AS expires_at, $4 AS cached_at, $5 AS etag, $6 AS last_modified, $7 AS source) AS source
+    await sql`MERGE player_stats_cache AS target
+       USING (SELECT ${key} AS cache_key, ${payload} AS payload, ${expiresAt} AS expires_at, ${cachedAt} AS cached_at, ${metadata.etag ?? null} AS etag, ${metadata.lastModified ?? null} AS last_modified, ${metadata.source ?? null} AS source) AS source
        ON (target.cache_key = source.cache_key)
        WHEN MATCHED THEN
          UPDATE SET payload = source.payload,
@@ -394,9 +382,7 @@ export async function setCachedPayload<T>(
                     source = source.source
        WHEN NOT MATCHED THEN
          INSERT (cache_key, payload, expires_at, cached_at, etag, last_modified, source)
-         VALUES (source.cache_key, source.payload, source.expires_at, source.cached_at, source.etag, source.last_modified, source.source);`,
-      [key, payload, expiresAt, cachedAt, metadata.etag ?? null, metadata.lastModified ?? null, metadata.source ?? null],
-    );
+         VALUES (source.cache_key, source.payload, source.expires_at, source.cached_at, source.etag, source.last_modified, source.source);`.execute(db);
   }
   markDbAccess();
 }
@@ -409,10 +395,10 @@ export async function clearAllCacheEntries(): Promise<number> {
     deleted += await clearAllPlayerCacheEntries();
   }
 
-  const statsResult = await pool.query('DELETE FROM player_stats_cache');
-  const ignResult = await pool.query('DELETE FROM ign_uuid_cache');
+  const statsResult = await sql`DELETE FROM player_stats_cache`.execute(db);
+  const ignResult = await sql`DELETE FROM ign_uuid_cache`.execute(db);
   markDbAccess();
-  return deleted + statsResult.rowCount + ignResult.rowCount;
+  return deleted + Number(statsResult.numAffectedRows ?? 0) + Number(ignResult.numAffectedRows ?? 0);
 }
 
 export async function deleteCacheEntries(keys: string[]): Promise<number> {
@@ -428,43 +414,29 @@ export async function deleteCacheEntries(keys: string[]): Promise<number> {
   }
 
   let result;
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    result = await pool.query('DELETE FROM player_stats_cache WHERE cache_key = ANY($1)', [keys]);
+  if (dbType === DatabaseType.POSTGRESQL) {
+    result = await sql`DELETE FROM player_stats_cache WHERE cache_key = ANY(${keys})`.execute(db);
   } else {
-    // SQL Server doesn't support ANY($1) with an array directly.
+    // SQL Server doesn't support ANY(${key}) with an array directly.
     const placeholders = keys.map((_, i) => `@p${i + 1}`).join(',');
-    result = await pool.query(`DELETE FROM player_stats_cache WHERE cache_key IN (${placeholders})`, keys);
+    result = await sql`DELETE FROM player_stats_cache WHERE cache_key IN (${keys})`.execute(db);
   }
   markDbAccess();
-  return deleted + result.rowCount;
+  return deleted + Number(result.numAffectedRows ?? 0);
 }
 
 export async function closeCache(): Promise<void> {
-  await pool.close();
+  await db.destroy();
   logger.info('[cache] database closed');
 }
 
 export async function getActivePrivateUserCount(since: number): Promise<number> {
   await ensureInitialized();
   let result;
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    result = await pool.query<{ count: string }>(
-      `
-      SELECT COUNT(DISTINCT split_part(key, ':', 2)) AS count
-      FROM rate_limits
-      WHERE key LIKE 'private:%' AND window_start >= $1
-      `,
-      [since],
-    );
+  if (dbType === DatabaseType.POSTGRESQL) {
+    result = await sql<{ count: string }>`${since}`.execute(db);
   } else {
-    result = await pool.query<{ count: number }>(
-      `
-      SELECT COUNT(DISTINCT SUBSTRING([key], CHARINDEX(':', [key]) + 1, LEN([key]))) AS count
-      FROM rate_limits
-      WHERE [key] LIKE 'private:%' AND window_start >= $1
-      `,
-      [since],
-    );
+    result = await sql<{ count: number }>`${since}`.execute(db);
   }
   markDbAccess();
   const raw = result.rows[0]?.count ?? '0';
@@ -475,24 +447,10 @@ export async function getActivePrivateUserCount(since: number): Promise<number> 
 export async function getPrivateRequestCount(since: number): Promise<number> {
   await ensureInitialized();
   let result;
-  if (pool.type === DatabaseType.POSTGRESQL) {
-    result = await pool.query<{ total: string | number | null }>(
-      `
-      SELECT COALESCE(SUM(count), 0) AS total
-      FROM rate_limits
-      WHERE key LIKE 'private:%' AND window_start >= $1
-      `,
-      [since],
-    );
+  if (dbType === DatabaseType.POSTGRESQL) {
+    result = await sql<{ total: string | number | null }>`${since}`.execute(db);
   } else {
-    result = await pool.query<{ total: string | number | null }>(
-      `
-      SELECT COALESCE(SUM(count), 0) AS total
-      FROM rate_limits
-      WHERE [key] LIKE 'private:%' AND window_start >= $1
-      `,
-      [since],
-    );
+    result = await sql<{ total: string | number | null }>`${since}`.execute(db);
   }
   markDbAccess();
   const raw = result.rows[0]?.total ?? '0';

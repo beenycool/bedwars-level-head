@@ -26,7 +26,7 @@ jest.mock('../../src/services/redis', () => ({
   trackGlobalStats: jest.fn().mockResolvedValue(undefined),
   getRateLimitFallbackState: jest.fn().mockReturnValue({ isInFallbackMode: false }),
 }));
-jest.mock('../../src/services/database/factory', () => ({}));
+jest.mock('../../src/services/database/db', () => ({}));
 jest.mock('../../src/services/metrics', () => ({ registry: { metrics: jest.fn(), contentType: 'text/plain' } }));
 
 import { isAuthorizedMonitoring, enforceMonitoringAuth } from '../../src/middleware/monitoringAuth';

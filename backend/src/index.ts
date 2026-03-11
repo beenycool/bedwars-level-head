@@ -1,3 +1,4 @@
+import { sql } from 'kysely';
 import express from 'express';
 import compression from 'compression';
 import ipaddr from 'ipaddr.js';
@@ -215,8 +216,7 @@ app.get('/healthz', enforceAdminRateLimit, async (req, res) => {
   // lgtm[js/missing-rate-limiting]
   res.locals.metricsRoute = '/healthz';
   const [dbHealthy, hypixelHealthy] = await Promise.all([
-    cachePool
-      .query('SELECT 1')
+    sql`SELECT 1`.execute(cachePool)
       .then(() => true)
       .catch((error) => {
         logger.error('Database health check failed', error);
@@ -334,7 +334,7 @@ const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
 
   void Promise.all([
     getRedisClient()?.ping().catch(() => {}),
-    cachePool.query('SELECT 1').catch(() => {}),
+    sql`SELECT 1`.execute(cachePool).catch(() => {}),
   ]).then(() => logger.info('[startup] connections warmed'));
 });
 

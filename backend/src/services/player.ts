@@ -89,6 +89,49 @@ function normalizeDisplayName(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function normalizeUuidLookupStats(stats: MinimalPlayerStats): { payload: MinimalPlayerStats; nicked: boolean } {
+  const displayname = normalizeDisplayName(stats.displayname);
+  if (!displayname || displayname === '(nicked)') {
+    return {
+      payload: buildNickedStats(),
+      nicked: true,
+    };
+  }
+
+  if (displayname !== stats.displayname) {
+    return {
+      payload: {
+        ...stats,
+        displayname,
+      },
+      nicked: false,
+    };
+  }
+
+  return { payload: stats, nicked: false };
+}
+
+function buildResolvedFromUuidStats(
+  stats: MinimalPlayerStats,
+  meta: { etag: string | null; lastModified: number | null },
+  source: 'cache' | 'network',
+  revalidated: boolean,
+  normalizedUuid: string,
+): ResolvedPlayer {
+  const normalized = normalizeUuidLookupStats(stats);
+  return buildResolvedFromStats(
+    normalized.payload,
+    meta,
+    source,
+    revalidated,
+    'uuid',
+    normalizedUuid,
+    normalizedUuid,
+    undefined,
+    normalized.nicked,
+  );
+}
+
 function summarizeCacheEntry(entry: CacheEntry<MinimalPlayerStats>): CacheMetadata {
   return { etag: entry.etag ?? undefined, lastModified: entry.lastModified ?? undefined };
 }
@@ -173,21 +216,22 @@ async function refreshUuidCache(
         source: cacheEntry.source ?? 'hypixel',
       }).catch((e) => logger.warn('[player] L1 revalidation write failed', e));
 
-      const displayname = normalizeDisplayName(cacheEntry.value.displayname);
-      if (displayname) {
-        void setIgnMapping(displayname.toLowerCase(), normalizedUuid, false)
-          .catch((e) => logger.warn('[player] ign mapping revalidation write failed', e));
-      }
-
-      const resolved = buildResolvedFromStats(
+      const resolved = buildResolvedFromUuidStats(
         cacheEntry.value,
         { etag: cacheEntry.etag, lastModified: cacheEntry.lastModified },
         'cache',
         true,
-        'uuid',
-        normalizedUuid,
         normalizedUuid,
       );
+
+      if (!resolved.nicked) {
+        const displayname = normalizeDisplayName(resolved.payload.displayname);
+        if (displayname) {
+          void setIgnMapping(displayname.toLowerCase(), normalizedUuid, false)
+            .catch((e) => logger.warn('[player] ign mapping revalidation write failed', e));
+        }
+      }
+
       setMemoized('player', normalizedUuid, resolved);
       return resolved;
     }
@@ -204,7 +248,8 @@ async function refreshUuidCache(
     };
   }
 
-  const { stats, etag, lastModified } = response;
+  const { stats: upstreamStats, etag, lastModified } = response;
+  const { payload: stats, nicked } = normalizeUuidLookupStats(upstreamStats);
 
   recordCacheSourceHit('upstream');
 
@@ -212,7 +257,7 @@ async function refreshUuidCache(
     .catch((e) => logger.warn('[player] cache write failed', e));
 
   const displayname = normalizeDisplayName(stats.displayname);
-  if (displayname) {
+  if (!nicked && displayname) {
     void setIgnMapping(displayname.toLowerCase(), normalizedUuid, false)
       .catch((e) => logger.warn('[player] ign mapping write failed', e));
   }
@@ -225,6 +270,8 @@ async function refreshUuidCache(
     'uuid',
     normalizedUuid,
     normalizedUuid,
+    undefined,
+    nicked,
   );
   setMemoized('player', normalizedUuid, resolved);
   return resolved;
@@ -254,13 +301,11 @@ async function fetchByUuid(uuid: string, conditional?: HypixelFetchOptions, skip
 
   const cacheEntry = await getPlayerStatsFromCacheWithSWR(cacheKey, normalizedUuid);
   if (cacheEntry) {
-    const resolved = buildResolvedFromStats(
+    const resolved = buildResolvedFromUuidStats(
       cacheEntry.value,
       { etag: cacheEntry.etag, lastModified: cacheEntry.lastModified },
       'cache',
       false,
-      'uuid',
-      normalizedUuid,
       normalizedUuid,
     );
     
@@ -393,15 +438,7 @@ export async function warmupPlayerCache(identifiers: string[]): Promise<void> {
       const entry = results.get(key);
       if (!entry) continue;
 
-      const resolved = buildResolvedFromStats(
-        entry.value,
-        { etag: entry.etag, lastModified: entry.lastModified },
-        'cache',
-        false,
-        'uuid',
-        uuid,
-        uuid,
-      );
+      const resolved = buildResolvedFromUuidStats(entry.value, { etag: entry.etag, lastModified: entry.lastModified }, 'cache', false, uuid);
 
       if (entry.isStale) {
         resolved.isStale = true;

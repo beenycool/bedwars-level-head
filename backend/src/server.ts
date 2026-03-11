@@ -1,3 +1,4 @@
+import { sql } from 'kysely';
 import { createApp } from './app';
 import {
   SERVER_HOST,
@@ -29,7 +30,7 @@ const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
 
   void Promise.all([
     getRedisClient()?.ping().catch(() => {}),
-    cachePool.query('SELECT 1').catch(() => {}),
+    sql`SELECT 1`.execute(cachePool).catch(() => {}),
   ]).then(() => console.info('[startup] connections warmed'));
 });
 
