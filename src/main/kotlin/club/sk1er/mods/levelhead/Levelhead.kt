@@ -247,7 +247,6 @@ object Levelhead {
         requestCoordinator.reset()
         displayManager.clearCachesWithoutRefetch()
         AboveHeadRender.clearRenderDebugState()
-        worldScope.launch { displayManager.requestAllDisplays() }
     }
 
     @SubscribeEvent

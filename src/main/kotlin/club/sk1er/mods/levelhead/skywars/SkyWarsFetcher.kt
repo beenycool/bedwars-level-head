@@ -157,6 +157,8 @@ object SkyWarsFetcher {
                 Levelhead.sendChat("${ChatColor.RED}Hypixel SkyWars stats offline. ${ChatColor.YELLOW}Retrying in 60s.")
             }
             FetchResult.TemporaryError(ex.message)
+        } catch (ex: kotlin.coroutines.cancellation.CancellationException) {
+            throw ex
         } catch (ex: Exception) {
             Levelhead.logger.error("Failed to fetch Hypixel SkyWars data", ex)
             FetchResult.TemporaryError(ex.message)
