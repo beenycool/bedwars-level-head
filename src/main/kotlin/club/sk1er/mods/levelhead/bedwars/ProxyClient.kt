@@ -191,6 +191,8 @@ object ProxyClient {
         } catch (ex: IOException) {
             notifyNetworkIssue(ex)
             FetchResult.TemporaryError(ex.message?.sanitizeForLogs())
+        } catch (ex: kotlin.coroutines.cancellation.CancellationException) {
+            throw ex
         } catch (ex: Exception) {
             Levelhead.logger.error("Failed to fetch proxy BedWars data", ex)
             FetchResult.TemporaryError(ex.message?.sanitizeForLogs())
@@ -219,9 +221,11 @@ object ProxyClient {
             add("uuids", uuidArray)
         }
 
+        val isPublic = LevelheadConfig.proxyAuthToken.isBlank()
         val url = HttpUrl.parse(LevelheadConfig.resolveDbUrl())
             ?.newBuilder()
             ?.addPathSegment("api")
+            ?.apply { if (isPublic) addPathSegment("public") }
             ?.addPathSegment("player")
             ?.addPathSegment("batch")
             ?.build()
@@ -334,6 +338,8 @@ object ProxyClient {
             notifyNetworkIssue(ex)
             val sanitized = ex.message?.sanitizeForLogs()
             identifierToUuid.values.associateWith { FetchResult.TemporaryError(sanitized) }
+        } catch (ex: kotlin.coroutines.cancellation.CancellationException) {
+            throw ex
         } catch (ex: Exception) {
             Levelhead.logger.error("Failed to fetch proxy BedWars batch data", ex)
             val sanitized = ex.message?.sanitizeForLogs()
@@ -393,6 +399,8 @@ object ProxyClient {
             }
         } catch (ex: IOException) {
             Levelhead.logger.warn("Network error contributing player data: {}", ex.message?.sanitizeForLogs())
+        } catch (ex: kotlin.coroutines.cancellation.CancellationException) {
+            throw ex
         } catch (ex: Exception) {
             Levelhead.logger.error("Error contributing player data", ex)
         }

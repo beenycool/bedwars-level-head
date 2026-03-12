@@ -108,6 +108,8 @@ object HypixelClient {
             }
             notifyNetworkIssue(ex)
             FetchResult.TemporaryError(ex.message?.sanitizeForLogs())
+        } catch (ex: kotlin.coroutines.cancellation.CancellationException) {
+            throw ex
         } catch (ex: Exception) {
             DebugLogging.logRequestDebug {
                 "[LevelheadDebug][network] error: ${ex::class.simpleName}"

@@ -191,6 +191,7 @@ class RequestCoordinator(
                                             val shouldSkipFallback = LevelheadConfig.proxyEnabled &&
                                                     entry.cached != null &&
                                                     proxyErrorReason != null &&
+                                                    proxyErrorReason != "PROXY_AUTH" &&
                                                     (proxyErrorReason.startsWith("PROXY_") || proxyErrorReason.startsWith("HTTP_"))
 
                                             if (shouldSkipFallback) {

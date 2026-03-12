@@ -1,6 +1,6 @@
 import { pool, ensureInitialized } from './cache';
 import { sql } from 'kysely';
-import { DatabaseType } from './database/db';
+import { DatabaseType, dbType } from './database/db';
 import { HYPIXEL_API_CALL_WINDOW_MS } from '../config';
 import { logger } from '../util/logger';
 import { getRedisClient, isRedisAvailable } from './redis';
@@ -46,7 +46,7 @@ async function updateRedisFailureWatermark(): Promise<void> {
   inMemoryLastRedisFailureAt = now;
   try {
     await ensureInitialized();
-    if (pool.type === DatabaseType.POSTGRESQL) {
+    if (dbType === DatabaseType.POSTGRESQL) {
       await pool.insertInto('system_kv' as any).values({ key: 'lastRedisFailureAt', value: String(now) })
         .onConflict((oc: any) => oc.column('key').doUpdateSet({ value: String(now) }))
         .execute();
@@ -131,7 +131,7 @@ async function flushHypixelCallBuffer(): Promise<void> {
 
       await ensureInitialized();
 
-      const maxParams = pool.type === DatabaseType.POSTGRESQL ? 65000 : 2000;
+      const maxParams = dbType === DatabaseType.POSTGRESQL ? 65000 : 2000;
       const maxRecordsPerChunk = Math.floor(maxParams / 2);
 
       // Process chunks from inflightBatch using inflightOffset to avoid O(N) splice inside the loop
