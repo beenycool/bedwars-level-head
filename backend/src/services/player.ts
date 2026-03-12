@@ -423,13 +423,20 @@ export interface PlayerResolutionOptions {
 
 export async function warmupPlayerCache(identifiers: string[]): Promise<void> {
   // Filter for valid UUIDs (no dashes)
-  const uuids = identifiers.filter((id) => uuidRegex.test(id)).map((id) => id.toLowerCase());
-
-  if (uuids.length === 0) {
-    return;
+  // ⚡ Bolt: Replaced chained .filter().map().map() with a single for loop
+  // to avoid O(N) intermediate array allocations and reduce GC pressure during batch processing.
+  const keys: { key: string; uuid: string }[] = [];
+  for (let i = 0; i < identifiers.length; i++) {
+    const id = identifiers[i];
+    if (uuidRegex.test(id)) {
+      const uuid = id.toLowerCase();
+      keys.push({ key: buildPlayerCacheKey(uuid), uuid });
+    }
   }
 
-  const keys = uuids.map((uuid) => ({ key: buildPlayerCacheKey(uuid), uuid }));
+  if (keys.length === 0) {
+    return;
+  }
 
   try {
     const results = await getManyPlayerStatsFromCacheWithSWR(keys);
