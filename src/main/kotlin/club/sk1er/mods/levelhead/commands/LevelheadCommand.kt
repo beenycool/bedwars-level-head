@@ -204,7 +204,14 @@ class LevelheadCommand {
         val minecraft = Minecraft.getMinecraft()
         val target = minecraft.objectMouseOver?.entityHit
         if (target == null || target !is EntityPlayer) {
-            sendMessage("${ChatColor.RED}You are not looking at a player.")
+            val msg = CommandUtils.buildInteractiveFeedback(
+                messagePrefix = "${ChatColor.RED}You are not looking at a player.${ChatColor.YELLOW} Look at someone, or try ",
+                command = "/levelhead whois <player>",
+                run = false,
+                suggestedCommand = "/levelhead whois ",
+                suffix = "${ChatColor.YELLOW} to lookup stats manually."
+            )
+            sendMessage(msg)
             return
         }
         val uuid = target.uniqueID.toString()
@@ -470,7 +477,13 @@ class LevelheadCommand {
                 sendMessage(ex.component ?: ChatComponentText("${ChatColor.RED}${ex.message}"))
             } catch (throwable: Throwable) {
                 Levelhead.logger.error("Failed to resolve stats for {}", identifier, throwable)
-                sendMessage("${ChatColor.RED}Unexpected error while fetching stats. Check logs for details.")
+                val errorMsg = CommandUtils.buildInteractiveFeedback(
+                    messagePrefix = "${ChatColor.RED}Unexpected error while fetching stats. Try ",
+                    command = "/levelhead status",
+                    run = true,
+                    suffix = "${ChatColor.RED} to check your connection or check logs for details."
+                )
+                sendMessage(errorMsg)
             }
         }
     }
@@ -739,7 +752,13 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
 
     private fun handleAdminPurgeCache(args: List<String>) {
         if (!isProxyFullyConfigured()) {
-            sendMessage("${ChatColor.RED}Proxy must be enabled and configured to purge the backend cache.")
+            val msg = CommandUtils.buildInteractiveFeedback(
+                messagePrefix = "${ChatColor.RED}Proxy must be enabled and configured to purge the backend cache.${ChatColor.YELLOW} Try ",
+                command = "/levelhead proxy",
+                run = true,
+                suffix = "${ChatColor.YELLOW} to configure it."
+            )
+            sendMessage(msg)
             return
         }
         val identifier = args.joinToString(" ").trim()
@@ -763,7 +782,13 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
             } catch (throwable: Throwable) {
                 Levelhead.logger.error("Failed to purge proxy cache", throwable)
                 Minecraft.getMinecraft().addScheduledTask {
-                    sendMessage("${ChatColor.RED}Unexpected error while purging cache. Check logs for details.")
+                    val errorMsg = CommandUtils.buildInteractiveFeedback(
+                        messagePrefix = "${ChatColor.RED}Unexpected error while purging cache. Try ",
+                        command = "/levelhead status",
+                        run = true,
+                        suffix = "${ChatColor.RED} to check your connection or check logs for details."
+                    )
+                    sendMessage(errorMsg)
                 }
             }
         }
