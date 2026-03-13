@@ -26,6 +26,35 @@ class DisplayManager(val file: File) {
         private const val LAST_SEEN_UPDATE_INTERVAL_MS = 5000L
         private const val CACHE_CHECK_INTERVAL_MS = 10000L
         private const val TAB_FETCH_INTERVAL_MS = 2000L
+        private val LEGACY_BEDWARS_HEADERS = setOf("Level", "Levelhead", "Network Level", "BedWars Level")
+        private val LEGACY_DUELS_HEADERS = setOf("Duels Wins")
+
+        internal fun managedHeaderMode(header: String?): GameMode? {
+            if (header.isNullOrBlank()) {
+                return null
+            }
+
+            return when {
+                header.equals(GameMode.BEDWARS.defaultHeader, ignoreCase = true) -> GameMode.BEDWARS
+                LEGACY_BEDWARS_HEADERS.any { header.equals(it, ignoreCase = true) } -> GameMode.BEDWARS
+                header.equals(GameMode.DUELS.defaultHeader, ignoreCase = true) -> GameMode.DUELS
+                LEGACY_DUELS_HEADERS.any { header.equals(it, ignoreCase = true) } -> GameMode.DUELS
+                header.equals(GameMode.SKYWARS.defaultHeader, ignoreCase = true) -> GameMode.SKYWARS
+                else -> null
+            }
+        }
+
+        internal fun normalizedManagedHeader(header: String?, targetMode: GameMode): String? {
+            if (header.isNullOrBlank()) {
+                return targetMode.defaultHeader
+            }
+
+            return if (managedHeaderMode(header) != null) {
+                targetMode.defaultHeader
+            } else {
+                null
+            }
+        }
     }
 
     var config = MasterConfig()
@@ -114,13 +143,25 @@ class DisplayManager(val file: File) {
 
     private fun migrateLegacyPrimaryDisplay(): Boolean {
         var migrated = false
-        val legacyHeaders = setOf("Level", "Levelhead", "Network Level")
         aboveHead.forEachIndexed { index, display ->
             if (display.config.type != GameMode.BEDWARS.typeId) {
-                if (index == 0 && legacyHeaders.any { display.config.headerString.equals(it, ignoreCase = true) }) {
-                    display.config.headerString = GameMode.BEDWARS.defaultHeader
+                val previousType = display.config.type
+                val previousHeader = display.config.headerString
+                val normalizedHeader = normalizedManagedHeader(previousHeader, GameMode.BEDWARS)
+
+                if (index == 0 && normalizedHeader != null && !previousHeader.equals(normalizedHeader, ignoreCase = true)) {
+                    display.config.headerString = normalizedHeader
+                    Levelhead.logger.info(
+                        "Migrating legacy display #{} header '{}' -> '{}' while normalizing to {}.",
+                        index + 1,
+                        previousHeader,
+                        normalizedHeader,
+                        GameMode.BEDWARS.typeId,
+                    )
+                    migrated = true
                 }
-                Levelhead.logger.info("Migrating legacy display #${index + 1} from type '${display.config.type}' to '${GameMode.BEDWARS.typeId}'.")
+
+                Levelhead.logger.info("Migrating legacy display #${index + 1} from type '$previousType' to '${GameMode.BEDWARS.typeId}'.")
                 display.config.type = GameMode.BEDWARS.typeId
                 migrated = true
             }
@@ -369,12 +410,24 @@ class DisplayManager(val file: File) {
             if (config.gameMode != detectedMode) {
                 val previousMode = config.gameMode
                 val previousType = config.type
+                val previousHeader = config.headerString
                 config.gameMode = detectedMode
                 if (config.type == previousMode.typeId) {
                     config.type = detectedMode.typeId
                 }
-                if (config.headerString.isBlank() || matchesModeDefaultHeader(config.headerString, previousMode)) {
-                    config.headerString = detectedMode.defaultHeader
+                val normalizedHeader = normalizedManagedHeader(previousHeader, detectedMode)
+                if (normalizedHeader != null) {
+                    if (!previousHeader.equals(normalizedHeader, ignoreCase = true)) {
+                        val matchedManagedMode = managedHeaderMode(previousHeader)
+                        Levelhead.logger.debug(
+                            "syncGameMode: normalizing managed header='{}' matchedMode={} -> '{}' for detectedMode={}",
+                            previousHeader,
+                            matchedManagedMode,
+                            normalizedHeader,
+                            detectedMode,
+                        )
+                    }
+                    config.headerString = normalizedHeader
                 }
                 Levelhead.logger.debug("syncGameMode: CHANGED gameMode={}->{} type={}->{} header={}", 
                     previousMode, detectedMode, previousType, config.type, config.headerString)
@@ -382,18 +435,6 @@ class DisplayManager(val file: File) {
             } else {
                 false
             }
-        }
-    }
-
-    private fun matchesModeDefaultHeader(header: String, mode: GameMode): Boolean {
-        if (header.equals(mode.defaultHeader, ignoreCase = true)) {
-            return true
-        }
-
-        return when (mode) {
-            GameMode.BEDWARS -> header.equals("BedWars Level", ignoreCase = true)
-            GameMode.DUELS -> header.equals("Duels Wins", ignoreCase = true)
-            GameMode.SKYWARS -> false
         }
     }
 

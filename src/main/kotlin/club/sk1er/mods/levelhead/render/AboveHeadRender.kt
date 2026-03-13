@@ -36,6 +36,10 @@ object AboveHeadRender {
 
     private const val TEXT_SCALE = 0.016666668f * 1.6f
     private const val RENDER_LOG_INTERVAL_MS = 2000L
+    private const val SEE_THROUGH_TEXT_ALPHA = 0.2f
+    private const val OPAQUE_TEXT_ALPHA = 1.0f
+    private const val SEE_THROUGH_SHADOW_ALPHA = 51
+    private const val OPAQUE_SHADOW_ALPHA = 255
 
     @SubscribeEvent
     fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
@@ -142,11 +146,14 @@ object AboveHeadRender {
             val headerColor = tag.header.color.formatAsHex()
             val footerColor = tag.footer.color.formatAsHex()
             val offsetFormatted = String.format(java.util.Locale.ROOT, "%.2f", yOffset)
+            val backgroundOpacity = String.format(java.util.Locale.ROOT, "%.2f", displayManager.config.backgroundOpacity)
 
             "[LevelheadDebug][render] player=${playerName} uuid=${maskedUuid} tag=\"${tagString}\" " +
                 "header=\"${headerValue}\" headerColor=${headerColor} " +
                 "footer=\"${footerValue}\" footerColor=${footerColor} " +
-                "position=${displayPosition} yOffset=${offsetFormatted}"
+                "position=${displayPosition} yOffset=${offsetFormatted} " +
+                "shadow=${displayManager.config.textShadow} background=${displayManager.config.showBackground} " +
+                "backgroundOpacity=${backgroundOpacity} textAlpha=${SEE_THROUGH_TEXT_ALPHA}/${OPAQUE_TEXT_ALPHA}"
         }
     }
 
@@ -227,11 +234,12 @@ object AboveHeadRender {
     private fun renderComponent(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int, shadow: Boolean, seeThrough: Boolean) {
         if (shadow) {
             val cleanText = net.minecraft.util.StringUtils.stripControlCodes(component.value)
-            val shadowColor = java.awt.Color(0, 0, 0, if (seeThrough) 51 else 255).rgb
+            val shadowColor = java.awt.Color(0, 0, 0, if (seeThrough) SEE_THROUGH_SHADOW_ALPHA else OPAQUE_SHADOW_ALPHA).rgb
             renderer.drawString(cleanText, x + 1, 1, shadowColor)
         }
 
-        val textColor = if (seeThrough) component.color.withAlpha(0.2f).rgb else component.color.withAlpha(0.5f).rgb
+        val textAlpha = if (seeThrough) SEE_THROUGH_TEXT_ALPHA else OPAQUE_TEXT_ALPHA
+        val textColor = component.color.withAlpha(textAlpha).rgb
         renderer.drawString(component.value, x, 0, textColor)
     }
 }
