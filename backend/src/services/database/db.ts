@@ -1,4 +1,4 @@
-import { Kysely, PostgresDialect, MssqlDialect } from 'kysely';
+import { Kysely, PostgresDialect, MssqlDialect, sql } from 'kysely';
 import { Pool } from 'pg';
 import * as mssql from 'mssql';
 import { Database } from './schema';
@@ -248,3 +248,26 @@ if (dbType === DatabaseType.POSTGRESQL) {
 }
 
 export { db };
+
+let isCockroachPromise: Promise<boolean> | null = null;
+
+export async function isCockroachDb(): Promise<boolean> {
+  if (dbType !== DatabaseType.POSTGRESQL) {
+    return false;
+  }
+
+  if (!isCockroachPromise) {
+    isCockroachPromise = sql<{ version: string }>`SELECT version() AS version`
+      .execute(db)
+      .then((result) => {
+        const version = result.rows[0]?.version ?? '';
+        return typeof version === 'string' && version.toLowerCase().includes('cockroachdb');
+      })
+      .catch((error) => {
+        logger.warn({ error }, '[db] failed to detect CockroachDB version');
+        return false;
+      });
+  }
+
+  return await isCockroachPromise;
+}

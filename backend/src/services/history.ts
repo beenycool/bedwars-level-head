@@ -1,6 +1,7 @@
 import pLimit from 'p-limit';
 import { db, dbType, DatabaseType } from './database/db';
 import { sql } from 'kysely';
+import { ensureCockroachRowLevelTtl } from './database/cockroachTtl';
 
 import { getRedisCacheStats } from './redis';
 import { getCurrentResourceMetrics, CurrentResourceMetrics } from './resourceMetrics';
@@ -91,6 +92,7 @@ export interface TopPlayer {
 const DEFAULT_PLAYER_QUERIES_LIMIT = 200;
 const MAX_ALLOWED_LIMIT = 10000;
 const CONCURRENT_HISTORY_FETCHES = 5;
+const PLAYER_QUERY_HISTORY_RETENTION_DAYS = 30;
 
 // Add a buffer
 let historyBuffer: PlayerQueryRecord[] = [];
@@ -168,6 +170,11 @@ const initialization = (async () => {
       
       supportsPgTotalRelationSize = false;
     }
+
+    await ensureCockroachRowLevelTtl({
+      tableName: 'player_query_history',
+      expirationExpression: `requested_at + '${PLAYER_QUERY_HISTORY_RETENTION_DAYS} days'::INTERVAL`,
+    });
   } catch (error) {
     logger.error({ err: error }, 'Failed to initialize player_query_history table');
     throw error;

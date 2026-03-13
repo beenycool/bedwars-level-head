@@ -305,19 +305,11 @@ async function getManyPlayerStatsFromDb(
       const entry = mapRow<MinimalPlayerStats>(row);
 
       if (!entry) {
-        if (!includeExpired) {
-          void db.deleteFrom('player_stats_cache').where('cache_key', '=', cacheKey).execute()
-            .catch((e) => logger.warn('[statsCache] failed to delete invalid L2 entry', e));
-        }
         continue;
       }
 
       const now = Date.now();
       if (Number.isNaN(entry.expiresAt) || entry.expiresAt <= now) {
-        if (!includeExpired) {
-          void db.deleteFrom('player_stats_cache').where('cache_key', '=', cacheKey).execute()
-            .catch((e) => logger.warn('[statsCache] failed to delete expired L2 entry', e));
-        }
         if (includeExpired) {
           result.set(cacheKey, entry);
         }
@@ -354,18 +346,12 @@ async function getPlayerStatsFromDb(
 
     const entry = mapRow<MinimalPlayerStats>(row);
     if (!entry) {
-      if (!includeExpired) {
-        await db.deleteFrom('player_stats_cache').where('cache_key', '=', key).execute();
-      }
       return null;
     }
 
     const now = Date.now();
     if (Number.isNaN(entry.expiresAt) || entry.expiresAt <= now) {
-      if (!includeExpired) {
-        await db.deleteFrom('player_stats_cache').where('cache_key', '=', key).execute();
-      }
-    return includeExpired ? entry : null;
+      return includeExpired ? entry : null;
     }
 
     return entry;
@@ -459,9 +445,6 @@ async function getIgnMappingFromDb(ign: string, includeExpired: boolean): Promis
     const now = Date.now();
 
     if (expiresAt <= now) {
-      if (!includeExpired) {
-        await db.deleteFrom('ign_uuid_cache').where('ign', '=', ign).execute();
-      }
       return includeExpired
         ? { uuid: row.uuid, nicked: !!row.nicked, expiresAt }
         : null;
@@ -791,9 +774,6 @@ export async function getPlayerStatsFromCacheWithSWR(
         };
       }
 
-      // Data is too old, delete it
-      await db.deleteFrom('player_stats_cache').where('cache_key', '=', key).execute();
-      markDbAccess();
       recordCacheMiss('expired');
       return null;
     }
@@ -954,7 +934,6 @@ export async function getManyPlayerStatsFromCacheWithSWR(
   if (missing.length > 0 && shouldReadFromDb()) {
     const missingKeys = missing.map((m) => m.key);
     const l2Results = await getManyPlayerStatsFromDb(missingKeys, true);
-    const expiredKeys: string[] = [];
 
     for (const [key, entry] of l2Results) {
       const idObj = missing.find((m) => m.key === key);
@@ -1001,13 +980,7 @@ export async function getManyPlayerStatsFromCacheWithSWR(
         continue;
       }
 
-      expiredKeys.push(key);
       recordCacheMiss('expired');
-    }
-
-    if (expiredKeys.length > 0) {
-      void db.deleteFrom('player_stats_cache').where('cache_key', 'in', expiredKeys).execute()
-        .catch((e) => logger.warn('[statsCache] failed to batch delete expired L2 entries', e));
     }
 
     const stillMissing = missing.filter((m) => !result.has(m.key));
