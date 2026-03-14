@@ -174,6 +174,7 @@ const initialization = (async () => {
     await ensureCockroachRowLevelTtl({
       tableName: 'player_query_history',
       expirationExpression: `requested_at + '${PLAYER_QUERY_HISTORY_RETENTION_DAYS} days'::INTERVAL`,
+      jobCron: '@hourly',
     });
   } catch (error) {
     logger.error({ err: error }, 'Failed to initialize player_query_history table');
