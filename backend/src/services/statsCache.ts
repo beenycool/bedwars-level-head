@@ -950,15 +950,26 @@ export async function getManyPlayerStatsFromCacheWithSWR(
     logger.error('[statsCache] L1 batch read failed', message);
   }
 
-  const missing = identifiers.filter((i) => !result.has(i.key));
-  if (missing.length > 0 && shouldReadFromDb()) {
-    const missingKeys = missing.map((m) => m.key);
+  // ⚡ Bolt: Replace chained .filter().map() with a single loop and build a lookup map
+  // to avoid O(N^2) behavior from missing.find() inside the L2 results loop
+  const missingKeys: string[] = [];
+  const missingLookup = new Map<string, string>(); // key -> uuid
+
+  for (let i = 0; i < identifiers.length; i++) {
+    const id = identifiers[i];
+    if (!result.has(id.key)) {
+      missingKeys.push(id.key);
+      missingLookup.set(id.key, id.uuid);
+    }
+  }
+
+  if (missingKeys.length > 0 && shouldReadFromDb()) {
     const l2Results = await getManyPlayerStatsFromDb(missingKeys, true);
     const expiredKeys: string[] = [];
 
     for (const [key, entry] of l2Results) {
-      const idObj = missing.find((m) => m.key === key);
-      if (!idObj) continue;
+      const uuid = missingLookup.get(key);
+      if (!uuid) continue;
 
       const now = Date.now();
       const normalTtl = PLAYER_L2_TTL_MS;
@@ -991,7 +1002,7 @@ export async function getManyPlayerStatsFromCacheWithSWR(
         recordCacheTierHit('l2');
         recordCacheSourceHit('sql');
 
-        triggerBackgroundRefresh(key, idObj.uuid, entry);
+        triggerBackgroundRefresh(key, uuid, entry);
 
         result.set(key, {
           ...entry,
@@ -1010,13 +1021,13 @@ export async function getManyPlayerStatsFromCacheWithSWR(
         .catch((e) => logger.warn('[statsCache] failed to batch delete expired L2 entries', e));
     }
 
-    const stillMissing = missing.filter((m) => !result.has(m.key));
+    const stillMissing = missingKeys.filter((m) => !result.has(m));
     for (const _ of stillMissing) {
       recordCacheTierMiss('l2', 'absent');
       recordCacheMiss('absent');
     }
-  } else if (missing.length > 0) {
-    for (const _ of missing) {
+  } else if (missingKeys.length > 0) {
+    for (const _ of missingKeys) {
       recordCacheTierMiss('l2', 'db_cold');
       recordCacheMiss('db_cold');
     }

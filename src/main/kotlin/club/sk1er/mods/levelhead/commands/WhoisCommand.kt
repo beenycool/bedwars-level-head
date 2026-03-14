@@ -10,7 +10,9 @@ import net.minecraft.event.HoverEvent
 import net.minecraft.util.ChatComponentText
 import net.minecraft.util.IChatComponent
 import net.minecraft.util.EnumChatFormatting as ChatColor
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
+import club.sk1er.mods.levelhead.commands.CommandUtils
 
 /**
  * Standalone /whois command that is an alias for /levelhead whois.
@@ -38,8 +40,15 @@ class WhoisCommand {
             } catch (ex: WhoisService.CommandException) {
                 sendMessage(ex.component ?: ChatComponentText("${ChatColor.RED}${ex.message}"))
             } catch (throwable: Throwable) {
+                if (throwable is CancellationException) throw throwable
                 Levelhead.logger.error("Failed to resolve stats for {}", identifier, throwable)
-                sendMessage("${ChatColor.RED}Unexpected error while fetching stats. Check logs for details.")
+                val errorMsg = CommandUtils.buildInteractiveFeedback(
+                    messagePrefix = "${ChatColor.RED}Unexpected error while fetching stats. Try ",
+                    command = "/levelhead status",
+                    run = true,
+                    suffix = "${ChatColor.RED} to check your connection or check logs for details. If this issue persists, please make an issue on GitHub: https://github.com/beenycool/bedwars-level-head/"
+                )
+                sendMessage(errorMsg)
             }
         }
     }

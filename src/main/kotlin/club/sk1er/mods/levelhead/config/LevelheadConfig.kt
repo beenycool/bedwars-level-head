@@ -483,6 +483,9 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             field = value
             Levelhead.displayManager.config.textShadow = value
             Levelhead.displayManager.saveConfig()
+            if (debugConfigSync) {
+                Levelhead.logger.info("[LevelheadConfigSync] UI->RT textShadow={}", value)
+            }
             save()
         }
 
