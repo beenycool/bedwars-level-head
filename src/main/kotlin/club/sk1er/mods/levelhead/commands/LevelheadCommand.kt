@@ -197,7 +197,7 @@ class LevelheadCommand {
         Levelhead.resetWorldCoroutines()
         Levelhead.rateLimiter.resetState()
         Levelhead.displayManager.clearCache()
-        sendMessage("${ChatColor.GREEN}Reloaded BedWars star cache.")
+        sendSuccessWithStatusLink("${ChatColor.GREEN}Reloaded BedWars star cache.")
     }
 
     @SubCommand
@@ -594,7 +594,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 }
                 val profile = ConfigProfiles.getPreset(preset)
                 ConfigProfiles.applyProfile(profile)
-                sendMessage("${ChatColor.GREEN}Applied ${ChatColor.GOLD}${preset.displayName}${ChatColor.GREEN} profile!")
+                sendSuccessWithLink("${ChatColor.GREEN}Applied ${ChatColor.GOLD}${preset.displayName}${ChatColor.GREEN} profile!", " ${ChatColor.GRAY}[Check Display]", "/levelhead display", "${ChatColor.GREEN}Click to view display settings")
             }
             "export" -> {
                 val exported = ConfigProfiles.exportProfile()
@@ -613,7 +613,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                     return
                 }
                 ConfigProfiles.applyProfile(profile)
-                sendMessage("${ChatColor.GREEN}Imported and applied profile ${ChatColor.GOLD}${profile.name}${ChatColor.GREEN}!")
+                sendSuccessWithLink("${ChatColor.GREEN}Imported and applied profile ${ChatColor.GOLD}${profile.name}${ChatColor.GREEN}!", " ${ChatColor.GRAY}[Check Display]", "/levelhead display", "${ChatColor.GREEN}Click to view display settings")
             }
             else -> {
                 sendMessage("${ChatColor.RED}Unknown profile action '${parsedArgs[0]}'.")
@@ -775,7 +775,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 val purged = purgeProxyCache(identifier)
                 Minecraft.getMinecraft().addScheduledTask {
                     val scopeText = identifier?.let { "for ${ChatColor.GOLD}$it${ChatColor.YELLOW}" } ?: "globally"
-                    sendMessage("${ChatColor.GREEN}Requested cache purge $scopeText (${ChatColor.GOLD}$purged${ChatColor.GREEN} entries).")
+                    sendSuccessWithStatusLink("${ChatColor.GREEN}Requested cache purge $scopeText (${ChatColor.GOLD}$purged${ChatColor.GREEN} entries).")
                 }
             } catch (ex: CommandException) {
                 Minecraft.getMinecraft().addScheduledTask {
@@ -886,10 +886,10 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
     }
 
     private fun sendSuccessWithStatusLink(message: String) {
-        val linkText = " ${ChatColor.GRAY}[Check Status]"
-        val linkCommand = "/levelhead status"
-        val linkHover = "${ChatColor.GREEN}Click to check status"
+        sendSuccessWithLink(message, " ${ChatColor.GRAY}[Check Status]", "/levelhead status", "${ChatColor.GREEN}Click to check status")
+    }
 
+    private fun sendSuccessWithLink(message: String, linkText: String, linkCommand: String, linkHover: String) {
         val msg = ChatComponentText(message).appendSibling(
             ChatComponentText(linkText).apply {
                 chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, linkCommand)
