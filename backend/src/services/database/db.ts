@@ -269,7 +269,6 @@ export async function isCockroachDb(): Promise<boolean> {
         return false;
       });
   }
-  }
 
   return await isCockroachPromise;
 }
