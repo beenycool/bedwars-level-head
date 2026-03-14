@@ -45,15 +45,10 @@ class DisplayManager(val file: File) {
         }
 
         internal fun normalizedManagedHeader(header: String?, targetMode: GameMode): String? {
-            if (header.isNullOrBlank()) {
+            if (header.isNullOrBlank() || managedHeaderMode(header) != null) {
                 return targetMode.defaultHeader
             }
-
-            return if (managedHeaderMode(header) != null) {
-                targetMode.defaultHeader
-            } else {
-                null
-            }
+            return null
         }
     }
 
