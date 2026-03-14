@@ -245,24 +245,29 @@ export function validateBedwarsStats(data: unknown): ValidationResult {
     }
 
     // Validate known fields have correct types
-    for (const [field, expectedType] of Object.entries(BEDWARS_STATS_SCHEMA)) {
-        const value = record[field];
+    // ⚡ Bolt: Replace Object.entries() to avoid creating intermediate arrays for keys and values
+    // on every validation run, significantly reducing garbage collection pressure on the hot path.
+    for (const field in BEDWARS_STATS_SCHEMA) {
+        if (Object.prototype.hasOwnProperty.call(BEDWARS_STATS_SCHEMA, field)) {
+            const expectedType = BEDWARS_STATS_SCHEMA[field];
+            const value = record[field];
 
-        if (value !== undefined && value !== null) {
-            if (!validateType(value, expectedType)) {
-                errors.push({
-                    field,
-                    message: `Field '${field}' must be of type ${expectedType}, got ${typeof value}`,
-                });
-            }
-
-            // Additional validation for numeric fields
-            if (expectedType === 'number' && typeof value === 'number') {
-                if (value < 0) {
+            if (value !== undefined && value !== null) {
+                if (!validateType(value, expectedType)) {
                     errors.push({
                         field,
-                        message: `Field '${field}' must be non-negative, got ${value}`,
+                        message: `Field '${field}' must be of type ${expectedType}, got ${typeof value}`,
                     });
+                }
+
+                // Additional validation for numeric fields
+                if (expectedType === 'number' && typeof value === 'number') {
+                    if (value < 0) {
+                        errors.push({
+                            field,
+                            message: `Field '${field}' must be non-negative, got ${value}`,
+                        });
+                    }
                 }
             }
         }
