@@ -265,8 +265,10 @@ export async function isCockroachDb(): Promise<boolean> {
       })
       .catch((error) => {
         logger.warn({ error }, '[db] failed to detect CockroachDB version');
+        isCockroachPromise = null;
         return false;
       });
+  }
   }
 
   return await isCockroachPromise;
