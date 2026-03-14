@@ -52,6 +52,10 @@ export async function ensureCockroachRowLevelTtl({
     } catch (error) {
       logger.warn({ error, tableName }, '[db] failed to enable Cockroach row-level TTL');
       return false;
+    } finally {
+      if (!ttlManagedTables.has(tableName)) {
+        ttlSetupPromises.delete(tableName);
+      }
     }
   })();
 
