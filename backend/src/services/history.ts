@@ -295,13 +295,21 @@ async function flushHistoryBuffer(): Promise<void> {
     logger.error({ err }, '[history] Failed to flush batch');
 
     // Handle retries and dead-lettering
-    const retryableBatch = batch.map(record => ({
-        ...record,
-        retryCount: (record.retryCount || 0) + 1
-    }));
+    // ⚡ Bolt: Replaced .map() and double .filter() with a single loop to avoid multiple O(N) intermediate array allocations
+    const deadLettered: PlayerQueryRecord[] = [];
+    const toRetry: PlayerQueryRecord[] = [];
 
-    const deadLettered = retryableBatch.filter(r => (r.retryCount || 0) >= MAX_RETRY_ATTEMPTS);
-    const toRetry = retryableBatch.filter(r => (r.retryCount || 0) < MAX_RETRY_ATTEMPTS);
+    for (let i = 0; i < batch.length; i++) {
+      const record = batch[i];
+      const retryCount = (record.retryCount || 0) + 1;
+      const updatedRecord = { ...record, retryCount };
+
+      if (retryCount >= MAX_RETRY_ATTEMPTS) {
+        deadLettered.push(updatedRecord);
+      } else {
+        toRetry.push(updatedRecord);
+      }
+    }
 
     if (deadLettered.length > 0) {
         logger.error(`[history] Dropped ${deadLettered.length} records after ${MAX_RETRY_ATTEMPTS} failed attempts`, { sample: deadLettered.slice(0, 3) });
