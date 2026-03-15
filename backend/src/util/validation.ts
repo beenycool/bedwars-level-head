@@ -252,7 +252,7 @@ export function validateBedwarsStats(data: unknown): ValidationResult {
             const expectedType = BEDWARS_STATS_SCHEMA[field];
             const value = record[field];
 
-            if (value !== undefined && value !== null) {
+            if (value != null) {
                 if (!validateType(value, expectedType)) {
                     errors.push({
                         field,
