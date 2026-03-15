@@ -142,6 +142,7 @@ async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
       existing = await pool.selectFrom('resource_metrics' as any)
         .selectAll()
         .where('bucket_start', '=', aggregate.bucketStart as any)
+        .limit(1)
         .executeTakeFirst();
 
       if (!existing) {

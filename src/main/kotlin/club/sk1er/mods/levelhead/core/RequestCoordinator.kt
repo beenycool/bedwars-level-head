@@ -135,7 +135,7 @@ class RequestCoordinator(
                     lockedEligible
                         .map { it.uuid }
                         .distinct()
-                        .chunked(20)
+                        .chunked(10)
                         .forEach { chunk ->
                             lastFetchAttemptAt = System.currentTimeMillis()
                             rateLimiter.consume()

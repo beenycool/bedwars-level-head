@@ -67,7 +67,7 @@ export function createApp(): express.Express {
   });
 
   app.use(compression());
-  app.use(express.json({ limit: '64kb' }));
+  app.use(express.json({ limit: '16kb' }));
 
   app.use((req, res, next) => {
     const start = process.hrtime.bigint();
