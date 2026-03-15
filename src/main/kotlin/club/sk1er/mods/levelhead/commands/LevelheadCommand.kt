@@ -369,7 +369,7 @@ class LevelheadCommand {
             }
             "disable", "off" -> {
                 LevelheadConfig.updateProxyEnabled(false)
-                sendMessage("${ChatColor.YELLOW}Disabled proxy usage. Hypixel API key will be used directly.")
+                sendSuccessWithStatusLink("${ChatColor.GREEN}Disabled proxy usage. ${ChatColor.YELLOW}Hypixel API key will be used directly.")
                 resetBedwarsFetcher()
             }
             "url" -> {
@@ -594,7 +594,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 }
                 val profile = ConfigProfiles.getPreset(preset)
                 ConfigProfiles.applyProfile(profile)
-                sendSuccessWithLink("${ChatColor.GREEN}Applied ${ChatColor.GOLD}${preset.displayName}${ChatColor.GREEN} profile!", " ${ChatColor.GRAY}[Check Display]", "/levelhead display", "${ChatColor.GREEN}Click to view display settings")
+                sendSuccessWithDisplayLink("${ChatColor.GREEN}Applied ${ChatColor.GOLD}${preset.displayName}${ChatColor.GREEN} profile!")
             }
             "export" -> {
                 val exported = ConfigProfiles.exportProfile()
@@ -613,7 +613,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                     return
                 }
                 ConfigProfiles.applyProfile(profile)
-                sendSuccessWithLink("${ChatColor.GREEN}Imported and applied profile ${ChatColor.GOLD}${profile.name}${ChatColor.GREEN}!", " ${ChatColor.GRAY}[Check Display]", "/levelhead display", "${ChatColor.GREEN}Click to view display settings")
+                sendSuccessWithDisplayLink("${ChatColor.GREEN}Imported and applied profile ${ChatColor.GOLD}${profile.name}${ChatColor.GREEN}!")
             }
             else -> {
                 sendMessage("${ChatColor.RED}Unknown profile action '${parsedArgs[0]}'.")
@@ -638,7 +638,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         sendLine("/levelhead profile list", "Show available presets", true)
         sendLine("/levelhead profile apply <name>", "Apply a preset", false)
         sendLine("/levelhead profile export", "Export config to clipboard", true)
-        sendLine("/levelhead profile import", "Import config from clipboard", false)
+        sendLine("/levelhead profile import", "Import config from clipboard", true)
     }
 
     private fun handleDisplayHeader(args: List<String>) {
@@ -663,7 +663,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 val previous = LevelheadConfig.headerText
                 if (previous != sanitized) {
                     LevelheadConfig.headerText = sanitized
-                    sendSuccessWithStatusLink("${ChatColor.GREEN}Updated header text to ${ChatColor.GOLD}$sanitized${ChatColor.GREEN}.")
+                    sendSuccessWithDisplayLink("${ChatColor.GREEN}Updated header text to ${ChatColor.GOLD}$sanitized${ChatColor.GREEN}.")
                 } else {
                     sendMessage("${ChatColor.YELLOW}Header text is already set to ${ChatColor.GOLD}$sanitized${ChatColor.YELLOW}.")
                 }
@@ -693,7 +693,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 val previous = LevelheadConfig.headerColorHex
                 if (previous != hexColor) {
                     LevelheadConfig.headerColorHex = hexColor
-                    sendSuccessWithStatusLink("${ChatColor.GREEN}Updated header color to ${ChatColor.GOLD}$hexColor${ChatColor.GREEN}.")
+                    sendSuccessWithDisplayLink("${ChatColor.GREEN}Updated header color to ${ChatColor.GOLD}$hexColor${ChatColor.GREEN}.")
                 } else {
                     sendMessage("${ChatColor.YELLOW}Header color is already $hexColor${ChatColor.YELLOW}.")
                 }
@@ -721,7 +721,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
             sendMessage("${ChatColor.YELLOW}Offset already set to ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", clamped)}${ChatColor.YELLOW}.")
         } else {
             LevelheadConfig.verticalOffset = clamped.toFloat()
-            sendSuccessWithStatusLink("${ChatColor.GREEN}Updated display offset to ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", clamped)}${ChatColor.GREEN}.")
+            sendSuccessWithDisplayLink("${ChatColor.GREEN}Updated display offset to ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", clamped)}${ChatColor.GREEN}.")
         }
     }
 
@@ -745,7 +745,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         val previous = LevelheadConfig.showSelf
         if (previous != toggle) {
             LevelheadConfig.showSelf = toggle
-            sendSuccessWithStatusLink("${ChatColor.GREEN}Self display is now ${formatToggle(toggle)}${ChatColor.GREEN}.")
+            sendSuccessWithDisplayLink("${ChatColor.GREEN}Self display is now ${formatToggle(toggle)}${ChatColor.GREEN}.")
         } else {
             sendMessage("${ChatColor.YELLOW}Self display is already ${formatToggle(toggle)}${ChatColor.YELLOW}.")
         }
@@ -868,7 +868,11 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         } else {
             "${ChatColor.YELLOW}BedWars Levelhead is already ${color}$stateText${ChatColor.YELLOW}."
         }
-        sendMessage(message)
+        if (changed) {
+            sendSuccessWithDisplayLink(message)
+        } else {
+            sendMessage(message)
+        }
     }
 
     private fun formatAge(ageMillis: Long?): String {
@@ -887,6 +891,10 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
 
     private fun sendSuccessWithStatusLink(message: String) {
         sendSuccessWithLink(message, " ${ChatColor.GRAY}[Check Status]", "/levelhead status", "${ChatColor.GREEN}Click to check status")
+    }
+
+    private fun sendSuccessWithDisplayLink(message: String) {
+        sendSuccessWithLink(message, " ${ChatColor.GRAY}[Check Display]", "/levelhead display", "${ChatColor.GREEN}Click to view display settings")
     }
 
     private fun sendSuccessWithLink(message: String, linkText: String, linkCommand: String, linkHover: String) {
