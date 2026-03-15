@@ -336,6 +336,7 @@ async function getPlayerStatsFromDb(
       .selectFrom('player_stats_cache')
       .selectAll()
       .where('cache_key', '=', key)
+      .limit(1)
       .executeTakeFirst();
 
     markDbAccess();
@@ -433,6 +434,7 @@ async function getIgnMappingFromDb(ign: string, includeExpired: boolean): Promis
       .selectFrom('ign_uuid_cache')
       .select(['uuid', 'nicked', 'expires_at'])
       .where('ign', '=', ign)
+      .limit(1)
       .executeTakeFirst();
 
     markDbAccess();

@@ -40,6 +40,8 @@ object AboveHeadRender {
     private const val OPAQUE_TEXT_ALPHA = 1.0f
     private const val SEE_THROUGH_SHADOW_ALPHA = 51
     private const val OPAQUE_SHADOW_ALPHA = 255
+    private val SEE_THROUGH_SHADOW_COLOR = java.awt.Color(0, 0, 0, SEE_THROUGH_SHADOW_ALPHA).rgb
+    private val OPAQUE_SHADOW_COLOR = java.awt.Color(0, 0, 0, OPAQUE_SHADOW_ALPHA).rgb
 
     @SubscribeEvent
     fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
@@ -234,7 +236,7 @@ object AboveHeadRender {
     private fun renderComponent(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int, shadow: Boolean, seeThrough: Boolean) {
         if (shadow) {
             val cleanText = net.minecraft.util.StringUtils.stripControlCodes(component.value)
-            val shadowColor = java.awt.Color(0, 0, 0, if (seeThrough) SEE_THROUGH_SHADOW_ALPHA else OPAQUE_SHADOW_ALPHA).rgb
+            val shadowColor = if (seeThrough) SEE_THROUGH_SHADOW_COLOR else OPAQUE_SHADOW_COLOR
             renderer.drawString(cleanText, x + 1, 1, shadowColor)
         }
 

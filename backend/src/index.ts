@@ -183,7 +183,7 @@ app.set('trust proxy', (ip: string) => {
 // Enable gzip compression for all responses (clients should send Accept-Encoding: gzip)
 // Large Hypixel JSON payloads compress very well (often 80-90% reduction)
 app.use(compression());
-app.use(express.json({ limit: '64kb' }));
+app.use(express.json({ limit: '16kb' }));
 
 app.use((req, res, next) => {
   const start = process.hrtime.bigint();

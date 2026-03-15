@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { COMMUNITY_SUBMIT_SECRET } from '../config';
 import { logger } from '../util/logger';
-import { validateTimestampAndNonce, validatePlayerSubmission, matchesCriticalFields } from '../util/validation';
+import { validateTimestampAndNonce, validatePlayerSubmission, matchesCriticalFields, extractBedwarsRecord } from '../util/validation';
 import { canonicalize } from '../util/signature';
 import { isValidBedwarsObject } from '../util/typeChecks';
 import { MinimalPlayerStats, extractMinimalStats } from './hypixel';
@@ -129,17 +129,18 @@ export class SubmissionService {
   }
 
   private buildMinimalStatsFromSubmission(data: Record<string, unknown>): MinimalPlayerStats {
-    const rawExperience = data.bedwars_experience ?? data.Experience ?? data.experience;
+    const record = extractBedwarsRecord(data) ?? data;
+    const rawExperience = record.bedwars_experience ?? record.Experience ?? record.experience;
     const numericExperience = Number(rawExperience);
     const bedwarsExperience = Number.isFinite(numericExperience) ? numericExperience : null;
 
-    const rawDisplayname = data.displayname;
+    const rawDisplayname = record.displayname;
     const displayname =
       typeof rawDisplayname === 'string' && rawDisplayname.trim().length > 0
         ? rawDisplayname.trim()
         : null;
-    const rawFinalKills = Number(data.final_kills_bedwars ?? 0);
-    const rawFinalDeaths = Number(data.final_deaths_bedwars ?? 0);
+    const rawFinalKills = Number(record.final_kills_bedwars ?? 0);
+    const rawFinalDeaths = Number(record.final_deaths_bedwars ?? 0);
     const bedwarsFinalKills = Number.isFinite(rawFinalKills) ? rawFinalKills : 0;
     const bedwarsFinalDeaths = Number.isFinite(rawFinalDeaths) ? rawFinalDeaths : 0;
 
@@ -198,6 +199,7 @@ export class SubmissionService {
 
     const cacheKey = `player:${normalizedUuid}`;
     const submission = data as Record<string, unknown>;
+    const record = extractBedwarsRecord(submission) ?? submission;
     const existingEntry = await getPlayerStatsFromCache(cacheKey, true);
 
     let minimalStats: MinimalPlayerStats;
@@ -217,9 +219,9 @@ export class SubmissionService {
     if (existingEntry?.value) {
       mergedStats = { ...existingEntry.value };
 
-      const hasExperience = Object.prototype.hasOwnProperty.call(submission, 'bedwars_experience') ||
-                          Object.prototype.hasOwnProperty.call(submission, 'Experience') ||
-                          Object.prototype.hasOwnProperty.call(submission, 'experience');
+      const hasExperience = Object.prototype.hasOwnProperty.call(record, 'bedwars_experience') ||
+                          Object.prototype.hasOwnProperty.call(record, 'Experience') ||
+                          Object.prototype.hasOwnProperty.call(record, 'experience');
 
       if (isFullResponse) {
         Object.assign(mergedStats, minimalStats);
@@ -230,10 +232,10 @@ export class SubmissionService {
         if (hasExperience && minimalStats.bedwars_experience !== null) {
           mergedStats.bedwars_experience = minimalStats.bedwars_experience;
         }
-        if (Object.prototype.hasOwnProperty.call(submission, 'final_kills_bedwars')) {
+        if (Object.prototype.hasOwnProperty.call(record, 'final_kills_bedwars')) {
           mergedStats.bedwars_final_kills = minimalStats.bedwars_final_kills;
         }
-        if (Object.prototype.hasOwnProperty.call(submission, 'final_deaths_bedwars')) {
+        if (Object.prototype.hasOwnProperty.call(record, 'final_deaths_bedwars')) {
           mergedStats.bedwars_final_deaths = minimalStats.bedwars_final_deaths;
         }
       }
