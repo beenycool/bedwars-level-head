@@ -29,7 +29,16 @@ object WhoisService {
 
     suspend fun lookupWhois(identifier: String): WhoisResult {
         val resolved = resolvePlayerIdentifier(identifier)
-            ?: throw CommandException("Could not resolve '$identifier' to a player UUID.")
+            ?: throw CommandException(
+                "Could not resolve '$identifier' to a player UUID.",
+                CommandUtils.buildInteractiveFeedback(
+                    messagePrefix = "${ChatColor.RED}Could not resolve '$identifier'.${ChatColor.YELLOW} Try ",
+                    command = "/levelhead whois <player>",
+                    run = false,
+                    suggestedCommand = "/levelhead whois ",
+                    suffix = "${ChatColor.YELLOW} with a valid name or UUID."
+                )
+            )
         
         val gameMode = ModeManager.getActiveGameMode() ?: GameMode.BEDWARS
         
@@ -49,8 +58,24 @@ object WhoisService {
                 val stats = StatsFetcher.buildGameStats(result.payload, gameMode, result.etag)
                 parseWhoisResult(result.payload, stats, resolved.displayName ?: resolved.uuid.toString(), gameMode)
             }
-            FetchResult.NotModified -> throw CommandException("No fresh data available for ${resolved.displayName ?: resolved.uuid}.")
-            is FetchResult.TemporaryError -> throw CommandException("${gameMode.displayName} stats temporarily unavailable (${result.reason ?: "unknown"}).")
+            FetchResult.NotModified -> throw CommandException(
+                "No fresh data available for ${resolved.displayName ?: resolved.uuid}.",
+                CommandUtils.buildInteractiveFeedback(
+                    messagePrefix = "${ChatColor.RED}No fresh data available for ${resolved.displayName ?: resolved.uuid}.${ChatColor.YELLOW} Check ",
+                    command = "/levelhead status",
+                    run = true,
+                    suffix = "${ChatColor.YELLOW} to see your cache settings."
+                )
+            )
+            is FetchResult.TemporaryError -> throw CommandException(
+                "${gameMode.displayName} stats temporarily unavailable (${result.reason ?: "unknown"}).",
+                CommandUtils.buildInteractiveFeedback(
+                    messagePrefix = "${ChatColor.RED}${gameMode.displayName} stats temporarily unavailable (${result.reason ?: "unknown"}).${ChatColor.YELLOW} Check ",
+                    command = "/levelhead status",
+                    run = true,
+                    suffix = "${ChatColor.YELLOW} to see your connection status."
+                )
+            )
             is FetchResult.PermanentError -> {
                 val (errorMessage, interactiveFeedback) = when (result.reason) {
                     "MISSING_KEY" -> "Set your Hypixel API key with /levelhead apikey <key> to query players." to
@@ -67,7 +92,12 @@ object WhoisService {
                             run = true,
                             suffix = "${ChatColor.RED} to change the backend."
                         )
-                    else -> "${gameMode.displayName} request failed (${result.reason ?: "unknown"})." to null
+                    else -> "${gameMode.displayName} request failed (${result.reason ?: "unknown"})." to CommandUtils.buildInteractiveFeedback(
+                        messagePrefix = "${ChatColor.RED}${gameMode.displayName} request failed (${result.reason ?: "unknown"}).${ChatColor.YELLOW} Check ",
+                        command = "/levelhead status",
+                        run = true,
+                        suffix = "${ChatColor.YELLOW} to see your connection status."
+                    )
                 }
                 throw CommandException(errorMessage, interactiveFeedback)
             }
@@ -172,7 +202,16 @@ object WhoisService {
                 if (response.code() == 204 || response.code() == 404) {
                     return@withContext null
                 }
-                throw CommandException("Mojang profile lookup failed with HTTP ${response.code()}.")
+                throw CommandException(
+                    "Mojang profile lookup failed with HTTP ${response.code()}.",
+                    CommandUtils.buildInteractiveFeedback(
+                        messagePrefix = "${ChatColor.RED}Mojang profile lookup failed with HTTP ${response.code()}.${ChatColor.YELLOW} Check spelling or try ",
+                        command = "/levelhead whois <player>",
+                        run = false,
+                        suggestedCommand = "/levelhead whois ",
+                        suffix = "${ChatColor.YELLOW} again."
+                    )
+                )
             }
             val body = response.body()?.string().orEmpty()
             if (body.isEmpty()) {
