@@ -13,6 +13,9 @@ import java.util.Locale
  * Similar to BedwarsModeDetector but for SkyWars game mode.
  */
 object SkyWarsModeDetector : BaseModeDetector() {
+    private var lastSkyWarsDetectedAt: Long = 0L
+    private const val SKYWARS_CONTEXT_GRACE_MS = 10_000L
+
     private val bedwarsChatIndicators = listOf(
         "protect your bed",
         "bed destruction",
@@ -36,6 +39,13 @@ object SkyWarsModeDetector : BaseModeDetector() {
 
     fun isInSkyWars(): Boolean = currentContext().isSkyWars
 
+    fun peekIsInSkyWars(): Boolean = peekContext().isSkyWars
+
+    override fun onWorldJoin() {
+        super.onWorldJoin()
+        lastSkyWarsDetectedAt = 0L
+    }
+
     fun shouldRequestData(): Boolean {
         return Levelhead.isOnHypixel() && isInSkyWars()
     }
@@ -58,16 +68,23 @@ object SkyWarsModeDetector : BaseModeDetector() {
     }
 
     override fun detectContext(): Context {
+        val now = System.currentTimeMillis()
         val scoreboardContext = detectScoreboardContext()
         if (scoreboardContext != null && scoreboardContext != Context.NONE) {
+            lastSkyWarsDetectedAt = now
             return scoreboardContext
         }
 
         if (scoreboardContext == null || isScoreboardTitleGeneric()) {
             val chatContext = currentChatContext()
             if (chatContext != Context.NONE) {
+                lastSkyWarsDetectedAt = now
                 return chatContext
             }
+        }
+
+        if (cachedContext.isSkyWars && now - lastSkyWarsDetectedAt < SKYWARS_CONTEXT_GRACE_MS) {
+            return cachedContext
         }
 
         return scoreboardContext ?: Context.NONE

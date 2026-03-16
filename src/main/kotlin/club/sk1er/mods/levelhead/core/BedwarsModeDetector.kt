@@ -39,6 +39,8 @@ object BedwarsModeDetector : BaseModeDetector() {
 
     fun isInBedwars(): Boolean = currentContext().isBedwars
 
+    fun peekIsInBedwars(): Boolean = peekContext().isBedwars
+
     fun shouldRequestData(): Boolean {
         return Levelhead.isOnHypixel() && isInBedwarsMatch()
     }

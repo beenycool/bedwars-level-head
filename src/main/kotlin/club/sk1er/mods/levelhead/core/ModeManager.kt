@@ -34,11 +34,6 @@ object ModeManager {
         val duelsScoreboard = DuelsModeDetector.isInDuelsScoreboard()
         val swScoreboard = SkyWarsModeDetector.isInSkyWarsScoreboard()
         
-        // Step 1: Scoreboard matches take absolute priority.
-        if (bwScoreboard) return ActiveMode.BEDWARS
-        if (duelsScoreboard) return ActiveMode.DUELS
-        if (swScoreboard) return ActiveMode.SKYWARS
-
         val bedwarsMatch = BedwarsModeDetector.isInBedwarsMatch()
         val duelsMatch = DuelsModeDetector.isInDuelsMatch()
         val skywarsMatch = SkyWarsModeDetector.isInSkyWarsMatch()
@@ -48,6 +43,10 @@ object ModeManager {
         val skywars = skywarsMatch || SkyWarsModeDetector.isInSkyWars()
         
         val detected = when {
+            // Step 1: Scoreboard matches take absolute priority.
+            bwScoreboard -> ActiveMode.BEDWARS
+            duelsScoreboard -> ActiveMode.DUELS
+            swScoreboard -> ActiveMode.SKYWARS
             // Step 2: Match contexts (e.g. chat/cached) take priority over lobby detection.
             bedwarsMatch -> ActiveMode.BEDWARS
             duelsMatch -> ActiveMode.DUELS

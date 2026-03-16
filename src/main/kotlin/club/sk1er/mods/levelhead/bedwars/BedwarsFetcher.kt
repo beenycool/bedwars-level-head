@@ -10,13 +10,6 @@ object BedwarsFetcher : BaseStatsFetcher() {
     override val gameMode = GameMode.BEDWARS
     override val modeName = "BedWars"
 
-    suspend fun fetchProxyPlayer(identifier: String, lastFetchedAt: Long? = null, etag: String? = null): FetchResult {
-        if (!ProxyClient.isAvailable()) {
-            return FetchResult.PermanentError("PROXY_DISABLED")
-        }
-        return ProxyClient.fetchPlayer(identifier, lastFetchedAt, etag)
-    }
-
     override fun resetWarnings() {
         super.resetWarnings()
         ProxyClient.resetWarnings()

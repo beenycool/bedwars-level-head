@@ -65,6 +65,8 @@ abstract class BaseModeDetector {
         return cachedContext
     }
 
+    fun peekContext(): Context = cachedContext
+
     protected abstract fun handleContextChange(old: Context, new: Context)
     protected abstract fun detectContext(): Context
 

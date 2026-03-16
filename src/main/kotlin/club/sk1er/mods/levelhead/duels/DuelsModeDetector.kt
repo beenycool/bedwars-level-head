@@ -61,8 +61,8 @@ object DuelsModeDetector : BaseModeDetector() {
     }
 
     override fun detectContext(): Context {
-        val isInBedwars = BedwarsModeDetector.isInBedwars()
-        val isInSkywars = SkyWarsModeDetector.isInSkyWars()
+        val isInBedwars = BedwarsModeDetector.peekIsInBedwars()
+        val isInSkywars = SkyWarsModeDetector.peekIsInSkyWars()
         Levelhead.logger.debug("detectContext: isInBedwars={} isInSkywars={}", isInBedwars, isInSkywars)
         
         if (isInBedwars || isInSkywars) {
