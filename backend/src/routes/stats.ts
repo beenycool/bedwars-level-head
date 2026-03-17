@@ -300,10 +300,13 @@ router.get('/', async (req, res, next) => {
     // Why: reduce() creates an intermediate accumulator object and invokes a callback for every element.
     // Impact: For arrays with thousands of lookups, this eliminates O(N) object allocations and function
     // call overhead, reducing GC pressure and improving CPU time on this hot path.
-    for (let i = 0; i < totalLookups; i++) {
-      const d = chartData[i];
-      if (d.cacheHit) cacheHits++;
-      if (d.responseStatus >= 200 && d.responseStatus < 400) successCount++;
+    for (const d of chartData) {
+      if (d.cacheHit) {
+        cacheHits++;
+      }
+      if (d.responseStatus >= 200 && d.responseStatus < 400) {
+        successCount++;
+      }
       if (typeof d.latencyMs === 'number' && d.latencyMs >= 0) {
         latencyValues.push(d.latencyMs);
       }
