@@ -29,16 +29,19 @@ object WhoisService {
 
     suspend fun lookupWhois(identifier: String): WhoisResult {
         val resolved = resolvePlayerIdentifier(identifier)
-            ?: throw CommandException(
-                "Could not resolve '$identifier' to a player UUID.",
-                CommandUtils.buildInteractiveFeedback(
-                    messagePrefix = "${ChatColor.RED}Could not resolve '$identifier'.${ChatColor.YELLOW} Try ",
-                    command = "/levelhead whois <player>",
-                    run = false,
-                    suggestedCommand = "/levelhead whois ",
-                    suffix = "${ChatColor.YELLOW} with a valid name or UUID."
+            ?: run {
+                val baseError = "Could not resolve '$identifier'"
+                throw CommandException(
+                    "$baseError to a player UUID.",
+                    CommandUtils.buildInteractiveFeedback(
+                        messagePrefix = "${ChatColor.RED}$baseError.${ChatColor.YELLOW} Try ",
+                        command = "/levelhead whois <player>",
+                        run = false,
+                        suggestedCommand = "/levelhead whois ",
+                        suffix = "${ChatColor.YELLOW} with a valid name or UUID."
+                    )
                 )
-            )
+            }
         
         val gameMode = ModeManager.getActiveGameMode() ?: GameMode.BEDWARS
         
