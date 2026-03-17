@@ -604,7 +604,13 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
             "import" -> {
                 val clipboard = GuiScreen.getClipboardString()
                 if (clipboard.isNullOrBlank()) {
-                    sendMessage("${ChatColor.RED}Clipboard is empty.${ChatColor.YELLOW} Copy a profile JSON to your clipboard first.")
+                    val msg = CommandUtils.buildInteractiveFeedback(
+                        messagePrefix = "${ChatColor.RED}Clipboard is empty.${ChatColor.YELLOW} Try using ",
+                        command = "/levelhead profile export",
+                        run = true,
+                        suffix = "${ChatColor.YELLOW} to create a profile JSON first."
+                    )
+                    sendMessage(msg)
                     return
                 }
                 val profile = ConfigProfiles.importProfile(clipboard)
