@@ -53,7 +53,7 @@
 **Learning:** Even though endpoints may be separated into distinct routers (like `player.ts` vs `playerPublic.ts`), authentication MUST be explicitly enforced at the route or router level. The existence of separate "private" rate limits does not mean the route is actually restricted to private users.
 **Prevention:** Always attach an authentication middleware (e.g., `enforceApiKeyAuth`) to any route or router that is explicitly non-public, rather than relying solely on the application structure.
 
-## 2026-11-20 - Unauthenticated Batch Rate Limiting Bypass
+## 2026-03-16 - Unauthenticated Batch Rate Limiting Bypass
 
 **Vulnerability:** The public `/api/public/player/batch` endpoint allowed users to query up to 20 UUIDs per request, but the rate limiter (`enforcePublicRateLimit`) only charged 1 token per HTTP request regardless of the batch size. An attacker could retrieve 20x more data than intended per minute, potentially exhausting upstream APIs (Hypixel) or local database resources.
 **Learning:** Batch endpoints inherently multiply the resource cost of a single HTTP request. A static "1 request = 1 token" rate limit is insufficient for endpoints that process variable-sized arrays of work.
