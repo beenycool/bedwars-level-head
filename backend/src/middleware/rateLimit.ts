@@ -239,8 +239,9 @@ export const enforceRateLimit = createRateLimitMiddleware({
   windowMs: RATE_LIMIT_WINDOW_MS,
   max: RATE_LIMIT_MAX,
   getBucketKey(req: Request) {
-    return getClientIpAddress(req);
+    return req.apiKeyValidation?.keyHash ? `apikey:${req.apiKeyValidation.keyHash}` : getClientIpAddress(req);
   },
+  getClientIp: getClientIpAddress,
   metricLabel: 'private',
   getDynamicMax: resolveDynamicLimitValue,
 });
@@ -261,8 +262,9 @@ export const enforceBatchRateLimit = createRateLimitMiddleware({
   windowMs: RATE_LIMIT_WINDOW_MS,
   max: RATE_LIMIT_MAX,
   getBucketKey(req: Request) {
-    return getClientIpAddress(req);
+    return req.apiKeyValidation?.keyHash ? `apikey:${req.apiKeyValidation.keyHash}` : getClientIpAddress(req);
   },
+  getClientIp: getClientIpAddress,
   getCost(req: Request) {
     // Cost is the number of UUIDs in the batch request
     const body = req.body as { uuids?: unknown } | undefined;
