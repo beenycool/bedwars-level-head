@@ -19,6 +19,8 @@ import net.minecraft.client.Minecraft
 import net.minecraft.util.ChatComponentText
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.util.IChatComponent
+import net.minecraft.event.ClickEvent
+import net.minecraft.event.HoverEvent
 import net.minecraft.util.EnumChatFormatting as ChatColor
 import okhttp3.HttpUrl
 import okhttp3.Request
@@ -149,17 +151,15 @@ object WhoisService {
     private fun formatResultComponent(result: WhoisResult): IChatComponent {
         val nickedText = if (result.nicked) " ${ChatColor.GRAY}(nicked)" else ""
 
-        val component = CommandUtils.createClickableCommand(
-            command = result.displayName,
-            run = false,
-            suggestedCommand = result.uuid.toString()
+        val nameComponent = ChatComponentText(result.displayName).apply {
+            chatStyle.color = ChatColor.YELLOW
+            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, result.uuid.toString())
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to fill"))
+        }
+
+        return nameComponent.appendSibling(
+            ChatComponentText("$nickedText ${ChatColor.YELLOW}is ${ChatColor.GOLD}${result.statValue} ${ChatColor.YELLOW}(${result.gameMode.displayName} ${result.statName})")
         )
-
-        val prefix = ChatComponentText("${ChatColor.YELLOW}")
-        prefix.appendSibling(component)
-        prefix.appendSibling(ChatComponentText("$nickedText ${ChatColor.YELLOW}is ${ChatColor.GOLD}${result.statValue} ${ChatColor.YELLOW}(${result.gameMode.displayName} ${result.statName})"))
-
-        return prefix
     }
 
     private suspend fun resolvePlayerIdentifier(input: String): ResolvedIdentifier? {
