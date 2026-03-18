@@ -2543,7 +2543,9 @@ router.get('/', async (req, res, next) => {
       // Client-side helper functions for formatting (mirrors server-side)
       function escapeHtmlClient(str) {
         if (str === null || str === undefined) return '';
-        return String(str)
+        const s = String(str);
+        if (!/[&<>"']/.test(s)) return s;
+        return s
           .replace(/&/g, '&amp;')
           .replace(/</g, '&lt;')
           .replace(/>/g, '&gt;')
