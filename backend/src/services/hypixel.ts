@@ -186,10 +186,11 @@ export function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayloa
   }
 
   const bedwarsStats = response.player?.stats?.Bedwars ?? {};
-  const experience = (bedwarsStats as any).bedwars_experience ?? (bedwarsStats as any).Experience;
-  const finalKillsRaw = (bedwarsStats as any).final_kills_bedwars;
-  const finalDeathsRaw = (bedwarsStats as any).final_deaths_bedwars;
-  const winstreakRaw = (bedwarsStats as any).winstreak;
+  const bedwars = bedwarsStats as Record<string, number | undefined>;
+  const experience = bedwars.bedwars_experience ?? bedwars.Experience;
+  const finalKillsRaw = bedwars.final_kills_bedwars;
+  const finalDeathsRaw = bedwars.final_deaths_bedwars;
+  const winstreakRaw = bedwars.winstreak;
 
   const finalKills = Number(finalKillsRaw ?? 0);
   const finalDeaths = Number(finalDeathsRaw ?? 0);
@@ -458,6 +459,9 @@ export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPla
   const duelsStats = response.player?.stats?.Duels ?? {};
   const skywarsStats = response.player?.stats?.SkyWars ?? {};
 
+  const bedwars = bedwarsStats as Record<string, number | undefined>;
+  const skywars = skywarsStats as Record<string, number | undefined>;
+
   const duelsAggregates = extractModeStats(duelsStats);
   const skywarsAggregates = extractModeStats(skywarsStats);
 
@@ -465,10 +469,9 @@ export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPla
     displayname: response.player?.displayname ?? null,
 
     // Bedwars
-    bedwars_experience: (bedwarsStats as any).bedwars_experience
-                       ?? (bedwarsStats as any).Experience ?? null,
-    bedwars_final_kills: Number(bedwarsStats.final_kills_bedwars ?? 0),
-    bedwars_final_deaths: Number(bedwarsStats.final_deaths_bedwars ?? 0),
+    bedwars_experience: bedwars.bedwars_experience ?? bedwars.Experience ?? null,
+    bedwars_final_kills: Number(bedwars.final_kills_bedwars ?? 0),
+    bedwars_final_deaths: Number(bedwars.final_deaths_bedwars ?? 0),
 
     // Duels
     duels_wins: duelsAggregates.wins,
@@ -477,9 +480,9 @@ export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPla
     duels_deaths: duelsAggregates.deaths,
 
     // SkyWars
-    skywars_experience: (skywarsStats as any).skywars_experience
-                       ?? (skywarsStats as any).SkyWars_experience
-                       ?? (skywarsStats as any).Experience
+    skywars_experience: skywars.skywars_experience
+                       ?? skywars.SkyWars_experience
+                       ?? skywars.Experience
                        ?? null,
     skywars_wins: skywarsAggregates.wins,
     skywars_losses: skywarsAggregates.losses,

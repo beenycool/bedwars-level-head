@@ -1,0 +1,4 @@
+## 2024-05-18 - Replacing unknown object casts
+**Tech Debt:** Inline `any` assertions used directly to access untyped JSON payload keys, then initially replaced with `Record<string, unknown>`.
+**Learning:** Casting a dynamic object to `Record<string, unknown>` before extracting primitives makes those extracted primitives inherently `unknown`. Assigning `unknown` to properties restricted to specific types (e.g., `number | undefined`) causes TS compilation errors. Trying to resolve this inline leads to an unreadable mess of repeated assertions (e.g., `((obj as ...).prop as ...)`).
+**Prevention:** Cast dynamic objects directly to structurally accurate types matching the primitives you need to extract (e.g., `const bedwars = obj as Record<string, number | undefined>`) so properties naturally resolve to the required types, maintaining both type-safety and readability without inline verbosity.

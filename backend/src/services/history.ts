@@ -1,6 +1,6 @@
 import pLimit from 'p-limit';
 import { db, dbType, DatabaseType } from './database/db';
-import { sql } from 'kysely';
+import { sql, SelectQueryBuilder, ExpressionBuilder } from 'kysely';
 import { ensureCockroachRowLevelTtl } from './database/cockroachTtl';
 
 import { getRedisCacheStats } from './redis';
@@ -362,7 +362,7 @@ export async function getRecentPlayerQueries(limit = 50): Promise<PlayerQuerySum
   return rows.map(mapRowToSummary);
 }
 
-function mapRowToSummary(row: PlayerQueryHistoryRow | any): PlayerQuerySummary {
+function mapRowToSummary(row: PlayerQueryHistoryRow): PlayerQuerySummary {
   const parsedResponseStatus = Number(row.response_status);
   const parsedLatency = row.latency_ms === null ? null : Number(row.latency_ms);
 
@@ -385,10 +385,10 @@ function mapRowToSummary(row: PlayerQueryHistoryRow | any): PlayerQuerySummary {
 }
 
 function buildDateRangeClause(
-  query: any,
+  query: SelectQueryBuilder<any, any, any>,
   startDate: Date | undefined,
   endDate: Date | undefined,
-): any {
+): SelectQueryBuilder<any, any, any> {
   let q = query;
   if (startDate) {
     q = q.where('requested_at', '>=', startDate);
@@ -447,7 +447,7 @@ export async function getPlayerQueriesStats(params: {
   return rows.map(mapRowToStatsSummary);
 }
 
-function mapRowToStatsSummary(row: PlayerQueryStatsRow | any): PlayerQueryStatsSummary {
+function mapRowToStatsSummary(row: PlayerQueryStatsRow): PlayerQueryStatsSummary {
   const parsedResponseStatus = Number(row.response_status);
   const parsedLatency = row.latency_ms === null ? null : Number(row.latency_ms);
 
@@ -492,13 +492,13 @@ export async function getTopPlayersByQueryCount(params: {
   }));
 }
 
-export function buildSearchClause(query: any, searchTerm: string | undefined): any {
+export function buildSearchClause(query: SelectQueryBuilder<any, any, any>, searchTerm: string | undefined): SelectQueryBuilder<any, any, any> {
   if (!searchTerm) {
     return query;
   }
   
   const term = `%${searchTerm}%`;
-  return query.where((eb: any) => eb.or([
+  return query.where((eb: ExpressionBuilder<any, any>) => eb.or([
     eb('normalized_identifier', 'like', term),
     eb('resolved_username', 'like', term),
     eb('resolved_uuid', 'like', term)
