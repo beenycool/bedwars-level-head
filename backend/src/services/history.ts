@@ -1,6 +1,6 @@
 import pLimit from 'p-limit';
 import { db, dbType, DatabaseType } from './database/db';
-import { sql } from 'kysely';
+import { sql, SelectQueryBuilder, ExpressionBuilder } from 'kysely';
 import { ensureCockroachRowLevelTtl } from './database/cockroachTtl';
 
 import { getRedisCacheStats } from './redis';
@@ -362,7 +362,7 @@ export async function getRecentPlayerQueries(limit = 50): Promise<PlayerQuerySum
   return rows.map(mapRowToSummary);
 }
 
-function mapRowToSummary(row: PlayerQueryHistoryRow | any): PlayerQuerySummary {
+function mapRowToSummary(row: PlayerQueryHistoryRow): PlayerQuerySummary {
   const parsedResponseStatus = Number(row.response_status);
   const parsedLatency = row.latency_ms === null ? null : Number(row.latency_ms);
 
@@ -384,11 +384,11 @@ function mapRowToSummary(row: PlayerQueryHistoryRow | any): PlayerQuerySummary {
   };
 }
 
-function buildDateRangeClause(
-  query: any,
+function buildDateRangeClause<QB extends SelectQueryBuilder<any, any, any>>(
+  query: QB,
   startDate: Date | undefined,
   endDate: Date | undefined,
-): any {
+): QB {
   let q = query;
   if (startDate) {
     q = q.where('requested_at', '>=', startDate);
@@ -447,7 +447,7 @@ export async function getPlayerQueriesStats(params: {
   return rows.map(mapRowToStatsSummary);
 }
 
-function mapRowToStatsSummary(row: PlayerQueryStatsRow | any): PlayerQueryStatsSummary {
+function mapRowToStatsSummary(row: PlayerQueryStatsRow): PlayerQueryStatsSummary {
   const parsedResponseStatus = Number(row.response_status);
   const parsedLatency = row.latency_ms === null ? null : Number(row.latency_ms);
 
@@ -492,17 +492,17 @@ export async function getTopPlayersByQueryCount(params: {
   }));
 }
 
-export function buildSearchClause(query: any, searchTerm: string | undefined): any {
+export function buildSearchClause<QB extends SelectQueryBuilder<any, any, any>>(query: QB, searchTerm: string | undefined): QB {
   if (!searchTerm) {
     return query;
   }
   
   const term = `%${searchTerm}%`;
-  return query.where((eb: any) => eb.or([
+  return query.where((eb) => eb.or([
     eb('normalized_identifier', 'like', term),
     eb('resolved_username', 'like', term),
     eb('resolved_uuid', 'like', term)
-  ]));
+  ])) as QB;
 }
 
 export async function getPlayerQueryCount(params: { search?: string }): Promise<number> {

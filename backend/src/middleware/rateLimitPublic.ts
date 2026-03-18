@@ -1,6 +1,6 @@
 import type { Request } from 'express';
 import { PUBLIC_RATE_LIMIT_MAX, PUBLIC_RATE_LIMIT_WINDOW_MS } from '../config';
-import { createRateLimitMiddleware, getClientIpAddress } from './rateLimit';
+import { createRateLimitMiddleware, getClientIpAddress, resolveBatchCost } from './rateLimit';
 
 function getBucketKey(req: Request): string {
   const ip = getClientIpAddress(req);
@@ -15,30 +15,12 @@ export const enforcePublicRateLimit = createRateLimitMiddleware({
   metricLabel: 'public',
 });
 
-// Cost-based rate limiter for public batch endpoint
-// Each identifier in the batch counts as one token toward the rate limit
+// Cost-based rate limiter for public batch endpoints
 export const enforcePublicBatchRateLimit = createRateLimitMiddleware({
   windowMs: PUBLIC_RATE_LIMIT_WINDOW_MS,
   max: PUBLIC_RATE_LIMIT_MAX,
   getBucketKey,
   getClientIp: getClientIpAddress,
-  getCost(req: Request) {
-    // Cost is the number of UUIDs in the batch request
-    const body = req.body as { uuids?: unknown } | undefined;
-    if (!body || !Array.isArray(body.uuids)) {
-      return 1; // Minimum cost for invalid/empty requests
-    }
-    // Count unique, non-empty strings in a single pass
-    const uniqueIdentifiers = new Set<string>();
-    for (const value of body.uuids) {
-      if (typeof value === 'string' && value.length <= 64 /* IDENTIFIER_MAX_LENGTH */) {
-        const trimmed = value.trim();
-        if (trimmed.length > 0) {
-          uniqueIdentifiers.add(trimmed);
-        }
-      }
-    }
-    return Math.max(1, uniqueIdentifiers.size); // Minimum cost of 1
-  },
+  getCost: resolveBatchCost,
   metricLabel: 'public_batch',
 });
