@@ -27,7 +27,11 @@ object TabRender {
 
     private var frameState: FrameState? = null
 
-    private val textCache = mutableMapOf<UUID, Pair<GameStats, String>>()
+    private val textCache = object : LinkedHashMap<Pair<UUID, GameMode>, Pair<GameStats, String>>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<UUID, GameMode>, Pair<GameStats, String>>): Boolean {
+            return size > 500
+        }
+    }
 
     /**
      * Called at the start of renderPlayerlist to prepare per-frame tab data.
@@ -146,12 +150,13 @@ object TabRender {
     }
 
     private fun getOrBuildTabString(uuid: UUID, stats: GameStats, mode: GameMode): String {
-        val cached = textCache[uuid]
-        if (cached != null && cached.first === stats) {
+        val key = uuid to mode
+        val cached = textCache[key]
+        if (cached != null && cached.first == stats) {
             return cached.second
         }
         val newText = formatTabString(stats, mode)
-        textCache[uuid] = stats to newText
+        textCache[key] = stats to newText
         return newText
     }
 

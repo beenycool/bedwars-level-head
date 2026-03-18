@@ -61,26 +61,26 @@ object DuelsModeDetector : BaseModeDetector() {
     }
 
     override fun detectContext(): Context {
-        val isInBedwars = BedwarsModeDetector.peekIsInBedwars()
-        val isInSkywars = SkyWarsModeDetector.peekIsInSkyWars()
-        Levelhead.logger.debug("detectContext: isInBedwars={} isInSkywars={}", isInBedwars, isInSkywars)
-        
-        if (isInBedwars || isInSkywars) {
-            Levelhead.logger.debug("detectContext: returning NONE due to Bedwars/SkyWars")
-            return Context.NONE
-        }
-
         val scoreboardContext = detectScoreboardContext()
         Levelhead.logger.debug("detectContext: scoreboardContext={}", scoreboardContext)
-        
+
         if (scoreboardContext != null && scoreboardContext != Context.NONE) {
             Levelhead.logger.debug("detectContext: returning scoreboardContext={}", scoreboardContext)
             return scoreboardContext
         }
 
+        val isInBedwars = BedwarsModeDetector.peekIsInBedwars()
+        val isInSkywars = SkyWarsModeDetector.peekIsInSkyWars()
+        Levelhead.logger.debug("detectContext: isInBedwars={} isInSkywars={}", isInBedwars, isInSkywars)
+
+        if (isInBedwars || isInSkywars) {
+            Levelhead.logger.debug("detectContext: returning NONE due to Bedwars/SkyWars")
+            return Context.NONE
+        }
+
         if (scoreboardContext == null || isScoreboardTitleGeneric()) {
             val chatContext = currentChatContext()
-            Levelhead.logger.debug("detectContext: chatContext={} (scoreboardNull={} titleGeneric={})", 
+            Levelhead.logger.debug("detectContext: chatContext={} (scoreboardNull={} titleGeneric={})",
                 chatContext, scoreboardContext == null, isScoreboardTitleGeneric())
             if (chatContext != Context.NONE) {
                 Levelhead.logger.debug("detectContext: returning chatContext={}", chatContext)

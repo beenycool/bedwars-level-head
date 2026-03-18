@@ -128,7 +128,6 @@ abstract class BaseModeDetector {
         chatDetectedContext = Context.NONE
         chatDetectionExpiry = 0L
         if (isTargetMode) {
-            cachedContext = Context.NONE
             lastDetectionTime = 0L
             currentContext(force = true)
         }
