@@ -31,7 +31,7 @@ export const enforcePublicBatchRateLimit = createRateLimitMiddleware({
     // Count unique, non-empty strings in a single pass
     const uniqueIdentifiers = new Set<string>();
     for (const value of body.uuids) {
-      if (typeof value === 'string') {
+      if (typeof value === 'string' && value.length <= 64 /* IDENTIFIER_MAX_LENGTH */) {
         const trimmed = value.trim();
         if (trimmed.length > 0) {
           uniqueIdentifiers.add(trimmed);
