@@ -35,3 +35,7 @@
 ## 2025-05-16 - Cost-based Rate Limiting for Public Batch Endpoints
 **Learning:** Public batch endpoints (e.g., `/api/public/player/batch`) were using a static per-request rate limit (`enforcePublicRateLimit`). This creates a vulnerability where attackers could bypass the rate limit by packing maximum permitted items into each request (e.g. 20 items), causing resource exhaustion proportional to the payload size rather than request count.
 **Action:** For batch endpoints that consume resources proportional to array payload length, implement and apply a dynamic, cost-based rate limiting middleware (like `enforcePublicBatchRateLimit`) that counts each item in the payload as an individual token against the rate limit bucket.
+
+## 2025-05-16 - Stateful Regex in Fast-Paths
+**Learning:** Using a global regular expression (`/pattern/g`) with `.test()` as a fast-path condition before a `.replace()` mutates the `lastIndex` property of the regex object. If the same global regex object is reused across function calls, subsequent `.test()` checks will resume from `lastIndex` and potentially fail on valid matches, causing stateful bugs.
+**Action:** In high-traffic string manipulation functions (like `escapeHtml`), use a non-global regex with `.test()` as a fast-path check before executing heavier `.replace()` operations to prevent unnecessary string allocations. Ensure this fast-path regex is non-global to avoid mutating the `.lastIndex` property.
