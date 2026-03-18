@@ -1,30 +1,92 @@
-package club.sk1er.mods.levelhead.bedwars
-
-import com.google.gson.JsonParser
+package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.executeWithRetries
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.handleRetryAfterHint
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.parseRetryAfterMillis
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.sanitizeForLogs
+import club.sk1er.mods.levelhead.bedwars.FetchResult
+import club.sk1er.mods.levelhead.bedwars.ProxyClient
 import club.sk1er.mods.levelhead.config.LevelheadConfig
-import club.sk1er.mods.levelhead.core.DebugLogging
 import club.sk1er.mods.levelhead.core.DebugLogging.maskForLogs
-import net.minecraft.util.EnumChatFormatting as ChatColor
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import okhttp3.HttpUrl
 import okhttp3.Request
 import java.io.IOException
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
+import net.minecraft.util.EnumChatFormatting as ChatColor
 
-object HypixelClient {
-    private const val HYPIXEL_PLAYER_ENDPOINT = "https://api.hypixel.net/player"
+abstract class BaseStatsFetcher {
+    private val HYPIXEL_PLAYER_ENDPOINT = "https://api.hypixel.net/player"
 
-    private val missingKeyWarned = AtomicBoolean(false)
-    private val invalidKeyWarned = AtomicBoolean(false)
-    private val networkIssueWarned = AtomicBoolean(false)
+    protected val missingKeyWarned = AtomicBoolean(false)
+    protected val invalidKeyWarned = AtomicBoolean(false)
+    protected val networkIssueWarned = AtomicBoolean(false)
 
-    suspend fun fetchPlayer(uuid: UUID): FetchResult {
+    protected abstract val gameMode: GameMode
+    protected abstract val modeName: String
+
+    protected fun contributeToCommunityDatabase(uuid: UUID, payload: JsonObject) {
+        if (ProxyClient.canContribute()) {
+            Levelhead.scope.launch(Dispatchers.IO) {
+                ProxyClient.submitPlayer(uuid, payload)
+            }
+        }
+    }
+
+    suspend fun fetchPlayer(uuid: UUID, lastFetchedAt: Long? = null, etag: String? = null): FetchResult {
+        return when (LevelheadConfig.backendMode) {
+            BackendMode.OFFLINE -> FetchResult.PermanentError("OFFLINE_MODE")
+            BackendMode.COMMUNITY_CACHE_ONLY -> {
+                if (isProxyAvailable()) {
+                    fetchFromProxy(uuid.toString(), lastFetchedAt, etag)
+                } else {
+                    FetchResult.PermanentError("COMMUNITY_DATABASE_UNAVAILABLE")
+                }
+            }
+            BackendMode.DIRECT_API -> {
+                val hypixelResult = fetchFromHypixel(uuid)
+                if (hypixelResult is FetchResult.Success) {
+                    contributeToCommunityDatabase(uuid, hypixelResult.payload)
+                }
+                hypixelResult
+            }
+            BackendMode.FALLBACK -> {
+                if (isProxyAvailable()) {
+                    val communityResult = fetchFromProxy(uuid.toString(), lastFetchedAt, etag)
+                    if (communityResult is FetchResult.Success) {
+                        if (StatsFetcher.findStatsObject(communityResult.payload, gameMode) != null) {
+                            return communityResult
+                        }
+                    } else if (communityResult is FetchResult.NotModified) {
+                        return communityResult
+                    }
+                }
+
+                val hypixelResult = fetchFromHypixel(uuid)
+                if (hypixelResult is FetchResult.Success) {
+                    contributeToCommunityDatabase(uuid, hypixelResult.payload)
+                }
+                hypixelResult
+            }
+        }
+    }
+
+    private fun isProxyAvailable(): Boolean {
+        if (!LevelheadConfig.proxyEnabled) return false
+        if (!LevelheadConfig.communityDatabase) return false
+        return LevelheadConfig.proxyBaseUrl.isNotBlank()
+    }
+
+    private suspend fun fetchFromProxy(identifier: String, lastFetchedAt: Long?, etag: String?): FetchResult {
+        return ProxyClient.fetchPlayer(identifier, lastFetchedAt, etag)
+    }
+
+    private suspend fun fetchFromHypixel(uuid: UUID): FetchResult {
         val key = LevelheadConfig.apiKey
         if (key.isBlank()) {
             notifyMissingKey()
@@ -36,7 +98,7 @@ object HypixelClient {
             ?.build()
 
         if (url == null) {
-            Levelhead.logger.error("Failed to build Hypixel BedWars endpoint URL")
+            Levelhead.logger.error("Failed to build Hypixel endpoint URL")
             return FetchResult.PermanentError("INVALID_URL")
         }
 
@@ -51,11 +113,11 @@ object HypixelClient {
         val debugEnabled = DebugLogging.isRequestDebugEnabled()
         val maskedUuid = if (debugEnabled) uuid.maskForLogs() else null
         DebugLogging.logRequestDebug {
-            "[LevelheadDebug][network] request start: endpoint=${HYPIXEL_PLAYER_ENDPOINT}, uuid=$maskedUuid, hasApiKey=${key.isNotBlank()}"
+            "[LevelheadDebug][network] request start: endpoint=$HYPIXEL_PLAYER_ENDPOINT, uuid=$maskedUuid, hasApiKey=${key.isNotBlank()}"
         }
 
         return try {
-            executeWithRetries(request, "Hypixel player").use { response ->
+            executeWithRetries(request, "Hypixel $modeName").use { response ->
                 val body = response.body()?.string().orEmpty()
                 val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
 
@@ -78,7 +140,7 @@ object HypixelClient {
                     if (response.code() == 429) {
                         handleRetryAfterHint("hypixel", retryAfterMillis)
                         Levelhead.logger.warn(
-                            "Hypixel rate limited BedWars requests. Retry after {} ms.",
+                            "Hypixel rate limited requests. Retry after {} ms.",
                             retryAfterMillis ?: -1
                         )
                     }
@@ -95,11 +157,13 @@ object HypixelClient {
                     Levelhead.logger.error("Failed to parse Hypixel response", it)
                     return FetchResult.TemporaryError("PARSE_ERROR")
                 }
+                
                 DebugLogging.logRequestDebug {
                     "[LevelheadDebug][network] parse: success=true"
                 }
                 handleRetryAfterHint("hypixel", retryAfterMillis)
-
+                missingKeyWarned.set(false)
+                
                 FetchResult.Success(json)
             }
         } catch (ex: IOException) {
@@ -114,24 +178,23 @@ object HypixelClient {
             DebugLogging.logRequestDebug {
                 "[LevelheadDebug][network] error: ${ex::class.simpleName}"
             }
-            Levelhead.logger.error("Failed to fetch Hypixel BedWars data", ex)
+            Levelhead.logger.error("Failed to fetch Hypixel data", ex)
             FetchResult.TemporaryError(ex.message?.sanitizeForLogs())
         }
     }
 
-    fun resetWarnings() {
+    open fun resetWarnings() {
         missingKeyWarned.set(false)
         invalidKeyWarned.set(false)
         networkIssueWarned.set(false)
     }
 
     private fun notifyMissingKey() {
-        // Suppress warnings when user has API key set and using shared backend
         if (LevelheadConfig.shouldSuppressBackendWarnings()) return
 
         if (missingKeyWarned.compareAndSet(false, true)) {
             Levelhead.sendChat(
-                "${ChatColor.YELLOW}Set your Hypixel API key with ${ChatColor.GOLD}/levelhead apikey <key>${ChatColor.YELLOW} to enable BedWars stats."
+                "${ChatColor.YELLOW}Set your Hypixel API key with ${ChatColor.GOLD}/levelhead apikey <key>${ChatColor.YELLOW} to enable $modeName stats."
             )
         }
     }
@@ -152,6 +215,6 @@ object HypixelClient {
         if (networkIssueWarned.compareAndSet(false, true)) {
             Levelhead.sendChat("${ChatColor.RED}Hypixel stats offline. ${ChatColor.YELLOW}Retrying in 60s.")
         }
-        Levelhead.logger.error("Network error while fetching Hypixel BedWars data", ex)
+        Levelhead.logger.error("Network error while fetching Hypixel data", ex)
     }
 }

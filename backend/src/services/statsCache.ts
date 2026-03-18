@@ -994,7 +994,7 @@ export async function getManyPlayerStatsFromCacheWithSWR(
       recordCacheMiss('expired');
     }
 
-    const stillMissing = missing.filter((m) => !result.has(m.key));
+    const stillMissing = missingKeys.filter((key) => !result.has(key));
     for (const _ of stillMissing) {
       recordCacheTierMiss('l2', 'absent');
       recordCacheMiss('absent');

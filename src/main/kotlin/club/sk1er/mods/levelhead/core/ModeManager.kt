@@ -30,19 +30,28 @@ object ModeManager {
      * Checks all mode detectors to determine which game is being played.
      */
     fun detectActiveMode(): ActiveMode {
+        val bwScoreboard = BedwarsModeDetector.isInBedwarsScoreboard()
+        val duelsScoreboard = DuelsModeDetector.isInDuelsScoreboard()
+        val swScoreboard = SkyWarsModeDetector.isInSkyWarsScoreboard()
+        
         val bedwarsMatch = BedwarsModeDetector.isInBedwarsMatch()
         val duelsMatch = DuelsModeDetector.isInDuelsMatch()
         val skywarsMatch = SkyWarsModeDetector.isInSkyWarsMatch()
+        
         val bedwars = bedwarsMatch || BedwarsModeDetector.isInBedwars()
         val duels = duelsMatch || DuelsModeDetector.isInDuels()
         val skywars = skywarsMatch || SkyWarsModeDetector.isInSkyWars()
         
         val detected = when {
-            // Match contexts take priority over lobby/general detection.
+            // Step 1: Scoreboard matches take absolute priority.
+            bwScoreboard -> ActiveMode.BEDWARS
+            duelsScoreboard -> ActiveMode.DUELS
+            swScoreboard -> ActiveMode.SKYWARS
+            // Step 2: Match contexts (e.g. chat/cached) take priority over lobby detection.
             bedwarsMatch -> ActiveMode.BEDWARS
             duelsMatch -> ActiveMode.DUELS
             skywarsMatch -> ActiveMode.SKYWARS
-            // Fall back to lobby/general detection.
+            // Step 3: Fall back to lobby/general detection.
             bedwars -> ActiveMode.BEDWARS
             duels -> ActiveMode.DUELS
             skywars -> ActiveMode.SKYWARS

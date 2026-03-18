@@ -1,10 +1,8 @@
 package club.sk1er.mods.levelhead.skywars
 
 import club.sk1er.mods.levelhead.Levelhead
+import club.sk1er.mods.levelhead.core.BaseModeDetector
 import net.minecraft.client.Minecraft
-import net.minecraft.scoreboard.Score
-import net.minecraft.scoreboard.ScorePlayerTeam
-import net.minecraft.util.IChatComponent
 import net.minecraft.util.StringUtils
 import net.minecraftforge.client.event.ClientChatReceivedEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
@@ -14,15 +12,9 @@ import java.util.Locale
  * Detects when the player is in a SkyWars game on Hypixel.
  * Similar to BedwarsModeDetector but for SkyWars game mode.
  */
-object SkyWarsModeDetector {
-    private val WHITESPACE_PATTERN = Regex("\\s+")
-
-    private var cachedContext: Context = Context.UNKNOWN
-    private var lastDetectionTime: Long = 0L
-    private var chatDetectedContext: Context = Context.NONE
-    private var chatDetectionExpiry: Long = 0L
-
-    private const val CHAT_CONTEXT_DURATION = 20_000L
+object SkyWarsModeDetector : BaseModeDetector() {
+    private var lastSkyWarsDetectedAt: Long = 0L
+    private const val SKYWARS_CONTEXT_GRACE_MS = 10_000L
 
     private val bedwarsChatIndicators = listOf(
         "protect your bed",
@@ -39,47 +31,20 @@ object SkyWarsModeDetector {
         "duels killer"
     )
 
-    enum class Context {
-        UNKNOWN,
-        NONE,
-        LOBBY,
-        MATCH;
-
-        val isSkyWars: Boolean
-            get() = this == LOBBY || this == MATCH
-    }
-
-    fun onWorldJoin() {
-        cachedContext = Context.UNKNOWN
-        lastDetectionTime = 0L
-        chatDetectedContext = Context.NONE
-        chatDetectionExpiry = 0L
-    }
-
-    fun currentContext(force: Boolean = false): Context {
-        val now = System.currentTimeMillis()
-        // Cache context for 5 seconds to reduce scoreboard parsing overhead
-        if (force || cachedContext == Context.UNKNOWN || now - lastDetectionTime > 5_000L) {
-            val detected = detectContext()
-            if (detected != cachedContext) {
-                val oldContext = cachedContext.takeUnless { it == Context.UNKNOWN } ?: Context.NONE
-                cachedContext = detected
-                if (oldContext != detected) {
-                    handleContextChange(oldContext, detected)
-                }
-            } else if (cachedContext == Context.UNKNOWN) {
-                cachedContext = detected
-            }
-            lastDetectionTime = now
-        }
-        return cachedContext
-    }
-
     fun isInSkyWarsLobby(): Boolean = currentContext().let { it == Context.LOBBY }
 
     fun isInSkyWarsMatch(): Boolean = currentContext().let { it == Context.MATCH }
 
+    fun isInSkyWarsScoreboard(): Boolean = detectScoreboardContext() == Context.MATCH
+
     fun isInSkyWars(): Boolean = currentContext().isSkyWars
+
+    fun peekIsInSkyWars(): Boolean = peekContext().isSkyWars
+
+    override fun onWorldJoin() {
+        super.onWorldJoin()
+        lastSkyWarsDetectedAt = 0L
+    }
 
     fun shouldRequestData(): Boolean {
         return Levelhead.isOnHypixel() && isInSkyWars()
@@ -90,7 +55,7 @@ object SkyWarsModeDetector {
         return shouldRequestData()
     }
 
-    private fun handleContextChange(old: Context, new: Context) {
+    override fun handleContextChange(old: Context, new: Context) {
         when {
             !old.isSkyWars && new.isSkyWars -> {
                 Levelhead.displayManager.syncGameMode()
@@ -102,34 +67,27 @@ object SkyWarsModeDetector {
         }
     }
 
-    private fun detectContext(): Context {
+    override fun detectContext(): Context {
+        val now = System.currentTimeMillis()
         val scoreboardContext = detectScoreboardContext()
         if (scoreboardContext != null && scoreboardContext != Context.NONE) {
+            lastSkyWarsDetectedAt = now
             return scoreboardContext
         }
 
         if (scoreboardContext == null || isScoreboardTitleGeneric()) {
             val chatContext = currentChatContext()
             if (chatContext != Context.NONE) {
+                lastSkyWarsDetectedAt = now
                 return chatContext
             }
         }
 
+        if (cachedContext.isSkyWars && now - lastSkyWarsDetectedAt < SKYWARS_CONTEXT_GRACE_MS) {
+            return cachedContext
+        }
+
         return scoreboardContext ?: Context.NONE
-    }
-
-    private fun isScoreboardTitleGeneric(): Boolean {
-        val mc = Minecraft.getMinecraft()
-        val world = mc.theWorld ?: return true
-        val scoreboard = world.scoreboard ?: return true
-        val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: return true
-
-        val rawTitle = objective.displayName?.let {
-            StringUtils.stripControlCodes(it)
-        } ?: ""
-        val title = rawTitle.uppercase(Locale.ROOT).replace(WHITESPACE_PATTERN, "")
-        
-        return title == "HYPIXEL" || title == "PROTOTYPE" || title.isBlank()
     }
 
     private fun detectScoreboardContext(): Context? {
@@ -138,12 +96,35 @@ object SkyWarsModeDetector {
         val scoreboard = world.scoreboard ?: return null
         val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: return null
 
-        val rawTitle = objective.displayName?.let {
-            StringUtils.stripControlCodes(it)
-        } ?: ""
-        val title = rawTitle.uppercase(Locale.ROOT)
+        val currentTitle = objective.displayName ?: ""
+        val scores = scoreboard.getSortedScores(objective)
+
+        var currentHash = currentTitle.hashCode()
+        if (scores.isNotEmpty()) {
+            currentHash = 31 * currentHash + scores.size
+            currentHash = 31 * currentHash + (scores.firstOrNull()?.playerName?.hashCode() ?: 0)
+        }
+
+        if (currentHash == lastScoreboardHash && lastScoreboardContext != Context.UNKNOWN) {
+             return lastScoreboardContext
+        }
+
+        val displayComponent: Any? = objective.displayName
+        val rawTitle = when (displayComponent) {
+            null -> ""
+            is net.minecraft.util.IChatComponent -> displayComponent.formattedText
+            else -> {
+                runCatching {
+                    displayComponent::class.java.getMethod("getFormattedText")
+                        .invoke(displayComponent) as? String
+                }.getOrNull() ?: displayComponent.toString()
+            }
+        }
+        val title = StringUtils.stripControlCodes(rawTitle).uppercase(Locale.ROOT)
         val normalizedTitle = title.replace(WHITESPACE_PATTERN, "")
         if (!normalizedTitle.contains("SKYWARS")) {
+            lastScoreboardHash = currentHash
+            lastScoreboardContext = Context.NONE
             return Context.NONE
         }
 
@@ -156,8 +137,6 @@ object SkyWarsModeDetector {
             .filter { it.isNotBlank() }
             .toList()
 
-        // In SkyWars, look for indicators like "Players Left:" or "Kills:"
-        // Lobbies usually have "Coins:" or "Tokens:"
         val matchIndicators = lines.any {
             it.contains("Players Left:", ignoreCase = true) ||
             it.contains("Kills:", ignoreCase = true) ||
@@ -179,61 +158,21 @@ object SkyWarsModeDetector {
             it.contains("Soul Well", ignoreCase = true)
         }
 
-        if (matchIndicators) {
-            return Context.MATCH
-        }
-        
-        if (preGameIndicators && !mainLobbyIndicators) {
-            return Context.LOBBY
+        val result = if (matchIndicators) {
+            Context.MATCH
+        } else if (preGameIndicators && !mainLobbyIndicators) {
+            Context.LOBBY
+        } else {
+            Context.NONE
         }
 
-        return Context.NONE
-    }
-
-    private fun formatScoreLine(score: Score, scoreboard: net.minecraft.scoreboard.Scoreboard): String {
-        val playerName = score.playerName
-        val team = scoreboard.getPlayersTeam(playerName)
-        val formatted = ScorePlayerTeam.formatPlayerName(team, playerName)
-        return StringUtils.stripControlCodes(formatted)
-    }
-
-    private fun currentChatContext(): Context {
-        val now = System.currentTimeMillis()
-        if (chatDetectedContext == Context.NONE) {
-            return Context.NONE
-        }
-        if (now > chatDetectionExpiry) {
-            chatDetectedContext = Context.NONE
-            chatDetectionExpiry = 0L
-            return Context.NONE
-        }
-        return chatDetectedContext
-    }
-
-    private fun recordChatDetection(context: Context) {
-        if (context == Context.NONE) {
-            return
-        }
-        val now = System.currentTimeMillis()
-        if (context == Context.MATCH || chatDetectedContext != Context.MATCH) {
-            chatDetectedContext = context
-        }
-        chatDetectionExpiry = now + CHAT_CONTEXT_DURATION
-        currentContext(force = true)
-    }
-
-    private fun clearCachedContext() {
-        chatDetectedContext = Context.NONE
-        chatDetectionExpiry = 0L
-        if (cachedContext.isSkyWars) {
-            cachedContext = Context.NONE
-            lastDetectionTime = 0L
-            currentContext(force = true)
-        }
+        lastScoreboardHash = currentHash
+        lastScoreboardContext = result
+        return result
     }
 
     @SubscribeEvent
-    fun onChat(event: ClientChatReceivedEvent) {
+    override fun onChat(event: ClientChatReceivedEvent) {
         if (!Levelhead.isOnHypixel()) {
             return
         }
@@ -247,7 +186,7 @@ object SkyWarsModeDetector {
         val sawBedwarsSignal = bedwarsChatIndicators.any { normalized.contains(it) }
         val sawDuelsSignal = duelsChatIndicators.any { normalized.contains(it) }
         if (sawBedwarsSignal || sawDuelsSignal) {
-            clearCachedContext()
+            clearCachedContext(cachedContext.isSkyWars)
             return
         }
         val detectedContext = when {

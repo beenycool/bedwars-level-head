@@ -1,12 +1,10 @@
 package club.sk1er.mods.levelhead.duels
 
 import club.sk1er.mods.levelhead.Levelhead
+import club.sk1er.mods.levelhead.core.BaseModeDetector
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import club.sk1er.mods.levelhead.skywars.SkyWarsModeDetector
 import net.minecraft.client.Minecraft
-import net.minecraft.scoreboard.Score
-import net.minecraft.scoreboard.ScorePlayerTeam
-import net.minecraft.util.IChatComponent
 import net.minecraft.util.StringUtils
 import net.minecraftforge.client.event.ClientChatReceivedEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
@@ -16,20 +14,7 @@ import java.util.Locale
  * Detects when the player is in a Duels game on Hypixel.
  * Similar to BedwarsModeDetector but for Duels game mode.
  */
-object DuelsModeDetector {
-    private val WHITESPACE_PATTERN = Regex("""\s+""")
-
-    private var cachedContext: Context = Context.UNKNOWN
-    private var lastDetectionTime: Long = 0L
-    private var chatDetectedContext: Context = Context.NONE
-    private var chatDetectionExpiry: Long = 0L
-
-    // Optimization: Cache previous scoreboard hash
-    private var lastScoreboardHash: Int = 0
-    private var lastScoreboardContext: Context = Context.UNKNOWN
-
-    private const val CHAT_CONTEXT_DURATION = 20_000L
-
+object DuelsModeDetector : BaseModeDetector() {
     private val bedwarsChatIndicators = listOf(
         "protect your bed",
         "bed destruction",
@@ -46,47 +31,11 @@ object DuelsModeDetector {
         "players left:"
     )
 
-    enum class Context {
-        UNKNOWN,
-        NONE,
-        LOBBY,
-        MATCH;
-
-        val isDuels: Boolean
-            get() = this == LOBBY || this == MATCH
-    }
-
-    fun onWorldJoin() {
-        cachedContext = Context.UNKNOWN
-        lastDetectionTime = 0L
-        chatDetectedContext = Context.NONE
-        chatDetectionExpiry = 0L
-        lastScoreboardHash = 0
-        lastScoreboardContext = Context.UNKNOWN
-    }
-
-    fun currentContext(force: Boolean = false): Context {
-        val now = System.currentTimeMillis()
-        // Cache context for 5 seconds to reduce scoreboard parsing overhead
-        if (force || cachedContext == Context.UNKNOWN || now - lastDetectionTime > 5_000L) {
-            val detected = detectContext()
-            if (detected != cachedContext) {
-                val oldContext = cachedContext.takeUnless { it == Context.UNKNOWN } ?: Context.NONE
-                cachedContext = detected
-                if (oldContext != detected) {
-                    handleContextChange(oldContext, detected)
-                }
-            } else if (cachedContext == Context.UNKNOWN) {
-                cachedContext = detected
-            }
-            lastDetectionTime = now
-        }
-        return cachedContext
-    }
-
     fun isInDuelsLobby(): Boolean = currentContext().let { it == Context.LOBBY }
 
     fun isInDuelsMatch(): Boolean = currentContext().let { it == Context.MATCH }
+
+    fun isInDuelsScoreboard(): Boolean = detectScoreboardContext() == Context.MATCH
 
     fun isInDuels(): Boolean = currentContext().isDuels
 
@@ -99,7 +48,7 @@ object DuelsModeDetector {
         return shouldRequestData()
     }
 
-    private fun handleContextChange(old: Context, new: Context) {
+    override fun handleContextChange(old: Context, new: Context) {
         when {
             !old.isDuels && new.isDuels -> {
                 Levelhead.displayManager.syncGameMode()
@@ -111,27 +60,27 @@ object DuelsModeDetector {
         }
     }
 
-    private fun detectContext(): Context {
-        val isInBedwars = BedwarsModeDetector.isInBedwars()
-        val isInSkywars = SkyWarsModeDetector.isInSkyWars()
-        Levelhead.logger.debug("detectContext: isInBedwars={} isInSkywars={}", isInBedwars, isInSkywars)
-        
-        if (isInBedwars || isInSkywars) {
-            Levelhead.logger.debug("detectContext: returning NONE due to Bedwars/SkyWars")
-            return Context.NONE
-        }
-
+    override fun detectContext(): Context {
         val scoreboardContext = detectScoreboardContext()
         Levelhead.logger.debug("detectContext: scoreboardContext={}", scoreboardContext)
-        
+
         if (scoreboardContext != null && scoreboardContext != Context.NONE) {
             Levelhead.logger.debug("detectContext: returning scoreboardContext={}", scoreboardContext)
             return scoreboardContext
         }
 
+        val isInBedwars = BedwarsModeDetector.peekIsInBedwars()
+        val isInSkywars = SkyWarsModeDetector.peekIsInSkyWars()
+        Levelhead.logger.debug("detectContext: isInBedwars={} isInSkywars={}", isInBedwars, isInSkywars)
+
+        if (isInBedwars || isInSkywars) {
+            Levelhead.logger.debug("detectContext: returning NONE due to Bedwars/SkyWars")
+            return Context.NONE
+        }
+
         if (scoreboardContext == null || isScoreboardTitleGeneric()) {
             val chatContext = currentChatContext()
-            Levelhead.logger.debug("detectContext: chatContext={} (scoreboardNull={} titleGeneric={})", 
+            Levelhead.logger.debug("detectContext: chatContext={} (scoreboardNull={} titleGeneric={})",
                 chatContext, scoreboardContext == null, isScoreboardTitleGeneric())
             if (chatContext != Context.NONE) {
                 Levelhead.logger.debug("detectContext: returning chatContext={}", chatContext)
@@ -141,20 +90,6 @@ object DuelsModeDetector {
 
         Levelhead.logger.debug("detectContext: returning final {}", scoreboardContext ?: Context.NONE)
         return scoreboardContext ?: Context.NONE
-    }
-
-    private fun isScoreboardTitleGeneric(): Boolean {
-        val mc = Minecraft.getMinecraft()
-        val world = mc.theWorld ?: return true
-        val scoreboard = world.scoreboard ?: return true
-        val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: return true
-
-        val rawTitle = objective.displayName?.let {
-            StringUtils.stripControlCodes(it)
-        } ?: ""
-        val title = rawTitle.uppercase(Locale.ROOT).replace(WHITESPACE_PATTERN, "")
-        
-        return title == "HYPIXEL" || title == "PROTOTYPE" || title.isBlank()
     }
 
     private fun detectScoreboardContext(): Context? {
@@ -172,7 +107,6 @@ object DuelsModeDetector {
             return null
         }
 
-        // Optimization: Quick check if scoreboard content changed
         val currentTitle = objective.displayName ?: ""
         val scores = scoreboard.getSortedScores(objective)
 
@@ -186,15 +120,22 @@ object DuelsModeDetector {
              return lastScoreboardContext
         }
 
-        val rawTitle = objective.displayName?.let {
-            StringUtils.stripControlCodes(it)
-        } ?: ""
-        val title = rawTitle.uppercase(Locale.ROOT)
+        val displayComponent: Any? = objective.displayName
+        val rawTitle = when (displayComponent) {
+            null -> ""
+            is net.minecraft.util.IChatComponent -> displayComponent.formattedText
+            else -> {
+                runCatching {
+                    displayComponent::class.java.getMethod("getFormattedText")
+                        .invoke(displayComponent) as? String
+                }.getOrNull() ?: displayComponent.toString()
+            }
+        }
+        val title = StringUtils.stripControlCodes(rawTitle).uppercase(Locale.ROOT)
         val normalizedTitle = title.replace(WHITESPACE_PATTERN, "")
         
         Levelhead.logger.debug("detectScoreboardContext: title='{}' normalized='{}'", rawTitle, normalizedTitle)
         
-        // If the title explicitly says BEDWARS or SKYWARS, we let those detectors handle it
         if (normalizedTitle.contains("BEDWARS") || normalizedTitle.contains("SKYWARS")) {
             Levelhead.logger.debug("detectScoreboardContext: title contains BEDWARS/SKYWARS, returning NONE")
             lastScoreboardHash = currentHash
@@ -243,9 +184,6 @@ object DuelsModeDetector {
             return Context.NONE
         }
 
-        // In Duels, only use strong in-match indicators.
-        // Lobby scoreboards can include lifetime stat lines (for example "Kills:"),
-        // so those should not be treated as match context.
         val matchIndicators = lines.any { 
             it.contains("Opponent:", ignoreCase = true) || 
             it.contains("Time Left:", ignoreCase = true) ||
@@ -282,50 +220,8 @@ object DuelsModeDetector {
         return result
     }
 
-    private fun formatScoreLine(score: Score, scoreboard: net.minecraft.scoreboard.Scoreboard): String {
-        val playerName = score.playerName
-        val team = scoreboard.getPlayersTeam(playerName)
-        val formatted = ScorePlayerTeam.formatPlayerName(team, playerName)
-        return StringUtils.stripControlCodes(formatted)
-    }
-
-    private fun currentChatContext(): Context {
-        val now = System.currentTimeMillis()
-        if (chatDetectedContext == Context.NONE) {
-            return Context.NONE
-        }
-        if (now > chatDetectionExpiry) {
-            chatDetectedContext = Context.NONE
-            chatDetectionExpiry = 0L
-            return Context.NONE
-        }
-        return chatDetectedContext
-    }
-
-    private fun recordChatDetection(context: Context) {
-        if (context == Context.NONE) {
-            return
-        }
-        val now = System.currentTimeMillis()
-        if (context == Context.MATCH || chatDetectedContext != Context.MATCH) {
-            chatDetectedContext = context
-        }
-        chatDetectionExpiry = now + CHAT_CONTEXT_DURATION
-        currentContext(force = true)
-    }
-
-    private fun clearCachedContext() {
-        chatDetectedContext = Context.NONE
-        chatDetectionExpiry = 0L
-        if (cachedContext.isDuels) {
-            cachedContext = Context.NONE
-            lastDetectionTime = 0L
-            currentContext(force = true)
-        }
-    }
-
     @SubscribeEvent
-    fun onChat(event: ClientChatReceivedEvent) {
+    override fun onChat(event: ClientChatReceivedEvent) {
         if (!Levelhead.isOnHypixel()) {
             return
         }
@@ -340,14 +236,12 @@ object DuelsModeDetector {
         val sawBedwarsSignal = bedwarsChatIndicators.any { normalized.contains(it) }
         val sawSkyWarsSignal = skywarsChatIndicators.any { normalized.contains(it) }
         if (sawBedwarsSignal || sawSkyWarsSignal) {
-            clearCachedContext()
+            clearCachedContext(cachedContext.isDuels)
             return
         }
 
         if (normalized.contains("bed wars duels") || normalized.contains("bedwars duels")) {
-            // Hypixel "Bed Wars Duels" should stay on BedWars mode semantics.
-            // Clear any stale Duels chat context so mode arbitration cannot stick to DUELS.
-            clearCachedContext()
+            clearCachedContext(cachedContext.isDuels)
             return
         }
 

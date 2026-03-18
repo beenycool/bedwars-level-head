@@ -273,7 +273,7 @@ export const CRON_RATE_LIMIT_MAX = parseIntEnv('CRON_RATE_LIMIT_MAX', 10);
 export const ADMIN_RATE_LIMIT_WINDOW_MS = parseIntEnv('ADMIN_RATE_LIMIT_WINDOW_MS', 15 * 60 * 1000);
 export const ADMIN_RATE_LIMIT_MAX = parseIntEnv('ADMIN_RATE_LIMIT_MAX', 50);
 export const DYNAMIC_RATE_LIMIT_ENABLED = parseBooleanEnv('DYNAMIC_RATE_LIMIT_ENABLED', true);
-export const DYNAMIC_RATE_LIMIT_MIN = Math.max(1, parseIntEnv('DYNAMIC_RATE_LIMIT_MIN', 10));
+export const DYNAMIC_RATE_LIMIT_MIN = Math.max(1, parseIntEnv('DYNAMIC_RATE_LIMIT_MIN', 25));
 export const DYNAMIC_RATE_LIMIT_MAX = Math.max(
   DYNAMIC_RATE_LIMIT_MIN,
   parseIntEnv('DYNAMIC_RATE_LIMIT_MAX', RATE_LIMIT_MAX),
@@ -437,3 +437,4 @@ export const SUBMISSION_TTL_MS = Math.max(1000, parseIntEnv('SUBMISSION_TTL_MS',
 // SWR allows serving stale data immediately while refreshing in the background
 export const SWR_ENABLED = parseBooleanEnv('SWR_ENABLED', true);
 export const SWR_STALE_TTL_MS = Math.max(0, parseIntEnv('SWR_STALE_TTL_MS', 10 * 60 * 1000));
+

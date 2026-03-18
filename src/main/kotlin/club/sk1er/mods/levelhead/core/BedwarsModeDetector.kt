@@ -2,16 +2,12 @@ package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.Levelhead
 import net.minecraft.client.Minecraft
-import net.minecraft.scoreboard.Score
-import net.minecraft.scoreboard.ScorePlayerTeam
-import net.minecraft.util.IChatComponent
 import net.minecraft.util.StringUtils
 import net.minecraftforge.client.event.ClientChatReceivedEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import java.util.Locale
 
-object BedwarsModeDetector {
-    // Legacy constants - kept for backward compatibility
+object BedwarsModeDetector : BaseModeDetector() {
     @Deprecated("Use GameMode.BEDWARS.typeId instead", ReplaceWith("GameMode.BEDWARS.typeId"))
     const val BEDWARS_STAR_TYPE = "BEDWARS_STAR"
     @Deprecated("Use GameMode.BEDWARS.defaultHeader instead", ReplaceWith("GameMode.BEDWARS.defaultHeader"))
@@ -20,64 +16,30 @@ object BedwarsModeDetector {
     private val teamPattern = Regex("""(?:^|\s)(RED|BLUE|GREEN|YELLOW|AQUA|WHITE|PINK|GRAY|GREY)\s*:""", RegexOption.IGNORE_CASE)
     private val miniServerPattern = Regex("""mini\w+""", RegexOption.IGNORE_CASE)
     private val bedwarsIntroPattern = Regex("""protect\s+your\s+bed\s+and\s+destroy\s+the\s+enemy\s+beds?""", RegexOption.IGNORE_CASE)
-    private val WHITESPACE_PATTERN = Regex("""\s+""")
 
-    private var cachedContext: Context = Context.UNKNOWN
-    private var lastDetectionTime: Long = 0L
-    private var chatDetectedContext: Context = Context.NONE
-    private var chatDetectionExpiry: Long = 0L
     private var lastBedwarsDetectedAt: Long = 0L
-
-    // Optimization: Cache previous scoreboard hash
-    private var lastScoreboardHash: Int = 0
-    private var lastScoreboardContext: Context = Context.UNKNOWN
-
     private const val TEMP_DEBUG = false
-    private const val CHAT_CONTEXT_DURATION = 20_000L
     private const val BEDWARS_CONTEXT_GRACE_MS = 10_000L
 
-    enum class Context {
-        UNKNOWN,
-        NONE,
-        LOBBY,
-        MATCH;
-
-        val isBedwars: Boolean
-            get() = this == LOBBY || this == MATCH
-    }
-
-    fun onWorldJoin() {
-        cachedContext = Context.UNKNOWN
-        lastDetectionTime = 0L
-        chatDetectedContext = Context.NONE
-        chatDetectionExpiry = 0L
+    override fun onWorldJoin() {
+        super.onWorldJoin()
         lastBedwarsDetectedAt = 0L
-        lastScoreboardHash = 0
-        lastScoreboardContext = Context.UNKNOWN
-    }
-
-    fun currentContext(force: Boolean = false): Context {
-        val now = System.currentTimeMillis()
-        // Cache context for 5 seconds to reduce scoreboard parsing overhead
-        if (force || cachedContext == Context.UNKNOWN || now - lastDetectionTime > 5_000L) {
-            val detected = detectContext()
-            if (detected != cachedContext) {
-                val oldContext = cachedContext.takeUnless { it == Context.UNKNOWN } ?: Context.NONE
-                cachedContext = detected
-                handleContextChange(oldContext, detected)
-            } else if (cachedContext == Context.UNKNOWN) {
-                cachedContext = detected
-            }
-            lastDetectionTime = now
-        }
-        return cachedContext
     }
 
     fun isInBedwarsLobby(): Boolean = currentContext().let { it == Context.LOBBY }
 
-    fun isInBedwarsMatch(): Boolean = currentContext().let { it == Context.MATCH }
+    fun isInBedwarsMatch(scoreboardOnly: Boolean = false): Boolean {
+        if (scoreboardOnly) {
+            return detectScoreboardContext() == Context.MATCH
+        }
+        return currentContext().let { it == Context.MATCH }
+    }
+
+    fun isInBedwarsScoreboard(): Boolean = detectScoreboardContext() == Context.MATCH
 
     fun isInBedwars(): Boolean = currentContext().isBedwars
+
+    fun peekIsInBedwars(): Boolean = peekContext().isBedwars
 
     fun shouldRequestData(): Boolean {
         return Levelhead.isOnHypixel() && isInBedwarsMatch()
@@ -88,7 +50,7 @@ object BedwarsModeDetector {
         return Levelhead.isOnHypixel() && isInBedwars()
     }
 
-    private fun handleContextChange(old: Context, new: Context) {
+    override fun handleContextChange(old: Context, new: Context) {
         debug("context change: old=$old new=$new lastBedwarsDetectedAt=$lastBedwarsDetectedAt")
         when {
             !old.isBedwars && new.isBedwars -> Levelhead.displayManager.requestAllDisplays()
@@ -96,7 +58,7 @@ object BedwarsModeDetector {
         }
     }
 
-    private fun detectContext(): Context {
+    override fun detectContext(): Context {
         val now = System.currentTimeMillis()
         val scoreboardContext = detectScoreboardContext()
         if (scoreboardContext != null && scoreboardContext != Context.NONE) {
@@ -136,18 +98,15 @@ object BedwarsModeDetector {
             return null
         }
 
-        // Optimization: Quick check if scoreboard content changed
         val currentTitle = objective.displayName ?: ""
         val scores = scoreboard.getSortedScores(objective)
 
-        // Simple hash of title + count + first/last score to detect changes cheaply
         var currentHash = currentTitle.hashCode()
         if (scores.isNotEmpty()) {
             currentHash = 31 * currentHash + scores.size
             currentHash = 31 * currentHash + (scores.firstOrNull()?.playerName?.hashCode() ?: 0)
         }
 
-        // If hash matches and we have a valid cached context, reuse it
         if (currentHash == lastScoreboardHash && lastScoreboardContext != Context.UNKNOWN) {
              return lastScoreboardContext
         }
@@ -155,9 +114,8 @@ object BedwarsModeDetector {
         val displayComponent: Any? = objective.displayName
         val rawTitle = when (displayComponent) {
             null -> ""
-            is IChatComponent -> displayComponent.formattedText
+            is net.minecraft.util.IChatComponent -> displayComponent.formattedText
             else -> {
-                // Fallback: try to invoke getFormattedText on the actual type, then fall back to toString()
                 runCatching {
                     displayComponent::class.java.getMethod("getFormattedText")
                         .invoke(displayComponent) as? String
@@ -213,40 +171,8 @@ object BedwarsModeDetector {
         }
     }
 
-    private fun formatScoreLine(score: Score, scoreboard: net.minecraft.scoreboard.Scoreboard): String {
-        val playerName = score.playerName
-        val team = scoreboard.getPlayersTeam(playerName)
-        val formatted = ScorePlayerTeam.formatPlayerName(team, playerName)
-        return StringUtils.stripControlCodes(formatted)
-    }
-
-    private fun currentChatContext(): Context {
-        val now = System.currentTimeMillis()
-        if (chatDetectedContext == Context.NONE) {
-            return Context.NONE
-        }
-        if (now > chatDetectionExpiry) {
-            chatDetectedContext = Context.NONE
-            chatDetectionExpiry = 0L
-            return Context.NONE
-        }
-        return chatDetectedContext
-    }
-
-    private fun recordChatDetection(context: Context) {
-        if (context == Context.NONE) {
-            return
-        }
-        val now = System.currentTimeMillis()
-        if (context == Context.MATCH || chatDetectedContext != Context.MATCH) {
-            chatDetectedContext = context
-        }
-        chatDetectionExpiry = now + CHAT_CONTEXT_DURATION
-        currentContext(force = true)
-    }
-
     @SubscribeEvent
-    fun onChat(event: ClientChatReceivedEvent) {
+    override fun onChat(event: ClientChatReceivedEvent) {
         if (!Levelhead.isOnHypixel()) {
             return
         }
