@@ -16,8 +16,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import net.minecraft.client.Minecraft
+import net.minecraft.util.ChatComponentText
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.util.IChatComponent
+import net.minecraft.event.ClickEvent
+import net.minecraft.event.HoverEvent
 import net.minecraft.util.EnumChatFormatting as ChatColor
 import okhttp3.HttpUrl
 import okhttp3.Request
@@ -29,16 +32,25 @@ object WhoisService {
 
     suspend fun lookupWhois(identifier: String): WhoisResult {
         val resolved = resolvePlayerIdentifier(identifier)
-            ?: throw CommandException("Could not resolve '$identifier' to a player UUID.")
+            ?: throw CommandException(
+                "Could not resolve '$identifier' to a player UUID.",
+                CommandUtils.buildInteractiveFeedback(
+                    messagePrefix = "${ChatColor.RED}Could not resolve '$identifier'.${ChatColor.YELLOW} Try ",
+                    command = "/levelhead whois <player>",
+                    run = false,
+                    suggestedCommand = "/levelhead whois ",
+                    suffix = "${ChatColor.YELLOW} with a valid name or UUID."
+                )
+            )
         
         val gameMode = ModeManager.getActiveGameMode() ?: GameMode.BEDWARS
         
         return fetchWhois(resolved, gameMode)
     }
 
-    suspend fun lookupWhoisMessage(identifier: String): String {
+    suspend fun lookupWhoisComponent(identifier: String): IChatComponent {
         val result = lookupWhois(identifier)
-        return formatResultMessage(result)
+        return formatResultComponent(result)
     }
 
     private suspend fun fetchWhois(resolved: ResolvedIdentifier, gameMode: GameMode): WhoisResult = withContext(Dispatchers.IO) {
@@ -47,10 +59,32 @@ object WhoisService {
         when (val result = StatsFetcher.fetchPlayer(resolved.uuid, gameMode)) {
             is FetchResult.Success -> {
                 val stats = StatsFetcher.buildGameStats(result.payload, gameMode, result.etag)
-                parseWhoisResult(result.payload, stats, resolved.displayName ?: resolved.uuid.toString(), gameMode)
+                parseWhoisResult(result.payload, stats, resolved.displayName ?: resolved.uuid.toString(), gameMode, resolved.uuid)
             }
-            FetchResult.NotModified -> throw CommandException("No fresh data available for ${resolved.displayName ?: resolved.uuid}.")
-            is FetchResult.TemporaryError -> throw CommandException("${gameMode.displayName} stats temporarily unavailable (${result.reason ?: "unknown"}).")
+            FetchResult.NotModified -> {
+                val baseError = "No fresh data available for ${resolved.displayName ?: resolved.uuid}"
+                throw CommandException(
+                    "$baseError.",
+                    CommandUtils.buildInteractiveFeedback(
+                        messagePrefix = "${ChatColor.RED}$baseError.${ChatColor.YELLOW} Check ",
+                        command = "/levelhead status",
+                        run = true,
+                        suffix = "${ChatColor.YELLOW} to see your cache settings."
+                    )
+                )
+            }
+            is FetchResult.TemporaryError -> {
+                val baseError = "${gameMode.displayName} stats temporarily unavailable (${result.reason ?: "unknown"})"
+                throw CommandException(
+                    "$baseError.",
+                    CommandUtils.buildInteractiveFeedback(
+                        messagePrefix = "${ChatColor.RED}$baseError.${ChatColor.YELLOW} Check ",
+                        command = "/levelhead status",
+                        run = true,
+                        suffix = "${ChatColor.YELLOW} to see your connection status."
+                    )
+                )
+            }
             is FetchResult.PermanentError -> {
                 val (errorMessage, interactiveFeedback) = when (result.reason) {
                     "MISSING_KEY" -> "Set your Hypixel API key with /levelhead apikey <key> to query players." to
@@ -67,14 +101,22 @@ object WhoisService {
                             run = true,
                             suffix = "${ChatColor.RED} to change the backend."
                         )
-                    else -> "${gameMode.displayName} request failed (${result.reason ?: "unknown"})." to null
+                    else -> {
+                        val baseError = "${gameMode.displayName} request failed (${result.reason ?: "unknown"})"
+                        "$baseError." to CommandUtils.buildInteractiveFeedback(
+                            messagePrefix = "${ChatColor.RED}$baseError.${ChatColor.YELLOW} Check ",
+                            command = "/levelhead status",
+                            run = true,
+                            suffix = "${ChatColor.YELLOW} to see your connection status."
+                        )
+                    }
                 }
                 throw CommandException(errorMessage, interactiveFeedback)
             }
         }
     }
 
-    private fun parseWhoisResult(payload: JsonObject, stats: GameStats?, fallbackName: String, gameMode: GameMode): WhoisResult {
+    private fun parseWhoisResult(payload: JsonObject, stats: GameStats?, fallbackName: String, gameMode: GameMode, uuid: UUID): WhoisResult {
         val displayName = payload.stringValue("display")
             ?: payload.stringValue("displayname")
             ?: payload.jsonObject("player")?.stringValue("displayname")
@@ -97,6 +139,7 @@ object WhoisService {
         }
 
         return WhoisResult(
+            uuid = uuid,
             displayName = displayName,
             statValue = statValue,
             statName = primaryStatName,
@@ -105,10 +148,18 @@ object WhoisService {
         )
     }
 
-    private fun formatResultMessage(result: WhoisResult): String {
+    private fun formatResultComponent(result: WhoisResult): IChatComponent {
         val nickedText = if (result.nicked) " ${ChatColor.GRAY}(nicked)" else ""
-        return "${ChatColor.YELLOW}${result.displayName}$nickedText ${ChatColor.YELLOW}is ${ChatColor.GOLD}${result.statValue} " +
-            "${ChatColor.YELLOW}(${result.gameMode.displayName} ${result.statName})"
+
+        val nameComponent = ChatComponentText(result.displayName).apply {
+            chatStyle.color = ChatColor.YELLOW
+            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, result.uuid.toString())
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to fill"))
+        }
+
+        return nameComponent.appendSibling(
+            ChatComponentText("$nickedText ${ChatColor.YELLOW}is ${ChatColor.GOLD}${result.statValue} ${ChatColor.YELLOW}(${result.gameMode.displayName} ${result.statName})")
+        )
     }
 
     private suspend fun resolvePlayerIdentifier(input: String): ResolvedIdentifier? {
@@ -172,7 +223,17 @@ object WhoisService {
                 if (response.code() == 204 || response.code() == 404) {
                     return@withContext null
                 }
-                throw CommandException("Mojang profile lookup failed with HTTP ${response.code()}.")
+                val baseError = "Mojang profile lookup failed with HTTP ${response.code()}"
+                throw CommandException(
+                    "$baseError.",
+                    CommandUtils.buildInteractiveFeedback(
+                        messagePrefix = "${ChatColor.RED}$baseError.${ChatColor.YELLOW} Check spelling or try ",
+                        command = "/levelhead whois <player>",
+                        run = false,
+                        suggestedCommand = "/levelhead whois ",
+                        suffix = "${ChatColor.YELLOW} again."
+                    )
+                )
             }
             val body = response.body()?.string().orEmpty()
             if (body.isEmpty()) {
@@ -187,6 +248,7 @@ object WhoisService {
     }
 
     data class WhoisResult(
+        val uuid: UUID,
         val displayName: String,
         val statValue: String,
         val statName: String,

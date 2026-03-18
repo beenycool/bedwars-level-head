@@ -48,6 +48,7 @@
 **Vulnerability:** The `sanitizeSearchQuery` function used for searching recent player lookups via database `LIKE` clauses failed to strip or escape SQL wildcard characters (like `%`). This allowed an attacker to send `%%%` payloads, inducing extremely slow full-table scan operations and causing a Database Denial of Service.
 **Learning:** Database libraries and query builders (like Kysely) do not automatically escape wildcard characters within strings used in `LIKE` queries. Sanitization logic must explicitly handle these characters.
 **Prevention:** Explicitly strip dangerous SQL wildcard characters (e.g., `%`) from user-provided search strings before they are incorporated into `LIKE` clauses, or securely escape them if supported by the query builder.
+
 ## 2024-03-24 - Authorization Bypass on Private Player Endpoints
 **Vulnerability:** The internal `/api/player/*` endpoints in `backend/src/routes/player.ts` were missing authentication middleware, allowing unauthenticated attackers to hit endpoints intended for API key holders (like `/batch` and `/submit`). This allowed bypassing public rate limits by utilizing the private limit buckets.
 **Learning:** Even though endpoints may be separated into distinct routers (like `player.ts` vs `playerPublic.ts`), authentication MUST be explicitly enforced at the route or router level. The existence of separate "private" rate limits does not mean the route is actually restricted to private users.
@@ -58,3 +59,8 @@
 **Vulnerability:** The public `/api/public/player/batch` endpoint allowed users to query up to 20 UUIDs per request, but the rate limiter (`enforcePublicRateLimit`) only charged 1 token per HTTP request regardless of the batch size. An attacker could retrieve 20x more data than intended per minute, potentially exhausting upstream APIs (Hypixel) or local database resources.
 **Learning:** Batch endpoints inherently multiply the resource cost of a single HTTP request. A static "1 request = 1 token" rate limit is insufficient for endpoints that process variable-sized arrays of work.
 **Prevention:** Implement dynamic cost calculation in rate limiters for batch endpoints. The cost should be proportional to the size of the requested batch (e.g., number of unique identifiers) to accurately reflect and limit resource consumption.
+
+## 2024-03-18 - [Fix rate limit bypass on authenticated API endpoints]
+**Vulnerability:** Rate limiting on private endpoints relied solely on the client's IP address (`getClientIpAddress(req)`) rather than the authenticated user's API key hash.
+**Learning:** Because the rate limiter bucketed by IP address instead of API key, an attacker with a single valid API key could distribute their requests across multiple IP addresses to completely bypass the intended limits, leading to potential Denial of Service (resource exhaustion). Conversely, multiple legitimate users sharing the same NAT IP address would unfairly exhaust each other's quota.
+**Prevention:** In API key-authenticated endpoints, `getBucketKey` should utilize the validated API key hash (`req.apiKeyValidation?.keyHash`) as the primary identifier, falling back to the client IP address only for unauthenticated paths.

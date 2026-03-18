@@ -28,3 +28,11 @@
 **Learning:** Providing command suggestions in chat with visual placeholders (like `/levelhead proxy url <url>`) is helpful, but if the `<url>` part is literally pasted into the user's input box when clicked, it adds friction because they have to manually delete the placeholder text before typing.
 
 **Action:** Use the `suggestedCommand` parameter in helpers like `createClickableCommand` to display the helpful placeholder text in chat but strip it from the actual string that fills the user's chat input when clicked (e.g., pasting just `/levelhead proxy url ` with a trailing space). When using `SUGGEST_COMMAND` click events, explicitly provide a `suggestedCommand` parameter with the placeholder stripped to ensure users can type immediately upon clicking.
+## 2024-05-30 - Interactive Error Fallbacks
+
+**Learning:** When adding asynchronous tasks like `WhoisService`, throwing standard exceptions that output string-based error messages misses an opportunity to guide users. Static text is hard to act upon in-game.
+**Action:** Utilize the `component` property of exceptions (like `CommandException`) to pass interactive feedback utilizing `CommandUtils.buildInteractiveFeedback`. Providing a clickable link (like `/levelhead status` or `/levelhead whois `) instantly turns a dead-end error into an actionable prompt, heavily reducing friction.
+
+## 2024-05-31 - Interactive Results Data
+**Learning:** Returning static string output for data queries (like `/whois`) forces users to manually retype or copy-paste identifiers (like UUIDs) if they need them for subsequent commands (e.g., admin tools, debugging).
+**Action:** When displaying fetched data about a specific entity or configuration, construct the output as an `IChatComponent` where key identifiers (like names or IDs) are clickable (`SUGGEST_COMMAND`), allowing the user to seamlessly pull that hidden data into their chat input without friction.
