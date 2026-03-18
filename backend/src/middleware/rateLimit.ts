@@ -20,6 +20,7 @@ import {
 } from '../services/redis';
 import { calculateDynamicRateLimit } from '../services/dynamicRateLimit';
 import { logger } from '../util/logger';
+import { MAX_BATCH_SIZE } from '../util/validationConstants';
 
 interface DynamicLimitCacheEntry {
   value: number | null;
@@ -258,6 +259,27 @@ export const enforceAdminRateLimit = createRateLimitMiddleware({
   metricLabel: 'admin',
 });
 
+/**
+ * Common logic to resolve batch request cost based on unique identifiers.
+ */
+export function resolveBatchCost(req: Request): number {
+  const body = req.body as { uuids?: unknown } | undefined;
+  if (!body || !Array.isArray(body.uuids)) {
+    return 1; // Minimum cost for invalid/empty requests
+  }
+  // Count unique, non-empty strings in a single pass
+  const uniqueIdentifiers = new Set<string>();
+  for (const value of body.uuids) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) {
+        uniqueIdentifiers.add(trimmed);
+      }
+    }
+  }
+  return Math.min(MAX_BATCH_SIZE, Math.max(1, uniqueIdentifiers.size));
+}
+
 // Cost-based rate limiter for batch endpoint
 // Each identifier in the batch counts as one token toward the rate limit
 export const enforceBatchRateLimit = createRateLimitMiddleware({
@@ -265,24 +287,7 @@ export const enforceBatchRateLimit = createRateLimitMiddleware({
   max: RATE_LIMIT_MAX,
   getBucketKey: getAuthenticatedRateLimitKey,
   getClientIp: getClientIpAddress,
-  getCost(req: Request) {
-    // Cost is the number of UUIDs in the batch request
-    const body = req.body as { uuids?: unknown } | undefined;
-    if (!body || !Array.isArray(body.uuids)) {
-      return 1; // Minimum cost for invalid/empty requests
-    }
-    // Count unique, non-empty strings in a single pass
-    const uniqueIdentifiers = new Set<string>();
-    for (const value of body.uuids) {
-      if (typeof value === 'string') {
-        const trimmed = value.trim();
-        if (trimmed.length > 0) {
-          uniqueIdentifiers.add(trimmed);
-        }
-      }
-    }
-    return Math.max(1, uniqueIdentifiers.size); // Minimum cost of 1
-  },
+  getCost: resolveBatchCost,
   metricLabel: 'batch',
   getDynamicMax: resolveDynamicLimitValue,
 });
