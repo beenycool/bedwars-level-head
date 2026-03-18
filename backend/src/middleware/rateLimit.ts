@@ -235,12 +235,14 @@ export function createRateLimitMiddleware({
   };
 }
 
+function getAuthenticatedRateLimitKey(req: Request): string {
+  return req.apiKeyValidation?.keyHash ? `apikey:${req.apiKeyValidation.keyHash}` : getClientIpAddress(req);
+}
+
 export const enforceRateLimit = createRateLimitMiddleware({
   windowMs: RATE_LIMIT_WINDOW_MS,
   max: RATE_LIMIT_MAX,
-  getBucketKey(req: Request) {
-    return req.apiKeyValidation?.keyHash ? `apikey:${req.apiKeyValidation.keyHash}` : getClientIpAddress(req);
-  },
+  getBucketKey: getAuthenticatedRateLimitKey,
   getClientIp: getClientIpAddress,
   metricLabel: 'private',
   getDynamicMax: resolveDynamicLimitValue,
@@ -261,9 +263,7 @@ export const enforceAdminRateLimit = createRateLimitMiddleware({
 export const enforceBatchRateLimit = createRateLimitMiddleware({
   windowMs: RATE_LIMIT_WINDOW_MS,
   max: RATE_LIMIT_MAX,
-  getBucketKey(req: Request) {
-    return req.apiKeyValidation?.keyHash ? `apikey:${req.apiKeyValidation.keyHash}` : getClientIpAddress(req);
-  },
+  getBucketKey: getAuthenticatedRateLimitKey,
   getClientIp: getClientIpAddress,
   getCost(req: Request) {
     // Cost is the number of UUIDs in the batch request
