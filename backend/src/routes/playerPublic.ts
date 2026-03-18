@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import pLimit from 'p-limit';
-import { enforcePublicRateLimit } from '../middleware/rateLimitPublic';
+import { enforcePublicRateLimit, enforcePublicBatchRateLimit } from '../middleware/rateLimitPublic';
 import { resolvePlayer, ResolvedPlayer, warmupPlayerCache } from '../services/player';
 import { computeBedwarsStar } from '../util/bedwars';
 import { HttpError } from '../util/httpError';
@@ -83,7 +83,7 @@ router.get('/:identifier', enforcePublicRateLimit, async (req, res, next) => {
   }
 });
 
-router.post('/batch', enforcePublicRateLimit, async (req, res, next) => {
+router.post('/batch', enforcePublicBatchRateLimit, async (req, res, next) => {
   res.locals.metricsRoute = '/api/public/player/batch';
   const uuidsValue = (req.body as { uuids?: unknown })?.uuids;
 
