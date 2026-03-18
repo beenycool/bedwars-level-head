@@ -370,7 +370,7 @@ object Levelhead {
         if (!display.config.enabled) return
         val activeMode = ModeManager.getActiveGameMode()
         logger.debug("updateDisplayCache: uuid={}, statsType={}, resolvedGameMode={}, displayConfigType={}, displayConfigGameMode={}, activeMode={}", 
-            uuid, stats?.let { it::class.simpleName }, gameMode, display.config.type, display.config.gameMode, activeMode)
+            uuid, stats?.let { it::class.simpleName }, gameMode, display.config.gameMode.typeId, display.config.gameMode, activeMode)
         val tag = StatsFormatter.formatTag(uuid, stats, display.config, gameMode)
         val cacheKey = DisplayCacheKey(uuid, gameMode)
         if (logger.isDebugEnabled) {

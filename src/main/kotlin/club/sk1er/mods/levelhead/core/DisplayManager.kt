@@ -7,6 +7,7 @@ import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.Levelhead.gson
 import club.sk1er.mods.levelhead.config.DisplayConfig
 import club.sk1er.mods.levelhead.config.MasterConfig
+import club.sk1er.mods.levelhead.config.migration.ConfigMigrator
 import club.sk1er.mods.levelhead.display.AboveHeadDisplay
 import com.google.gson.JsonArray
 import com.google.gson.JsonParser
@@ -67,14 +68,17 @@ class DisplayManager(val file: File) {
     fun readConfig() {
         try {
             var shouldSaveCopyNow = false
-            var migrated = false
             if (!file.exists()) {
                 file.createNewFile()
                 shouldSaveCopyNow = true
             }
-            val source = runCatching {
+            val rawSource = runCatching {
                 JsonParser.parseString(FileUtils.readFileToString(file, StandardCharsets.UTF_8)).asJsonObject
             }.getOrElse { JsonObject() }
+
+            val source = ConfigMigrator.migrate(rawSource)
+            val migrated = source != rawSource
+
             if (source.has("master")) {
                 config = gson.fromJson(source["master"].asJsonObject, MasterConfig::class.java)
             }
@@ -87,11 +91,7 @@ class DisplayManager(val file: File) {
 
             if (aboveHead.isEmpty()) {
                 aboveHead.add(AboveHeadDisplay(DisplayConfig()))
-                migrated = true
-            }
-
-            if (migrateLegacyPrimaryDisplay()) {
-                migrated = true
+                shouldSaveCopyNow = true
             }
 
             adjustIndices()
@@ -136,33 +136,6 @@ class DisplayManager(val file: File) {
         }
     }
 
-    private fun migrateLegacyPrimaryDisplay(): Boolean {
-        var migrated = false
-        aboveHead.forEachIndexed { index, display ->
-            if (display.config.type != GameMode.BEDWARS.typeId) {
-                val previousType = display.config.type
-                val previousHeader = display.config.headerString
-                val normalizedHeader = normalizedManagedHeader(previousHeader, GameMode.BEDWARS)
-
-                if (index == 0 && normalizedHeader != null && !previousHeader.equals(normalizedHeader, ignoreCase = true)) {
-                    display.config.headerString = normalizedHeader
-                    Levelhead.logger.info(
-                        "Migrating legacy display #{} header '{}' -> '{}' while normalizing to {}.",
-                        index + 1,
-                        previousHeader,
-                        normalizedHeader,
-                        GameMode.BEDWARS.typeId,
-                    )
-                    migrated = true
-                }
-
-                Levelhead.logger.info("Migrating legacy display #${index + 1} from type '$previousType' to '${GameMode.BEDWARS.typeId}'.")
-                display.config.type = GameMode.BEDWARS.typeId
-                migrated = true
-            }
-        }
-        return migrated
-    }
 
     @OptIn(ExperimentalStdlibApi::class)
     fun joinWorld(resetDetector: Boolean = false) {
@@ -194,7 +167,7 @@ class DisplayManager(val file: File) {
         val displays = aboveHead.filter { it.config.enabled }
         displays.filter { !it.cache.containsKey(Levelhead.DisplayCacheKey(player.uniqueID, activeMode)) }
             .forEach { display ->
-                enqueueRequest(player.uniqueID.trimmed, display, display.config.type, Levelhead.RequestReason.PLAYER_JOIN)
+                enqueueRequest(player.uniqueID.trimmed, display, display.config.gameMode.typeId, Levelhead.RequestReason.PLAYER_JOIN)
             }
     }
 
@@ -323,7 +296,7 @@ class DisplayManager(val file: File) {
 
         Minecraft.getMinecraft().theWorld?.playerEntities?.forEach { playerInfo ->
             displays.forEach { display ->
-                enqueueRequest(playerInfo.uniqueID.trimmed, display, display.config.type, Levelhead.RequestReason.REFRESH_VISIBLE_DISPLAYS)
+                enqueueRequest(playerInfo.uniqueID.trimmed, display, display.config.gameMode.typeId, Levelhead.RequestReason.REFRESH_VISIBLE_DISPLAYS)
             }
         }
     }
@@ -398,34 +371,24 @@ class DisplayManager(val file: File) {
             return
         }
 
-        Levelhead.logger.debug("syncGameMode: detectedMode={} currentConfigGameMode={} currentConfigType={}", 
-            detectedMode, primaryDisplay()?.config?.gameMode, primaryDisplay()?.config?.type)
+        Levelhead.logger.debug("syncGameMode: detectedMode={} currentConfigGameMode={}",
+            detectedMode, primaryDisplay()?.config?.gameMode)
 
         updatePrimaryDisplay { config ->
             if (config.gameMode != detectedMode) {
                 val previousMode = config.gameMode
-                val previousType = config.type
                 val previousHeader = config.headerString
+
                 config.gameMode = detectedMode
-                if (config.type == previousMode.typeId) {
-                    config.type = detectedMode.typeId
+
+                // If they were using the default header for the previous mode,
+                // automatically switch to the default header for the new mode.
+                if (previousHeader.equals(previousMode.defaultHeader, ignoreCase = true)) {
+                    config.headerString = detectedMode.defaultHeader
                 }
-                val normalizedHeader = normalizedManagedHeader(previousHeader, detectedMode)
-                if (normalizedHeader != null) {
-                    if (!previousHeader.equals(normalizedHeader, ignoreCase = true)) {
-                        val matchedManagedMode = managedHeaderMode(previousHeader)
-                        Levelhead.logger.debug(
-                            "syncGameMode: normalizing managed header='{}' matchedMode={} -> '{}' for detectedMode={}",
-                            previousHeader,
-                            matchedManagedMode,
-                            normalizedHeader,
-                            detectedMode,
-                        )
-                    }
-                    config.headerString = normalizedHeader
-                }
-                Levelhead.logger.debug("syncGameMode: CHANGED gameMode={}->{} type={}->{} header={}", 
-                    previousMode, detectedMode, previousType, config.type, config.headerString)
+
+                Levelhead.logger.debug("syncGameMode: CHANGED gameMode={}->{} header={}->{}",
+                    previousMode, detectedMode, previousHeader, config.headerString)
                 true
             } else {
                 false
@@ -445,7 +408,7 @@ class DisplayManager(val file: File) {
         if (displays.isEmpty()) return
         Minecraft.getMinecraft().theWorld?.playerEntities?.forEach { playerInfo ->
             displays.forEach { display ->
-                enqueueRequest(playerInfo.uniqueID.trimmed, display, display.config.type, Levelhead.RequestReason.REQUEST_ALL_DISPLAYS)
+                enqueueRequest(playerInfo.uniqueID.trimmed, display, display.config.gameMode.typeId, Levelhead.RequestReason.REQUEST_ALL_DISPLAYS)
             }
         }
     }
@@ -468,7 +431,6 @@ class DisplayManager(val file: File) {
         defaultDisplay.config.headerString = GameMode.BEDWARS.defaultHeader
         defaultDisplay.config.headerColor = Color(85, 255, 255)
         defaultDisplay.config.footerString = "%star%"
-        defaultDisplay.config.type = GameMode.BEDWARS.typeId
         aboveHead.add(defaultDisplay)
         adjustIndices()
         saveConfig()
