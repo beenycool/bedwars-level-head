@@ -6,7 +6,7 @@ import { computeBedwarsStar } from '../util/bedwars';
 import { HttpError } from '../util/httpError';
 import { extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely } from '../util/requestUtils';
 import { getCircuitBreakerState } from '../services/hypixel';
-import { IDENTIFIER_MAX_LENGTH } from '../util/validationConstants';
+import { IDENTIFIER_MAX_LENGTH, MAX_BATCH_SIZE } from '../util/validationConstants';
 
 const batchLimit = pLimit(6);
 const identifierPattern = /^(?:[0-9a-f]{32}|[a-zA-Z0-9_]{1,16})$/;
@@ -92,8 +92,8 @@ router.post('/batch', enforcePublicBatchRateLimit, async (req, res, next) => {
     return;
   }
 
-  if (uuidsValue.length > 20) {
-    next(new HttpError(400, 'BAD_REQUEST', 'Provide up to 20 UUIDs per batch request.'));
+  if (uuidsValue.length > MAX_BATCH_SIZE) {
+    next(new HttpError(400, 'BAD_REQUEST', `Provide up to ${MAX_BATCH_SIZE} UUIDs per batch request.`));
     return;
   }
 
