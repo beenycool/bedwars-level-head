@@ -3,6 +3,7 @@ import { recordCacheHit, recordCacheMiss } from './metrics';
 import { db, dbType } from './database/db';
 import { sql } from 'kysely';
 import { DatabaseType } from './database/db';
+import { ensureCockroachRowLevelTtl, isCockroachTtlManaged } from './database/cockroachTtl';
 
 import { logger } from '../util/logger';
 import {
@@ -66,6 +67,15 @@ export function shouldReadFromDb(): boolean {
 
 // Re-export pool for other services
 export { db as pool };
+
+function buildCockroachTimestampExpression(columnName: string): string {
+  return `to_timestamp(${columnName}::FLOAT / 1000.0)`;
+}
+
+function buildCockroachRetentionExpression(columnName: string, ttlMs: number): string {
+  const ttlSeconds = Math.max(1, Math.ceil(ttlMs / 1000));
+  return `${buildCockroachTimestampExpression(columnName)} + '${ttlSeconds} seconds'::INTERVAL`;
+}
 
 async function ensureRateLimitTable(): Promise<void> {
   try {
@@ -219,6 +229,21 @@ const initialization = (async () => {
   }
 
   logger.info('[cache] hypixel_api_calls and system_kv tables are ready');
+
+  await Promise.all([
+    ensureCockroachRowLevelTtl({
+      tableName: 'player_stats_cache',
+      expirationExpression: buildCockroachTimestampExpression('expires_at'),
+    }),
+    ensureCockroachRowLevelTtl({
+      tableName: 'ign_uuid_cache',
+      expirationExpression: buildCockroachTimestampExpression('expires_at'),
+    }),
+    ensureCockroachRowLevelTtl({
+      tableName: 'hypixel_api_calls',
+      expirationExpression: buildCockroachRetentionExpression('called_at', HYPIXEL_API_CALL_WINDOW_MS),
+    }),
+  ]);
 })();
 
 export async function ensureInitialized(): Promise<void> {
@@ -228,28 +253,33 @@ export async function ensureInitialized(): Promise<void> {
 export async function purgeExpiredEntries(now: number = Date.now()): Promise<void> {
   await ensureInitialized();
 
-  // Redis L1 handles TTL automatically - purge SQL L2 entries only
-  const statsResult = await sql`DELETE FROM player_stats_cache WHERE expires_at <= ${now}`.execute(db);
-  const purgedStats = Number(statsResult.numAffectedRows ?? 0);
-  if (purgedStats > 0) {
-    logger.info(`[cache] purged ${purgedStats} expired player_stats_cache entries`);
+  if (!isCockroachTtlManaged('player_stats_cache')) {
+    // Redis L1 handles TTL automatically - purge SQL L2 entries only when Cockroach TTL is unavailable.
+    const statsResult = await sql`DELETE FROM player_stats_cache WHERE expires_at <= ${now}`.execute(db);
+    const purgedStats = Number(statsResult.numAffectedRows ?? 0);
+    if (purgedStats > 0) {
+      logger.info(`[cache] purged ${purgedStats} expired player_stats_cache entries`);
+    }
   }
 
-  const ignResult = await sql`DELETE FROM ign_uuid_cache WHERE expires_at <= ${now}`.execute(db);
-  const purgedIgn = Number(ignResult.numAffectedRows ?? 0);
-  if (purgedIgn > 0) {
-    logger.info(`[cache] purged ${purgedIgn} expired ign_uuid_cache entries`);
+  if (!isCockroachTtlManaged('ign_uuid_cache')) {
+    const ignResult = await sql`DELETE FROM ign_uuid_cache WHERE expires_at <= ${now}`.execute(db);
+    const purgedIgn = Number(ignResult.numAffectedRows ?? 0);
+    if (purgedIgn > 0) {
+      logger.info(`[cache] purged ${purgedIgn} expired ign_uuid_cache entries`);
+    }
   }
-  markDbAccess();
 
-  const historyQuery = dbType === DatabaseType.POSTGRESQL
-    ? "DELETE FROM player_query_history WHERE requested_at < NOW() - INTERVAL '30 days'"
-    : "DELETE FROM player_query_history WHERE requested_at < DATEADD(day, -30, GETDATE())";
+  if (!isCockroachTtlManaged('player_query_history')) {
+    const historyQuery = dbType === DatabaseType.POSTGRESQL
+      ? "DELETE FROM player_query_history WHERE requested_at < NOW() - INTERVAL '30 days'"
+      : "DELETE FROM player_query_history WHERE requested_at < DATEADD(day, -30, GETDATE())";
 
-  const historyResult = await sql.raw(historyQuery).execute(db);
-  const purgedHistory = Number(historyResult.numAffectedRows ?? 0);
-  if (purgedHistory > 0) {
-    logger.info(`[cache] purged ${purgedHistory} historical query entries older than 30 days`);
+    const historyResult = await sql.raw(historyQuery).execute(db);
+    const purgedHistory = Number(historyResult.numAffectedRows ?? 0);
+    if (purgedHistory > 0) {
+      logger.info(`[cache] purged ${purgedHistory} historical query entries older than 30 days`);
+    }
   }
 
   const staleRateLimitThreshold = now - 60 * 60 * 1000;
@@ -258,12 +288,17 @@ export async function purgeExpiredEntries(now: number = Date.now()): Promise<voi
   if (purgedBuckets > 0) {
     logger.info(`[cache] purged ${purgedBuckets} expired rate limit entries`);
   }
-  const hypixelCutoff = now - HYPIXEL_API_CALL_WINDOW_MS;
-  const hypixelResult = await sql`DELETE FROM hypixel_api_calls WHERE called_at <= ${hypixelCutoff}`.execute(db);
-  const purgedCalls = Number(hypixelResult.numAffectedRows ?? 0);
-  if (purgedCalls > 0) {
-    logger.info(`[cache] purged ${purgedCalls} expired hypixel_api_calls entries`);
+
+  if (!isCockroachTtlManaged('hypixel_api_calls')) {
+    const hypixelCutoff = now - HYPIXEL_API_CALL_WINDOW_MS;
+    const hypixelResult = await sql`DELETE FROM hypixel_api_calls WHERE called_at <= ${hypixelCutoff}`.execute(db);
+    const purgedCalls = Number(hypixelResult.numAffectedRows ?? 0);
+    if (purgedCalls > 0) {
+      logger.info(`[cache] purged ${purgedCalls} expired hypixel_api_calls entries`);
+    }
   }
+
+  markDbAccess();
 }
 
 function mapRow<T>(row: CacheRow): CacheEntry<T> {
@@ -321,17 +356,11 @@ export async function getCacheEntry<T>(key: string, includeExpired = false): Pro
   try {
     entry = mapRow<T>(row);
   } catch (error) {
-    if (!includeExpired) {
-      await sql`DELETE FROM player_stats_cache WHERE cache_key = ${key}`.execute(db);
-    }
     recordCacheMiss('deserialization');
     return null;
   }
   const now = Date.now();
   if (Number.isNaN(entry.expiresAt) || entry.expiresAt <= now) {
-    if (!includeExpired) {
-      await sql`DELETE FROM player_stats_cache WHERE cache_key = ${key}`.execute(db);
-    }
     recordCacheMiss('expired');
     return includeExpired ? entry : null;
   }

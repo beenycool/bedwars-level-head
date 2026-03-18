@@ -1,6 +1,7 @@
 import pLimit from 'p-limit';
 import { db, dbType, DatabaseType } from './database/db';
 import { sql } from 'kysely';
+import { ensureCockroachRowLevelTtl } from './database/cockroachTtl';
 
 import { getRedisCacheStats } from './redis';
 import { getCurrentResourceMetrics, CurrentResourceMetrics } from './resourceMetrics';
@@ -91,6 +92,7 @@ export interface TopPlayer {
 const DEFAULT_PLAYER_QUERIES_LIMIT = 200;
 const MAX_ALLOWED_LIMIT = 10000;
 const CONCURRENT_HISTORY_FETCHES = 5;
+const PLAYER_QUERY_HISTORY_RETENTION_DAYS = 30;
 
 // Add a buffer
 let historyBuffer: PlayerQueryRecord[] = [];
@@ -168,6 +170,12 @@ const initialization = (async () => {
       
       supportsPgTotalRelationSize = false;
     }
+
+    await ensureCockroachRowLevelTtl({
+      tableName: 'player_query_history',
+      expirationExpression: `requested_at + '${PLAYER_QUERY_HISTORY_RETENTION_DAYS} days'::INTERVAL`,
+      jobCron: '@hourly',
+    });
   } catch (error) {
     logger.error({ err: error }, 'Failed to initialize player_query_history table');
     throw error;
@@ -287,13 +295,21 @@ async function flushHistoryBuffer(): Promise<void> {
     logger.error({ err }, '[history] Failed to flush batch');
 
     // Handle retries and dead-lettering
-    const retryableBatch = batch.map(record => ({
-        ...record,
-        retryCount: (record.retryCount || 0) + 1
-    }));
+    // ⚡ Bolt: Replaced .map() and double .filter() with a single loop to avoid multiple O(N) intermediate array allocations
+    const deadLettered: PlayerQueryRecord[] = [];
+    const toRetry: PlayerQueryRecord[] = [];
 
-    const deadLettered = retryableBatch.filter(r => (r.retryCount || 0) >= MAX_RETRY_ATTEMPTS);
-    const toRetry = retryableBatch.filter(r => (r.retryCount || 0) < MAX_RETRY_ATTEMPTS);
+    for (let i = 0; i < batch.length; i++) {
+      const record = batch[i];
+      const retryCount = (record.retryCount || 0) + 1;
+      const updatedRecord = { ...record, retryCount };
+
+      if (retryCount >= MAX_RETRY_ATTEMPTS) {
+        deadLettered.push(updatedRecord);
+      } else {
+        toRetry.push(updatedRecord);
+      }
+    }
 
     if (deadLettered.length > 0) {
         logger.error(`[history] Dropped ${deadLettered.length} records after ${MAX_RETRY_ATTEMPTS} failed attempts`, { sample: deadLettered.slice(0, 3) });
