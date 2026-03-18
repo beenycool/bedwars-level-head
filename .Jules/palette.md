@@ -32,3 +32,7 @@
 
 **Learning:** When adding asynchronous tasks like `WhoisService`, throwing standard exceptions that output string-based error messages misses an opportunity to guide users. Static text is hard to act upon in-game.
 **Action:** Utilize the `component` property of exceptions (like `CommandException`) to pass interactive feedback utilizing `CommandUtils.buildInteractiveFeedback`. Providing a clickable link (like `/levelhead status` or `/levelhead whois `) instantly turns a dead-end error into an actionable prompt, heavily reducing friction.
+
+## 2024-05-31 - Interactive Results Data
+**Learning:** Returning static string output for data queries (like `/whois`) forces users to manually retype or copy-paste identifiers (like UUIDs) if they need them for subsequent commands (e.g., admin tools, debugging).
+**Action:** When displaying fetched data about a specific entity or configuration, construct the output as an `IChatComponent` where key identifiers (like names or IDs) are clickable (`SUGGEST_COMMAND`), allowing the user to seamlessly pull that hidden data into their chat input without friction.
