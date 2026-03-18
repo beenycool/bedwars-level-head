@@ -384,11 +384,11 @@ function mapRowToSummary(row: PlayerQueryHistoryRow): PlayerQuerySummary {
   };
 }
 
-function buildDateRangeClause(
-  query: SelectQueryBuilder<any, any, any>,
+function buildDateRangeClause<QB extends SelectQueryBuilder<any, any, any>>(
+  query: QB,
   startDate: Date | undefined,
   endDate: Date | undefined,
-): SelectQueryBuilder<any, any, any> {
+): QB {
   let q = query;
   if (startDate) {
     q = q.where('requested_at', '>=', startDate);
@@ -492,17 +492,17 @@ export async function getTopPlayersByQueryCount(params: {
   }));
 }
 
-export function buildSearchClause(query: SelectQueryBuilder<any, any, any>, searchTerm: string | undefined): SelectQueryBuilder<any, any, any> {
+export function buildSearchClause<QB extends SelectQueryBuilder<any, any, any>>(query: QB, searchTerm: string | undefined): QB {
   if (!searchTerm) {
     return query;
   }
   
   const term = `%${searchTerm}%`;
-  return query.where((eb: ExpressionBuilder<any, any>) => eb.or([
+  return query.where((eb) => eb.or([
     eb('normalized_identifier', 'like', term),
     eb('resolved_username', 'like', term),
     eb('resolved_uuid', 'like', term)
-  ]));
+  ])) as QB;
 }
 
 export async function getPlayerQueryCount(params: { search?: string }): Promise<number> {

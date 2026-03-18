@@ -185,12 +185,17 @@ export function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayloa
     throw new HttpError(502, cause, 'Hypixel returned an error response.');
   }
 
-  const bedwarsStats = response.player?.stats?.Bedwars ?? {};
-  const bedwars = bedwarsStats as Record<string, number | undefined>;
-  const experience = bedwars.bedwars_experience ?? bedwars.Experience;
-  const finalKillsRaw = bedwars.final_kills_bedwars;
-  const finalDeathsRaw = bedwars.final_deaths_bedwars;
-  const winstreakRaw = bedwars.winstreak;
+  const bedwarsStats = response.player?.stats?.Bedwars ?? {} as Record<string, unknown>;
+  const getNumericStat = (stats: Record<string, unknown>, key: string): number | undefined => {
+    const val = stats[key];
+    return typeof val === 'number' ? val : undefined;
+  };
+
+  const experience = getNumericStat(bedwarsStats, 'bedwars_experience') 
+                  ?? getNumericStat(bedwarsStats, 'Experience');
+  const finalKillsRaw = getNumericStat(bedwarsStats, 'final_kills_bedwars');
+  const finalDeathsRaw = getNumericStat(bedwarsStats, 'final_deaths_bedwars');
+  const winstreakRaw = getNumericStat(bedwarsStats, 'winstreak');
 
   const finalKills = Number(finalKillsRaw ?? 0);
   const finalDeaths = Number(finalDeathsRaw ?? 0);
