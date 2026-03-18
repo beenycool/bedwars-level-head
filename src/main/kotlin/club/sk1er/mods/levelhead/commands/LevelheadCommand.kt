@@ -472,7 +472,7 @@ class LevelheadCommand {
         sendMessage("${ChatColor.YELLOW}Looking up stats for ${ChatColor.GOLD}$trimmedIdentifier${ChatColor.YELLOW}...")
         Levelhead.scope.launch {
             try {
-                val resultMessage = WhoisService.lookupWhoisMessage(trimmedIdentifier)
+                val resultMessage = WhoisService.lookupWhoisComponent(trimmedIdentifier)
                 sendMessage(resultMessage)
             } catch (ex: WhoisService.CommandException) {
                 sendMessage(ex.component ?: ChatComponentText("${ChatColor.RED}${ex.message}"))
