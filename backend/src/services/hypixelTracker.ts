@@ -1,5 +1,6 @@
 import { pool, ensureInitialized } from './cache';
 import { sql } from 'kysely';
+import { randomBytes } from 'node:crypto';
 import { DatabaseType, dbType } from './database/db';
 import { HYPIXEL_API_CALL_WINDOW_MS } from '../config';
 import { logger } from '../util/logger';
@@ -82,7 +83,7 @@ async function loadWatermarkIfNeeded(): Promise<void> {
 }
 
 function buildRedisRollingMember(uuid: string, calledAt: number): string {
-  const nonce = Math.random().toString(36).slice(2);
+  const nonce = randomBytes(8).toString('hex');
   return `${uuid}:${calledAt}:${nonce}`;
 }
 

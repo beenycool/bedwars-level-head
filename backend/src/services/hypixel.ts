@@ -1,5 +1,6 @@
 import axios, { type AxiosResponseHeaders, type RawAxiosResponseHeaders } from 'axios';
 import https from 'node:https';
+import { randomInt } from 'node:crypto';
 import CacheableLookup from 'cacheable-lookup';
 import {
   CB_FAILURE_THRESHOLD,
@@ -167,7 +168,7 @@ function parseLastModified(value?: string): number | null {
 function jitterDelay(): number {
   const min = Math.max(0, HYPIXEL_RETRY_DELAY_MIN_MS);
   const max = Math.max(min, HYPIXEL_RETRY_DELAY_MAX_MS);
-  return min + Math.random() * (max - min);
+  return max > min ? randomInt(min, max + 1) : min;
 }
 
 async function wait(ms: number): Promise<void> {
