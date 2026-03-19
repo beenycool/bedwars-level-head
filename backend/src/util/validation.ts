@@ -191,35 +191,37 @@ function validateType(value: unknown, expectedType: string): boolean {
  * Helper to extract bedwars stats object from various nested structures.
  * Uses isNonArrayObject helper to standardize validation.
  */
-export function extractBedwarsRecord(data: any): Record<string, unknown> | null {
+export function extractBedwarsRecord(data: unknown): Record<string, unknown> | null {
     if (!isNonArrayObject(data)) return null;
 
+    const dataObj = data as Record<string, unknown>;
+
     // Check player.stats.Bedwars
-    if (isNonArrayObject(data.player)) {
-        const stats = (data.player as any).stats;
-        if (isNonArrayObject(stats)) {
-            const bedwars = stats.Bedwars;
-            if (isNonArrayObject(bedwars)) {
-                return bedwars;
+    if (isNonArrayObject(dataObj.player)) {
+        const playerObj = dataObj.player as Record<string, unknown>;
+        if (isNonArrayObject(playerObj.stats)) {
+            const statsObj = playerObj.stats as Record<string, unknown>;
+            if (isNonArrayObject(statsObj.Bedwars)) {
+                return statsObj.Bedwars as Record<string, unknown>;
             }
         }
     }
 
     // Check data.bedwars (often from proxy payloads)
-    if (isNonArrayObject(data.data)) {
-        const bedwars = (data.data as any).bedwars;
-        if (isNonArrayObject(bedwars)) {
-            return bedwars;
+    if (isNonArrayObject(dataObj.data)) {
+        const innerDataObj = dataObj.data as Record<string, unknown>;
+        if (isNonArrayObject(innerDataObj.bedwars)) {
+            return innerDataObj.bedwars as Record<string, unknown>;
         }
     }
 
     // Check direct bedwars property
-    if (isNonArrayObject(data.bedwars)) {
-        return (data.bedwars as any);
+    if (isNonArrayObject(dataObj.bedwars)) {
+        return dataObj.bedwars as Record<string, unknown>;
     }
 
     // Fallback: assume data itself is the record, since we verified it's a non-array object
-    return data;
+    return dataObj;
 }
 
 /**
