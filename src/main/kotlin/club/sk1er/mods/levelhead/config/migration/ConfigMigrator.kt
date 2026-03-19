@@ -79,14 +79,14 @@ object ConfigMigrator {
 
                     if (i == 0 && normalizedHeader != null && !headerStr.equals(normalizedHeader, ignoreCase = true)) {
                         display.addProperty("headerString", normalizedHeader)
-                        Levelhead.logger.info(
+                        runCatching { Levelhead.logger.info(
                             "Migrating legacy display #1 header '{}' -> '{}' while normalizing to BEDWARS.",
                             headerStr ?: "null",
                             normalizedHeader
-                        )
+                        ) }
                     }
 
-                    Levelhead.logger.info("Migrating legacy display #${i + 1} from mode '$previousType' to 'BEDWARS'.")
+                    runCatching { Levelhead.logger.info("Migrating legacy display #${i + 1} from mode '$previousType' to 'BEDWARS'.") }
                     display.addProperty("gameMode", GameMode.BEDWARS.name)
                 }
             }
