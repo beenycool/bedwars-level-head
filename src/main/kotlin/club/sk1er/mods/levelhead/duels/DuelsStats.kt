@@ -195,7 +195,7 @@ object DuelsStats {
      * Find the Duels stats object from various JSON structures.
      */
     private fun findDuelsStats(json: JsonObject): JsonObject? {
-        return club.sk1er.mods.levelhead.core.StatsFetcher.findStatsObject(json, club.sk1er.mods.levelhead.core.GameMode.DUELS)
+        return club.sk1er.mods.levelhead.core.StatsPayloadParser.findStatsObject(json, club.sk1er.mods.levelhead.core.GameMode.DUELS)
     }
 
     /**
