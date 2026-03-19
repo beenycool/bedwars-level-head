@@ -7,6 +7,7 @@ import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.config.MasterConfig
 import club.sk1er.mods.levelhead.core.BedwarsModeDetector
 import club.sk1er.mods.levelhead.core.GameMode
+import club.sk1er.mods.levelhead.core.PerformanceMetrics
 import club.sk1er.mods.levelhead.core.await
 import club.sk1er.mods.levelhead.core.ModeManager
 import club.sk1er.mods.levelhead.commands.WhoisService.CommandException
@@ -566,6 +567,47 @@ class LevelheadCommand {
             "${ChatColor.GREEN}Render debug logging: ${formatToggle(newState)}${ChatColor.YELLOW}. " +
                 "Check ${ChatColor.GOLD}latest.log${ChatColor.YELLOW} for [LevelheadDebug][render] entries (header/footer per player)."
         )
+    }
+
+    @SubCommand
+    fun perf(@Greedy args: String = "") {
+        val arg = args.trim().lowercase(Locale.ROOT)
+        if (arg == "reset") {
+            PerformanceMetrics.reset()
+            sendMessage("${ChatColor.GREEN}Performance counters reset.")
+            return
+        }
+        val s = PerformanceMetrics.snapshot()
+        val totalAge = s.ageUnder1m + s.age1to5m + s.age5to15m + s.age15to45m + s.ageOver45m
+        fun pct(v: Long): String = if (totalAge > 0) String.format(Locale.ROOT, "%.0f%%", v * 100.0 / totalAge) else "–"
+        sendMessage("${ChatColor.GREEN}Performance metrics:")
+        sendMessage(
+            "${ChatColor.YELLOW}Tag renders/frame: ${ChatColor.GOLD}${s.tagRendersLastFrame}" +
+                "${ChatColor.YELLOW} (peak ${ChatColor.GOLD}${s.peakTagRendersPerFrame}${ChatColor.YELLOW})"
+        )
+        sendMessage(
+            "${ChatColor.YELLOW}Fetches/min: ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.1f", s.fetchesPerMinute)}" +
+                "${ChatColor.YELLOW} (${ChatColor.GOLD}${s.totalFetches}${ChatColor.YELLOW} total)"
+        )
+        sendMessage(
+            "${ChatColor.YELLOW}Cache hit rate: ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.1f%%", s.cacheHitRatePercent)}" +
+                "${ChatColor.YELLOW} (${ChatColor.GOLD}${s.cacheHits}${ChatColor.YELLOW}/${ChatColor.GOLD}${s.cacheLookups}${ChatColor.YELLOW})"
+        )
+        sendMessage(
+            "${ChatColor.YELLOW}Cache age: " +
+                "${ChatColor.GOLD}<1m ${pct(s.ageUnder1m)}${ChatColor.YELLOW}, " +
+                "${ChatColor.GOLD}1-5m ${pct(s.age1to5m)}${ChatColor.YELLOW}, " +
+                "${ChatColor.GOLD}5-15m ${pct(s.age5to15m)}${ChatColor.YELLOW}, " +
+                "${ChatColor.GOLD}15-45m ${pct(s.age15to45m)}${ChatColor.YELLOW}, " +
+                "${ChatColor.GOLD}>45m ${pct(s.ageOver45m)}"
+        )
+        val resetMsg = CommandUtils.buildInteractiveFeedback(
+            messagePrefix = "${ChatColor.GRAY}Use ",
+            command = "/levelhead perf reset",
+            run = true,
+            suffix = "${ChatColor.GRAY} to zero counters."
+        )
+        sendMessage(resetMsg)
     }
 
     @SubCommand
