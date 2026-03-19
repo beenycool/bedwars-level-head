@@ -77,7 +77,7 @@ object ConfigMigrator {
                     val previousType = modeStr
                     val normalizedHeader = normalizedManagedHeader(headerStr, GameMode.BEDWARS)
 
-                    if (i == 0 && normalizedHeader != null && !headerStr.equals(normalizedHeader, ignoreCase = true)) {
+                    if (i == 0 && normalizedHeader != null && !normalizedHeader.equals(headerStr, ignoreCase = true)) {
                         display.addProperty("headerString", normalizedHeader)
                         runCatching { Levelhead.logger.info(
                             "Migrating legacy display #1 header '{}' -> '{}' while normalizing to BEDWARS.",
