@@ -36,3 +36,7 @@
 ## 2024-05-31 - Interactive Results Data
 **Learning:** Returning static string output for data queries (like `/whois`) forces users to manually retype or copy-paste identifiers (like UUIDs) if they need them for subsequent commands (e.g., admin tools, debugging).
 **Action:** When displaying fetched data about a specific entity or configuration, construct the output as an `IChatComponent` where key identifiers (like names or IDs) are clickable (`SUGGEST_COMMAND`), allowing the user to seamlessly pull that hidden data into their chat input without friction.
+
+## 2024-06-01 - Interactive CLI Dashboards
+**Learning:** When displaying configuration overviews (like the main `/levelhead` command), static text requires users to memorize and manually type edit commands to tweak current values.
+**Action:** Turn read-only status outputs into interactive dashboards by making configuration values clickable. Use `SUGGEST_COMMAND` to pre-fill the chat input with the edit command and the current value (e.g., clicking the current header text suggests `/levelhead display header text <current>`), drastically reducing friction for minor tweaks.
