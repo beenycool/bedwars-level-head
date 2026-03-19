@@ -13,8 +13,11 @@ object ConfigMigrator {
     fun migrate(source: JsonObject): JsonObject {
         var version = 0
 
-        if (source.has("master") && source.getAsJsonObject("master").has("version")) {
-            version = source.getAsJsonObject("master").get("version").asInt
+        if (source.has("master") && source.get("master").isJsonObject) {
+            val master = source.getAsJsonObject("master")
+            if (master.has("version") && master.get("version").isJsonPrimitive && master.getAsJsonObject().get("version").asJsonPrimitive.isNumber) {
+                version = master.get("version").asInt
+            }
         }
 
         if (version >= CURRENT_VERSION) {
@@ -30,10 +33,9 @@ object ConfigMigrator {
 
         if (version < 2) {
             migrated = migrateV1ToV2(migrated)
-            version = 2
         }
 
-        if (!migrated.has("master")) {
+        if (!migrated.has("master") || !migrated.get("master").isJsonObject) {
             migrated.add("master", JsonObject())
         }
         migrated.getAsJsonObject("master").addProperty("version", CURRENT_VERSION)
@@ -46,7 +48,9 @@ object ConfigMigrator {
         if (source.has("head") && source.get("head").isJsonArray) {
             val headArray = source.getAsJsonArray("head")
             for (i in 0 until headArray.size()) {
-                val display = headArray.get(i).asJsonObject
+                val elem = headArray.get(i)
+                if (!elem.isJsonObject) continue
+                val display = elem.asJsonObject
 
                 // Read legacy 'type' and convert to 'gameMode'
                 val typeElem = display.get("type")
@@ -67,17 +71,20 @@ object ConfigMigrator {
         if (source.has("head") && source.get("head").isJsonArray) {
             val headArray = source.getAsJsonArray("head")
             for (i in 0 until headArray.size()) {
-                val display = headArray.get(i).asJsonObject
+                val elem = headArray.get(i)
+                if (!elem.isJsonObject) continue
+                val display = elem.asJsonObject
+
                 val modeElem = display.get("gameMode")
                 val headerElem = display.get("headerString")
-                val modeStr = if (modeElem != null && !modeElem.isJsonNull) modeElem.asString else GameMode.BEDWARS.name
-                val headerStr = if (headerElem != null && !headerElem.isJsonNull) headerElem.asString else null
+                val modeStr = if (modeElem != null && modeElem.isJsonPrimitive && modeElem.asJsonPrimitive.isString) modeElem.asString else GameMode.BEDWARS.name
+                val headerStr = if (headerElem != null && headerElem.isJsonPrimitive && headerElem.asJsonPrimitive.isString) headerElem.asString else null
 
                 if (modeStr != GameMode.BEDWARS.name) {
                     val previousType = modeStr
                     val normalizedHeader = normalizedManagedHeader(headerStr, GameMode.BEDWARS)
 
-                    if (i == 0 && normalizedHeader != null && !normalizedHeader.equals(headerStr, ignoreCase = true)) {
+                    if (i == 0 && normalizedHeader != null && !headerStr.equals(normalizedHeader, ignoreCase = true)) {
                         display.addProperty("headerString", normalizedHeader)
                         runCatching { Levelhead.logger.info(
                             "Migrating legacy display #1 header '{}' -> '{}' while normalizing to BEDWARS.",
