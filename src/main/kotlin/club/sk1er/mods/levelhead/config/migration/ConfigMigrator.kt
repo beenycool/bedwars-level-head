@@ -15,7 +15,7 @@ object ConfigMigrator {
 
         if (source.has("master") && source.get("master").isJsonObject) {
             val master = source.getAsJsonObject("master")
-            if (master.has("version") && master.get("version").isJsonPrimitive && master.getAsJsonObject().get("version").asJsonPrimitive.isNumber) {
+            if (master.has("version") && master.get("version").isJsonPrimitive && master.get("version").asJsonPrimitive.isNumber) {
                 version = master.get("version").asInt
             }
         }
@@ -90,10 +90,10 @@ object ConfigMigrator {
                             "Migrating legacy display #1 header '{}' -> '{}' while normalizing to BEDWARS.",
                             headerStr ?: "null",
                             normalizedHeader
-                        ) }
+                        ) }.onFailure { System.err.println("Warning: failed to log migration message: ${it.message}") }
                     }
 
-                    runCatching { Levelhead.logger.info("Migrating legacy display #${i + 1} from mode '$previousType' to 'BEDWARS'.") }
+                    runCatching { Levelhead.logger.info("Migrating legacy display #${i + 1} from mode '$previousType' to 'BEDWARS'.") }.onFailure { System.err.println("Warning: failed to log migration message: ${it.message}") }
                     display.addProperty("gameMode", GameMode.BEDWARS.name)
                 }
             }
