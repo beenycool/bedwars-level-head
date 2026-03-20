@@ -284,7 +284,7 @@ async function flushHistoryBuffer(): Promise<void> {
         }));
 
         await db.insertInto('player_query_history')
-          .values(rows as any)
+          .values(rows)
           .execute();
       })));
 
