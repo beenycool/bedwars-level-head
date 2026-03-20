@@ -166,8 +166,14 @@ function parseLastModified(value?: string): number | null {
 }
 
 function jitterDelay(): number {
-  const min = Math.max(0, HYPIXEL_RETRY_DELAY_MIN_MS);
-  const max = Math.max(min, HYPIXEL_RETRY_DELAY_MAX_MS);
+  const MAX_TIMEOUT_MS = 2_147_483_647; // setTimeout upper bound
+  const toSafeDelay = (value: number): number => {
+    if (!Number.isSafeInteger(value)) return 0;
+    return Math.min(MAX_TIMEOUT_MS, Math.max(0, value));
+  };
+
+  const min = toSafeDelay(HYPIXEL_RETRY_DELAY_MIN_MS);
+  const max = Math.max(min, toSafeDelay(HYPIXEL_RETRY_DELAY_MAX_MS));
   return max > min ? randomInt(min, max + 1) : min;
 }
 
