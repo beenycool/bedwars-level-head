@@ -84,9 +84,29 @@ function calculatePercentile(sortedValues: number[], percentile: number): number
   return sortedValues[Math.max(0, index)];
 }
 
-const arrayMax = (arr: number[]) => arr.reduce((a, b) => Math.max(a, b), -Infinity);
-const arrayMin = (arr: number[]) => arr.reduce((a, b) => Math.min(a, b), Infinity);
-const sum = (arr: number[]) => arr.reduce((a, b) => a + b, 0);
+// ⚡ Bolt: Replaced .reduce() with for loops to avoid O(N) intermediate accumulator object
+// allocations and function call overhead, improving CPU time on this hot path.
+const arrayMax = (arr: number[]) => {
+  let max = -Infinity;
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i] > max) max = arr[i];
+  }
+  return max;
+};
+const arrayMin = (arr: number[]) => {
+  let min = Infinity;
+  for (let i = 0; i < arr.length; i++) {
+    if (arr[i] < min) min = arr[i];
+  }
+  return min;
+};
+const sum = (arr: number[]) => {
+  let total = 0;
+  for (let i = 0; i < arr.length; i++) {
+    total += arr[i];
+  }
+  return total;
+};
 const avg = (arr: number[]) => arr.length > 0 ? sum(arr) / arr.length : 0;
 
 function getBucketStart(timestamp: number): Date {
@@ -107,9 +127,22 @@ function aggregateToBuckets(samples: MemorySample[]): BucketAggregate[] {
 
   const aggregates: BucketAggregate[] = [];
   for (const bucketSamples of buckets.values()) {
-    const rssValues = bucketSamples.map(s => s.rssMB).sort((a, b) => a - b);
-    const heapValues = bucketSamples.map(s => s.heapMB).sort((a, b) => a - b);
-    const cpuValues = bucketSamples.map(s => s.cpuPercent).sort((a, b) => a - b);
+    // ⚡ Bolt: Replaced chained .map().sort() with a single loop to avoid multiple O(N) intermediate array allocations
+    const len = bucketSamples.length;
+    const rssValues = new Array(len);
+    const heapValues = new Array(len);
+    const cpuValues = new Array(len);
+
+    for (let i = 0; i < len; i++) {
+      const s = bucketSamples[i];
+      rssValues[i] = s.rssMB;
+      heapValues[i] = s.heapMB;
+      cpuValues[i] = s.cpuPercent;
+    }
+
+    rssValues.sort((a, b) => a - b);
+    heapValues.sort((a, b) => a - b);
+    cpuValues.sort((a, b) => a - b);
 
     aggregates.push({
       bucketStart: getBucketStart(bucketSamples[0].timestamp),
