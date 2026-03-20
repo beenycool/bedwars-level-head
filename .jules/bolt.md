@@ -39,3 +39,7 @@
 ## 2025-05-16 - Stateful Regex in Fast-Paths
 **Learning:** Using a global regular expression (`/pattern/g`) with `.test()` as a fast-path condition before a `.replace()` mutates the `lastIndex` property of the regex object. If the same global regex object is reused across function calls, subsequent `.test()` checks will resume from `lastIndex` and potentially fail on valid matches, causing stateful bugs.
 **Action:** In high-traffic string manipulation functions (like `escapeHtml`), use a non-global regex with `.test()` as a fast-path check before executing heavier `.replace()` operations to prevent unnecessary string allocations. Ensure this fast-path regex is non-global to avoid mutating the `.lastIndex` property.
+
+## 2025-05-16 - CSV Export Memory Allocation Overhead
+**Learning:** During backend background or heavy-throughput operations, nested `.map()` array operations combined with string `.join(',')` operations cause a large number of intermediate memory allocations. Specifically in `backend/src/util/csv.ts`, parsing a 10,000-row `data` array with 14 keys created ~10,000 intermediate arrays (one for `headers.map` inside `data.map`) that were immediately garbage collected, creating massive V8 GC pressure and high memory spikes during CSV export.
+**Action:** When repeatedly mapping headers/columns over large datasets, completely replace `Array.prototype.map` inside the row iteration loop with a standard O(N) `for` loop that concatenates primitive strings directly (or pushes to a pre-allocated array).
