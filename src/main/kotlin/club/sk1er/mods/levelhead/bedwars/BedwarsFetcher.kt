@@ -1,8 +1,10 @@
 package club.sk1er.mods.levelhead.bedwars
 
 import club.sk1er.mods.levelhead.core.BaseStatsFetcher
+import club.sk1er.mods.levelhead.core.BedwarsStar
 import club.sk1er.mods.levelhead.core.GameMode
-import club.sk1er.mods.levelhead.core.StatsFetcher
+import club.sk1er.mods.levelhead.core.GameStats
+import club.sk1er.mods.levelhead.core.StatsPayloadParser
 import com.google.gson.JsonObject
 import java.util.UUID
 
@@ -13,6 +15,24 @@ object BedwarsFetcher : BaseStatsFetcher() {
     override fun resetWarnings() {
         super.resetWarnings()
         ProxyClient.resetWarnings()
+    }
+
+    override fun buildStats(payload: JsonObject, etag: String?): GameStats? {
+        StatsPayloadParser.findStatsObject(payload, GameMode.BEDWARS) ?: return null
+        val nicked = StatsPayloadParser.isNicked(payload)
+        val experience = BedwarsStar.extractExperience(payload)
+        val star = experience?.let { BedwarsStar.calculateStar(it) }
+        val fkdr = parseBedwarsFkdr(payload)
+        val winstreak = parseBedwarsWinstreak(payload)
+        return GameStats.Bedwars(
+            star = star,
+            experience = experience,
+            fkdr = fkdr,
+            winstreak = winstreak,
+            nicked = nicked,
+            fetchedAt = System.currentTimeMillis(),
+            etag = etag
+        )
     }
 
     fun parseBedwarsExperience(json: JsonObject): Long? {
@@ -53,7 +73,7 @@ object BedwarsFetcher : BaseStatsFetcher() {
     }
 
     private fun findBedwarsStats(json: JsonObject): JsonObject? {
-        return StatsFetcher.findStatsObject(json, GameMode.BEDWARS)
+        return StatsPayloadParser.findStatsObject(json, GameMode.BEDWARS)
     }
 
     private fun JsonObject.numberValue(key: String): Double? {

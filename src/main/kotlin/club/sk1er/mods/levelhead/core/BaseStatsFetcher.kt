@@ -20,14 +20,14 @@ import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 import net.minecraft.util.EnumChatFormatting as ChatColor
 
-abstract class BaseStatsFetcher {
+abstract class BaseStatsFetcher : GameModeFetcher {
     private val HYPIXEL_PLAYER_ENDPOINT = "https://api.hypixel.net/player"
 
     protected val missingKeyWarned = AtomicBoolean(false)
     protected val invalidKeyWarned = AtomicBoolean(false)
     protected val networkIssueWarned = AtomicBoolean(false)
 
-    protected abstract val gameMode: GameMode
+    abstract override val gameMode: GameMode
     protected abstract val modeName: String
 
     protected fun contributeToCommunityDatabase(uuid: UUID, payload: JsonObject) {
@@ -38,12 +38,12 @@ abstract class BaseStatsFetcher {
         }
     }
 
-    suspend fun fetchPlayer(uuid: UUID, lastFetchedAt: Long? = null, etag: String? = null): FetchResult {
+    override suspend fun fetch(uuid: UUID, cacheHint: CacheHint): FetchResult {
         return when (LevelheadConfig.backendMode) {
             BackendMode.OFFLINE -> FetchResult.PermanentError("OFFLINE_MODE")
             BackendMode.COMMUNITY_CACHE_ONLY -> {
                 if (isProxyAvailable()) {
-                    fetchFromProxy(uuid.toString(), lastFetchedAt, etag)
+                    fetchFromProxy(uuid.toString(), cacheHint.lastFetchedAt, cacheHint.etag)
                 } else {
                     FetchResult.PermanentError("COMMUNITY_DATABASE_UNAVAILABLE")
                 }
@@ -57,9 +57,9 @@ abstract class BaseStatsFetcher {
             }
             BackendMode.FALLBACK -> {
                 if (isProxyAvailable()) {
-                    val communityResult = fetchFromProxy(uuid.toString(), lastFetchedAt, etag)
+                    val communityResult = fetchFromProxy(uuid.toString(), cacheHint.lastFetchedAt, cacheHint.etag)
                     if (communityResult is FetchResult.Success) {
-                        if (StatsFetcher.findStatsObject(communityResult.payload, gameMode) != null) {
+                        if (StatsPayloadParser.findStatsObject(communityResult.payload, gameMode) != null) {
                             return communityResult
                         }
                     } else if (communityResult is FetchResult.NotModified) {
@@ -75,6 +75,8 @@ abstract class BaseStatsFetcher {
             }
         }
     }
+
+    abstract override fun buildStats(payload: JsonObject, etag: String?): GameStats?
 
     private fun isProxyAvailable(): Boolean {
         if (!LevelheadConfig.proxyEnabled) return false
@@ -183,7 +185,7 @@ abstract class BaseStatsFetcher {
         }
     }
 
-    open fun resetWarnings() {
+    override fun resetWarnings() {
         missingKeyWarned.set(false)
         invalidKeyWarned.set(false)
         networkIssueWarned.set(false)
