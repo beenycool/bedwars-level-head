@@ -99,7 +99,7 @@ class FetchExecutor(
                                 else -> null
                             }
                             entries.forEach { entry ->
-                                val shouldSkipFallback = LevelheadConfig.proxyEnabled &&
+                                val shouldSkipFallback =
                                     entry.cached != null &&
                                     proxyErrorReason != null &&
                                     proxyErrorReason != "PROXY_AUTH" &&
