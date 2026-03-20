@@ -14,3 +14,6 @@
 
 **Learning:** Exception handling and error blocks (like network failures or unselected targets) often produce static text that strands the user. By converting 'Unexpected error' or 'Not looking at a player' messages into interactive suggestions (e.g., checking status, using a manual command), we provide an immediate path forward.
 **Action:** When writing catch blocks or failure states in command handlers, don't just log and send static text. Always use `CommandUtils.buildInteractiveFeedback` to suggest the next logical step (like `/levelhead status` or `/levelhead whois`).
+## 2025-03-20 - Interactive Status Commands
+**Learning:** Purely informational commands (like `/levelhead status`) present excellent micro-UX opportunities when key data points are naturally linked to configuration commands, but they are often neglected because they "just show text".
+**Action:** When creating status readout commands, identify configuration metrics (e.g. cache TTL, proxy state, cache size) and format them as interactive components (with `ChatComponentText` and `ClickEvent`) that suggest the related modification command (e.g. `/levelhead cachettl <value>`).
