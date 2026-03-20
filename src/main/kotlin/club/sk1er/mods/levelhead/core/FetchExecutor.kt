@@ -10,6 +10,7 @@ import kotlinx.coroutines.sync.withPermit
 import org.apache.logging.log4j.Logger
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.random.Random
+import club.sk1er.mods.levelhead.core.PerformanceMetrics
 
 class FetchExecutor(
     private val worldScopeProvider: () -> CoroutineScope,
@@ -59,6 +60,7 @@ class FetchExecutor(
             .forEach { chunk ->
                 lastFetchAttemptAt = System.currentTimeMillis()
                 rateLimiter.consume()
+                PerformanceMetrics.recordFetch()
 
                 val results = ProxyClient.fetchBatch(chunk)
 
@@ -157,6 +159,7 @@ class FetchExecutor(
                 try {
                     lastFetchAttemptAt = System.currentTimeMillis()
                     rateLimiter.consume()
+                    PerformanceMetrics.recordFetch()
                     val gameMode = cacheKey.gameMode
                     when (val result = StatsFetcher.fetchPlayer(cacheKey.uuid, gameMode, cached?.fetchedAt, cached?.etag)) {
                         is FetchResult.Success -> {

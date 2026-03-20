@@ -42,7 +42,7 @@ class CacheApplier(
         stats: GameStats?
     ) {
         requests.forEach { req ->
-            val gameMode = resolveGameMode(req.type)
+            val gameMode = GameMode.resolve(req.type, logger)
             val matchingStats = statsForMode(stats, gameMode)
             req.displays.forEach { display ->
                 onTagUpdate(display, uuid, matchingStats, gameMode)
@@ -52,12 +52,6 @@ class CacheApplier(
 
     fun reset() {
         pendingDisplayRefreshes.clear()
-    }
-
-    private fun resolveGameMode(typeId: String): GameMode {
-        val resolved = GameMode.fromTypeId(typeId) ?: GameMode.BEDWARS
-        logger.debug("resolveGameMode: typeId={} -> {}", typeId, resolved)
-        return resolved
     }
 
     private fun statsForMode(stats: GameStats?, gameMode: GameMode): GameStats? {

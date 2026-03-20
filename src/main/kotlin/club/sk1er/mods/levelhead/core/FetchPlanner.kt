@@ -43,7 +43,7 @@ class FetchPlanner(
             .forEach { (trimmedUuid, groupedRequests) ->
                 val uuid = trimmedUuid.dashUUID ?: return@forEach
                 groupedRequests
-                    .groupBy { resolveGameMode(it.type) }
+                    .groupBy { GameMode.resolve(it.type, logger) }
                     .forEach { (gameMode, modeRequests) ->
                         val debug = DebugLogging.isRequestDebugEnabled()
                         val displays = modeRequests.flatMap { it.displays }.toSet()
@@ -54,6 +54,7 @@ class FetchPlanner(
 
                         when {
                             cached == null -> {
+                                PerformanceMetrics.recordCacheLookup(hit = false)
                                 repository.recordMiss(CacheMissReason.COLD)
                                 DebugLogging.logRequestDebug {
                                     "[LevelheadDebug][cache] COLD miss: uuid=$maskedUuid trimmed=$trimmedMasked mode=${gameMode.name} reasons=$reasons"
@@ -65,6 +66,7 @@ class FetchPlanner(
                                 }
                             }
                             cached.isExpired(LevelheadConfig.starCacheTtl, now) -> {
+                                PerformanceMetrics.recordCacheLookup(hit = false)
                                 repository.recordMiss(CacheMissReason.EXPIRED)
                                 DebugLogging.logRequestDebug {
                                     "[LevelheadDebug][cache] EXPIRED refresh: uuid=$maskedUuid trimmed=$trimmedMasked mode=${gameMode.name} reasons=$reasons"
@@ -77,6 +79,8 @@ class FetchPlanner(
                                 }
                             }
                             else -> {
+                                PerformanceMetrics.recordCacheLookup(hit = true)
+                                PerformanceMetrics.recordCacheAge(now - cached.fetchedAt)
                                 val planned = PlannedFetch(trimmedUuid, uuid, gameMode, modeRequests, displays, cached, CacheState.HIT)
                                 immediate += planned
                                 DebugLogging.logRequestDebug {
@@ -88,11 +92,5 @@ class FetchPlanner(
             }
 
         return FetchPlan(immediate, pending)
-    }
-
-    private fun resolveGameMode(typeId: String): GameMode {
-        val resolved = GameMode.fromTypeId(typeId) ?: GameMode.BEDWARS
-        logger.debug("resolveGameMode: typeId={} -> {}", typeId, resolved)
-        return resolved
     }
 }

@@ -14,6 +14,7 @@ import club.sk1er.mods.levelhead.core.DisplayManager
 import club.sk1er.mods.levelhead.core.GameMode
 import club.sk1er.mods.levelhead.core.GameStats
 import club.sk1er.mods.levelhead.core.ModeManager
+import club.sk1er.mods.levelhead.core.PerformanceMetrics
 import club.sk1er.mods.levelhead.core.RateLimiter
 import club.sk1er.mods.levelhead.core.RateLimiterMetrics
 import club.sk1er.mods.levelhead.core.RequestCoordinator
@@ -267,6 +268,7 @@ object Levelhead {
     @SubscribeEvent
     fun onClientTick(event: TickEvent.ClientTickEvent) {
         if (event.phase != TickEvent.Phase.END) return
+        PerformanceMetrics.onFrameBoundary()
         LevelheadConfig.syncUiAndRuntimeConfig()
         displayManager.tick()
     }

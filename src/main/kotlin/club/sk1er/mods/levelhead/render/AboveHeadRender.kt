@@ -11,6 +11,7 @@ import club.sk1er.mods.levelhead.core.DebugLogging.logRenderDebug
 import club.sk1er.mods.levelhead.core.DebugLogging.maskForLogs
 import club.sk1er.mods.levelhead.core.DebugLogging.truncateForLogs
 import club.sk1er.mods.levelhead.core.ModeManager
+import club.sk1er.mods.levelhead.core.PerformanceMetrics
 import gg.essential.api.EssentialAPI
 import gg.essential.elementa.utils.withAlpha
 import gg.essential.universal.UGraphics
@@ -102,6 +103,7 @@ object AboveHeadRender {
                 // Render sampling debug logging (throttled per player)
                 logRenderSamplingIfEnabled(tag, player.uniqueID, player.name, displayPosition, offset + indexOffset)
 
+                PerformanceMetrics.recordTagRender()
                 renderName(tag, player, event.x, event.y + offset + indexOffset, event.z)
             }
         }
