@@ -27,30 +27,9 @@ class DisplayManager(val file: File) {
         private const val LAST_SEEN_UPDATE_INTERVAL_MS = 5000L
         private const val CACHE_CHECK_INTERVAL_MS = 10000L
         private const val TAB_FETCH_INTERVAL_MS = 2000L
-        private val LEGACY_BEDWARS_HEADERS = setOf("Level", "Levelhead", "Network Level", "BedWars Level")
-        private val LEGACY_DUELS_HEADERS = setOf("Duels Wins")
 
-        internal fun managedHeaderMode(header: String?): GameMode? {
-            if (header.isNullOrBlank()) {
-                return null
-            }
-
-            return when {
-                header.equals(GameMode.BEDWARS.defaultHeader, ignoreCase = true) -> GameMode.BEDWARS
-                LEGACY_BEDWARS_HEADERS.any { header.equals(it, ignoreCase = true) } -> GameMode.BEDWARS
-                header.equals(GameMode.DUELS.defaultHeader, ignoreCase = true) -> GameMode.DUELS
-                LEGACY_DUELS_HEADERS.any { header.equals(it, ignoreCase = true) } -> GameMode.DUELS
-                header.equals(GameMode.SKYWARS.defaultHeader, ignoreCase = true) -> GameMode.SKYWARS
-                else -> null
-            }
-        }
-
-        internal fun normalizedManagedHeader(header: String?, targetMode: GameMode): String? {
-            if (header.isNullOrBlank() || managedHeaderMode(header) != null) {
-                return targetMode.defaultHeader
-            }
-            return null
-        }
+        internal fun managedHeaderMode(header: String?): GameMode? = ConfigMigrator.managedHeaderMode(header)
+        internal fun normalizedManagedHeader(header: String?, targetMode: GameMode): String? = ConfigMigrator.normalizedManagedHeader(header, targetMode)
     }
 
     var config = MasterConfig()
