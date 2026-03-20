@@ -1,6 +1,11 @@
 package club.sk1er.mods.levelhead.config
 
+
+import club.sk1er.mods.levelhead.config.migration.ConfigMigrator
+
+
 class MasterConfig {
+    var version: Int = ConfigMigrator.CURRENT_VERSION
     var enabled: Boolean = true
     var offset: Double = 0.0
     var displayPosition: DisplayPosition = DisplayPosition.ABOVE
