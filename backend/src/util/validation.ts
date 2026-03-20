@@ -194,34 +194,27 @@ function validateType(value: unknown, expectedType: string): boolean {
 export function extractBedwarsRecord(data: unknown): Record<string, unknown> | null {
     if (!isNonArrayObject(data)) return null;
 
-    const dataObj = data as Record<string, unknown>;
-
     // Check player.stats.Bedwars
-    if (isNonArrayObject(dataObj.player)) {
-        const playerObj = dataObj.player as Record<string, unknown>;
-        if (isNonArrayObject(playerObj.stats)) {
-            const statsObj = playerObj.stats as Record<string, unknown>;
-            if (isNonArrayObject(statsObj.Bedwars)) {
-                return statsObj.Bedwars as Record<string, unknown>;
-            }
-        }
+    if (
+        isNonArrayObject(data.player) &&
+        isNonArrayObject(data.player.stats) &&
+        isNonArrayObject(data.player.stats.Bedwars)
+    ) {
+        return data.player.stats.Bedwars;
     }
 
     // Check data.bedwars (often from proxy payloads)
-    if (isNonArrayObject(dataObj.data)) {
-        const innerDataObj = dataObj.data as Record<string, unknown>;
-        if (isNonArrayObject(innerDataObj.bedwars)) {
-            return innerDataObj.bedwars as Record<string, unknown>;
-        }
+    if (isNonArrayObject(data.data) && isNonArrayObject(data.data.bedwars)) {
+        return data.data.bedwars;
     }
 
     // Check direct bedwars property
-    if (isNonArrayObject(dataObj.bedwars)) {
-        return dataObj.bedwars as Record<string, unknown>;
+    if (isNonArrayObject(data.bedwars)) {
+        return data.bedwars;
     }
 
     // Fallback: assume data itself is the record, since we verified it's a non-array object
-    return dataObj;
+    return data;
 }
 
 /**
