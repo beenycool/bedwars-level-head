@@ -43,6 +43,16 @@ enum class GameMode(
         }
 
         /**
+         * Resolve a type ID to a GameMode, defaulting to BEDWARS if unknown.
+         * Logs the resolution at DEBUG level when a logger is provided.
+         */
+        fun resolve(typeId: String, logger: org.apache.logging.log4j.Logger? = null): GameMode {
+            val resolved = fromTypeId(typeId) ?: BEDWARS
+            logger?.debug("resolveGameMode: typeId={} -> {}", typeId, resolved)
+            return resolved
+        }
+
+        /**
          * Get a GameMode from its display name.
          * Returns null if no matching game mode is found.
          */

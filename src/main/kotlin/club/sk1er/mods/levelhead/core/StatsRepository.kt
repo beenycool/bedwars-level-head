@@ -65,12 +65,16 @@ class StatsRepository(private val maxSizeProvider: () -> Int) {
         val entry = cache.getIfPresent(key)
         if (entry == null) {
             metrics.recordMiss(CacheMissReason.COLD)
+            PerformanceMetrics.recordCacheLookup(hit = false)
             return null
         }
         if (entry.isExpired(ttl, now)) {
             metrics.recordMiss(CacheMissReason.EXPIRED)
+            PerformanceMetrics.recordCacheLookup(hit = false)
             return null
         }
+        PerformanceMetrics.recordCacheLookup(hit = true)
+        PerformanceMetrics.recordCacheAge(now - entry.fetchedAt)
         return entry
     }
 
