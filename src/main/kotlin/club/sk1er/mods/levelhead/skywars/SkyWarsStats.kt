@@ -285,7 +285,7 @@ object SkyWarsStats {
      * Find the SkyWars stats object from various JSON structures.
      */
     private fun findSkyWarsStats(json: JsonObject): JsonObject? {
-        return club.sk1er.mods.levelhead.core.StatsFetcher.findStatsObject(json, club.sk1er.mods.levelhead.core.GameMode.SKYWARS)
+        return club.sk1er.mods.levelhead.core.StatsPayloadParser.findStatsObject(json, club.sk1er.mods.levelhead.core.GameMode.SKYWARS)
     }
 
     /**

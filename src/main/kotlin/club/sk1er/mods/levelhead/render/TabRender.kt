@@ -27,7 +27,11 @@ object TabRender {
 
     private var frameState: FrameState? = null
 
-    private val textCache = WeakHashMap<GameStats, String>()
+    private val textCache = object : LinkedHashMap<Pair<UUID, GameMode>, Pair<GameStats, String>>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<UUID, GameMode>, Pair<GameStats, String>>): Boolean {
+            return size > 500
+        }
+    }
 
     /**
      * Called at the start of renderPlayerlist to prepare per-frame tab data.
@@ -65,7 +69,7 @@ object TabRender {
             val stats = Levelhead.getCachedStats(uuid, mode) ?: continue
             if (stats.nicked) continue
 
-            val text = getOrBuildTabString(stats, mode)
+            val text = getOrBuildTabString(uuid, stats, mode)
             if (text.isBlank()) continue
 
             map[uuid] = PreparedEntry(
@@ -145,8 +149,15 @@ object TabRender {
         textCache.clear()
     }
 
-    private fun getOrBuildTabString(stats: GameStats, mode: GameMode): String {
-        return textCache.getOrPut(stats) { formatTabString(stats, mode) }
+    private fun getOrBuildTabString(uuid: UUID, stats: GameStats, mode: GameMode): String {
+        val key = uuid to mode
+        val cached = textCache[key]
+        if (cached != null && cached.first == stats) {
+            return cached.second
+        }
+        val newText = formatTabString(stats, mode)
+        textCache[key] = stats to newText
+        return newText
     }
 
     private fun formatTabString(stats: GameStats, mode: GameMode): String {

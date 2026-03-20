@@ -120,15 +120,39 @@ class LevelheadCommand {
         }
 
         sendMessage(mainComponent)
-        sendMessage(
-            "${ChatColor.YELLOW}Header: ${ChatColor.GOLD}$header${ChatColor.YELLOW}, " +
-                "offset ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", offset)}${ChatColor.YELLOW}, " +
-                "show self ${formatToggle(showSelf)}${ChatColor.YELLOW}."
-        )
-        sendMessage(
-            "${ChatColor.YELLOW}Proxy: $proxyState${ChatColor.YELLOW}. " +
-                "${ChatColor.GRAY}Try ${ChatColor.GOLD}/levelhead status${ChatColor.GRAY} or ${ChatColor.GOLD}/levelhead display${ChatColor.GRAY} for more controls."
-        )
+        val headerClickable = CommandUtils.createClickableCommand("${ChatColor.GOLD}$header", run = false, suggestedCommand = "/levelhead display header text \"$header\"").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit text")) }
+        val offsetText = String.format(Locale.ROOT, "%.2f", offset)
+        val offsetClickable = CommandUtils.createClickableCommand("${ChatColor.GOLD}$offsetText", run = false, suggestedCommand = "/levelhead display offset $offsetText").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit offset")) }
+        val toggleText = if (showSelf) "on" else "off"
+        val toggleColor = if (showSelf) ChatColor.GREEN else ChatColor.RED
+        val toggleClickable = ChatComponentText("$toggleColor$toggleText").apply {
+            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/levelhead display showself $toggleText")
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit show self"))
+        }
+
+        val msg1 = ChatComponentText("${ChatColor.YELLOW}Header: ")
+            .appendSibling(headerClickable)
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW}, offset "))
+            .appendSibling(offsetClickable)
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW}, show self "))
+            .appendSibling(toggleClickable)
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
+        sendMessage(msg1)
+
+        val proxyClickable = ChatComponentText(proxyState).apply {
+            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead proxy")
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to view proxy options"))
+        }
+        val statusLink = CommandUtils.createClickableCommand("/levelhead status", run = true)
+        val displayLink = CommandUtils.createClickableCommand("/levelhead display", run = true)
+        val msg2 = ChatComponentText("${ChatColor.YELLOW}Proxy: ")
+            .appendSibling(proxyClickable)
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW}. ${ChatColor.GRAY}Try "))
+            .appendSibling(statusLink)
+            .appendSibling(ChatComponentText("${ChatColor.GRAY} or "))
+            .appendSibling(displayLink)
+            .appendSibling(ChatComponentText("${ChatColor.GRAY} for more controls."))
+        sendMessage(msg2)
     }
 
     @SubCommand(aliases = ["setapikey"])
@@ -925,12 +949,26 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         val showSelf = primaryDisplay?.config?.showSelf ?: true
         val offset = Levelhead.displayManager.config.offset
 
-        sendMessage(
-            "${ChatColor.YELLOW}Primary header: ${ChatColor.GOLD}$headerText${ChatColor.YELLOW} (${ChatColor.GOLD}${formatColor(headerColor)}${ChatColor.YELLOW})."
-        )
-        sendMessage(
-            "${ChatColor.YELLOW}Display offset: ${ChatColor.GOLD}${String.format(Locale.ROOT, "%.2f", offset)}${ChatColor.YELLOW}, show self ${formatToggle(showSelf)}${ChatColor.YELLOW}."
-        )
+        val msg1 = ChatComponentText("${ChatColor.YELLOW}Primary header: ")
+        msg1.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$headerText", run = false, suggestedCommand = "/levelhead display header text \"$headerText\"").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit text")) })
+        msg1.appendSibling(ChatComponentText("${ChatColor.YELLOW} ("))
+        val colorHex = formatColor(headerColor)
+        msg1.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$colorHex", run = false, suggestedCommand = "/levelhead display header color \"$colorHex\"").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit color")) })
+        msg1.appendSibling(ChatComponentText("${ChatColor.YELLOW})."))
+        sendMessage(msg1)
+
+        val msg2 = ChatComponentText("${ChatColor.YELLOW}Display offset: ")
+        val offsetText = String.format(Locale.ROOT, "%.2f", offset)
+        msg2.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$offsetText", run = false, suggestedCommand = "/levelhead display offset $offsetText").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit offset")) })
+        msg2.appendSibling(ChatComponentText("${ChatColor.YELLOW}, show self "))
+
+        val toggleText = if (showSelf) "on" else "off"
+        val toggleColor = if (showSelf) ChatColor.GREEN else ChatColor.RED
+        msg2.appendSibling(ChatComponentText("$toggleColor$toggleText").apply {
+            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/levelhead display showself $toggleText")            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit show self"))
+        })
+        msg2.appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
+        sendMessage(msg2)
     }
 
 private fun sendDisplayUsage() {

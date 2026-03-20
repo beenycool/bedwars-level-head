@@ -44,6 +44,7 @@ import net.minecraftforge.fml.common.event.FMLPreInitializationEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import net.minecraftforge.fml.common.gameevent.TickEvent
 import net.minecraftforge.fml.common.network.FMLNetworkEvent
+import okhttp3.ConnectionPool
 import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -100,6 +101,7 @@ object Levelhead {
 
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .dns(configurableDns)
+        .connectionPool(ConnectionPool(10, 5, TimeUnit.MINUTES))
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .writeTimeout(10, TimeUnit.SECONDS)
@@ -368,7 +370,7 @@ object Levelhead {
         if (!display.config.enabled) return
         val activeMode = ModeManager.getActiveGameMode()
         logger.debug("updateDisplayCache: uuid={}, statsType={}, resolvedGameMode={}, displayConfigType={}, displayConfigGameMode={}, activeMode={}", 
-            uuid, stats?.let { it::class.simpleName }, gameMode, display.config.type, display.config.gameMode, activeMode)
+            uuid, stats?.let { it::class.simpleName }, gameMode, display.config.gameMode.typeId, display.config.gameMode, activeMode)
         val tag = StatsFormatter.formatTag(uuid, stats, display.config, gameMode)
         val cacheKey = DisplayCacheKey(uuid, gameMode)
         if (logger.isDebugEnabled) {

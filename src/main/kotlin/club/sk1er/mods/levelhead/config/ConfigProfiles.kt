@@ -97,7 +97,7 @@ object ConfigProfiles {
         return DisplayConfig().apply {
             enabled = display.enabled
             showSelf = display.showSelf
-            type = display.type
+            gameMode = display.gameMode
             headerColor = cloneColor(display.headerColor)
             headerString = display.headerString
             footerColor = cloneColor(display.footerColor)

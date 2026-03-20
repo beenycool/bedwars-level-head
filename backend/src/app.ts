@@ -20,10 +20,14 @@ import helmet from 'helmet';
 import crypto from 'crypto';
 import { enforceAdminRateLimit } from './middleware/rateLimit';
 import { sanitizeUrlForLogs, isIPInCIDR } from './util/requestUtils';
+import { requestId } from './middleware/requestId';
+import pinoHttp from 'pino-http';
+import { logger } from './util/logger';
 
 export function createApp(): express.Express {
   const app = express();
 
+  app.use(requestId);
   app.use((_req, res, next) => {
     res.locals.nonce = crypto.randomUUID();
     next();
@@ -62,19 +66,41 @@ export function createApp(): express.Express {
     next();
   });
 
+  app.use(pinoHttp({
+    logger,
+    genReqId: (req) => req.id,
+    customLogLevel: (_req, res, err) => {
+      if (res.statusCode >= 500 || err) return 'error';
+      if (res.statusCode >= 400) return 'warn';
+      return 'info';
+    },
+    serializers: {
+      req: (req) => ({
+        id: req.id,
+        method: req.method,
+        url: sanitizeUrlForLogs(req.url),
+      }),
+    },
+    customSuccessMessage: (req, res, responseTime) => {
+      return `[request] ${req.method} ${sanitizeUrlForLogs(req.url)} -> ${res.statusCode} (${responseTime.toFixed(2)} ms)`;
+    },
+    customErrorMessage: (req, res, err) => {
+      return `[request] ${req.method} ${sanitizeUrlForLogs(req.url)} -> ${res.statusCode} (${err.message})`;
+    },
+  }));
+
   app.set('trust proxy', (ip: string) => {
     return TRUST_PROXY_CIDRS.some((cidr) => isIPInCIDR(ip, cidr));
   });
 
   app.use(compression());
-  app.use(express.json({ limit: '64kb' }));
+  app.use(express.json({ limit: '16kb' }));
 
   app.use((req, res, next) => {
     const start = process.hrtime.bigint();
     res.on('finish', () => {
       const end = process.hrtime.bigint();
       const durationSeconds = Number(end - start) / 1_000_000_000;
-      const durationMs = durationSeconds * 1000;
       const routeLabel =
         typeof res.locals.metricsRoute === 'string'
           ? res.locals.metricsRoute
@@ -82,19 +108,6 @@ export function createApp(): express.Express {
             ? `${req.baseUrl}${req.route?.path ?? ''}`
             : req.route?.path ?? req.path;
       observeRequest(req.method, routeLabel, res.statusCode, durationSeconds);
-
-      const rawTarget = req.originalUrl ?? req.url ?? routeLabel;
-      const target = sanitizeUrlForLogs(rawTarget);
-      const message = `[request] ${req.method} ${target} -> ${res.statusCode} (${durationMs.toFixed(2)} ms)`;
-      if (res.statusCode >= 500) {
-        console.error(message);
-      } else if (res.statusCode === 429) {
-        // Rate limit blocks are logged separately by the rate limit middleware
-      } else if (res.statusCode >= 400) {
-        console.warn(message);
-      } else {
-        console.info(message);
-      }
     });
     next();
   });
@@ -117,7 +130,7 @@ export function createApp(): express.Express {
       sql`SELECT 1`.execute(cachePool)
         .then(() => true)
         .catch((error) => {
-          console.error('Database health check failed', error);
+          logger.error('Database health check failed', error);
           return false;
         }),
       checkHypixelReachability(),
@@ -196,12 +209,12 @@ export function createApp(): express.Express {
     }
 
     if (err instanceof Error) {
-      console.error('Unexpected error:', err.message);
+      logger.error({ err }, 'Unexpected error');
       if (err.stack) {
-        console.error(err.stack);
+        logger.error(err.stack);
       }
     } else {
-      console.error('Unexpected error (non-Error object):', String(err));
+      logger.error({ err: String(err) }, 'Unexpected error (non-Error object)');
     }
     res.status(500).json({ success: false, cause: 'INTERNAL_ERROR', message: 'An unexpected error occurred.' });
   });

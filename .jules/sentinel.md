@@ -64,3 +64,9 @@
 **Vulnerability:** Rate limiting on private endpoints relied solely on the client's IP address (`getClientIpAddress(req)`) rather than the authenticated user's API key hash.
 **Learning:** Because the rate limiter bucketed by IP address instead of API key, an attacker with a single valid API key could distribute their requests across multiple IP addresses to completely bypass the intended limits, leading to potential Denial of Service (resource exhaustion). Conversely, multiple legitimate users sharing the same NAT IP address would unfairly exhaust each other's quota.
 **Prevention:** In API key-authenticated endpoints, `getBucketKey` should utilize the validated API key hash (`req.apiKeyValidation?.keyHash`) as the primary identifier, falling back to the client IP address only for unauthenticated paths.
+
+## 2026-03-19 - Weak Random Number Generation for Nonces and Jitters
+
+**Vulnerability:** `Math.random()` was being used to generate a uniqueness nonce for tracking Hypixel API calls in Redis, and for calculating a jitter offset for retry delays.
+**Learning:** `Math.random()` generates a pseudo-random number sequence that is predictable and not cryptographically secure. While the risk of collision or timing attacks on simple jitter delays or Redis set members might be theoretically low, using weak PRNG constructs introduces subtle vulnerabilities that can be exploited by motivated attackers performing timing analysis or forcing predictable nonce sequences.
+**Prevention:** Always use cryptographically secure random number generators (CSPRNG), such as `randomBytes` or `randomInt` from `node:crypto`, when calculating jitter, nonces, session identifiers, or hashing salts in backend logic.
