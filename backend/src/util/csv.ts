@@ -33,14 +33,14 @@ export function toCSV(data: any[]): string {
   const numCols = headers.length;
   const rows = new Array<string>(numRows + 1);
 
-  let headerRow = escapeCell(headers[0]);
-  for (let c = 1; c < numCols; c++) {
-    headerRow += ',' + escapeCell(headers[c]);
-  }
-  rows[0] = headerRow;
+  rows[0] = headers.map(escapeCell).join(',');
 
   for (let r = 0; r < numRows; r++) {
     const row = data[r];
+    if (numCols === 0) {
+      rows[r + 1] = '';
+      continue;
+    }
     let rowStr = escapeCell(row[headers[0]]);
     for (let c = 1; c < numCols; c++) {
       rowStr += ',' + escapeCell(row[headers[c]]);
