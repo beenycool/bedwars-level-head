@@ -61,6 +61,6 @@ The `/levelhead perf` command exposes runtime performance metrics:
 | Symptom | Threshold | Likely Cause |
 |---|---|---|
 | Hit rate drops | Below 70% | TTL too aggressive or cache size too small |
-| Fetches/minute elevated | Exceeds 45 sustained | Rapid world joins or config changes triggering re-fetches |
+| Fetches/minute elevated | Exceeds 45 sustained | 45 is a 50% buffer over the 30/min target — allows short bursts (e.g., config reloads) without triggering investigation, but sustained 45+/min indicates rapid world joins or misconfigured re-fetches |
 | Tag renders/frame high | Exceeds 100 | Render distance too high or excessive entity count |
 | Age distribution skewed old | Heavy >45min bucket | Cache is going stale; consider lowering TTL |
