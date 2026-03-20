@@ -1007,7 +1007,8 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         val toggleText = if (showSelf) "on" else "off"
         val toggleColor = if (showSelf) ChatColor.GREEN else ChatColor.RED
         msg2.appendSibling(ChatComponentText("$toggleColor$toggleText").apply {
-            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/levelhead display showself $toggleText")            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit show self"))
+            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/levelhead display showself $toggleText")
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit show self"))
         })
         msg2.appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
         sendMessage(msg2)
