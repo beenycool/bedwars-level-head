@@ -299,24 +299,41 @@ class LevelheadCommand {
     @SubCommand
     fun status() {
         val snapshot = Levelhead.statusSnapshot()
-        val proxyStatus = when {
+        val proxyStatusText = when {
             !snapshot.proxyEnabled -> "${ChatColor.GRAY}disabled"
             snapshot.proxyConfigured -> "${ChatColor.GREEN}configured"
             else -> "${ChatColor.RED}missing config"
         }
+
+        val proxyComponent = ChatComponentText(proxyStatusText).apply {
+            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead proxy")
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to configure proxy"))
+        }
+
+        val cacheSizeComponent = ChatComponentText("${ChatColor.GOLD}${snapshot.cacheSize}").apply {
+            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead reload")
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to clear cache"))
+        }
+
+        val ttlComponent = ChatComponentText("${ChatColor.GOLD}${snapshot.starCacheTtlMinutes}m").apply {
+            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/levelhead cachettl ${snapshot.starCacheTtlMinutes}")
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to change TTL"))
+        }
+
         val lastAttempt = formatAge(snapshot.lastAttemptAgeMillis)
         val lastSuccess = formatAge(snapshot.lastSuccessAgeMillis)
         val rateReset = formatAge(snapshot.rateLimitResetMillis)
         val serverCooldown = snapshot.serverCooldownMillis?.let { formatAge(it) }
 
         sendStatus("${ChatColor.GREEN}Status snapshot:")
-        sendStatus("${ChatColor.YELLOW}Proxy: $proxyStatus")
-        sendStatus("${ChatColor.YELLOW}Cache size: ${ChatColor.GOLD}${snapshot.cacheSize}")
-        sendStatus(
-            "${ChatColor.YELLOW}Star cache TTL: ${ChatColor.GOLD}${snapshot.starCacheTtlMinutes}m" +
-                "${ChatColor.YELLOW} (cold misses: ${ChatColor.GOLD}${snapshot.cacheMissesCold}${ChatColor.YELLOW}," +
-                " expired refreshes: ${ChatColor.GOLD}${snapshot.cacheMissesExpired}${ChatColor.YELLOW})"
-        )
+        sendStatus(ChatComponentText("${ChatColor.YELLOW}Proxy: ").appendSibling(proxyComponent))
+        sendStatus(ChatComponentText("${ChatColor.YELLOW}Cache size: ").appendSibling(cacheSizeComponent))
+
+        val ttlMsg = ChatComponentText("${ChatColor.YELLOW}Star cache TTL: ")
+            .appendSibling(ttlComponent)
+            .appendSibling(ChatComponentText("${ChatColor.YELLOW} (cold misses: ${ChatColor.GOLD}${snapshot.cacheMissesCold}${ChatColor.YELLOW}, expired refreshes: ${ChatColor.GOLD}${snapshot.cacheMissesExpired}${ChatColor.YELLOW})"))
+        sendStatus(ttlMsg)
+
         sendStatus("${ChatColor.YELLOW}Last request: ${ChatColor.GOLD}$lastAttempt${ChatColor.YELLOW} ago")
         sendStatus("${ChatColor.YELLOW}Last success: ${ChatColor.GOLD}$lastSuccess${ChatColor.YELLOW} ago")
         sendStatus(
@@ -925,6 +942,10 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
 
     private fun sendStatus(message: String) {
         sendMessage(message)
+    }
+
+    private fun sendStatus(component: IChatComponent) {
+        sendMessage(component)
     }
 
     private fun updateEnabledState(enabled: Boolean) {
