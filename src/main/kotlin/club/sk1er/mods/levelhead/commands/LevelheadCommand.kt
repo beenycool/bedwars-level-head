@@ -242,10 +242,10 @@ class LevelheadCommand {
         }
         val uuid = target.uniqueID.toString()
         GuiScreen.setClipboardString(uuid)
-        val msg = ChatComponentText("${ChatColor.GREEN}Copied UUID of ${ChatColor.GOLD}${target.name}${ChatColor.GREEN} to clipboard: ")
-            .appendSibling(ChatComponentText("${ChatColor.AQUA}$uuid").apply {
+        val msg = ChatComponentText("${ChatColor.GREEN}Copied UUID of ${ChatColor.GOLD}${target.name}${ChatColor.GREEN} to clipboard: ${ChatColor.AQUA}$uuid")
+            .appendSibling(ChatComponentText(" ${ChatColor.GRAY}[Click to lookup]").apply {
                 chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead whois $uuid")
-                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to lookup stats"))
+                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to lookup stats for ${target.name}"))
             })
         sendMessage(msg)
     }
