@@ -261,7 +261,7 @@ export async function getHypixelCallCount(
   const snapshotBuffer = [...hypixelCallBuffer];
 
   const result = await pool.selectFrom('hypixel_api_calls')
-    .select(pool.fn.countAll<number | string>().as('count'))
+    .select(pool.fn.countAll<number>().as('count'))
     .where('called_at', '>=', cutoff)
     .executeTakeFirst();
 
