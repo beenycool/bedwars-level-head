@@ -62,9 +62,8 @@ function formatLatency(latency: number | null): string {
   return `${new Intl.NumberFormat('en-US').format(latency)} ms`;
 }
 
-function percentile(values: number[], p: number): number | null {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
+function percentile(sorted: number[], p: number): number | null {
+  if (sorted.length === 0) return null;
   const rank = (p / 100) * (sorted.length - 1);
   const lower = Math.floor(rank);
   const upper = Math.ceil(rank);
@@ -319,7 +318,9 @@ router.get('/', async (req, res, next) => {
     const cacheHitRate = Math.round(cacheHitRateRaw * 10) / 10;
     const successRate = Math.round(successRateRaw * 10) / 10;
 
-    const latencyP95 = percentile(latencyValues, 95);
+    // ⚡ Bolt: Sort latency array exactly once before multiple percentile calculations
+    const sortedLatency = [...latencyValues].sort((a, b) => a - b);
+    const latencyP95 = percentile(sortedLatency, 95);
 
     const quotaPct = Math.max(0, Math.min(100, (sysStats.apiCallsLastHour / (120 * 60)) * 100));
 
@@ -1543,8 +1544,9 @@ router.get('/', async (req, res, next) => {
         applyChartHeight((event.target)?.value ?? defaultChartHeight);
       });
 
-      // ⚡ Bolt: Use pre-sorted arrays for percentiles to avoid multiple O(N log N) sorting overhead
-      function percentileSorted(sorted: number[], p: number): number | null {
+      // Helper: percentile for latency stats
+      // ⚡ Bolt: Assumes values are already sorted to avoid O(N log N) sorting overhead per percentile calculation
+      function percentile(sorted: number[], p: number): number | null {
         if (sorted.length === 0) return null;
         const rank = (p / 100) * (sorted.length - 1);
         const lower = Math.floor(rank);
@@ -1558,6 +1560,7 @@ router.get('/', async (req, res, next) => {
       const totalLookups = data.length;
       let cacheHits = 0;
       let successCount = 0;
+      let latencySum = 0;
       const latencyValues = [];
       const starRanges = { Unknown: 0, '0-10': 0, '11-50': 0, '51-100': 0, '100+': 0 };
       const statusBuckets = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, Other: 0 };
@@ -1569,6 +1572,7 @@ router.get('/', async (req, res, next) => {
         if (d.responseStatus >= 200 && d.responseStatus < 400) successCount++;
         if (typeof d.latencyMs === 'number' && d.latencyMs >= 0) {
           latencyValues.push(d.latencyMs);
+          latencySum += d.latencyMs;
         }
 
         // Stars
@@ -1596,17 +1600,17 @@ router.get('/', async (req, res, next) => {
       const successRate = totalLookups === 0 ? 0 : Math.round((successCount / totalLookups) * 1000) / 10;
       const cacheHitRate = totalLookups === 0 ? 0 : Math.round((cacheHits / totalLookups) * 1000) / 10;
 
+      // ⚡ Bolt: Sort latency array exactly once to avoid redundant O(N log N) overhead
+      const sortedLatency = [...latencyValues].sort((a, b) => a - b);
+
       // Calculate all latency metrics
-      const latencySorted = [...latencyValues].sort((a, b) => a - b);
       const latencyMetrics = {
-        p50: percentileSorted(latencySorted, 50),
-        p95: percentileSorted(latencySorted, 95),
-        p99: percentileSorted(latencySorted, 99),
-        min: latencySorted.length > 0 ? latencySorted[0] : null,
-        max: latencySorted.length > 0 ? latencySorted[latencySorted.length - 1] : null,
-        avg: latencyValues.length
-          ? latencyValues.reduce((sum, value) => sum + (value ?? 0), 0) / latencyValues.length
-          : null,
+        p50: percentile(sortedLatency, 50),
+        p95: percentile(sortedLatency, 95),
+        p99: percentile(sortedLatency, 99),
+        min: sortedLatency.length > 0 ? sortedLatency[0] : null,
+        max: sortedLatency.length > 0 ? sortedLatency[sortedLatency.length - 1] : null,
+        avg: latencyValues.length > 0 ? latencySum / latencyValues.length : null,
       };
       
       const latencyP95 = latencyMetrics.p95;
@@ -2732,6 +2736,7 @@ router.get('/', async (req, res, next) => {
         const totalReqs = chartData.length;
         let cacheHitsCount = 0;
         let succCount = 0;
+        let latSum = 0;
         const latVals = [];
 
         for (let i = 0; i < totalReqs; i++) {
@@ -2740,22 +2745,23 @@ router.get('/', async (req, res, next) => {
           if (d.responseStatus >= 200 && d.responseStatus < 400) succCount++;
           if (typeof d.latencyMs === 'number' && d.latencyMs >= 0) {
             latVals.push(d.latencyMs);
+            latSum += d.latencyMs;
           }
         }
 
         const newCacheHitRate = totalReqs === 0 ? 0 : (cacheHitsCount / totalReqs) * 100;
         const newSuccRate = totalReqs === 0 ? 0 : (succCount / totalReqs) * 100;
         
+        // ⚡ Bolt: Sort latency array exactly once to avoid redundant O(N log N) overhead
+        const sortedLatVals = [...latVals].sort((a, b) => a - b);
+
         // Update global latencyMetrics object
-        const latValsSorted = [...latVals].sort((a, b) => a - b);
-        latencyMetrics.p50 = percentileSorted(latValsSorted, 50);
-        latencyMetrics.p95 = percentileSorted(latValsSorted, 95);
-        latencyMetrics.p99 = percentileSorted(latValsSorted, 99);
-        latencyMetrics.min = latValsSorted.length > 0 ? latValsSorted[0] : null;
-        latencyMetrics.max = latValsSorted.length > 0 ? latValsSorted[latValsSorted.length - 1] : null;
-        latencyMetrics.avg = latVals.length
-          ? latVals.reduce((sum, value) => sum + (value ?? 0), 0) / latVals.length
-          : null;
+        latencyMetrics.p50 = percentile(sortedLatVals, 50);
+        latencyMetrics.p95 = percentile(sortedLatVals, 95);
+        latencyMetrics.p99 = percentile(sortedLatVals, 99);
+        latencyMetrics.min = sortedLatVals.length > 0 ? sortedLatVals[0] : null;
+        latencyMetrics.max = sortedLatVals.length > 0 ? sortedLatVals[sortedLatVals.length - 1] : null;
+        latencyMetrics.avg = latVals.length > 0 ? latSum / latVals.length : null;
         
         // Update Stat Cards
         setMetric('totalLookupsValue', new Intl.NumberFormat('en-US').format(totalReqs));
