@@ -105,7 +105,8 @@ export class SubmissionService {
       }
 
       if (matchesCriticalFields(hypixelData, data as Record<string, unknown>)) {
-        const submittedName = (data as any).displayname;
+        const submittedData = data as Record<string, unknown>;
+        const submittedName = submittedData.displayname;
         const actualName = result.payload.player?.displayname;
 
         if (typeof submittedName === 'string' && typeof actualName === 'string') {
@@ -206,7 +207,7 @@ export class SubmissionService {
     const isFullResponse = (submission.player && typeof submission.player === 'object');
 
     if (isFullResponse) {
-      minimalStats = extractMinimalStats(submission as any);
+      minimalStats = extractMinimalStats(submission as unknown as import('./hypixel').HypixelPlayerResponse);
     } else {
       minimalStats = this.buildMinimalStatsFromSubmission(submission);
     }

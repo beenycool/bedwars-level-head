@@ -169,7 +169,7 @@ router.post('/batch', enforceApiKeyAuth, enforceBatchRateLimit, async (req, res,
               ...(resolved.isStale ? { stale: true } : {}),
             },
             source: resolved.source,
-          };
+          } as { identifier: string; payload: ResolvedPlayer['payload'] & { nicked: boolean; stale?: true }; source: string };
         } catch (error) {
           if (error instanceof HttpError) {
             if (error.status >= 500) {
@@ -189,7 +189,7 @@ router.post('/batch', enforceApiKeyAuth, enforceBatchRateLimit, async (req, res,
       if (result) {
         payloadMap[result.identifier] = result.payload;
         total++;
-        if ((result as any).source === 'cache') {
+        if (result.source === 'cache') {
           cacheHits++;
         }
       }
