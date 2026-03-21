@@ -172,13 +172,13 @@ async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
   try {
     for (const aggregate of aggregates) {
       let existing;
-      existing = await pool.selectFrom('resource_metrics' as any)
+      existing = await pool.selectFrom('resource_metrics')
         .selectAll()
-        .where('bucket_start', '=', aggregate.bucketStart as any)
+        .where('bucket_start', '=', aggregate.bucketStart)
         .executeTakeFirst();
 
       if (!existing) {
-        await pool.insertInto('resource_metrics' as any).values({
+        await pool.insertInto('resource_metrics').values({
           bucket_start: aggregate.bucketStart,
           avg_rss_mb: aggregate.avgRssMB,
           max_rss_mb: aggregate.maxRssMB,
@@ -222,7 +222,7 @@ async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
         const mergedP95CpuPercent = aggregate.p95CpuPercent;
         const mergedP99CpuPercent = aggregate.p99CpuPercent;
 
-        await pool.updateTable('resource_metrics' as any).set({
+        await pool.updateTable('resource_metrics').set({
           avg_rss_mb: mergedAvgRssMB,
           max_rss_mb: mergedMaxRssMB,
           min_rss_mb: mergedMinRssMB,
@@ -239,7 +239,7 @@ async function persistAggregate(aggregates: BucketAggregate[]): Promise<void> {
           p95_cpu_percent: mergedP95CpuPercent,
           p99_cpu_percent: mergedP99CpuPercent,
           sample_count: newTotalCount
-        }).where('bucket_start', '=', aggregate.bucketStart as any).execute();
+        }).where('bucket_start', '=', aggregate.bucketStart).execute();
       }
     }
   } catch (err) {
@@ -287,13 +287,13 @@ async function pruneOldData(): Promise<void> {
 
     if (dbType === DatabaseType.POSTGRESQL) {
       const result = await sql`DELETE FROM resource_metrics WHERE bucket_start < ${cutoff}`.execute(pool);
-      if ((result as any).numDeletedRows > 0) {
-        logger.info(`[resourceMetrics] pruned ${(result as any).numDeletedRows} old records`);
+      if (Number(result.numUpdatedOrDeletedRows) > 0) {
+        logger.info(`[resourceMetrics] pruned ${Number(result.numUpdatedOrDeletedRows)} old records`);
       }
     } else {
       const result = await sql`DELETE FROM resource_metrics WHERE bucket_start < ${cutoff}`.execute(pool);
-      if ((result as any).numDeletedRows > 0) {
-        logger.info(`[resourceMetrics] pruned ${(result as any).numDeletedRows} old records`);
+      if (Number(result.numUpdatedOrDeletedRows) > 0) {
+        logger.info(`[resourceMetrics] pruned ${Number(result.numUpdatedOrDeletedRows)} old records`);
       }
     }
   } catch (err) {
@@ -490,7 +490,7 @@ export async function getResourceMetricsHistory(
     })();
 
     let dbRows: ResourceMetricsHistoryRow[] = [];
-    let query = pool.selectFrom('resource_metrics' as any)
+    let query = pool.selectFrom('resource_metrics')
       .select([
         'bucket_start as bucketStart',
         'avg_rss_mb as avgRssMB',
@@ -501,14 +501,14 @@ export async function getResourceMetricsHistory(
         'max_cpu_percent as maxCpuPercent',
         'sample_count as sampleCount'
       ])
-      .where('bucket_start', '>=', cutoff as any)
+      .where('bucket_start', '>=', cutoff)
       .orderBy('bucket_start', 'asc');
 
     if (endDate) {
-      query = query.where('bucket_start', '<=', endDate as any);
+      query = query.where('bucket_start', '<=', endDate);
     }
 
-    dbRows = await query.execute() as any[];
+    dbRows = await query.execute();
 
     // Include current buffer
     const bufferAggregates = aggregateToBuckets(memoryBuffer);
