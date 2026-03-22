@@ -161,7 +161,7 @@ router.post('/batch', enforcePublicBatchRateLimit, async (req, res, next) => {
               ...(resolved.isStale ? { stale: true } : {}),
             },
             source: resolved.source,
-          } as { identifier: string; payload: ResolvedPlayer['payload'] & { nicked: boolean; stale?: true }; source: string };
+          } as { identifier: string; payload: ResolvedPlayer['payload'] & { nicked: boolean; stale?: true }; source: ResolvedPlayer['source'] };
         } catch (error) {
           if (error instanceof HttpError) {
             if (error.status >= 500) {
