@@ -25,7 +25,7 @@ const agent = new https.Agent({
   maxSockets: 50,        // Allow up to 50 parallel connections
   family: 4,             // STRICTLY force IPv4 to bypass the 2s IPv6 timeout
 });
-dnsCache.install(agent as any);
+dnsCache.install(agent as unknown as https.Agent);
 
 const hypixelClient = axios.create({
   baseURL: HYPIXEL_API_BASE_URL,
