@@ -17,6 +17,3 @@
 ## 2025-03-20 - Interactive Status Commands
 **Learning:** Purely informational commands (like `/levelhead status`) present excellent micro-UX opportunities when key data points are naturally linked to configuration commands, but they are often neglected because they "just show text".
 **Action:** When creating status readout commands, identify configuration metrics (e.g. cache TTL, proxy state, cache size) and format them as interactive components (with `ChatComponentText` and `ClickEvent`) that suggest the related modification command (e.g. `/levelhead cachettl <value>`).
-## 2024-05-24 - Add explicit lookup action to copied identifier feedback
-**Learning:** Users might not realize that copying an identifier to their clipboard implies they can click the raw UUID to immediately process it.
-**Action:** Always append explicit action links like `[Click to lookup]` when outputting a copied identifier to chat.
