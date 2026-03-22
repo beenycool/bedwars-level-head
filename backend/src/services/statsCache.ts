@@ -118,6 +118,28 @@ export interface SWRCacheEntry<T> extends CacheEntry<T> {
   staleAgeMs: number;
 }
 
+export interface PlayerCachePayload {
+  payload: string | Record<string, unknown>;
+  expires_at: number;
+  cached_at: number;
+  etag: string | null;
+  last_modified: number | null;
+  source: string | null;
+}
+
+function isPlayerCachePayload(value: unknown): value is PlayerCachePayload {
+  if (!value || typeof value !== 'object') return false;
+  const v = value as Record<string, unknown>;
+  return (
+    (typeof v.payload === 'string' || (typeof v.payload === 'object' && v.payload !== null)) &&
+    typeof v.expires_at === 'number' &&
+    typeof v.cached_at === 'number' &&
+    (v.etag === null || typeof v.etag === 'string') &&
+    (v.last_modified === null || typeof v.last_modified === 'number') &&
+    (v.source === null || typeof v.source === 'string')
+  );
+}
+
 let lastMemorySample: MemorySample | null = null;
 let cachedAdaptiveTtlMs = PLAYER_L1_TTL_FALLBACK_MS;
 
@@ -242,14 +264,7 @@ export function stopAdaptiveTtlRefresh(): void {
 }
 
 // Helper to map DB row to internal cache structure
-function mapRow<T>(row: {
-  payload: string | Record<string, unknown>,
-  expires_at: number,
-  cached_at: number,
-  etag: string | null,
-  last_modified: number | null,
-  source: string | null
-}): CacheEntryWithCachedAt<T> | null {
+function mapRow<T>(row: PlayerCachePayload): CacheEntryWithCachedAt<T> | null {
 
   const expiresAt = Number(row.expires_at);
   const cachedAt = Number(row.cached_at);
@@ -576,12 +591,16 @@ export async function getPlayerStatsFromCache(
         const redisKey = `cache:${key}`;
         const data = await client.get(redisKey);
         if (data) {
-          let row: any; // Using any for Redis JSON parse structure locally
+          let row: PlayerCachePayload | undefined;
           try {
-            row = JSON.parse(data);
+            const parsed: unknown = JSON.parse(data);
+            if (isPlayerCachePayload(parsed)) {
+              row = parsed;
+            } else {
+              await client.del(redisKey);
+            }
           } catch {
             await client.del(redisKey);
-            // Skip processing this cache entry
           }
           if (row) {
             // Re-use mapRow logic but adapted for Redis JSON structure (snake_case from setPlayerStatsL1)
@@ -672,9 +691,14 @@ export async function getPlayerStatsFromCacheWithSWR(
         const redisKey = `cache:${key}`;
         const data = await client.get(redisKey);
         if (data) {
-          let row: any;
+          let row: PlayerCachePayload | undefined;
           try {
-            row = JSON.parse(data);
+            const parsed: unknown = JSON.parse(data);
+            if (isPlayerCachePayload(parsed)) {
+              row = parsed;
+            } else {
+              await client.del(redisKey);
+            }
           } catch {
             await client.del(redisKey);
           }
@@ -876,9 +900,12 @@ export async function getManyPlayerStatsFromCacheWithSWR(
       if (!val) continue;
 
       const identifier = identifiers[i];
-      let row: any;
+      let row: PlayerCachePayload | undefined;
       try {
-        row = JSON.parse(val);
+        const parsed: unknown = JSON.parse(val);
+        if (isPlayerCachePayload(parsed)) {
+          row = parsed;
+        }
       } catch {
         continue;
       }
