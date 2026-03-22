@@ -247,6 +247,10 @@ class LevelheadCommand {
                 chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead whois $uuid")
                 chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to lookup stats"))
             })
+            .appendSibling(ChatComponentText(" ${ChatColor.GRAY}[Click to lookup]").apply {
+                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead whois $uuid")
+                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to lookup stats"))
+            })
         sendMessage(msg)
     }
 
