@@ -1543,10 +1543,9 @@ router.get('/', async (req, res, next) => {
         applyChartHeight((event.target)?.value ?? defaultChartHeight);
       });
 
-      // Helper: percentile for latency stats
-      function percentile(values, p) {
-        if (values.length === 0) return null;
-        const sorted = [...values].sort((a, b) => a - b);
+      // ⚡ Bolt: Use pre-sorted arrays for percentiles to avoid multiple O(N log N) sorting overhead
+      function percentileSorted(sorted, p) {
+        if (sorted.length === 0) return null;
         const rank = (p / 100) * (sorted.length - 1);
         const lower = Math.floor(rank);
         const upper = Math.ceil(rank);
@@ -1598,12 +1597,13 @@ router.get('/', async (req, res, next) => {
       const cacheHitRate = totalLookups === 0 ? 0 : Math.round((cacheHits / totalLookups) * 1000) / 10;
 
       // Calculate all latency metrics
+      const latencySorted = [...latencyValues].sort((a, b) => a - b);
       const latencyMetrics = {
-        p50: percentile(latencyValues, 50),
-        p95: percentile(latencyValues, 95),
-        p99: percentile(latencyValues, 99),
-        min: latencyValues.length > 0 ? Math.min(...latencyValues) : null,
-        max: latencyValues.length > 0 ? Math.max(...latencyValues) : null,
+        p50: percentileSorted(latencySorted, 50),
+        p95: percentileSorted(latencySorted, 95),
+        p99: percentileSorted(latencySorted, 99),
+        min: latencySorted.length > 0 ? latencySorted[0] : null,
+        max: latencySorted.length > 0 ? latencySorted[latencySorted.length - 1] : null,
         avg: latencyValues.length
           ? latencyValues.reduce((sum, value) => sum + (value ?? 0), 0) / latencyValues.length
           : null,
