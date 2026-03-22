@@ -1544,7 +1544,7 @@ router.get('/', async (req, res, next) => {
       });
 
       // ⚡ Bolt: Use pre-sorted arrays for percentiles to avoid multiple O(N log N) sorting overhead
-      function percentileSorted(sorted, p) {
+      function percentileSorted(sorted: number[], p: number): number | null {
         if (sorted.length === 0) return null;
         const rank = (p / 100) * (sorted.length - 1);
         const lower = Math.floor(rank);
@@ -1552,7 +1552,7 @@ router.get('/', async (req, res, next) => {
         if (lower === upper) return sorted[lower];
         const weight = rank - lower;
         return sorted[lower] * (1 - weight) + sorted[upper] * weight;
-    }
+      }
 
       // 1. Prepare metrics in a single pass to avoid O(N) intermediate array allocations
       const totalLookups = data.length;
@@ -2747,11 +2747,12 @@ router.get('/', async (req, res, next) => {
         const newSuccRate = totalReqs === 0 ? 0 : (succCount / totalReqs) * 100;
         
         // Update global latencyMetrics object
-        latencyMetrics.p50 = percentile(latVals, 50);
-        latencyMetrics.p95 = percentile(latVals, 95);
-        latencyMetrics.p99 = percentile(latVals, 99);
-        latencyMetrics.min = latVals.length > 0 ? Math.min(...latVals) : null;
-        latencyMetrics.max = latVals.length > 0 ? Math.max(...latVals) : null;
+        const latValsSorted = [...latVals].sort((a, b) => a - b);
+        latencyMetrics.p50 = percentileSorted(latValsSorted, 50);
+        latencyMetrics.p95 = percentileSorted(latValsSorted, 95);
+        latencyMetrics.p99 = percentileSorted(latValsSorted, 99);
+        latencyMetrics.min = latValsSorted.length > 0 ? latValsSorted[0] : null;
+        latencyMetrics.max = latValsSorted.length > 0 ? latValsSorted[latValsSorted.length - 1] : null;
         latencyMetrics.avg = latVals.length
           ? latVals.reduce((sum, value) => sum + (value ?? 0), 0) / latVals.length
           : null;

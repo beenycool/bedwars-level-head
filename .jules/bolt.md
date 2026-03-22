@@ -47,6 +47,7 @@
 ## 2024-05-19 - Array Allocations and Reductions in Aggregation Loops
 **Learning:** Using chained higher-order array functions like `.map().sort()` inside frequently called loops (like `aggregateToBuckets` which runs on arrays of thousands of memory/cpu samples) forces the engine to allocate multiple intermediate O(N) arrays per iteration. Similarly, using `.reduce()` for simple aggregations (`Math.max`, `Math.min`, `sum`) creates an intermediate accumulator object and invokes a callback per element, creating hidden GC pressure and CPU overhead on hot paths.
 **Action:** Replace chained array methods with a single loop that extracts values into pre-allocated arrays, then sort the primitive arrays. Replace `.reduce()` calls with simple `for` loops to eliminate callback overhead and intermediate object allocation.
+
 ## 2026-03-22 - Optimize Percentile Calculation
 **Learning:** Calculating multiple percentiles on the same dataset results in redundant O(N log N) sorts if not pre-sorted.
 **Action:** Pass pre-sorted arrays into statistic functions to eliminate redundant sorting overhead.
