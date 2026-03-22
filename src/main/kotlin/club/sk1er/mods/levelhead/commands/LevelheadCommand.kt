@@ -50,7 +50,7 @@ class LevelheadCommand {
     fun confirm() {
         val action = pendingAction
         if (action == null) {
-            sendMessage("§cNo pending action to confirm.")
+            sendMessage("${ChatColor.RED}No pending action to confirm.")
             return
         }
         pendingAction = null
@@ -1261,7 +1261,13 @@ private const val CONFIRMATION_TIMEOUT_MS = 30_000L // 30 seconds
 
 private fun requireConfirmation(warningMessage: String, action: () -> Unit) {
     if (pendingAction != null && System.currentTimeMillis() - pendingActionTimestamp < CONFIRMATION_TIMEOUT_MS) {
-        CommandUtils.sendPrefixedChat(ChatComponentText("§cAn action is already pending. Please §a/levelhead confirm§c or wait for it to expire."))
+        val errorMsg = CommandUtils.buildInteractiveFeedback(
+            messagePrefix = "${ChatColor.RED}An action is already pending. Please ",
+            command = "/levelhead confirm",
+            run = true,
+            suffix = "${ChatColor.RED} or wait for it to expire."
+        )
+        CommandUtils.sendPrefixedChat(errorMsg)
         return
     }
 
