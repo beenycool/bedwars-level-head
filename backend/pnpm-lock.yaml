@@ -36,8 +36,8 @@ importers:
         specifier: ^2.3.0
         version: 2.3.0
       kysely:
-        specifier: ^0.28.12
-        version: 0.28.12
+        specifier: ^0.28.14
+        version: 0.28.14
       lru-cache:
         specifier: ^11.2.4
         version: 11.2.6
@@ -1752,8 +1752,8 @@ packages:
   jws@4.0.1:
     resolution: {integrity: sha512-EKI/M/yqPncGUUh44xz0PxSidXFr/+r0pA70+gIYhjv+et7yxM+s29Y+VGDkovRofQem0fs7Uvf4+YmAdyRduA==}
 
-  kysely@0.28.12:
-    resolution: {integrity: sha512-kWiueDWXhbCchgiotwXkwdxZE/6h56IHAeFWg4euUfW0YsmO9sxbAxzx1KLLv2lox15EfuuxHQvgJ1qIfZuHGw==}
+  kysely@0.28.14:
+    resolution: {integrity: sha512-SU3lgh0rPvq7upc6vvdVrCsSMUG1h3ChvHVOY7wJ2fw4C9QEB7X3d5eyYEyULUX7UQtxZJtZXGuT6U2US72UYA==}
     engines: {node: '>=20.0.0'}
 
   leven@3.1.0:
@@ -4585,7 +4585,7 @@ snapshots:
       jwa: 2.0.1
       safe-buffer: 5.2.1
 
-  kysely@0.28.12: {}
+  kysely@0.28.14: {}
 
   leven@3.1.0: {}
 

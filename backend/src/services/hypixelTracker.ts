@@ -48,8 +48,8 @@ async function updateRedisFailureWatermark(): Promise<void> {
   try {
     await ensureInitialized();
     if (dbType === DatabaseType.POSTGRESQL) {
-      await pool.insertInto('system_kv' as any).values({ key: 'lastRedisFailureAt', value: String(now) })
-        .onConflict((oc: any) => oc.column('key').doUpdateSet({ value: String(now) }))
+      await pool.insertInto('system_kv').values({ key: 'lastRedisFailureAt', value: String(now) })
+        .onConflict((oc) => oc.column('key').doUpdateSet({ value: String(now) }))
         .execute();
     } else {
       await sql`MERGE system_kv AS target
@@ -150,7 +150,7 @@ async function flushHypixelCallBuffer(): Promise<void> {
 
         try {
           const values = chunk.map(item => ({ called_at: item.calledAt, uuid: item.uuid }));
-          await pool.insertInto('hypixel_api_calls' as any).values(values).execute();
+          await pool.insertInto('hypixel_api_calls').values(values).execute();
           // Success: advance offset. Items before offset are in DB; items at/after offset are pending.
           inflightOffset += chunk.length;
         } catch (error) {
@@ -260,10 +260,10 @@ export async function getHypixelCallCount(
   const snapshotInflight = [...inflightBatch];
   const snapshotBuffer = [...hypixelCallBuffer];
 
-  const result = await pool.selectFrom('hypixel_api_calls' as any)
-    .select(pool.fn.countAll().as('count'))
-    .where('called_at', '>=', cutoff as any)
-    .executeTakeFirst() as any;
+  const result = await pool.selectFrom('hypixel_api_calls')
+    .select(pool.fn.countAll<number>().as('count'))
+    .where('called_at', '>=', cutoff)
+    .executeTakeFirst();
 
   // ⚡ Bolt: Avoid O(N) memory allocation from Array.filter().length
   let bufferCount = 0;
