@@ -118,6 +118,15 @@ export interface SWRCacheEntry<T> extends CacheEntry<T> {
   staleAgeMs: number;
 }
 
+export interface RedisPlayerCachePayload {
+  payload: string | Record<string, unknown>;
+  expires_at: number;
+  cached_at: number;
+  etag: string | null;
+  last_modified: number | null;
+  source: string | null;
+}
+
 let lastMemorySample: MemorySample | null = null;
 let cachedAdaptiveTtlMs = PLAYER_L1_TTL_FALLBACK_MS;
 
@@ -242,14 +251,7 @@ export function stopAdaptiveTtlRefresh(): void {
 }
 
 // Helper to map DB row to internal cache structure
-function mapRow<T>(row: {
-  payload: string | Record<string, unknown>,
-  expires_at: number,
-  cached_at: number,
-  etag: string | null,
-  last_modified: number | null,
-  source: string | null
-}): CacheEntryWithCachedAt<T> | null {
+function mapRow<T>(row: RedisPlayerCachePayload): CacheEntryWithCachedAt<T> | null {
 
   const expiresAt = Number(row.expires_at);
   const cachedAt = Number(row.cached_at);
@@ -576,7 +578,7 @@ export async function getPlayerStatsFromCache(
         const redisKey = `cache:${key}`;
         const data = await client.get(redisKey);
         if (data) {
-          let row: any; // Using any for Redis JSON parse structure locally
+          let row: RedisPlayerCachePayload | undefined;
           try {
             row = JSON.parse(data);
           } catch {
@@ -672,7 +674,7 @@ export async function getPlayerStatsFromCacheWithSWR(
         const redisKey = `cache:${key}`;
         const data = await client.get(redisKey);
         if (data) {
-          let row: any;
+          let row: RedisPlayerCachePayload | undefined;
           try {
             row = JSON.parse(data);
           } catch {
@@ -876,7 +878,7 @@ export async function getManyPlayerStatsFromCacheWithSWR(
       if (!val) continue;
 
       const identifier = identifiers[i];
-      let row: any;
+      let row: RedisPlayerCachePayload | undefined;
       try {
         row = JSON.parse(val);
       } catch {
