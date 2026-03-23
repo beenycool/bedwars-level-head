@@ -36,7 +36,7 @@ export function parseMssqlConfig(connString: string): mssql.config {
     const normalizedString = connString.replace(/^sqlserver:/i, 'mssql:');
     try {
       const url = new URL(normalizedString);
-      const parsedConfig: any = {
+      const parsedConfig: mssql.config = {
         server: url.hostname,
         user: url.username,
         password: url.password,
@@ -66,12 +66,12 @@ export function parseMssqlConfig(connString: string): mssql.config {
         if (parsedConfig.server.endsWith('.database.windows.net') && parsedConfig.user && !parsedConfig.user.includes('@')) {
           parsedConfig.user = `${parsedConfig.user}@${parsedConfig.server.split('.')[0]}`;
         }
-        return parsedConfig as mssql.config;
+        return parsedConfig;
       }
     } catch (error) {}
   }
 
-  const config: any = {
+  const config: mssql.config = {
       server: '',
       user: '',
       password: '',

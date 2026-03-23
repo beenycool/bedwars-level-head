@@ -326,12 +326,15 @@ export async function initializeResourceMetrics(): Promise<void> {
     if (dbType === DatabaseType.POSTGRESQL) {
       // Backward compatibility: rename hour_start to bucket_start if it exists
       try {
-        await sql`SELECT 1 FROM information_schema.columns WHERE table_name='resource_metrics' AND column_name='hour_start'`.execute(pool).then(async (res: any) => {
+        await sql<{1: number}>`SELECT 1 FROM information_schema.columns WHERE table_name='resource_metrics' AND column_name='hour_start'`.execute(pool).then(async (res) => {
           if (res.rows && res.rows.length > 0) {
             try {
               await sql`ALTER TABLE resource_metrics RENAME COLUMN hour_start TO bucket_start`.execute(pool);
-            } catch (err: any) {
-              if (err.code !== '42703') throw err;
+            } catch (err: unknown) {
+              if (typeof err === 'object' && err !== null && 'code' in err && (err as { code: string }).code === '42703') {
+                return;
+              }
+              throw err;
             }
           }
         });

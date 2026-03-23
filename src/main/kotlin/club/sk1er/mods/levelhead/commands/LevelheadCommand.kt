@@ -50,7 +50,7 @@ class LevelheadCommand {
     fun confirm() {
         val action = pendingAction
         if (action == null) {
-            sendMessage("§cNo pending action to confirm.")
+            sendMessage("${ChatColor.RED}No pending action to confirm.")
             return
         }
         pendingAction = null
@@ -244,6 +244,10 @@ class LevelheadCommand {
         GuiScreen.setClipboardString(uuid)
         val msg = ChatComponentText("${ChatColor.GREEN}Copied UUID of ${ChatColor.GOLD}${target.name}${ChatColor.GREEN} to clipboard: ")
             .appendSibling(ChatComponentText("${ChatColor.AQUA}$uuid").apply {
+                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead whois $uuid")
+                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to lookup stats"))
+            })
+            .appendSibling(ChatComponentText(" ${ChatColor.GRAY}[Click to lookup]").apply {
                 chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead whois $uuid")
                 chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to lookup stats"))
             })
@@ -695,7 +699,13 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 }
                 val profile = ConfigProfiles.importProfile(clipboard)
                 if (profile == null) {
-                    sendMessage("${ChatColor.RED}Invalid profile data in clipboard.${ChatColor.YELLOW} Make sure you copied a valid Levelhead profile.")
+                    val msg = CommandUtils.buildInteractiveFeedback(
+                        messagePrefix = "${ChatColor.RED}Invalid profile data in clipboard.${ChatColor.YELLOW} Try using ",
+                        command = "/levelhead profile export",
+                        run = true,
+                        suffix = "${ChatColor.YELLOW} to create a valid profile first."
+                    )
+                    sendMessage(msg)
                     return
                 }
                 ConfigProfiles.applyProfile(profile)
@@ -1257,7 +1267,13 @@ private const val CONFIRMATION_TIMEOUT_MS = 30_000L // 30 seconds
 
 private fun requireConfirmation(warningMessage: String, action: () -> Unit) {
     if (pendingAction != null && System.currentTimeMillis() - pendingActionTimestamp < CONFIRMATION_TIMEOUT_MS) {
-        CommandUtils.sendPrefixedChat(ChatComponentText("§cAn action is already pending. Please §a/levelhead confirm§c or wait for it to expire."))
+        val errorMsg = CommandUtils.buildInteractiveFeedback(
+            messagePrefix = "${ChatColor.RED}An action is already pending. Please ",
+            command = "/levelhead confirm",
+            run = true,
+            suffix = "${ChatColor.RED} or wait for it to expire."
+        )
+        CommandUtils.sendPrefixedChat(errorMsg)
         return
     }
 

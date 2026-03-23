@@ -13,7 +13,7 @@ const agent = new https.Agent({
   maxSockets: 20,
   family: 4,
 });
-dnsCache.install(agent as any);
+dnsCache.install(agent as unknown as https.Agent);
 
 const mojangClient = axios.create({
   baseURL: 'https://api.mojang.com',

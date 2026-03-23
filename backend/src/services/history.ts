@@ -485,9 +485,9 @@ export async function getTopPlayersByQueryCount(params: {
 
   const rows = await query.execute();
 
-  return rows.map((row: any) => ({
+  return rows.map((row) => ({
     identifier: row.normalized_identifier,
-    resolvedUsername: row.resolved_username,
+    resolvedUsername: row.resolved_username as string | null,
     queryCount: Number(row.query_count),
   }));
 }
@@ -578,7 +578,7 @@ export async function getSystemStats(): Promise<SystemStats> {
       // This uses Redis ZCOUNT internally which is O(log(N)) and avoids blocking database operations,
       // while also correctly including buffered and inflight calls not yet written to the DB.
       return await getHypixelCallCount(60 * 60 * 1000);
-    } catch (e: any) {
+    } catch (e) {
       logger.warn({ err: e }, '[history] Failed to query hypixel_api_calls for stats');
       return 0;
     }
