@@ -1546,6 +1546,11 @@ router.get('/', async (req, res, next) => {
 
       // Helper: percentile for latency stats
       // ⚡ Bolt: Assumes values are already sorted to avoid O(N log N) sorting overhead per percentile calculation
+      /**
+       * @param {number[]} sorted The sorted array of numbers.
+       * @param {number} p The percentile to calculate (0-100).
+       * @returns {number | null}
+       */
       function percentile(sorted, p) {
         if (sorted.length === 0) return null;
         const rank = (p / 100) * (sorted.length - 1);
