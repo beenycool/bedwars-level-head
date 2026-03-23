@@ -699,7 +699,13 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 }
                 val profile = ConfigProfiles.importProfile(clipboard)
                 if (profile == null) {
-                    sendMessage("${ChatColor.RED}Invalid profile data in clipboard.${ChatColor.YELLOW} Make sure you copied a valid Levelhead profile.")
+                    val msg = CommandUtils.buildInteractiveFeedback(
+                        messagePrefix = "${ChatColor.RED}Invalid profile data in clipboard.${ChatColor.YELLOW} Try using ",
+                        command = "/levelhead profile export",
+                        run = true,
+                        suffix = "${ChatColor.YELLOW} to create a valid profile first."
+                    )
+                    sendMessage(msg)
                     return
                 }
                 ConfigProfiles.applyProfile(profile)

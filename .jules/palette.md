@@ -19,3 +19,7 @@
 ## 2026-03-20 - Interactive Prompting for Re-execution
 **Learning:** When users encounter a prompt that tells them to "run X command to proceed" (such as a pending confirmation state), hardcoding the command as static text creates friction because they have to retype it manually.
 **Action:** Make any command explicitly suggested within an error or warning message instantly clickable using `ClickEvent.Action.RUN_COMMAND` to provide a seamless follow-up action.
+
+## 2026-03-24 - Interactive Clipboard Error Suggestions
+**Learning:** When users fail to import a profile due to invalid clipboard data, a static error message forces them to manually type a command to get valid data. Making the suggested command interactive provides an immediate path forward.
+**Action:** When handling clipboard validation failures, always use `CommandUtils.buildInteractiveFeedback` to suggest the logical next action (like exporting a valid profile).
