@@ -1,4 +1,4 @@
-const escapeCell = (val: any): string => {
+const escapeCell = (val: unknown): string => {
   if (val === null || val === undefined) return '';
   if (val instanceof Date) return val.toISOString();
 
@@ -23,7 +23,7 @@ const escapeCell = (val: any): string => {
   return sanitized;
 };
 
-export function toCSV(data: any[]): string {
+export function toCSV(data: Record<string, unknown>[]): string {
   if (data.length === 0) return '';
   const headers = Object.keys(data[0]);
 
