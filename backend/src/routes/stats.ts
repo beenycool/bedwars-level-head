@@ -1731,7 +1731,7 @@ router.get('/', async (req, res, next) => {
 
         setChartAriaLabel(
           'requestsOverTimeChart',
-          \`\${chartAriaBase.requestsOverTimeChart}. \${requestsTotal.toLocaleString()} total requests across \${(summary.requestsOverTimeData ?? []).length.toLocaleString()} time buckets.\${filterSummary}\`,
+          `${chartAriaBase.requestsOverTimeChart}. ${requestsTotal.toLocaleString()} total requests across ${requestsData.length.toLocaleString()} time buckets.${filterSummary}`,
         );
 
         const cacheOverTimeData = summary.cacheOverTimeData ?? [];
