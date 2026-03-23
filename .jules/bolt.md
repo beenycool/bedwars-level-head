@@ -51,3 +51,11 @@
 ## 2024-05-19 - Redundant Sorting in Multiple Percentile Calculations
 **Learning:** In `backend/src/routes/stats.ts`, the `percentile` function was implemented to copy and sort the input array (`[...values].sort(...)`) every time it was called. When calculating multiple percentiles (e.g., p50, p95, p99) or deriving `min`/`max` from the same latency dataset containing thousands of points, this resulted in executing multiple $O(N \log N)$ sort operations and allocating redundant array copies, significantly slowing down dashboard metric generation.
 **Action:** When calculating multiple percentiles or math aggregations from a dataset, ensure the array is sorted exactly once beforehand. Change utility functions to accept and expect pre-sorted arrays to eliminate redundant $O(N \log N)$ sorting overhead and GC pressure.
+
+## 2024-05-19 - Safe Array Optimization
+**Learning:** Using a raw JS object (`Record<string, boolean>`) for uniqueness checks introduces vulnerabilities to Object prototype property collisions (e.g., valid strings matching "toString" or "constructor"), causing valid user input to be silently dropped.
+**Action:** Always use `new Set()` and `.has()` for safe and performant string uniqueness tracking, even when attempting to optimize array operations.
+
+## 2024-05-19 - High-Throughput Aggregation Optimization
+**Learning:** While `Array.prototype.reduce()` is idiomatic, it incurs callback invocation overhead on each iteration, which can degrade client-side performance during aggregations over large datasets (like computing total requests or average cache rates in `stats.ts`).
+**Action:** Replace `.reduce()` aggregations with standard `for` loops in hot paths to avoid closure allocations and callback overhead.

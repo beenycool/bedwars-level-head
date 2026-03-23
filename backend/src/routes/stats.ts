@@ -1722,15 +1722,26 @@ router.get('/', async (req, res, next) => {
           \`\${chartAriaBase.lookupTypeChart}. UUID: \${Number(lookupTypeCounts.UUID ?? 0).toLocaleString()}, IGN: \${Number(lookupTypeCounts.IGN ?? 0).toLocaleString()}.\${filterSummary}\`,
         );
 
-        const requestsTotal = (summary.requestsOverTimeData ?? []).reduce((acc, value) => acc + Number(value ?? 0), 0);
+        // ⚡ Bolt: Replace reduce() to avoid callback invocation and O(N) allocation per aggregation step
+        const requestsData = summary.requestsOverTimeData ?? [];
+        let requestsTotal = 0;
+        for (let i = 0; i < requestsData.length; i++) {
+          requestsTotal += Number(requestsData[i] ?? 0);
+        }
+
         setChartAriaLabel(
           'requestsOverTimeChart',
           \`\${chartAriaBase.requestsOverTimeChart}. \${requestsTotal.toLocaleString()} total requests across \${(summary.requestsOverTimeData ?? []).length.toLocaleString()} time buckets.\${filterSummary}\`,
         );
 
         const cacheOverTimeData = summary.cacheOverTimeData ?? [];
+        let cacheRateSum = 0;
+        for (let i = 0; i < cacheOverTimeData.length; i++) {
+          cacheRateSum += Number(cacheOverTimeData[i] ?? 0);
+        }
+
         const avgCacheRate = cacheOverTimeData.length
-          ? cacheOverTimeData.reduce((acc, value) => acc + Number(value ?? 0), 0) / cacheOverTimeData.length
+          ? cacheRateSum / cacheOverTimeData.length
           : 0;
         setChartAriaLabel(
           'cacheOverTimeChart',
