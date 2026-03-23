@@ -37,10 +37,10 @@ export function createApp(): express.Express {
     contentSecurityPolicy: {
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", (_req, res) => `'nonce-${(res as express.Response).locals.nonce}'`, "'strict-dynamic'"],
+        scriptSrc: ["'self'", "https://cdn.jsdelivr.net", (_req, res) => `'nonce-${(res as express.Response).locals.nonce}'`, "'strict-dynamic'"],
         styleSrc: ["'self'", (_req, res) => `'nonce-${(res as express.Response).locals.nonce}'`],
         imgSrc: ["'self'", "data:"],
-        connectSrc: ["'self'", "https://cdn.jsdelivr.net"],
+        connectSrc: ["'self'"],
         objectSrc: ["'none'"],
         baseUri: ["'none'"],
         formAction: ["'self'"],
