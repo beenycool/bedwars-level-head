@@ -104,18 +104,21 @@ router.post('/batch', enforceApiKeyAuth, enforceBatchRateLimit, async (req, res,
     return;
   }
 
-  const uniqueUuidsSet = new Set<string>();
+  // ⚡ Bolt: Replace Array.from(), and filter() with a single pass to avoid multiple O(N) allocations
+  const uniqueUuids: string[] = [];
+  const seenUuids = new Set<string>();
+
   for (let i = 0; i < uuidsValue.length; i++) {
     const value = uuidsValue[i];
     if (typeof value === 'string' && value.length <= IDENTIFIER_MAX_LENGTH) {
       const trimmed = value.trim();
-      if (trimmed.length > 0) {
-        uniqueUuidsSet.add(trimmed);
+      if (trimmed.length > 0 && !seenUuids.has(trimmed)) {
+        seenUuids.add(trimmed);
+        uniqueUuids.push(trimmed);
       }
     }
   }
 
-  const uniqueUuids = Array.from(uniqueUuidsSet);
   if (uniqueUuids.length === 0) {
     res.json({ success: true, data: {} });
     return;
