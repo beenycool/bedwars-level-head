@@ -1132,6 +1132,7 @@ private fun sendDisplayShowSelfDetails() {
 
         return ChatComponentText("Minecraft color name").apply {
             chatStyle.color = ChatColor.GOLD
+            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/levelhead display header color ")
             chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, hoverContent)
         }
     }
