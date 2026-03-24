@@ -69,7 +69,7 @@ async function loadWatermarkIfNeeded(): Promise<void> {
   if (hasLoadedWatermark) return;
   try {
     await ensureInitialized();
-    const res = await sql<any>`SELECT value FROM system_kv WHERE key = 'lastRedisFailureAt'`.execute(pool);
+    const res = await sql<{ value: string }>`SELECT value FROM system_kv WHERE key = 'lastRedisFailureAt'`.execute(pool);
     if (res.rows.length > 0) {
       const parsed = Number(res.rows[0].value);
       if (Number.isFinite(parsed) && parsed > inMemoryLastRedisFailureAt) {
