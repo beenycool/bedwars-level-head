@@ -1,5 +1,9 @@
 # Bolt learnings
 
+## 2024-05-19 - Avoid Spread Syntax with Math.min/max on Large Arrays
+**Learning:** In Node.js backend code, using `Math.min(...array)` or `Math.max(...array)` on potentially large datasets (like thousands of timestamps in stats charting) can cause a "Maximum call stack size exceeded" error. This is because the spread operator (`...`) pushes every element of the array onto the JavaScript engine's call stack as function arguments. This also consumes O(N) memory temporarily. Combined with chained array operations like `.map().filter()`, this creates unnecessary GC pressure and a vector for crashes.
+**Action:** Always replace chained `.map().filter()` combined with `Math.min(...array)` or `Math.max(...array)` with a single, O(N) `for` loop that safely tracks minimum and maximum values using O(1) memory, ensuring stability on unbounded or large data inputs.
+
 ## 2025-05-16 - DB Counting vs In-Memory/Redis Counting
 **Learning:** `getSystemStats` in `backend/src/services/history.ts` executed an unindexed `SELECT COUNT(*)` on `hypixel_api_calls` for the last hour on every call. This bypassed the highly optimized Redis `ZCOUNT` implementation already present in `backend/src/services/hypixelTracker.ts` (`getHypixelCallCount`), creating a significant database bottleneck for the analytics dashboard while also missing buffered/in-flight statistics.
 **Action:** When calculating sliding-window aggregates, always prioritize existing Redis/in-memory abstractions (like `getHypixelCallCount`) over raw database count queries to leverage `O(log N)` complexity and reduce database load.

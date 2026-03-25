@@ -2086,10 +2086,20 @@ router.get('/', async (req, res, next) => {
           timeStart = new Date(activeFilters.from);
           timeEnd = new Date(activeFilters.to);
         } else if (dataSet.length > 0) {
-          const timestamps = dataSet.map(d => new Date(d.requestedAt).getTime()).filter(t => !Number.isNaN(t));
-          if (timestamps.length > 0) {
-            timeStart = new Date(Math.min(...timestamps));
-            timeEnd = new Date(Math.max(...timestamps));
+          // ⚡ Bolt: Replace chained .map().filter() and Math.min/max spread with a single loop
+          // to prevent "Maximum call stack size exceeded" on large datasets and avoid O(N) array allocations.
+          let minT = Infinity;
+          let maxT = -Infinity;
+          for (const d of dataSet) {
+            const t = new Date(d.requestedAt).getTime();
+            if (!Number.isNaN(t)) {
+              if (t < minT) minT = t;
+              if (t > maxT) maxT = t;
+            }
+          }
+          if (minT !== Infinity && maxT !== -Infinity) {
+            timeStart = new Date(minT);
+            timeEnd = new Date(maxT);
           } else {
             timeStart = new Date(Date.now() - 24 * 60 * 60 * 1000);
             timeEnd = new Date();
