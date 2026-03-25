@@ -68,6 +68,8 @@ class LevelheadCommand {
             ?: error("Failed to initialise JSON media type")
         private const val APIKEY_COMMAND = "/levelhead apikey <key>"
         private const val APIKEY_SUGGESTION = "/levelhead apikey "
+        private const val DISPLAY_HEADER_COLOR_COMMAND = "/levelhead display header color <color>"
+        private const val DISPLAY_HEADER_COLOR_SUGGESTION = "/levelhead display header color "
         private val NAMED_COLORS: Map<String, Color> = mapOf(
             "black" to Color(0, 0, 0),
             "dark_blue" to Color(0, 0, 170),
@@ -777,8 +779,8 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                     prefixComponent.appendSibling(ChatComponentText("${ChatColor.YELLOW}. Use "))
                     val combinedMsg = CommandUtils.buildInteractiveFeedback(
                         messagePrefix = "",
-                        command = "/levelhead display header color <color>",
-                        suggestedCommand = "/levelhead display header color ",
+                        command = DISPLAY_HEADER_COLOR_COMMAND,
+                        suggestedCommand = DISPLAY_HEADER_COLOR_SUGGESTION,
                         suffix = "${ChatColor.YELLOW}. Current header color: ${ChatColor.GOLD}${formatColor(currentHeaderColor())}${ChatColor.YELLOW}."
                     )
                     val finalMsg = prefixComponent.appendSibling(combinedMsg)
@@ -1026,7 +1028,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         msg1.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$headerText", run = false, suggestedCommand = "/levelhead display header text \"$headerText\"").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit text")) })
         msg1.appendSibling(ChatComponentText("${ChatColor.YELLOW} ("))
         val colorHex = formatColor(headerColor)
-        msg1.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$colorHex", run = false, suggestedCommand = "/levelhead display header color \"$colorHex\"").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit color")) })
+        msg1.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$colorHex", run = false, suggestedCommand = "$DISPLAY_HEADER_COLOR_SUGGESTION\"$colorHex\"").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit color")) })
         msg1.appendSibling(ChatComponentText("${ChatColor.YELLOW})."))
         sendMessage(msg1)
 
@@ -1085,8 +1087,8 @@ private fun sendDisplayHeaderDetails() {
 private fun sendDisplayHeaderColorHelp() {
     val msg = CommandUtils.buildInteractiveFeedback(
         messagePrefix = "${ChatColor.YELLOW}Current header color: ${ChatColor.GOLD}${formatColor(currentHeaderColor())}${ChatColor.YELLOW}. Use ",
-        command = "/levelhead display header color <color>",
-        suggestedCommand = "/levelhead display header color ",
+        command = DISPLAY_HEADER_COLOR_COMMAND,
+        suggestedCommand = DISPLAY_HEADER_COLOR_SUGGESTION,
         run = false,
         suffix = "${ChatColor.YELLOW} with a hex code, RGB value, or "
     )
@@ -1132,6 +1134,7 @@ private fun sendDisplayShowSelfDetails() {
 
         return ChatComponentText("Minecraft color name").apply {
             chatStyle.color = ChatColor.GOLD
+            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, DISPLAY_HEADER_COLOR_SUGGESTION)
             chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, hoverContent)
         }
     }
