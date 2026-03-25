@@ -880,14 +880,12 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                             chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead whois $identifier")
                             chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to lookup fresh stats"))
                         })
-                        msg.appendSibling(ChatComponentText(" ${ChatColor.GRAY}[Check Status]").apply {
-                            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead status")
-                            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to check status"))
-                        })
-                        sendMessage(msg)
-                    } else {
-                        sendSuccessWithStatusLink(baseMessage)
                     }
+                    msg.appendSibling(ChatComponentText(" ${ChatColor.GRAY}[Check Status]").apply {
+                        chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead status")
+                        chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to check status"))
+                    })
+                    sendMessage(msg)
                 }
             } catch (ex: CommandException) {
                 Minecraft.getMinecraft().addScheduledTask {
