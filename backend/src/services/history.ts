@@ -498,7 +498,8 @@ export function buildSearchClause<QB extends SelectQueryBuilder<Database, 'playe
     return query;
   }
   
-  const term = `%${searchTerm}%`;
+  const escapedSearchTerm = searchTerm.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+  const term = `%${escapedSearchTerm}%`;
   return query.where((eb) => eb.or([
     eb('normalized_identifier', 'like', term),
     eb('resolved_username', 'like', term),
