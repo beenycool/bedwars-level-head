@@ -26,3 +26,6 @@
 ## 2025-03-24 - Interactive Chat Help
 **Learning:** Help text components in Minecraft chat that provide visual information (like hover tooltips) often lack corresponding interactive actions, forcing users to type out commands manually.
 **Action:** Always pair `HoverEvent` tooltips explaining options with `ClickEvent.Action.SUGGEST_COMMAND` to pre-fill the relevant command in the user's chat input for a seamless UX.
+## 2024-03-25 - Added [Lookup] link to cache purge success message
+**Learning:** In text-based interfaces like Minecraft chat, when users perform administrative actions (like clearing a cache), they almost always follow up by manually fetching the new data to verify the action.
+**Action:** Always provide interactive `[Action]` buttons in success messages that predict the user's next logical step. In this case, appending `[Lookup]` next to `[Check Status]` saves the user from having to type `/levelhead whois <player>` immediately after running `/levelhead cache purge <player>`.

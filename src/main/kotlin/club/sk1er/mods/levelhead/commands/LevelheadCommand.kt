@@ -873,7 +873,21 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 val purged = purgeProxyCache(identifier)
                 Minecraft.getMinecraft().addScheduledTask {
                     val scopeText = identifier?.let { "for ${ChatColor.GOLD}$it${ChatColor.YELLOW}" } ?: "globally"
-                    sendSuccessWithStatusLink("${ChatColor.GREEN}Requested cache purge $scopeText (${ChatColor.GOLD}$purged${ChatColor.GREEN} entries).")
+                    val baseMessage = "${ChatColor.GREEN}Requested cache purge $scopeText (${ChatColor.GOLD}$purged${ChatColor.GREEN} entries)."
+                    val msg = ChatComponentText(baseMessage)
+                    if (identifier != null) {
+                        msg.appendSibling(ChatComponentText(" ${ChatColor.GRAY}[Lookup]").apply {
+                            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead whois $identifier")
+                            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to lookup fresh stats"))
+                        })
+                        msg.appendSibling(ChatComponentText(" ${ChatColor.GRAY}[Check Status]").apply {
+                            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead status")
+                            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to check status"))
+                        })
+                        sendMessage(msg)
+                    } else {
+                        sendSuccessWithStatusLink(baseMessage)
+                    }
                 }
             } catch (ex: CommandException) {
                 Minecraft.getMinecraft().addScheduledTask {
