@@ -1,6 +1,7 @@
 import pLimit from 'p-limit';
 import { db, dbType, DatabaseType } from './database/db';
 import { sql, SelectQueryBuilder, ExpressionBuilder } from 'kysely';
+import { Database } from './database/schema';
 import { ensureCockroachRowLevelTtl } from './database/cockroachTtl';
 
 import { getRedisCacheStats } from './redis';
@@ -384,7 +385,7 @@ function mapRowToSummary(row: PlayerQueryHistoryRow): PlayerQuerySummary {
   };
 }
 
-function buildDateRangeClause<QB extends SelectQueryBuilder<any, any, any>>(
+function buildDateRangeClause<QB extends SelectQueryBuilder<Database, 'player_query_history', any>>(
   query: QB,
   startDate: Date | undefined,
   endDate: Date | undefined,
@@ -492,12 +493,13 @@ export async function getTopPlayersByQueryCount(params: {
   }));
 }
 
-export function buildSearchClause<QB extends SelectQueryBuilder<any, any, any>>(query: QB, searchTerm: string | undefined): QB {
+export function buildSearchClause<QB extends SelectQueryBuilder<Database, 'player_query_history', any>>(query: QB, searchTerm: string | undefined): QB {
   if (!searchTerm) {
     return query;
   }
   
-  const term = `%${searchTerm}%`;
+  const escapedSearchTerm = searchTerm.replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+  const term = `%${escapedSearchTerm}%`;
   return query.where((eb) => eb.or([
     eb('normalized_identifier', 'like', term),
     eb('resolved_username', 'like', term),

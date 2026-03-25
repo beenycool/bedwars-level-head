@@ -864,7 +864,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     var communityDatabase: Boolean = true
         set(value) {
-            if (value && apiKey.isBlank()) {
+            if (value && apiKey.isBlank() && (backendMode == BackendMode.FALLBACK || backendMode == BackendMode.DIRECT_API)) {
                 Levelhead.sendChat("§eYou need a Hypixel API key to contribute to the community database. §7You can still fetch cached data.")
             }
             field = value

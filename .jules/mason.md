@@ -15,3 +15,7 @@
 **Tech Debt:** Usage of `any` types within generic SQL query functions, data transformers, and catch blocks across backend services, disabling TypeScript inference and error checking.
 **Learning:** `any` bypasses TypeScript type narrowing and error inspections. On runtime error objects in catch blocks, assuming `any` hides potential unhandled runtime exceptions. The `sql` tagged template provided by Kysely accepts a generic for the return type row structure, such as `sql<{1: number}>\`...\``, which provides immediate safety downstream.
 **Prevention:** In TypeScript, explicitly define `unknown` for inputs like CSV generator arguments, and for `catch (err)` bindings, use type-checking guards before accessing properties (e.g. `typeof err === 'object' && 'code' in err`). Use typed SQL generic responses.
+## 2026-03-25 - Kysely Query Builder Type Safety
+**Tech Debt:** Query builder helper functions (like `buildSearchClause`) used `<QB extends SelectQueryBuilder<any, any, any>>`, completely bypassing Kysely's static type analysis for table schema verification.
+**Learning:** TypeScript requires explicitly passing the root Database schema and specific table name as generic parameters to the `SelectQueryBuilder` to retain compile-time validation for string-based column selection.
+**Prevention:** Always use `<QB extends SelectQueryBuilder<Database, 'table_name', any>>` when writing modular query helper functions.
