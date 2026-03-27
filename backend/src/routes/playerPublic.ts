@@ -187,8 +187,6 @@ router.post('/batch', enforcePublicBatchRateLimit, async (req, res, next) => {
     let cacheHits = 0;
     let total = 0;
 
-    // Using for...of instead of forEach to avoid per-iteration closure allocation.
-    // Batch sizes are capped at MAX_BATCH_SIZE (20), so the gain is small but intentional.
     for (const result of results) {
       if (result) {
         payloadMap[result.identifier] = result.payload;
