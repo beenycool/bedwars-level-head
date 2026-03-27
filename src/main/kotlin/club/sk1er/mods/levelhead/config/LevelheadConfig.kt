@@ -478,7 +478,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         description = "Render text with a shadow. Disable to match Patcher nametag settings.",
         category = "Appearance"
     )
-    var textShadow: Boolean = false
+    var textShadow: Boolean = true
         set(value) {
             field = value
             Levelhead.displayManager.config.textShadow = value
@@ -1521,7 +1521,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         verticalOffset = 0.0f
         showBackground = true
         backgroundOpacity = 0.25f
-        textShadow = false
+        textShadow = true
         renderDistance = 64
         frameSkip = 1
         renderThrottleMs = 0

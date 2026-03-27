@@ -401,7 +401,7 @@ class DisplayManager(val file: File) {
         config.showBackground = true
         config.renderThrottleMs = 0L
         config.frameSkip = 1
-        config.textShadow = false
+        config.textShadow = true
         config.displayPosition = MasterConfig.DisplayPosition.ABOVE
         aboveHead.clear()
         val defaultDisplay = AboveHeadDisplay(DisplayConfig())
