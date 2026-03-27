@@ -15,7 +15,7 @@ function quoteSqlLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
-function quoteSqlIdentifier(identifier: string): string {
+export function quoteSqlIdentifier(identifier: string): string {
   return identifier
     .split('.')
     .map((part) => `"${part.replace(/"/g, '""')}"`)
