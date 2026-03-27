@@ -15,6 +15,13 @@ function quoteSqlLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
 
+export function quoteSqlIdentifier(identifier: string): string {
+  return identifier
+    .split('.')
+    .map((part) => `"${part.replace(/"/g, '""')}"`)
+    .join('.');
+}
+
 export function isCockroachTtlManaged(tableName: string): boolean {
   return ttlManagedTables.has(tableName);
 }
@@ -40,7 +47,7 @@ export async function ensureCockroachRowLevelTtl({
 
     try {
       await sql.raw(
-        `ALTER TABLE ${tableName} SET (` +
+        `ALTER TABLE ${quoteSqlIdentifier(tableName)} SET (` +
           `ttl_expiration_expression = ${quoteSqlLiteral(expirationExpression)}, ` +
           `ttl_job_cron = ${quoteSqlLiteral(jobCron)}` +
         `)`
