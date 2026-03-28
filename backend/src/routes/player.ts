@@ -188,7 +188,9 @@ router.post('/batch', enforceApiKeyAuth, enforceBatchRateLimit, async (req, res,
     const payloadMap: Record<string, ResolvedPlayer['payload'] & { nicked: boolean; stale?: true }> = {};
     let cacheHits = 0;
     let total = 0;
-    results.forEach((result) => {
+
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
       if (result) {
         payloadMap[result.identifier] = result.payload;
         total++;
@@ -196,7 +198,7 @@ router.post('/batch', enforceApiKeyAuth, enforceBatchRateLimit, async (req, res,
           cacheHits++;
         }
       }
-    });
+    }
 
     if (total > 0) {
       res.set('X-Cache', cacheHits === total ? 'HIT' : cacheHits > 0 ? 'PARTIAL' : 'MISS');
