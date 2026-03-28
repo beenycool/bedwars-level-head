@@ -127,10 +127,11 @@ class LevelheadCommand {
         val offsetText = String.format(Locale.ROOT, "%.2f", offset)
         val offsetClickable = CommandUtils.createClickableCommand("${ChatColor.GOLD}$offsetText", run = false, suggestedCommand = "/levelhead display offset $offsetText").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit offset")) }
         val toggleText = if (showSelf) "on" else "off"
+        val oppositeToggleText = if (showSelf) "off" else "on"
         val toggleColor = if (showSelf) ChatColor.GREEN else ChatColor.RED
         val toggleClickable = ChatComponentText("$toggleColor$toggleText").apply {
-            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/levelhead display showself $toggleText")
-            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit show self"))
+            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead display showself $oppositeToggleText")
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to toggle show self"))
         }
 
         val msg1 = ChatComponentText("${ChatColor.YELLOW}Header: ")
@@ -1050,10 +1051,11 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         msg2.appendSibling(ChatComponentText("${ChatColor.YELLOW}, show self "))
 
         val toggleText = if (showSelf) "on" else "off"
+        val oppositeToggleText = if (showSelf) "off" else "on"
         val toggleColor = if (showSelf) ChatColor.GREEN else ChatColor.RED
         msg2.appendSibling(ChatComponentText("$toggleColor$toggleText").apply {
-            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/levelhead display showself $toggleText")
-            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit show self"))
+            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead display showself $oppositeToggleText")
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to toggle show self"))
         })
         msg2.appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
         sendMessage(msg2)
