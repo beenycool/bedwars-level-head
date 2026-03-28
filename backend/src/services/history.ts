@@ -135,10 +135,20 @@ const initialization = (async () => {
 
       // Detect whether pg_total_relation_size exists
       try {
-        await sql`SELECT pg_total_relation_size('player_stats_cache') as size_check`.execute(db);
-        supportsPgTotalRelationSize = true;
+        const result = await sql<{ exists: boolean }>`
+          SELECT EXISTS (
+            SELECT 1
+            FROM pg_catalog.pg_proc
+            WHERE proname = 'pg_total_relation_size'
+          ) as "exists"
+        `.execute(db);
+        supportsPgTotalRelationSize = result.rows[0]?.exists ?? false;
       } catch (err) {
         supportsPgTotalRelationSize = false;
+        logger.warn({ err }, '[history] pg_total_relation_size check failed');
+      }
+
+      if (!supportsPgTotalRelationSize) {
         logger.info('[history] pg_total_relation_size not available; DB size queries will be skipped');
       }
     } else {
