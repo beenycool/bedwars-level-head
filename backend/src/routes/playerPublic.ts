@@ -186,7 +186,10 @@ router.post('/batch', enforcePublicBatchRateLimit, async (req, res, next) => {
     const payloadMap: Record<string, ResolvedPlayer['payload'] & { nicked: boolean; stale?: true }> = {};
     let cacheHits = 0;
     let total = 0;
-    results.forEach((result) => {
+
+    // Using for...of instead of forEach to avoid per-iteration closure allocation.
+    // Batch sizes are capped at MAX_BATCH_SIZE (20), so the gain is small but intentional.
+    for (const result of results) {
       if (result) {
         payloadMap[result.identifier] = result.payload;
         total++;
@@ -194,7 +197,7 @@ router.post('/batch', enforcePublicBatchRateLimit, async (req, res, next) => {
           cacheHits++;
         }
       }
-    });
+    }
 
     if (total > 0) {
       res.set('X-Cache', cacheHits === total ? 'HIT' : cacheHits > 0 ? 'PARTIAL' : 'MISS');
