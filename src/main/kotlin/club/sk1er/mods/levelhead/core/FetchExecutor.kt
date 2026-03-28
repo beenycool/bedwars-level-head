@@ -44,11 +44,11 @@ class FetchExecutor(
         val proxyCandidates = remaining.filter { !inFlightStatsRequests.containsKey(it.cacheKey) }
         if (proxyCandidates.isEmpty()) return remaining
 
-        val batchLocks = proxyCandidates.associate { entry ->
+        val batchLocks = proxyCandidates.mapNotNull { entry ->
             val deferred = CompletableDeferred<GameStats?>()
             val existing = inFlightStatsRequests.putIfAbsent(entry.cacheKey, deferred)
-            entry.cacheKey to (if (existing == null) deferred else null)
-        }.filterValues { it != null }.mapValues { it.value!! }
+            if (existing == null) entry.cacheKey to deferred else null
+        }.toMap()
 
         val lockedEligible = proxyCandidates.filter { batchLocks.containsKey(it.cacheKey) }
         val entriesByUuid = lockedEligible.groupBy { it.uuid }

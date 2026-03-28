@@ -16,7 +16,7 @@ class MasterConfig {
     var showBackground: Boolean = true
     var renderThrottleMs: Long = 0L
     var frameSkip: Int = 1 // Render every N frames (1 = every frame, 2 = every other frame, etc.)
-    var textShadow: Boolean = false // Whether to render text with shadow (disable to match Patcher nametag settings)
+    var textShadow: Boolean = true // Whether to render text with shadow (disable to match Patcher nametag settings)
 
     enum class DisplayPosition {
         ABOVE,  // Display levelhead above the nametag (default)

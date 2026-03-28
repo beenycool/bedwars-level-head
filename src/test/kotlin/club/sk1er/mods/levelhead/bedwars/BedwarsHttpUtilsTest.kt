@@ -73,7 +73,7 @@ class BedwarsHttpUtilsTest {
 
         assertNotNull(result)
         // Result should be approximately 30 seconds (30000ms), allow some tolerance
-        assertTrue(result!! in 25000L..35000L)
+        assertTrue(result in 25000L..35000L)
     }
 
     @Test
