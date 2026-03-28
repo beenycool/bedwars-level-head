@@ -1,6 +1,7 @@
 import { sql } from 'kysely';
 import express from 'express';
 import compression from 'compression';
+import cors from 'cors';
 import playerRouter from './routes/player';
 import playerPublicRouter from './routes/playerPublic';
 import apikeyPublicRouter from './routes/apikeyPublic';
@@ -28,6 +29,33 @@ export function createApp(): express.Express {
   const app = express();
 
   app.use(requestId);
+
+  // 🛡️ Sentinel: Enforce strict CORS policy.
+  // CORS is a browser-enforced relaxation mechanism that allows servers to opt-in to cross-origin access.
+  // It does not prevent CSRF — use anti-CSRF tokens, SameSite cookies, or Origin/Referer validation for that.
+  // Since this is primarily an API service called by Minecraft clients or server-side bots
+  // (which don't send Origin headers), we only allow requests with no Origin header or
+  // requests originating from the same origin.
+  app.use(cors((req, callback) => {
+    const origin = req.headers.origin;
+    const serverOrigin = `${req.protocol}://${req.get('host')}`;
+
+    // Allow requests with no origin (like mobile apps, curl, or Minecraft client)
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+
+    // Allow requests from the server's own origin
+    if (origin === serverOrigin) {
+      callback(null, true);
+      return;
+    }
+
+    // Reject all other cross-origin requests
+    callback(new Error('Not allowed by CORS'));
+  }));
+
   app.use((_req, res, next) => {
     res.locals.nonce = crypto.randomUUID();
     next();
