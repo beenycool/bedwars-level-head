@@ -138,8 +138,9 @@ const initialization = (async () => {
         const result = await sql<{ exists: boolean }>`
           SELECT EXISTS (
             SELECT 1
-            FROM pg_catalog.pg_proc
-            WHERE proname = 'pg_total_relation_size'
+            FROM pg_catalog.pg_proc p
+            JOIN pg_catalog.pg_namespace n ON p.pronamespace = n.oid
+            WHERE n.nspname = 'pg_catalog' AND p.proname = 'pg_total_relation_size'
           ) as "exists"
         `.execute(db);
         supportsPgTotalRelationSize = result.rows[0]?.exists ?? false;
