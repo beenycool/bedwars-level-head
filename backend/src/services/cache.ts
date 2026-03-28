@@ -80,22 +80,18 @@ function buildCockroachRetentionExpression(columnName: string, ttlMs: number): s
 async function ensureRateLimitTable(): Promise<void> {
   try {
     if (dbType === DatabaseType.POSTGRESQL) {
-      await sql.raw(
-        `CREATE TABLE IF NOT EXISTS rate_limits (
+      await sql`CREATE TABLE IF NOT EXISTS rate_limits (
           key TEXT PRIMARY KEY,
           count BIGINT NOT NULL,
           window_start BIGINT NOT NULL
-        )`,
-      );
+        )`.execute(db);
     } else {
-      await sql.raw(
-        `IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[rate_limits]') AND type in (N'U'))
+      await sql`IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[rate_limits]') AND type in (N'U'))
          CREATE TABLE rate_limits (
            [key] NVARCHAR(450) PRIMARY KEY,
            [count] BIGINT NOT NULL,
            window_start BIGINT NOT NULL
-         )`,
-      );
+         )`.execute(db);
     }
   } catch (error) {
     const dbError = error as DatabaseError | undefined;
@@ -116,8 +112,7 @@ async function ensureRateLimitTable(): Promise<void> {
 
 async function ensurePlayerStatsTables(): Promise<void> {
   if (dbType === DatabaseType.POSTGRESQL) {
-    await sql.raw(
-      `CREATE TABLE IF NOT EXISTS player_stats_cache (
+    await sql`CREATE TABLE IF NOT EXISTS player_stats_cache (
         cache_key TEXT PRIMARY KEY,
         payload JSONB NOT NULL,
         expires_at BIGINT NOT NULL,
@@ -126,28 +121,20 @@ async function ensurePlayerStatsTables(): Promise<void> {
         last_modified BIGINT,
         source TEXT DEFAULT 'hypixel',
         created_at TIMESTAMPTZ DEFAULT NOW()
-      )`,
-    );
+      )`.execute(db);
     await sql`ALTER TABLE player_stats_cache ADD COLUMN IF NOT EXISTS cached_at BIGINT`.execute(db);
-    await sql.raw(
-      `CREATE INDEX IF NOT EXISTS idx_player_stats_expires ON player_stats_cache (expires_at)`,
-    );
+    await sql`CREATE INDEX IF NOT EXISTS idx_player_stats_expires ON player_stats_cache (expires_at)`.execute(db);
 
-    await sql.raw(
-      `CREATE TABLE IF NOT EXISTS ign_uuid_cache (
+    await sql`CREATE TABLE IF NOT EXISTS ign_uuid_cache (
         ign TEXT PRIMARY KEY,
         uuid TEXT,
         nicked BOOLEAN NOT NULL DEFAULT FALSE,
         expires_at BIGINT NOT NULL,
         updated_at TIMESTAMPTZ DEFAULT NOW()
-      )`,
-    );
-    await sql.raw(
-      `CREATE INDEX IF NOT EXISTS idx_ign_uuid_expires ON ign_uuid_cache (expires_at)`,
-    );
+      )`.execute(db);
+    await sql`CREATE INDEX IF NOT EXISTS idx_ign_uuid_expires ON ign_uuid_cache (expires_at)`.execute(db);
   } else {
-    await sql.raw(
-      `IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[player_stats_cache]') AND type in (N'U'))
+    await sql`IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[player_stats_cache]') AND type in (N'U'))
        CREATE TABLE player_stats_cache (
          cache_key NVARCHAR(450) PRIMARY KEY,
          payload NVARCHAR(MAX) NOT NULL,
@@ -157,29 +144,20 @@ async function ensurePlayerStatsTables(): Promise<void> {
          last_modified BIGINT,
          source NVARCHAR(64),
          created_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
-       )`,
-    );
-    await sql.raw(
-      `IF COL_LENGTH('player_stats_cache', 'cached_at') IS NULL
-       ALTER TABLE player_stats_cache ADD cached_at BIGINT`,
-    );
-    await sql.raw(
-      "IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_player_stats_expires') CREATE INDEX idx_player_stats_expires ON player_stats_cache (expires_at)",
-    );
+       )`.execute(db);
+    await sql`IF COL_LENGTH('player_stats_cache', 'cached_at') IS NULL
+       ALTER TABLE player_stats_cache ADD cached_at BIGINT`.execute(db);
+    await sql`IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_player_stats_expires') CREATE INDEX idx_player_stats_expires ON player_stats_cache (expires_at)`.execute(db);
 
-    await sql.raw(
-      `IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[ign_uuid_cache]') AND type in (N'U'))
+    await sql`IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[ign_uuid_cache]') AND type in (N'U'))
        CREATE TABLE ign_uuid_cache (
          ign NVARCHAR(32) PRIMARY KEY,
          uuid NVARCHAR(32),
          nicked BIT NOT NULL DEFAULT 0,
          expires_at BIGINT NOT NULL,
          updated_at DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
-       )`,
-    );
-    await sql.raw(
-      "IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_ign_uuid_expires') CREATE INDEX idx_ign_uuid_expires ON ign_uuid_cache (expires_at)",
-    );
+       )`.execute(db);
+    await sql`IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_ign_uuid_expires') CREATE INDEX idx_ign_uuid_expires ON ign_uuid_cache (expires_at)`.execute(db);
   }
 }
 
@@ -193,39 +171,31 @@ const initialization = (async () => {
   logger.info('[cache] player_stats_cache tables are ready');
 
   if (dbType === DatabaseType.POSTGRESQL) {
-    await sql.raw(
-      `CREATE TABLE IF NOT EXISTS hypixel_api_calls (
+    await sql`CREATE TABLE IF NOT EXISTS hypixel_api_calls (
         id BIGSERIAL PRIMARY KEY,
         called_at BIGINT NOT NULL,
         uuid TEXT NOT NULL
-      )`,
-    );
+      )`.execute(db);
     await sql`CREATE INDEX IF NOT EXISTS idx_hypixel_calls_time ON hypixel_api_calls (called_at)`.execute(db);
     await sql`CREATE INDEX IF NOT EXISTS idx_rate_limits_window ON rate_limits (window_start)`.execute(db);
-    await sql.raw(
-      `CREATE TABLE IF NOT EXISTS system_kv (
+    await sql`CREATE TABLE IF NOT EXISTS system_kv (
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
-      )`,
-    );
+      )`.execute(db);
   } else {
-    await sql.raw(
-      `IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[hypixel_api_calls]') AND type in (N'U'))
+    await sql`IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[hypixel_api_calls]') AND type in (N'U'))
        CREATE TABLE hypixel_api_calls (
          id BIGINT IDENTITY(1,1) PRIMARY KEY,
          called_at BIGINT NOT NULL,
          uuid NVARCHAR(MAX) NOT NULL
-       )`,
-    );
+       )`.execute(db);
     await sql`IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_hypixel_calls_time') CREATE INDEX idx_hypixel_calls_time ON hypixel_api_calls (called_at)`.execute(db);
     await sql`IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_rate_limits_window') CREATE INDEX idx_rate_limits_window ON rate_limits (window_start)`.execute(db);
-    await sql.raw(
-      `IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[system_kv]') AND type in (N'U'))
+    await sql`IF NOT EXISTS (SELECT * FROM sys.objects WHERE object_id = OBJECT_ID(N'[dbo].[system_kv]') AND type in (N'U'))
        CREATE TABLE system_kv (
          [key] NVARCHAR(128) PRIMARY KEY,
          [value] NVARCHAR(MAX) NOT NULL
-       )`,
-    );
+       )`.execute(db);
   }
 
   logger.info('[cache] hypixel_api_calls and system_kv tables are ready');
@@ -271,11 +241,12 @@ export async function purgeExpiredEntries(now: number = Date.now()): Promise<voi
   }
 
   if (!isCockroachTtlManaged('player_query_history')) {
-    const historyQuery = dbType === DatabaseType.POSTGRESQL
-      ? "DELETE FROM player_query_history WHERE requested_at < NOW() - INTERVAL '30 days'"
-      : "DELETE FROM player_query_history WHERE requested_at < DATEADD(day, -30, GETDATE())";
-
-    const historyResult = await sql.raw(historyQuery).execute(db);
+    let historyResult;
+    if (dbType === DatabaseType.POSTGRESQL) {
+      historyResult = await sql`DELETE FROM player_query_history WHERE requested_at < NOW() - INTERVAL '30 days'`.execute(db);
+    } else {
+      historyResult = await sql`DELETE FROM player_query_history WHERE requested_at < DATEADD(day, -30, GETDATE())`.execute(db);
+    }
     const purgedHistory = Number(historyResult.numAffectedRows ?? 0);
     if (purgedHistory > 0) {
       logger.info(`[cache] purged ${purgedHistory} historical query entries older than 30 days`);

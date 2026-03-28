@@ -46,12 +46,7 @@ export async function ensureCockroachRowLevelTtl({
     }
 
     try {
-      await sql.raw(
-        `ALTER TABLE ${quoteSqlIdentifier(tableName)} SET (` +
-          `ttl_expiration_expression = ${quoteSqlLiteral(expirationExpression)}, ` +
-          `ttl_job_cron = ${quoteSqlLiteral(jobCron)}` +
-        `)`
-      ).execute(db);
+      await sql`ALTER TABLE ${sql.raw(quoteSqlIdentifier(tableName))} SET (ttl_expiration_expression = ${sql.raw(expirationExpression)}, ttl_job_cron = ${jobCron})`.execute(db);
 
       ttlManagedTables.add(tableName);
       logger.info(`[db] enabled Cockroach row-level TTL for ${tableName}`);
