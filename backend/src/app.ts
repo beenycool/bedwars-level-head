@@ -31,26 +31,29 @@ export function createApp(): express.Express {
   app.use(requestId);
 
   // 🛡️ Sentinel: Enforce strict CORS policy.
-  // We use CORS to prevent Cross-Site Request Forgery (CSRF) and cross-origin reads.
+  // CORS is a browser-enforced relaxation mechanism that allows servers to opt-in to cross-origin access.
+  // It does not prevent CSRF — use anti-CSRF tokens, SameSite cookies, or Origin/Referer validation for that.
   // Since this is primarily an API service called by Minecraft clients or server-side bots
   // (which don't send Origin headers), we only allow requests with no Origin header or
   // requests originating from the same origin.
-  app.use(cors({
-    origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps, curl, or Minecraft client)
-      if (!origin) {
-        callback(null, true);
-        return;
-      }
+  app.use(cors((req, callback) => {
+    const origin = req.headers.origin;
+    const serverOrigin = `${req.protocol}://${req.get('host')}`;
 
-      // In a real application, you would allow specific trusted origins here.
-      // For this implementation, we enforce same-origin policy by default.
-      // Since cors() automatically allows the same origin if we pass true (or specifically the origin itself),
-      // we can do a strict check against the allowed origins.
-      // If we don't have a list of allowed origins, we can return false to reject cross-origin requests.
-      callback(null, false);
-    },
-    credentials: true,
+    // Allow requests with no origin (like mobile apps, curl, or Minecraft client)
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+
+    // Allow requests from the server's own origin
+    if (origin === serverOrigin) {
+      callback(null, true);
+      return;
+    }
+
+    // Reject all other cross-origin requests
+    callback(new Error('Not allowed by CORS'));
   }));
 
   app.use((_req, res, next) => {
