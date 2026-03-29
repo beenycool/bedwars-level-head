@@ -42,13 +42,13 @@ export function createApp(): express.Express {
 
     // Allow requests with no origin (like mobile apps, curl, or Minecraft client)
     if (!origin) {
-      callback(null, true);
+      callback(null, { origin: true });
       return;
     }
 
     // Allow requests from the server's own origin
     if (origin === serverOrigin) {
-      callback(null, true);
+      callback(null, { origin: true });
       return;
     }
 
