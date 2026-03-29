@@ -46,8 +46,9 @@ class WhoisCommand {
                     messagePrefix = "${ChatColor.RED}Unexpected error while fetching stats. Try ",
                     command = "/levelhead status",
                     run = true,
-                    suffix = "${ChatColor.RED} to check your connection or check logs for details. If this issue persists, please make an issue on GitHub: https://github.com/beenycool/bedwars-level-head/"
+                    suffix = "${ChatColor.RED} to check your connection or check logs for details. If this issue persists, please make an issue on GitHub: "
                 )
+                errorMsg.appendSibling(CommandUtils.createClickableUrl("https://github.com/beenycool/bedwars-level-head/"))
                 sendMessage(errorMsg)
             }
         }
