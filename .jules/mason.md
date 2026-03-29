@@ -1,21 +1,4 @@
-# 2026-03-18 - Replacing unknown object casts
-
-**Tech Debt:** Inline `any` assertions used directly to access untyped JSON payload keys, then initially replaced with `Record<string, unknown>`.
-**Learning:** Casting a dynamic object to `Record<string, unknown>` before extracting primitives makes those extracted primitives inherently `unknown`. Assigning `unknown` to properties restricted to specific types (e.g., `number | undefined`) causes TS compilation errors. Trying to resolve this inline leads to an unreadable mess of repeated assertions (e.g., `((obj as ...).prop as ...)`).
-**Prevention:** Cast dynamic objects directly to structurally accurate types matching the primitives you need to extract (e.g., `const bedwars = obj as Record<string, number | undefined>`) so properties naturally resolve to the required types, maintaining both type-safety and readability without inline verbosity.
-## 2024-05-19 - Removed unsafe 'any' typings in generic JSON extraction
-**Tech Debt:** `extractBedwarsRecord` in validation utilities used `any` types and `as any` casting for deeply nested JSON access, creating an unchecked gap in type safety.
-**Learning:** Working with loosely typed inputs from Express routes makes it easy to fall back to `any`. This bypasses strict TypeScript checks, leading to potential unseen runtime assignment bugs.
-**Prevention:** Avoid `any`. Treat arbitrary inputs as `unknown`, then explicitly use type guards (like `isNonArrayObject()`) to assert them into structural objects (e.g., `Record<string, unknown>`), traversing properties cleanly.
-## 2024-05-14 - Replace 'as any' casts with strict Kysely types
-**Tech Debt:** Core tables like `resource_metrics`, `hypixel_api_calls`, `system_kv`, and `rate_limits` were missing interfaces in the central `Database` type (`backend/src/services/database/schema.ts`). This forced the usage of `pool.selectFrom('table' as any)` in database queries throughout the codebase, bypassing TypeScript's static analysis and increasing the risk of runtime errors.
-**Learning:** Kysely heavily relies on the generic types of the DB object to validate SQL statements at compile time. Defining incomplete database interfaces means you miss out on table names, column names, and type checks. Type assertions like `as any` defeat the primary architectural benefit of Kysely.
-**Prevention:** Every time a new table is added via SQL migration or initialization scripts, its corresponding `Table` interface and `Selectable`/`Insertable`/`Updateable` exports MUST be strictly defined in `schema.ts`.
-## 2025-05-18 - Type-Safety Enhancements
-**Tech Debt:** Usage of `any` types within generic SQL query functions, data transformers, and catch blocks across backend services, disabling TypeScript inference and error checking.
-**Learning:** `any` bypasses TypeScript type narrowing and error inspections. On runtime error objects in catch blocks, assuming `any` hides potential unhandled runtime exceptions. The `sql` tagged template provided by Kysely accepts a generic for the return type row structure, such as `sql<{1: number}>\`...\``, which provides immediate safety downstream.
-**Prevention:** In TypeScript, explicitly define `unknown` for inputs like CSV generator arguments, and for `catch (err)` bindings, use type-checking guards before accessing properties (e.g. `typeof err === 'object' && 'code' in err`). Use typed SQL generic responses.
-## 2026-03-25 - Kysely Query Builder Type Safety
-**Tech Debt:** Query builder helper functions (like `buildSearchClause`) used `<QB extends SelectQueryBuilder<any, any, any>>`, completely bypassing Kysely's static type analysis for table schema verification.
-**Learning:** TypeScript requires explicitly passing the root Database schema and specific table name as generic parameters to the `SelectQueryBuilder` to retain compile-time validation for string-based column selection.
-**Prevention:** Always use `<QB extends SelectQueryBuilder<Database, 'table_name', any>>` when writing modular query helper functions.
+## 2025-02-12 - Eliminate Promise.all(array.map) allocations
+**Tech Debt:** High-throughput batch processing loops in `history.ts`, `player.ts`, and `playerPublic.ts` were utilizing `await Promise.all(array.map(item => limit(async () => ...)))`. This inherently creates two O(N) memory allocations: one for the intermediate closure state and another for the new array produced by `.map()` itself before passing it to `Promise.all()`.
+**Learning:** In very hot paths (like processing large batch arrays or flushing memory history queues continuously), this native functional mapping generates massive, unnecessary pressure on the Garbage Collector. It triggers micro-stutters and increased RSS footprint.
+**Prevention:** Rather than functional chaining in these critical limits, use procedural iteration: instantiate a clean array `const limitPromises = [];`, iterate over the items using a standard `for (let i = 0; i < array.length; i++)` loop, use `.push(limit(async () => ...))` into the array, and finally invoke `await Promise.all(limitPromises)`. This entirely circumvents intermediate array generation.

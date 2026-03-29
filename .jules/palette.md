@@ -30,3 +30,7 @@
 ## 2026-03-25 - Added [Lookup] link to cache purge success message
 **Learning:** In text-based interfaces like Minecraft chat, when users perform administrative actions (like clearing a cache), they almost always follow up by manually fetching the new data to verify the action.
 **Action:** Always provide interactive `[Action]` buttons in success messages that predict the user's next logical step. In this case, appending `[Lookup]` next to `[Check Status]` saves the user from having to type `/levelhead whois <player>` immediately after running `/levelhead admin purgecache <player>`.
+
+## 2026-03-28 - One-Click Toggle for Boolean States
+**Learning:** For boolean states displayed in chat (like "show self on"/"off"), suggesting the current state requires the user to manually edit the command. Using `RUN_COMMAND` with the *opposite* state provides a one-click toggle, significantly reducing friction.
+**Action:** When displaying a boolean setting, always wrap the status text in a `ClickEvent.Action.RUN_COMMAND` configured to execute the *opposite* state.

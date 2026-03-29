@@ -1,6 +1,6 @@
 import pLimit from 'p-limit';
 import { db, dbType, DatabaseType } from './database/db';
-import { sql, SelectQueryBuilder, ExpressionBuilder } from 'kysely';
+import { sql, SelectQueryBuilder, ExpressionBuilder, Insertable } from 'kysely';
 import { Database } from './database/schema';
 import { ensureCockroachRowLevelTtl } from './database/cockroachTtl';
 
@@ -278,27 +278,36 @@ async function flushHistoryBuffer(): Promise<void> {
 
       const limit = pLimit(CONCURRENT_HISTORY_FETCHES);
 
-      await Promise.all(chunks.map(chunk => limit(async () => {
-        const rows = chunk.map(r => ({
-          identifier: r.identifier,
-          normalized_identifier: r.normalizedIdentifier,
-          lookup_type: r.lookupType,
-          resolved_uuid: r.resolvedUuid,
-          resolved_username: r.resolvedUsername,
-          stars: r.stars,
-          nicked: r.nicked ? 1 : 0, // MSSQL BIT
-          cache_source: r.cacheSource,
-          cache_hit: r.cacheHit ? 1 : 0,
-          revalidated: r.revalidated ? 1 : 0,
-          install_id: r.installId,
-          response_status: r.responseStatus,
-          latency_ms: r.latencyMs != null ? Math.round(r.latencyMs) : null
-        }));
+      const limitPromises: Promise<void>[] = [];
+      for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        limitPromises.push(limit(async () => {
+          const rows: Insertable<Database['player_query_history']>[] = [];
+          for (let j = 0; j < chunk.length; j++) {
+            const r = chunk[j];
+            rows.push({
+              identifier: r.identifier,
+              normalized_identifier: r.normalizedIdentifier,
+              lookup_type: r.lookupType,
+              resolved_uuid: r.resolvedUuid,
+              resolved_username: r.resolvedUsername,
+              stars: r.stars,
+              nicked: r.nicked ? 1 : 0, // MSSQL BIT
+              cache_source: r.cacheSource,
+              cache_hit: r.cacheHit ? 1 : 0,
+              revalidated: r.revalidated ? 1 : 0,
+              install_id: r.installId,
+              response_status: r.responseStatus,
+              latency_ms: r.latencyMs != null ? Math.round(r.latencyMs) : null
+            });
+          }
 
-        await db.insertInto('player_query_history')
-          .values(rows)
-          .execute();
-      })));
+          await db.insertInto('player_query_history')
+            .values(rows)
+            .execute();
+        }));
+      }
+      await Promise.all(limitPromises);
 
       logger.info(`[history] Flushed ${batch.length} records in ${chunks.length} chunks`);
     }

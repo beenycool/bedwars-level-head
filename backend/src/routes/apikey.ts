@@ -128,7 +128,7 @@ router.get('/list', enforceAdminRateLimit, enforceAdminAuth, async (req, res, ne
     res.json({
       success: true,
       count: keys.length,
-      data: keys.map((key) => toApiKeyResponse(key)),
+      data: keys.map(toApiKeyResponse),
     });
   } catch (error) {
     next(error);
