@@ -48,7 +48,7 @@ class WhoisCommand {
                     run = true,
                     suffix = "${ChatColor.RED} to check your connection or check logs for details. If this issue persists, please make an issue on GitHub: "
                 )
-                errorMsg.appendSibling(CommandUtils.createClickableUrl("https://github.com/beenycool/bedwars-level-head/"))
+                errorMsg.appendSibling(CommandUtils.createClickableUrl("https://github.com/beenycool/bedwars-level-head/", "${ChatColor.AQUA}GitHub."))
                 sendMessage(errorMsg)
             }
         }

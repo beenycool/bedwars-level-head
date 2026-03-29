@@ -48,22 +48,20 @@ class LevelheadCommand {
 
     @SubCommand
     fun confirm() {
-        val action = pendingAction
+        val action = takePendingActionIfFresh()
         if (action == null) {
             sendMessage("${ChatColor.RED}No pending action to confirm.")
             return
         }
-        pendingAction = null
         action()
     }
 
     @SubCommand
     fun cancel() {
-        if (pendingAction == null) {
+        if (takePendingActionIfFresh() == null) {
             sendMessage("${ChatColor.RED}No pending action to cancel.")
             return
         }
-        pendingAction = null
         sendMessage("${ChatColor.YELLOW}Action cancelled.")
     }
 
@@ -538,8 +536,7 @@ class LevelheadCommand {
                     run = true,
                     suffix = "${ChatColor.RED} to check your connection or check logs for details. If this issue persists, please make an issue on GitHub: "
                 )
-                errorMsg.appendSibling(CommandUtils.createClickableUrl("https://github.com/beenycool/bedwars-level-head/"))
-                sendMessage(errorMsg)
+                errorMsg.appendSibling(CommandUtils.createClickableUrl("https://github.com/beenycool/bedwars-level-head/", "${ChatColor.AQUA}GitHub."))
             }
         }
     }
@@ -907,7 +904,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                         run = true,
                         suffix = "${ChatColor.RED} to check your connection or check logs for details. If this issue persists, please make an issue on GitHub: "
                     )
-                    errorMsg.appendSibling(CommandUtils.createClickableUrl("https://github.com/beenycool/bedwars-level-head/"))
+                errorMsg.appendSibling(CommandUtils.createClickableUrl("https://github.com/beenycool/bedwars-level-head/", "${ChatColor.AQUA}GitHub."))
                     sendMessage(errorMsg)
                 }
             }
@@ -1289,6 +1286,14 @@ private fun sendDisplayShowSelfDetails() {
 private var pendingAction: (() -> Unit)? = null
 private var pendingActionTimestamp: Long = 0L
 private const val CONFIRMATION_TIMEOUT_MS = 30_000L // 30 seconds
+
+private fun takePendingActionIfFresh(): (() -> Unit)? {
+    val action = pendingAction ?: return null
+    val fresh = System.currentTimeMillis() - pendingActionTimestamp < CONFIRMATION_TIMEOUT_MS
+    pendingAction = null
+    pendingActionTimestamp = 0L
+    return if (fresh) action else null
+}
 
 private fun requireConfirmation(warningMessage: String, action: () -> Unit) {
     if (pendingAction != null && System.currentTimeMillis() - pendingActionTimestamp < CONFIRMATION_TIMEOUT_MS) {
