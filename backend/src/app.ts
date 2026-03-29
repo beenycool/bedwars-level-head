@@ -68,7 +68,7 @@ export function createApp(): express.Express {
         scriptSrc: ["'self'", "https://cdn.jsdelivr.net", (_req, res) => `'nonce-${(res as express.Response).locals.nonce}'`, "'strict-dynamic'"],
         styleSrc: ["'self'", (_req, res) => `'nonce-${(res as express.Response).locals.nonce}'`],
         imgSrc: ["'self'", "data:"],
-        connectSrc: ["'self'", "https://cdn.jsdelivr.net"],
+        connectSrc: ["'self'", "https://cdn.jsdelivr.net/npm/chart.js/"],
         objectSrc: ["'none'"],
         baseUri: ["'none'"],
         formAction: ["'self'"],
