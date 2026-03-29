@@ -2237,8 +2237,7 @@ router.get('/', async (req, res, next) => {
       const resourceMetricsLabels = [];
       const resourceMetricsData = [];
       const resourceMetricsCpuData = [];
-      for (let i = 0; i < resourceMetricsHistory.length; i++) {
-        const m = resourceMetricsHistory[i];
+      for (const m of resourceMetricsHistory) {
         resourceMetricsLabels.push(new Date(m.bucketStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
         resourceMetricsData.push(m.avgRssMB);
         resourceMetricsCpuData.push(m.avgCpuPercent);
@@ -3054,8 +3053,7 @@ router.get('/', async (req, res, next) => {
           const resourceMetricsLabels = [];
           const resourceMetricsData = [];
           const resourceMetricsCpuData = [];
-          for (let i = 0; i < resourceMetricsHistory.length; i++) {
-            const m = resourceMetricsHistory[i];
+          for (const m of resourceMetricsHistory) {
             resourceMetricsLabels.push(new Date(m.bucketStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
             resourceMetricsData.push(m.avgRssMB);
             resourceMetricsCpuData.push(m.avgCpuPercent);
