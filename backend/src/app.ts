@@ -41,13 +41,8 @@ export function createApp(): express.Express {
     const serverOrigin = `${req.protocol}://${req.get('host')}`;
 
     // Allow requests with no origin (like mobile apps, curl, or Minecraft client)
-    if (!origin) {
-      callback(null, { origin: true });
-      return;
-    }
-
-    // Allow requests from the server's own origin
-    if (origin === serverOrigin) {
+    // and requests from the server's own origin
+    if (!origin || origin === serverOrigin) {
       callback(null, { origin: true });
       return;
     }
