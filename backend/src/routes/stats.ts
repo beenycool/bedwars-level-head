@@ -2232,12 +2232,16 @@ router.get('/', async (req, res, next) => {
 
       // 8. Process Memory Over Time
       const resourceMetricsHistory = pageData.resourceMetricsHistory || [];
-      const resourceMetricsLabels = resourceMetricsHistory.map((m) => {
-        const date = new Date(m.bucketStart);
-        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      });
-      const resourceMetricsData = resourceMetricsHistory.map((m) => m.avgRssMB);
-      const resourceMetricsCpuData = resourceMetricsHistory.map((m) => m.avgCpuPercent);
+
+      // ⚡ Bolt: Replace multiple .map() passes with a single loop to avoid O(N) intermediate array allocations
+      const resourceMetricsLabels = [];
+      const resourceMetricsData = [];
+      const resourceMetricsCpuData = [];
+      for (const m of resourceMetricsHistory) {
+        resourceMetricsLabels.push(new Date(m.bucketStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+        resourceMetricsData.push(m.avgRssMB);
+        resourceMetricsCpuData.push(m.avgCpuPercent);
+      }
 
       const resourceMetricsChartConfig = {
         type: 'line',
@@ -3044,12 +3048,16 @@ router.get('/', async (req, res, next) => {
         // 9. Update Resource Metrics Chart
         const resourceMetricsHistory = json.resourceMetricsHistory || [];
         if (resourceMetricsHistory.length > 0) {
-          const resourceMetricsLabels = resourceMetricsHistory.map((m) => {
-            const date = new Date(m.bucketStart);
-            return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-          });
-          const resourceMetricsData = resourceMetricsHistory.map((m) => m.avgRssMB);
-          const resourceMetricsCpuData = resourceMetricsHistory.map((m) => m.avgCpuPercent);
+
+          // ⚡ Bolt: Replace multiple .map() passes with a single loop to avoid O(N) intermediate array allocations
+          const resourceMetricsLabels = [];
+          const resourceMetricsData = [];
+          const resourceMetricsCpuData = [];
+          for (const m of resourceMetricsHistory) {
+            resourceMetricsLabels.push(new Date(m.bucketStart).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+            resourceMetricsData.push(m.avgRssMB);
+            resourceMetricsCpuData.push(m.avgCpuPercent);
+          }
 
           const resourceMetricsChart = charts.find(c => c.canvas && c.canvas.id === 'resourceMetricsChart');
           if (resourceMetricsChart) {
