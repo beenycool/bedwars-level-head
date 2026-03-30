@@ -691,7 +691,12 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
             "export" -> {
                 val exported = ConfigProfiles.exportProfile()
                 GuiScreen.setClipboardString(exported)
-                sendMessage("${ChatColor.GREEN}Exported current configuration to clipboard. Share it with others!")
+                val msg = ChatComponentText("${ChatColor.GREEN}Exported current configuration to clipboard. Share it with others!")
+                    .appendSibling(ChatComponentText(" ${ChatColor.GRAY}[Click to import]").apply {
+                        chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead profile import")
+                        chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to import from clipboard"))
+                    })
+                sendMessage(msg)
             }
             "import" -> {
                 val clipboard = GuiScreen.getClipboardString()
