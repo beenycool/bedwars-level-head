@@ -693,8 +693,8 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 GuiScreen.setClipboardString(exported)
                 val msg = ChatComponentText("${ChatColor.GREEN}Exported current configuration to clipboard. Share it with others!")
                     .appendSibling(ChatComponentText(" ${ChatColor.GRAY}[Click to import]").apply {
-                        chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/levelhead profile import ")
-                        chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to prepare import command"))
+                        chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead profile import")
+                        chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to import from clipboard"))
                     })
                 sendMessage(msg)
             }
