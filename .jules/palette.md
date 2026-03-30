@@ -1,36 +1,4 @@
-# Palette's Journal
+# 2024-05-24 - Interactive Chat Error Links & Action Cancellation
 
-## 2026-02-18 - Interactive Chat Help
-**Learning:** Users benefit significantly from clickable chat commands, and implementing them is a low-effort, high-impact UX win. Existing infrastructure (`IChatComponent`) makes this easy.
-**Action:** Always check for `IChatComponent` support in chat command handlers to provide clickable suggestions or run commands directly.
-
-## 2026-02-19 - Clickable Status Indicators
-**Learning:** For boolean states displayed in chat (like "Enabled"/"Disabled"), use direct RUN_COMMAND actions instead of SUGGEST_COMMAND to provide immediate control.
-**Action:** When displaying configuration state in chat, wrap the status text in a ClickEvent that toggles the setting.
-
-## 2026-03-12 - Interactive Catch Blocks
-**Learning:** Exception handling and error blocks (like network failures or unselected targets) often produce static text that strands the user. By converting 'Unexpected error' or 'Not looking at a player' messages into interactive suggestions (e.g., checking status, using a manual command), we provide an immediate path forward.
-**Action:** When writing catch blocks or failure states in command handlers, don't just log and send static text. Always use `CommandUtils.buildInteractiveFeedback` to suggest the next logical step (like `/levelhead status` or `/levelhead whois`).
-
-## 2025-03-20 - Interactive Status Commands
-**Learning:** Purely informational commands (like `/levelhead status`) present excellent micro-UX opportunities when key data points are naturally linked to configuration commands, but they are often neglected because they "just show text".
-**Action:** When creating status readout commands, identify configuration metrics (e.g. cache TTL, proxy state, cache size) and format them as interactive components (with `ChatComponentText` and `ClickEvent`) that suggest the related modification command (e.g. `/levelhead cachettl <value>`).
-
-## 2026-03-20 - Interactive Prompting for Re-execution
-**Learning:** When users encounter a prompt that tells them to "run X command to proceed" (such as a pending confirmation state), hardcoding the command as static text creates friction because they have to retype it manually.
-**Action:** Make any command explicitly suggested within an error or warning message instantly clickable using `ClickEvent.Action.RUN_COMMAND` to provide a seamless follow-up action.
-
-## 2026-03-24 - Interactive Clipboard Error Suggestions
-**Learning:** When users fail to import a profile due to invalid clipboard data, a static error message forces them to manually type a command to get valid data. Making the suggested command interactive provides an immediate path forward.
-**Action:** When handling clipboard validation failures, always use `CommandUtils.buildInteractiveFeedback` to suggest the logical next action (like exporting a valid profile).
-## 2025-03-24 - Interactive Chat Help
-**Learning:** Help text components in Minecraft chat that provide visual information (like hover tooltips) often lack corresponding interactive actions, forcing users to type out commands manually.
-**Action:** Always pair `HoverEvent` tooltips explaining options with `ClickEvent.Action.SUGGEST_COMMAND` to pre-fill the relevant command in the user's chat input for a seamless UX.
-
-## 2026-03-25 - Added [Lookup] link to cache purge success message
-**Learning:** In text-based interfaces like Minecraft chat, when users perform administrative actions (like clearing a cache), they almost always follow up by manually fetching the new data to verify the action.
-**Action:** Always provide interactive `[Action]` buttons in success messages that predict the user's next logical step. In this case, appending `[Lookup]` next to `[Check Status]` saves the user from having to type `/levelhead whois <player>` immediately after running `/levelhead admin purgecache <player>`.
-
-## 2026-03-28 - One-Click Toggle for Boolean States
-**Learning:** For boolean states displayed in chat (like "show self on"/"off"), suggesting the current state requires the user to manually edit the command. Using `RUN_COMMAND` with the *opposite* state provides a one-click toggle, significantly reducing friction.
-**Action:** When displaying a boolean setting, always wrap the status text in a `ClickEvent.Action.RUN_COMMAND` configured to execute the *opposite* state.
+**Learning:** In Minecraft chat interfaces, long URLs (like GitHub issues) in error messages are extremely painful for users to copy/paste manually. Additionally, timeout-based confirmation prompts (`requireConfirmation`) trap the user in a pending state, preventing them from running other conflicting commands until the timeout expires.
+**Action:** Always wrap plain-text URLs using `ClickEvent.Action.OPEN_URL` so users can click them directly. For confirmation flows, always provide an explicit, clickable `[Cancel]` button alongside `[Confirm]` that immediately clears the pending state.

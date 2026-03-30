@@ -48,13 +48,21 @@ class LevelheadCommand {
 
     @SubCommand
     fun confirm() {
-        val action = pendingAction
+        val action = takePendingActionIfFresh()
         if (action == null) {
             sendMessage("${ChatColor.RED}No pending action to confirm.")
             return
         }
-        pendingAction = null
         action()
+    }
+
+    @SubCommand
+    fun cancel() {
+        if (takePendingActionIfFresh() == null) {
+            sendMessage("${ChatColor.RED}No pending action to cancel.")
+            return
+        }
+        sendMessage("${ChatColor.YELLOW}Action cancelled.")
     }
 
 
@@ -526,9 +534,9 @@ class LevelheadCommand {
                     messagePrefix = "${ChatColor.RED}Unexpected error while fetching stats. Try ",
                     command = "/levelhead status",
                     run = true,
-                    suffix = "${ChatColor.RED} to check your connection or check logs for details. If this issue persists, please make an issue on GitHub: https://github.com/beenycool/bedwars-level-head/"
+                    suffix = "${ChatColor.RED} to check your connection or check logs for details. If this issue persists, please make an issue on GitHub: "
                 )
-                sendMessage(errorMsg)
+                errorMsg.appendSibling(CommandUtils.createClickableUrl("https://github.com/beenycool/bedwars-level-head/", "${ChatColor.AQUA}GitHub."))
             }
         }
     }
@@ -683,7 +691,12 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
             "export" -> {
                 val exported = ConfigProfiles.exportProfile()
                 GuiScreen.setClipboardString(exported)
-                sendMessage("${ChatColor.GREEN}Exported current configuration to clipboard. Share it with others!")
+                val msg = ChatComponentText("${ChatColor.GREEN}Exported current configuration to clipboard. Share it with others!")
+                    .appendSibling(ChatComponentText(" ${ChatColor.GRAY}[Click to import]").apply {
+                        chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead profile import")
+                        chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to import from clipboard"))
+                    })
+                sendMessage(msg)
             }
             "import" -> {
                 val clipboard = GuiScreen.getClipboardString()
@@ -894,8 +907,9 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                         messagePrefix = "${ChatColor.RED}Unexpected error while purging cache. Try ",
                         command = "/levelhead status",
                         run = true,
-                        suffix = "${ChatColor.RED} to check your connection or check logs for details. If this issue persists, please make an issue on GitHub: https://github.com/beenycool/bedwars-level-head/"
+                        suffix = "${ChatColor.RED} to check your connection or check logs for details. If this issue persists, please make an issue on GitHub: "
                     )
+                errorMsg.appendSibling(CommandUtils.createClickableUrl("https://github.com/beenycool/bedwars-level-head/", "${ChatColor.AQUA}GitHub."))
                     sendMessage(errorMsg)
                 }
             }
@@ -1278,14 +1292,28 @@ private var pendingAction: (() -> Unit)? = null
 private var pendingActionTimestamp: Long = 0L
 private const val CONFIRMATION_TIMEOUT_MS = 30_000L // 30 seconds
 
+private fun takePendingActionIfFresh(): (() -> Unit)? {
+    val action = pendingAction ?: return null
+    val fresh = System.currentTimeMillis() - pendingActionTimestamp < CONFIRMATION_TIMEOUT_MS
+    pendingAction = null
+    pendingActionTimestamp = 0L
+    return if (fresh) action else null
+}
+
 private fun requireConfirmation(warningMessage: String, action: () -> Unit) {
     if (pendingAction != null && System.currentTimeMillis() - pendingActionTimestamp < CONFIRMATION_TIMEOUT_MS) {
         val errorMsg = CommandUtils.buildInteractiveFeedback(
             messagePrefix = "${ChatColor.RED}An action is already pending. Please ",
             command = "/levelhead confirm",
             run = true,
-            suffix = "${ChatColor.RED} or wait for it to expire."
+            suffix = "${ChatColor.RED} or "
         )
+        errorMsg.appendSibling(CommandUtils.buildInteractiveFeedback(
+            messagePrefix = "",
+            command = "/levelhead cancel",
+            run = true,
+            suffix = "${ChatColor.RED} it."
+        ))
         CommandUtils.sendPrefixedChat(errorMsg)
         return
     }
@@ -1294,6 +1322,11 @@ private fun requireConfirmation(warningMessage: String, action: () -> Unit) {
         .appendSibling(ChatComponentText("${ChatColor.GREEN}[Confirm]").apply {
             chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead confirm")
             chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to confirm"))
+        })
+        .appendSibling(ChatComponentText(" "))
+        .appendSibling(ChatComponentText("${ChatColor.RED}[Cancel]").apply {
+            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead cancel")
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.RED}Click to cancel"))
         })
     CommandUtils.sendPrefixedChat(msg)
 
