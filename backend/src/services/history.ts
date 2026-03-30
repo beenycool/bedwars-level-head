@@ -405,7 +405,7 @@ function mapRowToSummary(row: PlayerQueryHistoryRow): PlayerQuerySummary {
   };
 }
 
-function buildDateRangeClause<QB extends SelectQueryBuilder<Database, 'player_query_history', any>>(
+function buildDateRangeClause<O, QB extends SelectQueryBuilder<Database, 'player_query_history', O>>(
   query: QB,
   startDate: Date | undefined,
   endDate: Date | undefined,
@@ -513,7 +513,7 @@ export async function getTopPlayersByQueryCount(params: {
   }));
 }
 
-export function buildSearchClause<QB extends SelectQueryBuilder<Database, 'player_query_history', any>>(query: QB, searchTerm: string | undefined): QB {
+export function buildSearchClause<O, QB extends SelectQueryBuilder<Database, 'player_query_history', O>>(query: QB, searchTerm: string | undefined): QB {
   if (!searchTerm) {
     return query;
   }
