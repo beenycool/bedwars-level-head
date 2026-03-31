@@ -372,8 +372,9 @@ export async function listApiKeys(): Promise<ApiKeyValidation[]> {
 
     if (foundKeys.length > 0) {
       const values = await redis.mget(...foundKeys);
-      values.forEach((data, index) => {
-        if (!data) return;
+      for (let index = 0; index < values.length; index++) {
+        const data = values[index];
+        if (!data) continue;
         try {
           const stored = JSON.parse(data) as StoredApiKeyData;
           const redisKey = foundKeys[index];
@@ -389,7 +390,7 @@ export async function listApiKeys(): Promise<ApiKeyValidation[]> {
         } catch {
           // Skip invalid entries
         }
-      });
+      }
     }
   } while (cursor !== '0');
 

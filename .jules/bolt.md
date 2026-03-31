@@ -74,5 +74,14 @@
 
 ## 2025-01-26 - Optimize toCSV to use direct string concatenation
 
-**Learning:** For generating large strings like CSV or text reports, `Array.map().join('\n')` or pushing to a pre-allocated array followed by `.join('\n')` creates O(N) intermediate array allocations, increasing GC pressure.
-**Action:** Replace intermediate array allocations and `.join('\n')` with direct string concatenation (`+=`) in hot paths where large strings are built iteratively.
+**Learning:** For generating large strings like CSV or text reports, `Array.map().join('
+')` or pushing to a pre-allocated array followed by `.join('
+')` creates O(N) intermediate array allocations, increasing GC pressure.
+**Action:** Replace intermediate array allocations and `.join('
+')` with direct string concatenation (`+=`) in hot paths where large strings are built iteratively.
+
+## 2025-10-27 - Array mapping and creation overheads in Express routes
+
+**Learning:** When using `.map()` on arrays that are fetched from cache, databases, or inside loop structures for endpoints handling dynamic requests, Node.js has to allocate new intermediate array references for mapping over elements, generating O(N) short-lived objects. Combined with `.forEach()` or similar functional array aggregators, this introduces latency and overhead.
+**Action:** Replace `.map()` allocations inside frequently hit components, specifically those like the express api batch routes, cron routes, and api stat endpoints, and `.forEach()` with pre-allocated arrays `new Array(size)` and simple `for` loops respectively to minimize transient object generation and GC delays.
+
