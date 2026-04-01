@@ -693,8 +693,8 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 GuiScreen.setClipboardString(exported)
                 val msg = ChatComponentText("${ChatColor.GREEN}Exported current configuration to clipboard. Share it with others!")
                     .appendSibling(ChatComponentText(" ${ChatColor.GRAY}[Click to import]").apply {
-                        chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/levelhead profile import")
-                        chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to paste import command (press Enter to run)"))
+                        chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead profile import")
+                        chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to import from clipboard (confirm required)"))
                     })
                 sendMessage(msg)
             }
@@ -718,7 +718,9 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                     sendMessage(msg)
                     return
                 }
-                requireConfirmation("Importing will replace your current Levelhead configuration with the profile from the clipboard.") {
+                requireConfirmation(
+                    "Importing will replace your current Levelhead configuration with profile ${profile.name}."
+                ) {
                     ConfigProfiles.applyProfile(profile)
                     sendSuccessWithDisplayLink("${ChatColor.GREEN}Imported and applied profile ${ChatColor.GOLD}${profile.name}${ChatColor.GREEN}!")
                 }
@@ -746,7 +748,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         sendLine("/levelhead profile list", "Show available presets", true)
         sendLine("/levelhead profile apply <name>", "Apply a preset", false)
         sendLine("/levelhead profile export", "Export config to clipboard", true)
-        sendLine("/levelhead profile import", "Import config from clipboard", false)
+        sendLine("/levelhead profile import", "Import config from clipboard", true)
     }
 
     private fun handleDisplayHeader(args: List<String>) {

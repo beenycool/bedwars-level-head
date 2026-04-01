@@ -1,9 +1,13 @@
-# 2024-05-24 - Interactive Chat Error Links & Action Cancellation
+# Palette Learnings
+
+## 2024-05-24 - Interactive Chat Error Links & Action Cancellation
 
 **Learning:** In Minecraft chat interfaces, long URLs (like GitHub issues) in error messages are extremely painful for users to copy/paste manually. Additionally, timeout-based confirmation prompts (`requireConfirmation`) trap the user in a pending state, preventing them from running other conflicting commands until the timeout expires.
+
 **Action:** Always wrap plain-text URLs using `ClickEvent.Action.OPEN_URL` so users can click them directly. For confirmation flows, always provide an explicit, clickable `[Cancel]` button alongside `[Confirm]` that immediately clears the pending state.
 
-## 2024-05-24 - Safe Clipboard Actions
+## 2024-05-24 - Profile Import Confirmation
 
-**Learning:** When generating interactive chat components that involve clipboard actions (like importing configurations), using `RUN_COMMAND` can accidentally trigger destructive actions if the clipboard contains unexpected data—for example, a clickable `[Click to import]` after export can overwrite config on one mis-click. Users need a chance to verify before execution.
-**Action:** For potentially destructive actions (like importing configurations), prefer using the `requireConfirmation` utility within the command logic. For interactive chat components that trigger these actions, use `SUGGEST_COMMAND` instead of `RUN_COMMAND` to suggest the import command in the chat bar so the user can review before sending it.
+**Learning:** Importing a profile via clipboard overwrites the user's current configuration. A `[Click to import]` control after export must not apply data on a single accidental activation, including when the user runs `/levelhead profile import` manually.
+
+**Action:** Validate clipboard JSON, then wrap the apply step in `requireConfirmation` (same pattern as other destructive commands). With confirmation in the command, chat may use `ClickEvent.Action.RUN_COMMAND` to start the flow; `SUGGEST_COMMAND` alone does not protect users who type or bind the command directly.
