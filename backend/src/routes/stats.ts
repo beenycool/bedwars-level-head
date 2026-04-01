@@ -324,49 +324,52 @@ router.get('/', async (req, res, next) => {
 
     const quotaPct = Math.max(0, Math.min(100, (sysStats.apiCallsLastHour / (120 * 60)) * 100));
 
-    let rows = pageData.rows
-      .map((entry) => {
-        const lookupIdentifier =
-          entry.lookupType === 'uuid' && entry.resolvedUsername
-            ? entry.resolvedUsername
-            : entry.identifier;
-        const lookup = `${entry.lookupType.toUpperCase()}: ${lookupIdentifier}`;
-        const resolved = entry.nicked === true ? '(nicked)' : entry.resolvedUsername ?? entry.resolvedUuid ?? 'unknown';
-        const cacheSource = entry.cacheHit ? 'Cache' : entry.cacheSource === 'network' ? 'Network' : entry.cacheSource;
+    // 🧱 Mason: Replace .map().join('\\n') with a single for loop and direct string concatenation
+    // to eliminate allocating intermediate arrays for both the mapped results and the join operation,
+    // significantly reducing GC pressure.
+    let rows = '';
+    for (let i = 0; i < pageData.rows.length; i++) {
+      const entry = pageData.rows[i];
+      const lookupIdentifier =
+        entry.lookupType === 'uuid' && entry.resolvedUsername
+          ? entry.resolvedUsername
+          : entry.identifier;
+      const lookup = `${entry.lookupType.toUpperCase()}: ${lookupIdentifier}`;
+      const resolved = entry.nicked === true ? '(nicked)' : entry.resolvedUsername ?? entry.resolvedUuid ?? 'unknown';
+      const cacheSource = entry.cacheHit ? 'Cache' : entry.cacheSource === 'network' ? 'Network' : entry.cacheSource;
 
-        // URL encode the identifier to prevent XSS in href
-        const encodedIdentifier = encodeURIComponent(entry.identifier);
-        const lookupLink = entry.lookupType === 'uuid'
-          ? `https://namemc.com/profile/${encodedIdentifier}`
-          : `https://namemc.com/search?q=${encodedIdentifier}`;
+      // URL encode the identifier to prevent XSS in href
+      const encodedIdentifier = encodeURIComponent(entry.identifier);
+      const lookupLink = entry.lookupType === 'uuid'
+        ? `https://namemc.com/profile/${encodedIdentifier}`
+        : `https://namemc.com/search?q=${encodedIdentifier}`;
 
-        const statusClass = `status-${Math.floor(entry.responseStatus / 100)}xx`;
+      const statusClass = `status-${Math.floor(entry.responseStatus / 100)}xx`;
 
-        return `<tr>
-          <td title="${escapeHtml(formatDate(entry.requestedAt))}">${escapeHtml(timeAgo(entry.requestedAt))}</td>
-          <td>
-            <div class="lookup-cell">
-              <a href="${lookupLink}" target="_blank" rel="noopener noreferrer" class="lookup-link">${escapeHtml(lookup)}</a>
-              <button class="copy-btn" aria-label="Copy identifier" title="Copy identifier" data-copy="${escapeHtml(lookupIdentifier)}">
-                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
-              </button>
-            </div>
-          </td>
-          <td>${escapeHtml(resolved)}</td>
-          <td class="stars">${escapeHtml(formatStars(entry.stars))}</td>
-          <td>${escapeHtml(cacheSource)}${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
-          <td><span class="status-badge ${statusClass}">${escapeHtml(String(entry.responseStatus))}</span></td>
-          <td class="latency">${escapeHtml(formatLatency(entry.latencyMs))}</td>
-        </tr>`;
-      })
-      .join('\n');
+      rows += `<tr>
+        <td title="${escapeHtml(formatDate(entry.requestedAt))}">${escapeHtml(timeAgo(entry.requestedAt))}</td>
+        <td>
+          <div class="lookup-cell">
+            <a href="${lookupLink}" target="_blank" rel="noopener noreferrer" class="lookup-link">${escapeHtml(lookup)}</a>
+            <button class="copy-btn" aria-label="Copy identifier" title="Copy identifier" data-copy="${escapeHtml(lookupIdentifier)}">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+            </button>
+          </div>
+        </td>
+        <td>${escapeHtml(resolved)}</td>
+        <td class="stars">${escapeHtml(formatStars(entry.stars))}</td>
+        <td>${escapeHtml(cacheSource)}${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
+        <td><span class="status-badge ${statusClass}">${escapeHtml(String(entry.responseStatus))}</span></td>
+        <td class="latency">${escapeHtml(formatLatency(entry.latencyMs))}</td>
+      </tr>\n`;
+    }
 
     if (!rows) {
       if (search) {
         rows = getEmptyStateForSearch(search, clearUrl);
       } else {
         rows = getEmptyStateForNoLookups();
-    }
+      }
     }
 
 
@@ -2991,7 +2994,9 @@ router.get('/', async (req, res, next) => {
         if (pageData && pageData.rows) {
           const tbody = document.querySelector('table tbody');
           if (tbody) {
-            const rowsHtml = pageData.rows.map((entry) => {
+            let rowsHtml = '';
+            for (let i = 0; i < pageData.rows.length; i++) {
+              const entry = pageData.rows[i];
               const lookupIdentifier =
                 entry.lookupType === 'uuid' && entry.resolvedUsername
                   ? entry.resolvedUsername
@@ -3007,7 +3012,7 @@ router.get('/', async (req, res, next) => {
               
               const statusClass = \`status-\${Math.floor(entry.responseStatus / 100)}xx\`;
 
-              return \`<tr>
+              rowsHtml += \`<tr>
                 <td title="\${escapeHtmlClient(formatDateClient(entry.requestedAt))}">\${escapeHtmlClient(timeAgoClient(entry.requestedAt))}</td>
                 <td>
                   <div class="lookup-cell">
@@ -3022,8 +3027,8 @@ router.get('/', async (req, res, next) => {
                 <td>\${escapeHtmlClient(cacheSource)}\${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
                 <td><span class="status-badge \${statusClass}">\${escapeHtmlClient(String(entry.responseStatus))}</span></td>
                 <td class="latency">\${escapeHtmlClient(formatLatencyClient(entry.latencyMs))}</td>
-              </tr>\`;
-            }).join('\\n');
+              </tr>\\n\`;
+            }
             
             if (rowsHtml) {
               tbody.innerHTML = rowsHtml;

@@ -9,6 +9,11 @@
 **Learning:** Hardcoding the return shape to `any` within Kysely query extension helpers breaks strict type inference when the helper is applied to an upstream query. If the parent query has applied `.select()` mappings, casting it through a helper with `any` causes TypeScript to lose the projection types downstream.
 **Prevention:** When writing shared query builder helpers, declare a generic type parameter for the output shape (e.g., `<O, QB extends SelectQueryBuilder<Database, 'table_name', O>>`) to perfectly preserve the existing row projection through the middleware chain without falling back to `any`.
 
+## 2025-06-25 - Eliminate .map().join() Intermediate Array Allocations
+**Tech Debt:** Generating HTML tables and strings via chained array operations (`.map(fn).join('\n')`) in `stats.ts` (both server-side SSR and client-side JS logic).
+**Learning:** For arrays with thousands of lookups, `.map().join()` allocates an entire intermediate array of mapped strings before joining them into a final output string. This introduces severe O(N) memory overhead and stresses the Garbage Collector on hot reporting and rendering routes.
+**Prevention:** Optimize string generation loops by replacing `.map().join()` with standard `for` loops and direct string concatenation (`+=`), which completely bypasses the intermediate array allocation.
+
 ## 2026-04-03 - Refactor Node.js Array .forEach to for-loop
 
 **Tech Debt:** Found multiple instances of `.forEach` used for iterating over arrays (e.g. `results.forEach` in `player.ts` and `playerPublic.ts`).
