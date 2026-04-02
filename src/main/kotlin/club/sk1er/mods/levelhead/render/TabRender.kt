@@ -155,15 +155,14 @@ object TabRender {
         if (cached != null && cached.first == stats) {
             return cached.second
         }
-        val newText = formatTabString(stats, mode)
+        val newText = formatTabString(stats)
         textCache[key] = stats to newText
         return newText
     }
 
-    private fun formatTabString(stats: GameStats, mode: GameMode): String {
-        return when (mode) {
-            GameMode.BEDWARS -> {
-                stats as GameStats.Bedwars
+    private fun formatTabString(stats: GameStats): String {
+        return when (stats) {
+            is GameStats.Bedwars -> {
                 val starTag = stats.star?.let { BedwarsStar.formatStarTag(it) }
                 val fkdrPart = if (stats.fkdr != null) {
                     val color = ratioColor(stats.fkdr)
@@ -173,16 +172,14 @@ object TabRender {
                 }
                 if (starTag != null) "$starTag §7: $fkdrPart" else fkdrPart
             }
-            GameMode.DUELS -> {
-                stats as GameStats.Duels
+            is GameStats.Duels -> {
                 val wins = stats.wins ?: return ""
                 val divisionTag = DuelsStats.formatDivisionTag(wins)
                 val wlr = DuelsStats.calculateWLR(wins, stats.losses) ?: wins.toDouble()
                 val wlrColor = ratioColor(wlr)
                 "$divisionTag §7: ${wlrColor}${String.format(Locale.ROOT, "%.2f", wlr)}"
             }
-            GameMode.SKYWARS -> {
-                stats as GameStats.SkyWars
+            is GameStats.SkyWars -> {
                 if (stats.level == null) return ""
                 val levelTag = SkyWarsStats.formatLevelTag(stats.levelInt)
                 val kdr = SkyWarsStats.calculateKDR(stats.kills, stats.deaths) ?: (stats.kills ?: 0).toDouble()
