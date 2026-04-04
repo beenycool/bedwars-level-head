@@ -2022,13 +2022,13 @@ router.get('/', async (req, res, next) => {
 
       // 5. Lookup Type Distribution
       const lookupTypeCounts = { UUID: 0, IGN: 0 };
-      data.forEach((d) => {
-        if (d.lookupType === 'uuid') {
+      for (let i = 0; i < data.length; i++) {
+        if (data[i].lookupType === 'uuid') {
           lookupTypeCounts.UUID++;
         } else {
           lookupTypeCounts.IGN++;
         }
-      });
+      }
       const lookupTypeChartConfig = {
         type: 'doughnut',
         data: {
@@ -2117,7 +2117,8 @@ router.get('/', async (req, res, next) => {
         const cacheBuckets = new Map();
         const sortedData = [...dataSet].sort((a, b) => new Date(a.requestedAt).getTime() - new Date(b.requestedAt).getTime());
 
-        sortedData.forEach((d) => {
+        for (let i = 0; i < sortedData.length; i++) {
+          const d = sortedData[i];
           const timestamp = new Date(d.requestedAt).getTime();
           const bucketKey = Math.floor(timestamp / bucketInterval) * bucketInterval;
           if (!timeBuckets.has(bucketKey)) {
@@ -2131,18 +2132,27 @@ router.get('/', async (req, res, next) => {
           const bucket = cacheBuckets.get(bucketKey);
           bucket.total++;
           if (d.cacheHit) bucket.hits++;
-        });
+        }
 
         const timeBucketKeys = Array.from(timeBuckets.keys()).sort((a, b) => a - b);
         const cacheBucketKeys = Array.from(cacheBuckets.keys()).sort((a, b) => a - b);
 
-        const requestsOverTimeLabels = timeBucketKeys.map((key) => formatTimeBucketLabel(key, bucketInterval));
-        const requestsOverTimeData = timeBucketKeys.map((key) => timeBuckets.get(key));
-        const cacheOverTimeLabels = cacheBucketKeys.map((key) => formatTimeBucketLabel(key, bucketInterval));
-        const cacheOverTimeData = cacheBucketKeys.map((key) => {
+        const requestsOverTimeLabels = new Array(timeBucketKeys.length);
+        const requestsOverTimeData = new Array(timeBucketKeys.length);
+        for (let i = 0; i < timeBucketKeys.length; i++) {
+          const key = timeBucketKeys[i];
+          requestsOverTimeLabels[i] = formatTimeBucketLabel(key, bucketInterval);
+          requestsOverTimeData[i] = timeBuckets.get(key);
+        }
+
+        const cacheOverTimeLabels = new Array(cacheBucketKeys.length);
+        const cacheOverTimeData = new Array(cacheBucketKeys.length);
+        for (let i = 0; i < cacheBucketKeys.length; i++) {
+          const key = cacheBucketKeys[i];
+          cacheOverTimeLabels[i] = formatTimeBucketLabel(key, bucketInterval);
           const bucket = cacheBuckets.get(key);
-          return bucket.total > 0 ? (bucket.hits / bucket.total) * 100 : 0;
-        });
+          cacheOverTimeData[i] = bucket && bucket.total > 0 ? (bucket.hits / bucket.total) * 100 : 0;
+        }
 
         return {
           requestsOverTimeLabels,
@@ -2828,7 +2838,8 @@ router.get('/', async (req, res, next) => {
         
         // 2. Star Chart
         const newStarRanges = { Unknown: 0, '0-10': 0, '11-50': 0, '51-100': 0, '100+': 0 };
-        chartData.forEach((d) => {
+        for (let i = 0; i < chartData.length; i++) {
+          const d = chartData[i];
           if (d.stars === null || d.stars === undefined || d.stars < 0) {
             newStarRanges.Unknown++;
           } else {
@@ -2838,7 +2849,7 @@ router.get('/', async (req, res, next) => {
             else if (s <= 100) newStarRanges['51-100']++;
             else newStarRanges['100+']++;
           }
-        });
+        }
         const starChart = charts.find(c => c.canvas && c.canvas.id === 'starChart');
         if (starChart) {
           starChart.data.datasets[0].data = Object.values(newStarRanges);
@@ -2867,13 +2878,14 @@ router.get('/', async (req, res, next) => {
         
         // 4. Status Chart
         const newStatusBuckets = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, Other: 0 };
-        chartData.forEach((d) => {
+        for (let i = 0; i < chartData.length; i++) {
+          const d = chartData[i];
           if (d.responseStatus >= 200 && d.responseStatus < 300) newStatusBuckets['2xx']++;
           else if (d.responseStatus >= 300 && d.responseStatus < 400) newStatusBuckets['3xx']++;
           else if (d.responseStatus >= 400 && d.responseStatus < 500) newStatusBuckets['4xx']++;
           else if (d.responseStatus >= 500 && d.responseStatus < 600) newStatusBuckets['5xx']++;
           else newStatusBuckets.Other++;
-        });
+        }
         const statusChart = charts.find(c => c.canvas && c.canvas.id === 'statusChart');
         if (statusChart) {
           statusChart.data.datasets[0].data = Object.values(newStatusBuckets);
@@ -2885,13 +2897,13 @@ router.get('/', async (req, res, next) => {
         
         // 5. Lookup Type Chart
         const newLookupTypeCounts = { UUID: 0, IGN: 0 };
-        chartData.forEach((d) => {
-          if (d.lookupType === 'uuid') {
+        for (let i = 0; i < chartData.length; i++) {
+          if (chartData[i].lookupType === 'uuid') {
             newLookupTypeCounts.UUID++;
           } else {
             newLookupTypeCounts.IGN++;
           }
-        });
+        }
         const lookupTypeChart = charts.find(c => c.canvas && c.canvas.id === 'lookupTypeChart');
         if (lookupTypeChart) {
           lookupTypeChart.data.datasets[0].data = [newLookupTypeCounts.UUID, newLookupTypeCounts.IGN];

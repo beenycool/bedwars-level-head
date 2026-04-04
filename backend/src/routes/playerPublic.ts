@@ -190,8 +190,9 @@ router.post('/batch', enforcePublicBatchRateLimit, async (req, res, next) => {
     let cacheHits = 0;
     let total = 0;
 
-    // Use a for...of loop to avoid closure allocations in this hot path
-    for (const result of results) {
+    // Indexed for loop avoids iterator/closure overhead in this hot batch path
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
       if (result) {
         payloadMap[result.identifier] = result.payload;
         total++;
