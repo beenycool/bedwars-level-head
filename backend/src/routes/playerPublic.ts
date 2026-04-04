@@ -190,7 +190,7 @@ router.post('/batch', enforcePublicBatchRateLimit, async (req, res, next) => {
     let cacheHits = 0;
     let total = 0;
 
-    // 🧱 Mason: Replace .forEach() with for...of to avoid .forEach callback/iterator overhead in hot paths
+    // Use a for...of loop to avoid closure allocations in this hot path
     for (const result of results) {
       if (result) {
         payloadMap[result.identifier] = result.payload;
