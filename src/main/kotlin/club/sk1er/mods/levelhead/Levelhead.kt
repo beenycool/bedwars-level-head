@@ -254,14 +254,15 @@ object Levelhead {
 
     @SubscribeEvent
     fun playerJoin(event: EntityJoinWorldEvent) {
-        if (event.entity is EntityPlayerSP) {
+        val entity = event.entity
+        if (entity is EntityPlayerSP) {
             resetWorldScope()
             rateLimiter.resetState()
             clearCachedStats()
             ModeManager.onWorldJoin()
             displayManager.joinWorld(resetDetector = true)
-        } else if (event.entity is EntityPlayer) {
-            displayManager.playerJoin(event.entity as EntityPlayer)
+        } else if (entity is EntityPlayer) {
+            displayManager.playerJoin(entity)
         }
     }
 
