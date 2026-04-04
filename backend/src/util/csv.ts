@@ -30,7 +30,14 @@ export function toCSV(data: Record<string, unknown>[]): string {
   // ⚡ Bolt: Replaced .map().join('\n') and intermediate array allocations with direct string concatenation (+=) and a single loop to reduce GC pressure when generating large CSVs
   const numRows = data.length;
   const numCols = headers.length;
-  let result = headers.map(escapeCell).join(',');
+  let result = '';
+  if (numCols > 0) {
+    result = escapeCell(headers[0]);
+    for (let c = 1; c < numCols; c++) {
+      result += ',';
+      result += escapeCell(headers[c]);
+    }
+  }
 
   for (let r = 0; r < numRows; r++) {
     const row = data[r];
@@ -40,9 +47,11 @@ export function toCSV(data: Record<string, unknown>[]): string {
     }
     let rowStr = escapeCell(row[headers[0]]);
     for (let c = 1; c < numCols; c++) {
-      rowStr += ',' + escapeCell(row[headers[c]]);
+      rowStr += ',';
+      rowStr += escapeCell(row[headers[c]]);
     }
-    result += '\n' + rowStr;
+    result += '\n';
+    result += rowStr;
   }
 
   return result;

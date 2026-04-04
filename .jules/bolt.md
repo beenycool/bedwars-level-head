@@ -71,6 +71,8 @@
 ## 2024-05-16 - Array Iteration Hot Path Optimization
 **Learning:** In the Express batch route implementations (`backend/src/routes/player.ts` and `backend/src/routes/playerPublic.ts`), building the payload object using `results.forEach((result) => {...})` creates significant memory GC pressure when looping over dozens of concurrent payload maps. Calling `.forEach` requires instantiating an intermediate function closure on every loop array, generating hidden O(N) allocations for high-throughput loops.
 **Action:** In Node.js backend projects, optimize high-throughput array processing by replacing `.forEach` calls with a simple `for` loop to eliminate intermediate memory allocations and reduce GC pressure.
+
 ## 2025-01-26 - Optimize toCSV to use direct string concatenation
+
 **Learning:** For generating large strings like CSV or text reports, `Array.map().join('\n')` or pushing to a pre-allocated array followed by `.join('\n')` creates O(N) intermediate array allocations, increasing GC pressure.
 **Action:** Replace intermediate array allocations and `.join('\n')` with direct string concatenation (`+=`) in hot paths where large strings are built iteratively.
