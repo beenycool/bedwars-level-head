@@ -51,8 +51,7 @@ object AboveHeadRender {
         if (getMinecraft().gameSettings.hideGUI) return
         if (!ModeManager.shouldRenderTags()) return
 
-        if (event.entity !is EntityPlayer) return
-        val player = event.entity as EntityPlayer
+        val player = event.entity as? EntityPlayer ?: return
 
         val localPlayer = UMinecraft.getPlayer()
         val displayPosition = displayManager.config.displayPosition
