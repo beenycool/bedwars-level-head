@@ -694,7 +694,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 val msg = ChatComponentText("${ChatColor.GREEN}Exported current configuration to clipboard. Share it with others!")
                     .appendSibling(ChatComponentText(" ${ChatColor.GRAY}[Click to import]").apply {
                         chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/levelhead profile import")
-                        chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to fill import command"))
+                        chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to paste import command (press Enter to run)"))
                     })
                 sendMessage(msg)
             }
@@ -718,8 +718,10 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                     sendMessage(msg)
                     return
                 }
-                ConfigProfiles.applyProfile(profile)
-                sendSuccessWithDisplayLink("${ChatColor.GREEN}Imported and applied profile ${ChatColor.GOLD}${profile.name}${ChatColor.GREEN}!")
+                requireConfirmation("Importing will replace your current Levelhead configuration with the profile from the clipboard.") {
+                    ConfigProfiles.applyProfile(profile)
+                    sendSuccessWithDisplayLink("${ChatColor.GREEN}Imported and applied profile ${ChatColor.GOLD}${profile.name}${ChatColor.GREEN}!")
+                }
             }
             else -> {
                 sendMessage("${ChatColor.RED}Unknown profile action '${parsedArgs[0]}'.")
