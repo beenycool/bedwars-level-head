@@ -190,7 +190,8 @@ router.post('/batch', enforcePublicBatchRateLimit, async (req, res, next) => {
     let cacheHits = 0;
     let total = 0;
 
-    results.forEach((result) => {
+    // 🧱 Mason: Replace .forEach() with for...of to avoid .forEach callback/iterator overhead in hot paths
+    for (const result of results) {
       if (result) {
         payloadMap[result.identifier] = result.payload;
         total++;
@@ -198,7 +199,7 @@ router.post('/batch', enforcePublicBatchRateLimit, async (req, res, next) => {
           cacheHits++;
         }
       }
-    });
+    }
 
     if (total > 0) {
       res.set('X-Cache', cacheHits === total ? 'HIT' : cacheHits > 0 ? 'PARTIAL' : 'MISS');
