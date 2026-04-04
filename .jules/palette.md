@@ -5,5 +5,5 @@
 
 ## 2024-05-24 - Safe Clipboard Actions
 
-**Learning:** When generating interactive chat components that involve clipboard actions (like importing configurations), using `RUN_COMMAND` can accidentally trigger destructive actions if the clipboard contains unexpected data. Users need a chance to verify before execution.
-**Action:** For potentially destructive actions (like importing configurations), prefer using the `requireConfirmation` utility within the command logic. For interactive chat components that trigger these actions, use `SUGGEST_COMMAND` instead of `RUN_COMMAND` to prevent accidental execution on click.
+**Learning:** When generating interactive chat components that involve clipboard actions (like importing configurations), using `RUN_COMMAND` can accidentally trigger destructive actions if the clipboard contains unexpected data—for example, a clickable `[Click to import]` after export can overwrite config on one mis-click. Users need a chance to verify before execution.
+**Action:** For potentially destructive actions (like importing configurations), prefer using the `requireConfirmation` utility within the command logic. For interactive chat components that trigger these actions, use `SUGGEST_COMMAND` instead of `RUN_COMMAND` to suggest the import command in the chat bar so the user can review before sending it.

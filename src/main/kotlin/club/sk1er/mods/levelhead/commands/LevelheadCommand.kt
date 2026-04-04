@@ -746,7 +746,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         sendLine("/levelhead profile list", "Show available presets", true)
         sendLine("/levelhead profile apply <name>", "Apply a preset", false)
         sendLine("/levelhead profile export", "Export config to clipboard", true)
-        sendLine("/levelhead profile import", "Import config from clipboard", true)
+        sendLine("/levelhead profile import", "Import config from clipboard", false)
     }
 
     private fun handleDisplayHeader(args: List<String>) {
