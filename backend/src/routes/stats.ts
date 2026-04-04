@@ -2146,12 +2146,11 @@ router.get('/', async (req, res, next) => {
         }
 
         const cacheOverTimeLabels = new Array(cacheBucketKeys.length);
-        for (let i = 0; i < cacheBucketKeys.length; i++) {
-          cacheOverTimeLabels[i] = formatTimeBucketLabel(cacheBucketKeys[i], bucketInterval);
-        }
         const cacheOverTimeData = new Array(cacheBucketKeys.length);
         for (let i = 0; i < cacheBucketKeys.length; i++) {
-          const bucket = cacheBuckets.get(cacheBucketKeys[i]);
+          const key = cacheBucketKeys[i];
+          cacheOverTimeLabels[i] = formatTimeBucketLabel(key, bucketInterval);
+          const bucket = cacheBuckets.get(key);
           cacheOverTimeData[i] = bucket && bucket.total > 0 ? (bucket.hits / bucket.total) * 100 : 0;
         }
 
