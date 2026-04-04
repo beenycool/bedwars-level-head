@@ -197,9 +197,8 @@ router.post('/batch', enforceApiKeyAuth, enforceBatchRateLimit, async (req, res,
     let cacheHits = 0;
     let total = 0;
 
-    // 🧱 Mason: Replace .forEach() with a standard for loop to avoid callback allocation overhead in hot paths
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
+    // 🧱 Mason: Replace .forEach() with for...of to avoid .forEach callback/iterator overhead in hot paths
+    for (const result of results) {
       if (result) {
         payloadMap[result.identifier] = result.payload;
         total++;
