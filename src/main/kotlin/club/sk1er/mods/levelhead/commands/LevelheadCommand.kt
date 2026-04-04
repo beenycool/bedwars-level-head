@@ -694,7 +694,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                 val msg = ChatComponentText("${ChatColor.GREEN}Exported current configuration to clipboard. Share it with others!")
                     .appendSibling(ChatComponentText(" ${ChatColor.GRAY}[Click to import]").apply {
                         chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/levelhead profile import")
-                        chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to paste import command"))
+                        chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to fill import command"))
                     })
                 sendMessage(msg)
             }
