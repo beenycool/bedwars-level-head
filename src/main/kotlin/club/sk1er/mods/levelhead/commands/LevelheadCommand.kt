@@ -650,12 +650,16 @@ class LevelheadCommand {
             "list" -> {
                 sendMessage("${ChatColor.GREEN}Available presets:")
                 ConfigProfiles.Preset.entries.forEach { preset ->
-val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
-    ChatComponentText("${ChatColor.GOLD}${preset.displayName}").apply {
-        chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead profile apply ${preset.name}")
-        chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to apply ${preset.displayName}"))
-    }
-).appendSibling(ChatComponentText("${ChatColor.YELLOW}: ${ChatColor.GRAY}${preset.description}"))
+                    val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
+                        ChatComponentText("${ChatColor.GOLD}${preset.displayName}").apply {
+                            chatStyle.chatClickEvent =
+                                ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/levelhead profile apply ${preset.name}")
+                            chatStyle.chatHoverEvent = HoverEvent(
+                                HoverEvent.Action.SHOW_TEXT,
+                                ChatComponentText("${ChatColor.GREEN}Click to fill apply command for ${preset.displayName}")
+                            )
+                        }
+                    ).appendSibling(ChatComponentText("${ChatColor.YELLOW}: ${ChatColor.GRAY}${preset.description}"))
                     sendMessage(line)
                 }
             }
@@ -684,17 +688,26 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                     sendMessage(msg)
                     return
                 }
-                val profile = ConfigProfiles.getPreset(preset)
-                ConfigProfiles.applyProfile(profile)
-                sendSuccessWithDisplayLink("${ChatColor.GREEN}Applied ${ChatColor.GOLD}${preset.displayName}${ChatColor.GREEN} profile!")
+                requireConfirmation(
+                    "Applying this preset will replace your current Levelhead configuration."
+                ) {
+                    val profile = ConfigProfiles.getPreset(preset)
+                    ConfigProfiles.applyProfile(profile)
+                    sendSuccessWithDisplayLink(
+                        "${ChatColor.GREEN}Applied ${ChatColor.GOLD}${preset.displayName}${ChatColor.GREEN} profile!"
+                    )
+                }
             }
             "export" -> {
                 val exported = ConfigProfiles.exportProfile()
                 GuiScreen.setClipboardString(exported)
                 val msg = ChatComponentText("${ChatColor.GREEN}Exported current configuration to clipboard. Share it with others!")
                     .appendSibling(ChatComponentText(" ${ChatColor.GRAY}[Click to import]").apply {
-                        chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead profile import")
-                        chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to import from clipboard (confirm required)"))
+                        chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/levelhead profile import")
+                        chatStyle.chatHoverEvent = HoverEvent(
+                            HoverEvent.Action.SHOW_TEXT,
+                            ChatComponentText("${ChatColor.GREEN}Click to fill import command (confirm required)")
+                        )
                     })
                 sendMessage(msg)
             }
@@ -722,7 +735,9 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                     "Importing will replace your current Levelhead configuration with profile ${profile.name}."
                 ) {
                     ConfigProfiles.applyProfile(profile)
-                    sendSuccessWithDisplayLink("${ChatColor.GREEN}Imported and applied profile ${ChatColor.GOLD}${profile.name}${ChatColor.GREEN}!")
+                    sendSuccessWithDisplayLink(
+                        "${ChatColor.GREEN}Imported and applied profile ${ChatColor.GOLD}${profile.name}${ChatColor.GREEN}!"
+                    )
                 }
             }
             else -> {
@@ -748,7 +763,7 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
         sendLine("/levelhead profile list", "Show available presets", true)
         sendLine("/levelhead profile apply <name>", "Apply a preset", false)
         sendLine("/levelhead profile export", "Export config to clipboard", true)
-        sendLine("/levelhead profile import", "Import config from clipboard", true)
+        sendLine("/levelhead profile import", "Import config from clipboard", false)
     }
 
     private fun handleDisplayHeader(args: List<String>) {
