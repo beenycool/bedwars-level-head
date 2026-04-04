@@ -552,9 +552,20 @@ export async function getResourceMetricsHistory(
       }
     }
 
-    return Array.from(merged.values())
-      .filter(r => r.bucketStart >= cutoff && (!endDate || r.bucketStart <= endDate))
-      .sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime());
+    // ⚡ Bolt: Replaced Array.from().filter() with a single loop to avoid O(N) intermediate array allocations
+    const result: ResourceMetricsHistoryRow[] = new Array(merged.size);
+    const cutoffTs = cutoff.getTime();
+    const endTs = endDate?.getTime();
+    let count = 0;
+
+    for (const r of merged.values()) {
+      const t = r.bucketStart.getTime();
+      if (t >= cutoffTs && (!endTs || t <= endTs)) {
+        result[count++] = r;
+      }
+    }
+    result.length = count;
+    return result.sort((a, b) => a.bucketStart.getTime() - b.bucketStart.getTime());
   } catch (err) {
     logger.error({ err }, '[resourceMetrics] failed to get history');
     return [];
