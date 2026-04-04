@@ -718,8 +718,10 @@ val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
                     sendMessage(msg)
                     return
                 }
-                ConfigProfiles.applyProfile(profile)
-                sendSuccessWithDisplayLink("${ChatColor.GREEN}Imported and applied profile ${ChatColor.GOLD}${profile.name}${ChatColor.GREEN}!")
+                requireConfirmation("Importing will replace your current Levelhead configuration with the profile from the clipboard.") {
+                    ConfigProfiles.applyProfile(profile)
+                    sendSuccessWithDisplayLink("${ChatColor.GREEN}Imported and applied profile ${ChatColor.GOLD}${profile.name}${ChatColor.GREEN}!")
+                }
             }
             else -> {
                 sendMessage("${ChatColor.RED}Unknown profile action '${parsedArgs[0]}'.")
