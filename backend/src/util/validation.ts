@@ -427,7 +427,7 @@ export async function validateTimestampAndNonce(
         return { valid: true, statusCode: 200 };
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        logger.error('[nonce-validation] Redis operation failed:', message);
+        logger.error({ err: err }, `[nonce-validation] Redis operation failed: ${message}`);
         
         // Redis error - fail closed for security
         return {

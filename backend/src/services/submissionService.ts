@@ -50,7 +50,7 @@ export class SubmissionService {
       }
       return timingSafeEqual(provided, digest);
     } catch (error) {
-      logger.warn('Failed to verify signed submission', error);
+      logger.warn({ err: error }, 'Failed to verify signed submission');
       return false;
     }
   }
@@ -123,7 +123,7 @@ export class SubmissionService {
 
       return { valid: false, source: null };
     } catch (error) {
-      logger.error('Failed to verify Hypixel origin:', error);
+      logger.error({ err: error }, 'Failed to verify Hypixel origin:');
       return { valid: false, source: null };
     }
   }

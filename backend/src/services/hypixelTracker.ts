@@ -61,7 +61,7 @@ async function updateRedisFailureWatermark(): Promise<void> {
            INSERT (key, value) VALUES (source.key, source.value);`.execute(pool);
     }
   } catch (error) {
-    logger.error('[hypixelTracker] Failed to persist Redis failure watermark', error);
+    logger.error({ err: error }, '[hypixelTracker] Failed to persist Redis failure watermark');
   }
 }
 
@@ -78,7 +78,7 @@ async function loadWatermarkIfNeeded(): Promise<void> {
     }
     hasLoadedWatermark = true;
   } catch (error) {
-    logger.error('[hypixelTracker] Failed to load Redis failure watermark', error);
+    logger.error({ err: error }, '[hypixelTracker] Failed to load Redis failure watermark');
   }
 }
 
@@ -111,7 +111,7 @@ async function recordHypixelCallInRedis(uuid: string, calledAt: number): Promise
     await pipeline.exec();
   } catch (error) {
     void updateRedisFailureWatermark();
-    logger.warn('[hypixelTracker] Failed to update Redis rolling counter', error);
+    logger.warn({ err: error }, '[hypixelTracker] Failed to update Redis rolling counter');
   }
 }
 
@@ -154,7 +154,7 @@ async function flushHypixelCallBuffer(): Promise<void> {
           // Success: advance offset. Items before offset are in DB; items at/after offset are pending.
           inflightOffset += chunk.length;
         } catch (error) {
-          logger.error('[hypixelTracker] Failed to flush chunk, re-queueing remaining items', error);
+          logger.error({ err: error }, '[hypixelTracker] Failed to flush chunk, re-queueing remaining items');
           // Stop processing further chunks on error to preserve order/integrity
           break;
         }
@@ -212,14 +212,14 @@ export async function recordHypixelApiCall(uuid: string, calledAt: number = Date
 
   if (hypixelCallBuffer.length >= MAX_BUFFER_SIZE) {
     void flushHypixelCallBuffer().catch((error) => {
-      logger.error('[hypixelTracker] Flush failed', error);
+      logger.error({ err: error }, '[hypixelTracker] Flush failed');
     });
   }
 
   if (!flushInterval) {
     flushInterval = setInterval(() => {
       void flushHypixelCallBuffer().catch((error) => {
-        logger.error('[hypixelTracker] Flush interval failed', error);
+        logger.error({ err: error }, '[hypixelTracker] Flush interval failed');
       });
     }, FLUSH_INTERVAL_MS);
     
@@ -247,7 +247,7 @@ export async function getHypixelCallCount(
           return Number(count);
         }
       } catch (error) {
-        logger.warn('[hypixelTracker] Redis zcount failed, falling back to SQL count', error);
+        logger.warn({ err: error }, '[hypixelTracker] Redis zcount failed, falling back to SQL count');
       }
     }
   }

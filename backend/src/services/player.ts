@@ -214,7 +214,7 @@ async function refreshUuidCache(
         etag: cacheMetadata.etag ?? undefined,
         lastModified: cacheMetadata.lastModified ?? undefined,
         source: cacheEntry.source ?? 'hypixel',
-      }).catch((e) => logger.warn('[player] L1 revalidation write failed', e));
+      }).catch((e) => logger.warn({ err: e }, '[player] L1 revalidation write failed'));
 
       const resolved = buildResolvedFromUuidStats(
         cacheEntry.value,
@@ -228,7 +228,7 @@ async function refreshUuidCache(
         const displayname = normalizeDisplayName(resolved.payload.displayname);
         if (displayname) {
           void setIgnMapping(displayname.toLowerCase(), normalizedUuid, false)
-            .catch((e) => logger.warn('[player] ign mapping revalidation write failed', e));
+            .catch((e) => logger.warn({ err: e }, '[player] ign mapping revalidation write failed'));
         }
       }
 
@@ -254,12 +254,12 @@ async function refreshUuidCache(
   recordCacheSourceHit('upstream');
 
   void setPlayerStatsBoth(cacheKey, stats, { etag, lastModified, source: 'hypixel' })
-    .catch((e) => logger.warn('[player] cache write failed', e));
+    .catch((e) => logger.warn({ err: e }, '[player] cache write failed'));
 
   const displayname = normalizeDisplayName(stats.displayname);
   if (!nicked && displayname) {
     void setIgnMapping(displayname.toLowerCase(), normalizedUuid, false)
-      .catch((e) => logger.warn('[player] ign mapping write failed', e));
+      .catch((e) => logger.warn({ err: e }, '[player] ign mapping write failed'));
   }
 
   const resolved = buildResolvedFromStats(
