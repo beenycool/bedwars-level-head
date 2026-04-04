@@ -8,7 +8,7 @@ import { HttpError } from '../util/httpError';
 import { extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely } from '../util/requestUtils';
 import { getCircuitBreakerState } from '../services/hypixel';
 import { logger } from '../util/logger';
-import { IDENTIFIER_MAX_LENGTH } from '../util/validationConstants';
+import { IDENTIFIER_MAX_LENGTH, IDENTIFIER_PATTERN } from '../util/validationConstants';
 import { submissionService } from '../services/submissionService';
 
 const batchLimit = pLimit(6);
@@ -17,6 +17,12 @@ const router = Router();
 
 router.get('/:identifier', enforceApiKeyAuth, enforceRateLimit, async (req, res, next) => {
   const { identifier } = req.params;
+
+  if (!IDENTIFIER_PATTERN.test(identifier)) {
+    next(new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a valid Minecraft username (<=16 chars) or undashed UUID.'));
+    return;
+  }
+
   const ifNoneMatch = req.header('if-none-match')?.trim();
   const ifModifiedSince = parseIfModifiedSince(req.header('if-modified-since'));
   res.locals.metricsRoute = '/api/player/:identifier';
@@ -88,8 +94,6 @@ router.get('/:identifier', enforceApiKeyAuth, enforceRateLimit, async (req, res,
   }
 });
 
-const identifierPattern = /^(?:[0-9a-f]{32}|[a-zA-Z0-9_]{1,16})$/;
-
 router.post('/batch', enforceApiKeyAuth, enforceBatchRateLimit, async (req, res, next) => {
   res.locals.metricsRoute = '/api/player/batch';
   const uuidsValue = (req.body as { uuids?: unknown })?.uuids;
@@ -124,7 +128,7 @@ router.post('/batch', enforceApiKeyAuth, enforceBatchRateLimit, async (req, res,
     return;
   }
 
-  const invalidIdentifiers = uniqueUuids.filter((identifier) => !identifierPattern.test(identifier));
+  const invalidIdentifiers = uniqueUuids.filter((identifier) => !IDENTIFIER_PATTERN.test(identifier));
   if (invalidIdentifiers.length > 0) {
     next(
       new HttpError(
