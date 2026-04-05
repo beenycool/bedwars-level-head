@@ -3,6 +3,37 @@ import { recordPlayerQuery } from '../services/history';
 import { ResolvedPlayer } from '../services/player';
 import { isValidBedwarsObject } from './typeChecks';
 import { logger } from './logger';
+import { IDENTIFIER_PATTERN, IDENTIFIER_MAX_LENGTH } from './validationConstants';
+
+export interface BatchResolvedPlayer {
+  identifier: string;
+  payload: ResolvedPlayer['payload'] & { nicked: boolean; stale?: true };
+  source: ResolvedPlayer['source'];
+}
+
+export function parseAndValidateBatchIdentifiers(
+  uuidsValue: unknown[]
+): { uniqueUuids: string[]; hasInvalid: boolean } {
+  const uniqueUuids: string[] = [];
+  const seenUuids = new Set<string>();
+  let hasInvalid = false;
+
+  for (let i = 0; i < uuidsValue.length; i++) {
+    const value = uuidsValue[i];
+    if (typeof value === 'string' && value.length <= IDENTIFIER_MAX_LENGTH) {
+      const trimmed = value.trim();
+      if (trimmed.length > 0 && !seenUuids.has(trimmed)) {
+        seenUuids.add(trimmed);
+        uniqueUuids.push(trimmed);
+        if (!IDENTIFIER_PATTERN.test(trimmed)) {
+          hasInvalid = true;
+        }
+      }
+    }
+  }
+
+  return { uniqueUuids, hasInvalid };
+}
 
 export function isIPInCIDR(ip: string, cidr: string): boolean {
   try {

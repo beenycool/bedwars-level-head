@@ -5,10 +5,10 @@ import { enforceApiKeyAuth } from '../middleware/apiKeyAuth';
 import { resolvePlayer, ResolvedPlayer, warmupPlayerCache } from '../services/player';
 import { computeBedwarsStar } from '../util/bedwars';
 import { HttpError } from '../util/httpError';
-import { extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely } from '../util/requestUtils';
+import { extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely, parseAndValidateBatchIdentifiers, BatchResolvedPlayer } from '../util/requestUtils';
 import { getCircuitBreakerState } from '../services/hypixel';
 import { logger } from '../util/logger';
-import { IDENTIFIER_MAX_LENGTH, IDENTIFIER_PATTERN } from '../util/validationConstants';
+import { IDENTIFIER_PATTERN } from '../util/validationConstants';
 import { submissionService } from '../services/submissionService';
 
 const batchLimit = pLimit(6);
@@ -108,28 +108,14 @@ router.post('/batch', enforceApiKeyAuth, enforceBatchRateLimit, async (req, res,
     return;
   }
 
-  // ⚡ Bolt: Replace Array.from(), and filter() with a single pass to avoid multiple O(N) allocations
-  const uniqueUuids: string[] = [];
-  const seenUuids = new Set<string>();
-
-  for (let i = 0; i < uuidsValue.length; i++) {
-    const value = uuidsValue[i];
-    if (typeof value === 'string' && value.length <= IDENTIFIER_MAX_LENGTH) {
-      const trimmed = value.trim();
-      if (trimmed.length > 0 && !seenUuids.has(trimmed)) {
-        seenUuids.add(trimmed);
-        uniqueUuids.push(trimmed);
-      }
-    }
-  }
+  const { uniqueUuids, hasInvalid } = parseAndValidateBatchIdentifiers(uuidsValue);
 
   if (uniqueUuids.length === 0) {
     res.json({ success: true, data: {} });
     return;
   }
 
-  const invalidIdentifiers = uniqueUuids.filter((identifier) => !IDENTIFIER_PATTERN.test(identifier));
-  if (invalidIdentifiers.length > 0) {
+  if (hasInvalid) {
     next(
       new HttpError(
         400,
@@ -144,7 +130,7 @@ router.post('/batch', enforceApiKeyAuth, enforceBatchRateLimit, async (req, res,
     // Warmup cache for all UUIDs in parallel (single Redis round-trip)
     await warmupPlayerCache(uniqueUuids);
 
-    const limitPromises: Promise<{ identifier: string; payload: ResolvedPlayer['payload'] & { nicked: boolean; stale?: true }; source: ResolvedPlayer['source'] } | null>[] = [];
+    const limitPromises: Promise<BatchResolvedPlayer | null>[] = [];
     for (let i = 0; i < uniqueUuids.length; i++) {
       const identifier = uniqueUuids[i];
       limitPromises.push(batchLimit(async () => {
@@ -179,7 +165,7 @@ router.post('/batch', enforceApiKeyAuth, enforceBatchRateLimit, async (req, res,
               ...(resolved.isStale ? { stale: true } : {}),
             },
             source: resolved.source,
-          } as { identifier: string; payload: ResolvedPlayer['payload'] & { nicked: boolean; stale?: true }; source: ResolvedPlayer['source'] };
+          } as BatchResolvedPlayer;
         } catch (error) {
           if (error instanceof HttpError) {
             if (error.status >= 500) {
