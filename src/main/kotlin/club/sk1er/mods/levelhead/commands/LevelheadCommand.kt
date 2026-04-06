@@ -980,7 +980,7 @@ class LevelheadCommand {
         val msg = CommandUtils.buildInteractiveFeedback(
             messagePrefix = "${ChatColor.GRAY}Example: ",
             command = "/levelhead admin purgecache",
-            run = false,
+            run = true,
             suffix = "${ChatColor.YELLOW} (all) or "
         )
         msg.appendSibling(CommandUtils.buildInteractiveFeedback(

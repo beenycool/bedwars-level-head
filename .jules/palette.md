@@ -11,3 +11,9 @@
 **Learning:** Importing a profile via clipboard overwrites the user's current configuration. A `[Click to import]` control after export must not apply data on a single accidental activation, including when the user runs `/levelhead profile import` manually.
 
 **Action:** Validate clipboard JSON, then wrap the apply step in `requireConfirmation` (same pattern as other destructive commands). Prefer `SUGGEST_COMMAND` for `[Click to import]` and for preset names in `/levelhead profile list` so the command is visible before Enter; confirmation still runs when the command executes, so direct runs and keybinds stay safe. Wrap preset apply in `requireConfirmation` before replacing configuration.
+
+## 2024-05-24 - Make Example Safe Admin Commands Executable
+
+**Learning:** When displaying example admin commands (like cache purging) in a help menu, setting `run = false` causes the command to be placed in the user's chat input area instead of running immediately. For safe, repeatable, non-destructive examples, this creates an unnecessary extra step.
+
+**Action:** Use `run = true` in `CommandUtils.buildInteractiveFeedback` for safe, fully-formed example commands like `/levelhead admin purgecache`. Examples containing placeholders (e.g., player names) should continue to use `run = false` to allow user editing before execution.
