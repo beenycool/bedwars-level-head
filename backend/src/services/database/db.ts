@@ -204,7 +204,25 @@ const validatedPoolMax = Number.isFinite(dbPoolMax) && dbPoolMax > 0 ? dbPoolMax
 // Optional TTL ALTER may fail on some CockroachDB builds; cockroachTtl logs that at debug, so avoid duplicate ERROR from Kysely.
 function isOptionalTtlAlterErrorSql(sqlText: string): boolean {
   const s = sqlText.toLowerCase();
-  return s.includes('ttl_expiration_expression') || s.includes('ttl_job_cron');
+  if (!s.includes('alter table')) {
+    return false;
+  }
+  return /\bset\s*\([^)]*(ttl_expiration_expression|ttl_job_cron)/.test(s);
+}
+
+const DB_QUERY_ERROR_MSG = '[db] Query Error';
+const DB_QUERY_ERROR_TTL_DEBUG_MSG = '[db] Query Error (optional TTL skipped)';
+
+function logQueryError(
+  event: { error: unknown; query: { sql: string; parameters: unknown } },
+  options: { allowTtlDowngrade: boolean },
+): void {
+  const payload = { err: event.error, sql: event.query.sql, params: event.query.parameters };
+  if (options.allowTtlDowngrade && isOptionalTtlAlterErrorSql(event.query.sql)) {
+    logger.debug(payload, DB_QUERY_ERROR_TTL_DEBUG_MSG);
+  } else {
+    logger.error(payload, DB_QUERY_ERROR_MSG);
+  }
 }
 
 let db: Kysely<Database>;
@@ -222,12 +240,7 @@ if (dbType === DatabaseType.POSTGRESQL) {
     }),
     log: (event) => {
       if (event.level === 'error') {
-        const payload = { err: event.error, sql: event.query.sql, params: event.query.parameters };
-        if (isOptionalTtlAlterErrorSql(event.query.sql)) {
-          logger.debug(payload, '[db] Query Error');
-        } else {
-          logger.error(payload, '[db] Query Error');
-        }
+        logQueryError(event, { allowTtlDowngrade: true });
       }
     },
   });
@@ -250,12 +263,7 @@ if (dbType === DatabaseType.POSTGRESQL) {
     }),
     log: (event) => {
       if (event.level === 'error') {
-        const payload = { err: event.error, sql: event.query.sql, params: event.query.parameters };
-        if (isOptionalTtlAlterErrorSql(event.query.sql)) {
-          logger.debug(payload, '[db] Query Error');
-        } else {
-          logger.error(payload, '[db] Query Error');
-        }
+        logQueryError(event, { allowTtlDowngrade: false });
       }
     },
   });

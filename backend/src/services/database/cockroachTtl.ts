@@ -21,6 +21,13 @@ function databaseErrorCode(error: unknown): string | undefined {
   return code === undefined || code === null ? undefined : String(code);
 }
 
+function shouldPermanentlySkipTtl(error: unknown): boolean {
+  const code = databaseErrorCode(error);
+  // Focused on known non-retriable "TTL unsupported/invalid" classes (Postgres/Cockroach).
+  return code === '42704' || code === '0A000';
+}
+
+
 function quoteSqlLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
 }
@@ -65,7 +72,9 @@ export async function ensureCockroachRowLevelTtl({
       logger.info(`[db] enabled Cockroach row-level TTL for ${tableName}`);
       return true;
     } catch (error) {
-      ttlSkippedTables.add(tableName);
+      if (shouldPermanentlySkipTtl(error)) {
+        ttlSkippedTables.add(tableName);
+      }
       const code = databaseErrorCode(error);
       logger.debug(
         { err: error, tableName, ...(code !== undefined ? { code } : {}) },
