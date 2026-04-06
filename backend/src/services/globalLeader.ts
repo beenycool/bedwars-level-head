@@ -44,7 +44,7 @@ async function transitionToLeader(reason: string): Promise<void> {
   try {
     await callbacks.onLeaderStart();
   } catch (error) {
-    logger.error('[leader] onLeaderStart failed', error);
+    logger.error({ err: error }, '[leader] onLeaderStart failed');
   }
 }
 
@@ -59,7 +59,7 @@ async function transitionFromLeader(reason: string): Promise<void> {
   try {
     await callbacks.onLeaderStop();
   } catch (error) {
-    logger.error('[leader] onLeaderStop failed', error);
+    logger.error({ err: error }, '[leader] onLeaderStop failed');
   }
 }
 
@@ -77,7 +77,7 @@ async function releaseRedisLock(): Promise<void> {
   try {
     await client.eval(RELEASE_LOCK_SCRIPT, 1, GLOBAL_JOBS_LEADER_LOCK_KEY, leaderToken);
   } catch (error) {
-    logger.error('[leader] Failed to release Redis lock', error);
+    logger.error({ err: error }, '[leader] Failed to release Redis lock');
   } finally {
     hasRedisLock = false;
   }
@@ -139,7 +139,7 @@ async function heartbeat(): Promise<void> {
 
     await transitionFromLeader('another-instance-holds-lock');
   } catch (error) {
-    logger.error('[leader] Heartbeat failed', error);
+    logger.error({ err: error }, '[leader] Heartbeat failed');
     hasRedisLock = false;
     await transitionFromLeader('heartbeat-error');
   } finally {

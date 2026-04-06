@@ -319,7 +319,7 @@ export async function fetchHypixelPlayer(
       const etag = response.headers['etag'] ?? null;
       const lastModified = parseLastModified(response.headers['last-modified']);
       void recordHypixelApiCall(uuid).catch((error) => {
-        logger.error('Failed to record Hypixel API call', error);
+        logger.error({ err: error }, 'Failed to record Hypixel API call');
       });
 
       circuitBreakerSuccess();
@@ -386,7 +386,7 @@ export async function checkHypixelReachability(): Promise<boolean> {
     });
     return response.status < 500;
   } catch (error) {
-    logger.error('Hypixel reachability check failed', error);
+    logger.error({ err: error }, 'Hypixel reachability check failed');
     return false;
   }
 }

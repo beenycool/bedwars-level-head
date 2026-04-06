@@ -202,8 +202,7 @@ async function refreshAdaptiveTtl(): Promise<void> {
   try {
     info = await client.info('memory');
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.warn('[statsCache] redis memory info failed', message);
+    logger.warn({ err: error }, `[statsCache] redis memory info failed`);
     cachedAdaptiveTtlMs = PLAYER_L1_TTL_FALLBACK_MS;
     return;
   }
@@ -247,11 +246,11 @@ export function startAdaptiveTtlRefresh(): void {
     return;
   }
   void refreshAdaptiveTtl().catch((e) =>
-    logger.warn('[statsCache] initial adaptive TTL refresh failed', e),
+    logger.warn({ err: e }, '[statsCache] initial adaptive TTL refresh failed'),
   );
   adaptiveTtlInterval = setInterval(() => {
     void refreshAdaptiveTtl().catch((e) =>
-      logger.warn('[statsCache] adaptive TTL refresh failed', e),
+      logger.warn({ err: e }, '[statsCache] adaptive TTL refresh failed'),
     );
   }, PLAYER_L1_INFO_REFRESH_MS);
 }
@@ -334,7 +333,7 @@ async function getManyPlayerStatsFromDb(
       result.set(cacheKey, entry);
     }
   } catch (error) {
-    logger.error('[statsCache] failed to batch read L2 cache', error);
+    logger.error({ err: error }, '[statsCache] failed to batch read L2 cache');
   }
 
   return result;
@@ -371,7 +370,7 @@ async function getPlayerStatsFromDb(
 
     return entry;
   } catch (error) {
-    logger.error('[statsCache] failed to read L2 cache', error);
+    logger.error({ err: error }, '[statsCache] failed to read L2 cache');
     return null;
   }
 }
@@ -436,7 +435,7 @@ async function setPlayerStatsInDb(
     }
     markDbAccess();
   } catch (error) {
-    logger.error('[statsCache] failed to write L2 cache', error);
+    logger.error({ err: error }, '[statsCache] failed to write L2 cache');
   }
 }
 
@@ -467,7 +466,7 @@ async function getIgnMappingFromDb(ign: string, includeExpired: boolean): Promis
 
     return { uuid: row.uuid, nicked: !!row.nicked, expiresAt };
   } catch (error) {
-    logger.error('[statsCache] failed to read ign mapping', error);
+    logger.error({ err: error }, '[statsCache] failed to read ign mapping');
     return null;
   }
 }
@@ -516,7 +515,7 @@ async function setIgnMappingInDb(ign: string, uuid: string | null, nicked: boole
     }
     markDbAccess();
   } catch (error) {
-    logger.error('[statsCache] failed to write ign mapping', error);
+    logger.error({ err: error }, '[statsCache] failed to write ign mapping');
   }
 }
 
@@ -550,8 +549,7 @@ async function getIgnMappingFromRedis(ign: string, includeExpired: boolean): Pro
 
     return { uuid: parsed.uuid, nicked: parsed.nicked, expiresAt };
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.error('[statsCache] getIgnMapping failed', message);
+    logger.error({ err: error }, '[statsCache] getIgnMapping failed');
     return null;
   }
 }
@@ -572,8 +570,7 @@ async function setIgnMappingInRedis(ign: string, mapping: IgnMappingEntry, ttlMs
     });
     await client.setex(redisKey, Math.ceil(ttlMs / 1000), data);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.error('[statsCache] setIgnMapping failed', message);
+    logger.error({ err: error }, '[statsCache] setIgnMapping failed');
   }
 }
 
@@ -620,8 +617,7 @@ export async function getPlayerStatsFromCache(
         }
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error('[statsCache] L1 read failed', message);
+      logger.error({ err: error }, '[statsCache] L1 read failed');
     }
   }
 
@@ -647,7 +643,7 @@ export async function getPlayerStatsFromCache(
         etag: l2Entry.etag ?? undefined,
         lastModified: l2Entry.lastModified ?? undefined,
         source: l2Entry.source ?? undefined,
-      }).catch((e) => logger.warn('[statsCache] L1 backfill failed', e));
+      }).catch((e) => logger.warn({ err: e }, '[statsCache] L1 backfill failed'));
     }
     return l2Entry;
   }
@@ -746,8 +742,7 @@ export async function getPlayerStatsFromCacheWithSWR(
         }
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error('[statsCache] L1 SWR read failed', message);
+      logger.error({ err: error }, '[statsCache] L1 SWR read failed');
     }
   }
 
@@ -774,7 +769,7 @@ export async function getPlayerStatsFromCacheWithSWR(
           etag: l2Entry.etag ?? undefined,
           lastModified: l2Entry.lastModified ?? undefined,
           source: l2Entry.source ?? undefined,
-        }).catch((e) => logger.warn('[statsCache] L1 backfill failed', e));
+        }).catch((e) => logger.warn({ err: e }, '[statsCache] L1 backfill failed'));
         
         return {
           ...l2Entry,
@@ -853,7 +848,7 @@ function triggerBackgroundRefresh(
         recordCacheRefresh('success');
       }
     } catch (error) {
-      logger.warn('[statsCache] background refresh failed for %s', uuid, error);
+      logger.warn({ err: error }, `[statsCache] background refresh failed for ${uuid}`);
       recordCacheRefresh('fail');
     } finally {
       backgroundRefreshLocks.delete(key);
@@ -953,8 +948,7 @@ export async function getManyPlayerStatsFromCacheWithSWR(
       // Expired and not SWR-eligible, ignore.
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.error('[statsCache] L1 batch read failed', message);
+    logger.error({ err: error }, '[statsCache] L1 batch read failed');
   }
 
   // ⚡ Bolt: Replace chained .filter().map() with a single loop and build a lookup map
@@ -993,7 +987,7 @@ export async function getManyPlayerStatsFromCacheWithSWR(
           etag: entry.etag ?? undefined,
           lastModified: entry.lastModified ?? undefined,
           source: entry.source ?? undefined,
-        }).catch((e) => logger.warn('[statsCache] L1 backfill failed', e));
+        }).catch((e) => logger.warn({ err: e }, '[statsCache] L1 backfill failed'));
 
         result.set(key, {
           ...entry,
@@ -1063,8 +1057,7 @@ export async function setPlayerStatsL1(
     const redisKey = `cache:${key}`;
     await client.setex(redisKey, Math.ceil(ttlMs / 1000), data);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logger.error('[statsCache] setPlayerStatsL1 failed', message);
+    logger.error({ err: error }, '[statsCache] setPlayerStatsL1 failed');
   }
 }
 
@@ -1101,7 +1094,7 @@ export async function getIgnMapping(
     if (l2Entry.expiresAt > now) {
       const ttlMs = getAdaptiveL1TtlMs();
       void setIgnMappingInRedis(ign, l2Entry, ttlMs).catch((e) =>
-        logger.warn('[statsCache] IGN L1 backfill failed', e),
+        logger.warn({ err: e }, '[statsCache] IGN L1 backfill failed'),
       );
     }
     return l2Entry;
@@ -1131,8 +1124,7 @@ export async function deletePlayerStatsEntries(keys: string[]): Promise<number> 
         const redisKeys = keys.map((key) => `cache:${key}`);
         await client.del(...redisKeys);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger.error('[statsCache] delete L1 stats failed', message);
+        logger.error({ err: error }, '[statsCache] delete L1 stats failed');
       }
     }
   }
@@ -1147,7 +1139,7 @@ export async function deletePlayerStatsEntries(keys: string[]): Promise<number> 
     markDbAccess();
     return Number(result[0]?.numDeletedRows ?? 0);
   } catch (error) {
-    logger.error('[statsCache] delete L2 stats failed', error);
+    logger.error({ err: error }, '[statsCache] delete L2 stats failed');
     return 0;
   }
 }
@@ -1164,8 +1156,7 @@ export async function deleteIgnMappings(igns: string[]): Promise<number> {
         const redisKeys = igns.map((ign) => `cache:${buildIgnMappingKey(ign)}`);
         await client.del(...redisKeys);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger.error('[statsCache] delete L1 ign mappings failed', message);
+        logger.error({ err: error }, '[statsCache] delete L1 ign mappings failed');
       }
     }
   }
@@ -1179,7 +1170,7 @@ export async function deleteIgnMappings(igns: string[]): Promise<number> {
     markDbAccess();
     return Number(result[0]?.numDeletedRows ?? 0);
   } catch (error) {
-    logger.error('[statsCache] delete L2 ign mappings failed', error);
+    logger.error({ err: error }, '[statsCache] delete L2 ign mappings failed');
     return 0;
   }
 }
@@ -1207,8 +1198,7 @@ export async function clearAllPlayerStatsCaches(): Promise<number> {
           }
         } while (cursor !== '0');
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        logger.error('[statsCache] clear L1 caches failed', message);
+        logger.error({ err: error }, '[statsCache] clear L1 caches failed');
       }
     }
   }
@@ -1221,7 +1211,7 @@ export async function clearAllPlayerStatsCaches(): Promise<number> {
     markDbAccess();
     return deleted + Number(statsResult[0]?.numDeletedRows ?? 0) + Number(ignResult[0]?.numDeletedRows ?? 0);
   } catch (error) {
-    logger.error('[statsCache] clear L2 caches failed', error);
+    logger.error({ err: error }, '[statsCache] clear L2 caches failed');
     return deleted;
   }
 }

@@ -64,7 +64,7 @@ async function resolveDynamicLimitValue(): Promise<number> {
     })
     .catch((error) => {
       dynamicLimitCache.pendingPromise = undefined;
-      logger.error('Dynamic rate limit calculation failed:', error);
+      logger.error({ err: error }, 'Dynamic rate limit calculation failed:');
       // Fallback to static max on error to prevent unhandled rejections
       return RATE_LIMIT_MAX;
     });
@@ -130,7 +130,7 @@ export function createRateLimitMiddleware({
             effectiveMax = Math.max(1, Math.floor(dynamicValue));
           }
         } catch (dynamicError) {
-          logger.error('Failed to compute dynamic rate limit; falling back to static value', dynamicError);
+          logger.error({ err: dynamicError }, 'Failed to compute dynamic rate limit; falling back to static value');
         }
       }
 
@@ -154,7 +154,7 @@ export function createRateLimitMiddleware({
         // Fail open dangerously - Redis unavailable and RATE_LIMIT_FALLBACK_MODE=allow
         // Fire-and-forget stats tracking
         void trackGlobalStats(clientIp).catch((err) => {
-          logger.error('[rate-limit] trackGlobalStats failed', err);
+          logger.error({ err }, '[rate-limit] trackGlobalStats failed');
         });
         next();
         return;
@@ -164,7 +164,7 @@ export function createRateLimitMiddleware({
         // Unexpected null result - respect RATE_LIMIT_REQUIRE_REDIS
         logger.warn('[rate-limit] Unexpected null result from incrementRateLimit');
         void trackGlobalStats(clientIp).catch((err) => {
-          logger.error('[rate-limit] trackGlobalStats failed', err);
+          logger.error({ err }, '[rate-limit] trackGlobalStats failed');
         });
         if (RATE_LIMIT_REQUIRE_REDIS) {
           next(
@@ -188,7 +188,7 @@ export function createRateLimitMiddleware({
 
       // Fire-and-forget stats tracking with raw client IP (not prefixed bucket key)
       void trackGlobalStats(clientIp).catch((err) => {
-        logger.error('[rate-limit] trackGlobalStats failed', err);
+        logger.error({ err }, '[rate-limit] trackGlobalStats failed');
       });
 
       if (count > effectiveMax) {
@@ -219,7 +219,7 @@ export function createRateLimitMiddleware({
 
       next();
     } catch (error) {
-      logger.error('[rate-limit] unexpected error', error);
+      logger.error({ err: error }, '[rate-limit] unexpected error');
       if (RATE_LIMIT_REQUIRE_REDIS) {
         next(
           new HttpError(

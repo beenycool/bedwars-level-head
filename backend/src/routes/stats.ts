@@ -324,49 +324,52 @@ router.get('/', async (req, res, next) => {
 
     const quotaPct = Math.max(0, Math.min(100, (sysStats.apiCallsLastHour / (120 * 60)) * 100));
 
-    let rows = pageData.rows
-      .map((entry) => {
-        const lookupIdentifier =
-          entry.lookupType === 'uuid' && entry.resolvedUsername
-            ? entry.resolvedUsername
-            : entry.identifier;
-        const lookup = `${entry.lookupType.toUpperCase()}: ${lookupIdentifier}`;
-        const resolved = entry.nicked === true ? '(nicked)' : entry.resolvedUsername ?? entry.resolvedUuid ?? 'unknown';
-        const cacheSource = entry.cacheHit ? 'Cache' : entry.cacheSource === 'network' ? 'Network' : entry.cacheSource;
+    // 🧱 Mason: Replace .map().join('\\n') with a single for loop and direct string concatenation
+    // to eliminate allocating intermediate arrays for both the mapped results and the join operation,
+    // significantly reducing GC pressure.
+    let rows = '';
+    for (let i = 0; i < pageData.rows.length; i++) {
+      const entry = pageData.rows[i];
+      const lookupIdentifier =
+        entry.lookupType === 'uuid' && entry.resolvedUsername
+          ? entry.resolvedUsername
+          : entry.identifier;
+      const lookup = `${entry.lookupType.toUpperCase()}: ${lookupIdentifier}`;
+      const resolved = entry.nicked === true ? '(nicked)' : entry.resolvedUsername ?? entry.resolvedUuid ?? 'unknown';
+      const cacheSource = entry.cacheHit ? 'Cache' : entry.cacheSource === 'network' ? 'Network' : entry.cacheSource;
 
-        // URL encode the identifier to prevent XSS in href
-        const encodedIdentifier = encodeURIComponent(entry.identifier);
-        const lookupLink = entry.lookupType === 'uuid'
-          ? `https://namemc.com/profile/${encodedIdentifier}`
-          : `https://namemc.com/search?q=${encodedIdentifier}`;
+      // URL encode the identifier to prevent XSS in href
+      const encodedIdentifier = encodeURIComponent(entry.identifier);
+      const lookupLink = entry.lookupType === 'uuid'
+        ? `https://namemc.com/profile/${encodedIdentifier}`
+        : `https://namemc.com/search?q=${encodedIdentifier}`;
 
-        const statusClass = `status-${Math.floor(entry.responseStatus / 100)}xx`;
+      const statusClass = `status-${Math.floor(entry.responseStatus / 100)}xx`;
 
-        return `<tr>
-          <td title="${escapeHtml(formatDate(entry.requestedAt))}">${escapeHtml(timeAgo(entry.requestedAt))}</td>
-          <td>
-            <div class="lookup-cell">
-              <a href="${lookupLink}" target="_blank" rel="noopener noreferrer" class="lookup-link">${escapeHtml(lookup)}</a>
-              <button class="copy-btn" aria-label="Copy identifier" title="Copy identifier" data-copy="${escapeHtml(lookupIdentifier)}">
-                <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
-              </button>
-            </div>
-          </td>
-          <td>${escapeHtml(resolved)}</td>
-          <td class="stars">${escapeHtml(formatStars(entry.stars))}</td>
-          <td>${escapeHtml(cacheSource)}${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
-          <td><span class="status-badge ${statusClass}">${escapeHtml(String(entry.responseStatus))}</span></td>
-          <td class="latency">${escapeHtml(formatLatency(entry.latencyMs))}</td>
-        </tr>`;
-      })
-      .join('\n');
+      rows += `<tr>
+        <td title="${escapeHtml(formatDate(entry.requestedAt))}">${escapeHtml(timeAgo(entry.requestedAt))}</td>
+        <td>
+          <div class="lookup-cell">
+            <a href="${lookupLink}" target="_blank" rel="noopener noreferrer" class="lookup-link">${escapeHtml(lookup)}</a>
+            <button class="copy-btn" aria-label="Copy identifier" title="Copy identifier" data-copy="${escapeHtml(lookupIdentifier)}">
+              <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+            </button>
+          </div>
+        </td>
+        <td>${escapeHtml(resolved)}</td>
+        <td class="stars">${escapeHtml(formatStars(entry.stars))}</td>
+        <td>${escapeHtml(cacheSource)}${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
+        <td><span class="status-badge ${statusClass}">${escapeHtml(String(entry.responseStatus))}</span></td>
+        <td class="latency">${escapeHtml(formatLatency(entry.latencyMs))}</td>
+      </tr>\n`;
+    }
 
     if (!rows) {
       if (search) {
         rows = getEmptyStateForSearch(search, clearUrl);
       } else {
         rows = getEmptyStateForNoLookups();
-    }
+      }
     }
 
 
@@ -2019,13 +2022,13 @@ router.get('/', async (req, res, next) => {
 
       // 5. Lookup Type Distribution
       const lookupTypeCounts = { UUID: 0, IGN: 0 };
-      data.forEach((d) => {
-        if (d.lookupType === 'uuid') {
+      for (let i = 0; i < data.length; i++) {
+        if (data[i].lookupType === 'uuid') {
           lookupTypeCounts.UUID++;
         } else {
           lookupTypeCounts.IGN++;
         }
-      });
+      }
       const lookupTypeChartConfig = {
         type: 'doughnut',
         data: {
@@ -2114,7 +2117,8 @@ router.get('/', async (req, res, next) => {
         const cacheBuckets = new Map();
         const sortedData = [...dataSet].sort((a, b) => new Date(a.requestedAt).getTime() - new Date(b.requestedAt).getTime());
 
-        sortedData.forEach((d) => {
+        for (let i = 0; i < sortedData.length; i++) {
+          const d = sortedData[i];
           const timestamp = new Date(d.requestedAt).getTime();
           const bucketKey = Math.floor(timestamp / bucketInterval) * bucketInterval;
           if (!timeBuckets.has(bucketKey)) {
@@ -2128,18 +2132,27 @@ router.get('/', async (req, res, next) => {
           const bucket = cacheBuckets.get(bucketKey);
           bucket.total++;
           if (d.cacheHit) bucket.hits++;
-        });
+        }
 
         const timeBucketKeys = Array.from(timeBuckets.keys()).sort((a, b) => a - b);
         const cacheBucketKeys = Array.from(cacheBuckets.keys()).sort((a, b) => a - b);
 
-        const requestsOverTimeLabels = timeBucketKeys.map((key) => formatTimeBucketLabel(key, bucketInterval));
-        const requestsOverTimeData = timeBucketKeys.map((key) => timeBuckets.get(key));
-        const cacheOverTimeLabels = cacheBucketKeys.map((key) => formatTimeBucketLabel(key, bucketInterval));
-        const cacheOverTimeData = cacheBucketKeys.map((key) => {
+        const requestsOverTimeLabels = new Array(timeBucketKeys.length);
+        const requestsOverTimeData = new Array(timeBucketKeys.length);
+        for (let i = 0; i < timeBucketKeys.length; i++) {
+          const key = timeBucketKeys[i];
+          requestsOverTimeLabels[i] = formatTimeBucketLabel(key, bucketInterval);
+          requestsOverTimeData[i] = timeBuckets.get(key);
+        }
+
+        const cacheOverTimeLabels = new Array(cacheBucketKeys.length);
+        const cacheOverTimeData = new Array(cacheBucketKeys.length);
+        for (let i = 0; i < cacheBucketKeys.length; i++) {
+          const key = cacheBucketKeys[i];
+          cacheOverTimeLabels[i] = formatTimeBucketLabel(key, bucketInterval);
           const bucket = cacheBuckets.get(key);
-          return bucket.total > 0 ? (bucket.hits / bucket.total) * 100 : 0;
-        });
+          cacheOverTimeData[i] = bucket && bucket.total > 0 ? (bucket.hits / bucket.total) * 100 : 0;
+        }
 
         return {
           requestsOverTimeLabels,
@@ -2825,7 +2838,8 @@ router.get('/', async (req, res, next) => {
         
         // 2. Star Chart
         const newStarRanges = { Unknown: 0, '0-10': 0, '11-50': 0, '51-100': 0, '100+': 0 };
-        chartData.forEach((d) => {
+        for (let i = 0; i < chartData.length; i++) {
+          const d = chartData[i];
           if (d.stars === null || d.stars === undefined || d.stars < 0) {
             newStarRanges.Unknown++;
           } else {
@@ -2835,7 +2849,7 @@ router.get('/', async (req, res, next) => {
             else if (s <= 100) newStarRanges['51-100']++;
             else newStarRanges['100+']++;
           }
-        });
+        }
         const starChart = charts.find(c => c.canvas && c.canvas.id === 'starChart');
         if (starChart) {
           starChart.data.datasets[0].data = Object.values(newStarRanges);
@@ -2864,13 +2878,14 @@ router.get('/', async (req, res, next) => {
         
         // 4. Status Chart
         const newStatusBuckets = { '2xx': 0, '3xx': 0, '4xx': 0, '5xx': 0, Other: 0 };
-        chartData.forEach((d) => {
+        for (let i = 0; i < chartData.length; i++) {
+          const d = chartData[i];
           if (d.responseStatus >= 200 && d.responseStatus < 300) newStatusBuckets['2xx']++;
           else if (d.responseStatus >= 300 && d.responseStatus < 400) newStatusBuckets['3xx']++;
           else if (d.responseStatus >= 400 && d.responseStatus < 500) newStatusBuckets['4xx']++;
           else if (d.responseStatus >= 500 && d.responseStatus < 600) newStatusBuckets['5xx']++;
           else newStatusBuckets.Other++;
-        });
+        }
         const statusChart = charts.find(c => c.canvas && c.canvas.id === 'statusChart');
         if (statusChart) {
           statusChart.data.datasets[0].data = Object.values(newStatusBuckets);
@@ -2882,13 +2897,13 @@ router.get('/', async (req, res, next) => {
         
         // 5. Lookup Type Chart
         const newLookupTypeCounts = { UUID: 0, IGN: 0 };
-        chartData.forEach((d) => {
-          if (d.lookupType === 'uuid') {
+        for (let i = 0; i < chartData.length; i++) {
+          if (chartData[i].lookupType === 'uuid') {
             newLookupTypeCounts.UUID++;
           } else {
             newLookupTypeCounts.IGN++;
           }
-        });
+        }
         const lookupTypeChart = charts.find(c => c.canvas && c.canvas.id === 'lookupTypeChart');
         if (lookupTypeChart) {
           lookupTypeChart.data.datasets[0].data = [newLookupTypeCounts.UUID, newLookupTypeCounts.IGN];
@@ -2991,7 +3006,9 @@ router.get('/', async (req, res, next) => {
         if (pageData && pageData.rows) {
           const tbody = document.querySelector('table tbody');
           if (tbody) {
-            const rowsHtml = pageData.rows.map((entry) => {
+            let rowsHtml = '';
+            for (let i = 0; i < pageData.rows.length; i++) {
+              const entry = pageData.rows[i];
               const lookupIdentifier =
                 entry.lookupType === 'uuid' && entry.resolvedUsername
                   ? entry.resolvedUsername
@@ -3007,7 +3024,7 @@ router.get('/', async (req, res, next) => {
               
               const statusClass = \`status-\${Math.floor(entry.responseStatus / 100)}xx\`;
 
-              return \`<tr>
+              rowsHtml += \`<tr>
                 <td title="\${escapeHtmlClient(formatDateClient(entry.requestedAt))}">\${escapeHtmlClient(timeAgoClient(entry.requestedAt))}</td>
                 <td>
                   <div class="lookup-cell">
@@ -3022,8 +3039,8 @@ router.get('/', async (req, res, next) => {
                 <td>\${escapeHtmlClient(cacheSource)}\${entry.revalidated ? ' <span class="tag">revalidated</span>' : ''}</td>
                 <td><span class="status-badge \${statusClass}">\${escapeHtmlClient(String(entry.responseStatus))}</span></td>
                 <td class="latency">\${escapeHtmlClient(formatLatencyClient(entry.latencyMs))}</td>
-              </tr>\`;
-            }).join('\\n');
+              </tr>\\n\`;
+            }
             
             if (rowsHtml) {
               tbody.innerHTML = rowsHtml;

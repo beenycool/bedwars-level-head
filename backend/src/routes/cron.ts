@@ -55,17 +55,23 @@ router.get('/apikey-status', enforceCronRateLimit, enforceCronAuth, async (_req,
       }
     }
 
-    res.json({
-      success: true,
-      timestamp: new Date().toISOString(),
-      summary,
-      keys: keys.map((key) => ({
+    const keysResponse = new Array(keys.length);
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i];
+      keysResponse[i] = {
         keyHash: key.keyHash,
         validationStatus: key.validationStatus,
         lastValidatedAt: key.lastValidatedAt,
         validatedCount: key.validatedCount,
         ...(key.errorMessage && { error: key.errorMessage }),
-      })),
+      };
+    }
+
+    res.json({
+      success: true,
+      timestamp: new Date().toISOString(),
+      summary,
+      keys: keysResponse,
     });
   } catch (error) {
     next(error);

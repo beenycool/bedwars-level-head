@@ -39,7 +39,7 @@ export function getRedisClient(): Redis | null {
         });
 
         redis.on('error', (err) => {
-            logger.error('[redis] connection error', err.message);
+            logger.error({ err }, '[redis] connection error');
         });
 
         redis.on('connect', () => {
@@ -315,7 +315,7 @@ export async function incrementRateLimit(ip: string, windowMs: number, cost: num
         if (shouldSync) {
             // Sync to Redis in background (don't block the response)
             void syncToRedis(cacheKey, windowMs, local).catch((err) => {
-                logger.error('[redis] background sync failed', err);
+                logger.error({ err }, '[redis] background sync failed');
             });
         }
 
@@ -368,8 +368,7 @@ export async function incrementRateLimit(ip: string, windowMs: number, cost: num
             ttl: result[1],
         };
     } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        logger.error('[redis] incrementRateLimit failed', message);
+        logger.error({ err }, '[redis] incrementRateLimit failed');
 
         // Redis operation failed - handle according to configuration
         if (RATE_LIMIT_REQUIRE_REDIS) {
@@ -408,8 +407,7 @@ async function syncToRedis(key: string, windowMs: number, local: LocalRateLimitE
         local.lastSyncedCount = local.count;
         local.lastSyncTime = Date.now();
     } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        logger.error('[redis] syncToRedis failed', message);
+        logger.error({ err }, '[redis] syncToRedis failed');
     }
 }
 
@@ -467,8 +465,7 @@ async function flushGlobalStats(): Promise<void> {
 
         await client.eval(BATCH_BUCKET_SCRIPT, 2, reqKey, hllKey, ttl.toString(), count.toString(), ...ips);
     } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        logger.error(`[redis] flushGlobalStats failed: ${message} (lost ${count} requests from ${ips.length} IPs)`);
+        logger.error({ err }, `[redis] flushGlobalStats failed (lost ${count} requests from ${ips.length} IPs)`);
     }
 }
 
@@ -580,8 +577,7 @@ async function refreshKeyCounts(): Promise<void> {
       cacheKeys: tempCacheKeys,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    logger.error('[redis] refreshKeyCounts failed', message);
+    logger.error({ err }, '[redis] refreshKeyCounts failed');
   } finally {
     isRefreshingKeyCounts = false;
   }
@@ -595,7 +591,7 @@ export function startKeyCountRefresher(): void {
 
   keyCountRefreshInterval = setInterval(() => {
     void refreshKeyCounts().catch((err) => {
-      logger.error('[redis] key count refresh interval error', err);
+      logger.error({ err }, '[redis] key count refresh interval error');
     });
   }, HEAVY_STATS_TTL_MS);
   keyCountRefreshInterval.unref();
@@ -665,8 +661,7 @@ export async function getGlobalStats(windowMs: number): Promise<{ requestCount: 
 
         return result;
     } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        logger.error('[redis] getGlobalStats failed', message);
+        logger.error({ err }, '[redis] getGlobalStats failed');
         return { requestCount: 0, activeUsers: 0 };
     }
 }
@@ -763,8 +758,7 @@ export async function getRedisStats(): Promise<RedisStats> {
                 localCacheMaxSize: localCache.maxSize,
             };
         } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            logger.error('[redis] getRedisStats failed', message);
+            logger.error({ err }, '[redis] getRedisStats failed');
             return defaultStats;
         }
     });
@@ -854,8 +848,7 @@ export async function getPlayerCacheEntry<T>(key: string): Promise<CacheEntry<T>
 
         return entry;
     } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        logger.error('[redis] getPlayerCacheEntry failed', message);
+        logger.error({ err }, '[redis] getPlayerCacheEntry failed');
         return null;
     }
 }
@@ -885,8 +878,7 @@ export async function setPlayerCacheEntry<T>(
         const redisKey = `cache:${key}`;
         await client.setex(redisKey, Math.ceil(ttlMs / 1000), data);
     } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        logger.error('[redis] setPlayerCacheEntry failed', message);
+        logger.error({ err }, '[redis] setPlayerCacheEntry failed');
     }
 }
 
@@ -900,8 +892,7 @@ export async function clearPlayerCacheEntry(key: string): Promise<void> {
         const redisKey = `cache:${key}`;
         await client.del(redisKey);
     } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        logger.error('[redis] clearPlayerCacheEntry failed', message);
+        logger.error({ err }, '[redis] clearPlayerCacheEntry failed');
     }
 }
 
@@ -933,8 +924,7 @@ export async function clearAllPlayerCacheEntries(): Promise<number> {
 
         return deletedCount;
     } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        logger.error('[redis] clearAllPlayerCacheEntries failed', message);
+        logger.error({ err }, '[redis] clearAllPlayerCacheEntries failed');
         return 0;
     }
 }
@@ -954,8 +944,7 @@ export async function deletePlayerCacheEntries(keys: string[]): Promise<number> 
         const result = await client.del(...redisKeys);
         return result;
     } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        logger.error('[redis] deletePlayerCacheEntries failed', message);
+        logger.error({ err }, '[redis] deletePlayerCacheEntries failed');
         return 0;
     }
 }
@@ -1015,8 +1004,7 @@ export async function getRedisCacheStats(): Promise<RedisCacheStats> {
                 memoryPercent,
             };
         } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
-            logger.error('[redis] getRedisCacheStats failed', message);
+            logger.error({ err }, '[redis] getRedisCacheStats failed');
             return {
                 totalKeys: 0,
                 cacheKeys: 0,

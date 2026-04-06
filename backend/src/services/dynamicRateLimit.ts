@@ -77,7 +77,7 @@ async function refreshDynamicRateLimit(): Promise<void> {
   try {
     await calculateDynamicRateLimit();
   } catch (error) {
-    logger.error('Failed to refresh dynamic rate limit', error);
+    logger.error({ err: error }, 'Failed to refresh dynamic rate limit');
   }
 }
 
