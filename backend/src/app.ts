@@ -92,6 +92,9 @@ export function createApp(): express.Express {
   app.use(pinoHttp({
     logger,
     genReqId: (req) => req.id,
+    autoLogging: {
+      ignore: (req) => req.method === 'POST' && (req.url ?? '').startsWith('/api/cron/ping'),
+    },
     customLogLevel: (_req, res, err) => {
       if (res.statusCode >= 500 || err) return 'error';
       if (res.statusCode >= 400) return 'warn';
@@ -103,6 +106,16 @@ export function createApp(): express.Express {
         method: req.method,
         url: sanitizeUrlForLogs(req.url),
       }),
+      res: (res) => {
+        const contentLength =
+          typeof res.getHeader === 'function' ? res.getHeader('content-length') : undefined;
+        return {
+          statusCode: res.statusCode,
+          ...(contentLength != null && contentLength !== ''
+            ? { contentLength: String(contentLength) }
+            : {}),
+        };
+      },
     },
     customSuccessMessage: (req, res, responseTime) => {
       return `[request] ${req.method} ${sanitizeUrlForLogs(req.url)} -> ${res.statusCode} (${responseTime.toFixed(2)} ms)`;
