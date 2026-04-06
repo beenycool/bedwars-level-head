@@ -986,7 +986,7 @@ class LevelheadCommand {
         msg.appendSibling(CommandUtils.buildInteractiveFeedback(
             messagePrefix = "",
             command = "/levelhead admin purgecache Notch",
-            run = true,
+            run = false,
             suffix = "${ChatColor.YELLOW}."
         ))
         sendMessage(msg)

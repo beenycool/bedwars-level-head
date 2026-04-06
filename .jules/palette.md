@@ -16,4 +16,4 @@
 
 **Learning:** When displaying example admin commands (like cache purging) in a help menu, setting `run = false` causes the command to be placed in the user's chat input area instead of running immediately. For safe, repeatable, non-destructive examples, this creates an unnecessary extra step.
 
-**Action:** Use `run = true` in `CommandUtils.buildInteractiveFeedback` for safe example commands like `/levelhead admin purgecache` so they execute immediately with one click.
+**Action:** Use `run = true` in `CommandUtils.buildInteractiveFeedback` for safe, fully-formed example commands like `/levelhead admin purgecache`. Examples containing placeholders (e.g., player names) should continue to use `run = false` to allow user editing before execution.
