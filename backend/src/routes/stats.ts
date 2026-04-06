@@ -1908,16 +1908,28 @@ router.get('/', async (req, res, next) => {
       function updateLatencyChart() {
         // ⚡ Bolt: Replace multiple `.filter()` and `.map()` passes with a single loop.
         // Impact: Eliminates O(N) intermediate array allocations and closure overhead.
-        const filteredLabels = [];
-        const filteredData = [];
-        
-        for (let i = 0; i < allLatencySeries.length; i++) {
+        const totalPoints = allLatencySeries.length;
+        const filteredLabels = new Array(totalPoints);
+        const filteredData = new Array(totalPoints);
+        let count = 0;
+
+        for (let i = 0; i < totalPoints; i++) {
           const point = allLatencySeries[i];
           if (includeCacheHits || !point.cacheHit) {
-            const asDate = point.x instanceof Date ? point.x : new Date(point.x);
-            filteredLabels.push(Number.isNaN(asDate.getTime()) ? '' : asDate.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-            filteredData.push(point.y);
+            const asDate = point.x;
+            const timeStr = Number.isNaN(asDate.getTime())
+              ? ''
+              : asDate.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+            filteredLabels[count] = timeStr;
+            filteredData[count] = point.y;
+            count++;
           }
+        }
+
+        if (count < totalPoints) {
+          filteredLabels.length = count;
+          filteredData.length = count;
         }
         
         // Find existing latency chart and update it
