@@ -1906,23 +1906,38 @@ router.get('/', async (req, res, next) => {
       charts.push(new Chart(starChartEl, starChartConfig));
 
       function updateLatencyChart() {
-        // Filter latency series based on cache hit inclusion
-        const filteredSeries = includeCacheHits
-          ? allLatencySeries
-          : allLatencySeries.filter((point) => !point.cacheHit);
-        
-        const filteredLabels = filteredSeries.map((point) => {
-          const asDate = point.x instanceof Date ? point.x : new Date(point.x);
-          if (Number.isNaN(asDate.getTime())) return '';
-          return asDate.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-        });
+        // ⚡ Bolt: Replace multiple `.filter()` and `.map()` passes with a single loop.
+        // Impact: Eliminates O(N) intermediate array allocations and closure overhead.
+        const totalPoints = allLatencySeries.length;
+        const filteredLabels = new Array(totalPoints);
+        const filteredData = new Array(totalPoints);
+        let count = 0;
+
+        for (let i = 0; i < totalPoints; i++) {
+          const point = allLatencySeries[i];
+          if (includeCacheHits || !point.cacheHit) {
+            const asDate = point.x;
+            const timeStr = Number.isNaN(asDate.getTime())
+              ? ''
+              : asDate.toLocaleTimeString([], { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+            filteredLabels[count] = timeStr;
+            filteredData[count] = point.y;
+            count++;
+          }
+        }
+
+        if (count < totalPoints) {
+          filteredLabels.length = count;
+          filteredData.length = count;
+        }
         
         // Find existing latency chart and update it
         const latencyChartIndex = charts.findIndex((chart) => chart.canvas.id === 'latencyChart');
         if (latencyChartIndex >= 0) {
           const chart = charts[latencyChartIndex];
           chart.data.labels = filteredLabels;
-          chart.data.datasets[0].data = filteredSeries.map((point) => point.y);
+          chart.data.datasets[0].data = filteredData;
           chart.update('none'); // Update without animation for better performance
         }
 
@@ -2389,10 +2404,16 @@ router.get('/', async (req, res, next) => {
       charts.push(new Chart(latencyDistributionChartEl, latencyDistributionChartConfig));
 
       // 9. Top Players
-      const topPlayersLabels = topPlayers.slice(0, 20).map((p) => {
-        return p.resolvedUsername || p.identifier;
-      });
-      const topPlayersData = topPlayers.slice(0, 20).map((p) => p.queryCount);
+      // ⚡ Bolt: Replaced multiple .slice().map() passes with a single loop
+      // Impact: Avoids redundant array copies and O(N) allocations
+      const topPlayersLimit = Math.min(topPlayers.length, 20);
+      const topPlayersLabels = new Array(topPlayersLimit);
+      const topPlayersData = new Array(topPlayersLimit);
+      for (let i = 0; i < topPlayersLimit; i++) {
+        const p = topPlayers[i];
+        topPlayersLabels[i] = p.resolvedUsername || p.identifier;
+        topPlayersData[i] = p.queryCount;
+      }
 
       const topPlayersChartConfig = {
         type: 'bar',
@@ -2972,16 +2993,24 @@ router.get('/', async (req, res, next) => {
         }
 
         // 8. Top Players Chart
-        const topPlayersLabels = topPlayers.slice(0, 20).map(p => p.resolvedUsername || p.identifier);
-        const topPlayersDataArr = topPlayers.slice(0, 20).map(p => p.queryCount);
+        // ⚡ Bolt: Replaced multiple .slice().map() passes with a single loop
+        // Impact: Avoids redundant array copies and O(N) allocations
+        const localTopPlayersLimit = Math.min(topPlayers.length, 20);
+        const localTopPlayersLabels = new Array(localTopPlayersLimit);
+        const topPlayersDataArr = new Array(localTopPlayersLimit);
+        for (let i = 0; i < localTopPlayersLimit; i++) {
+          const p = topPlayers[i];
+          localTopPlayersLabels[i] = p.resolvedUsername || p.identifier;
+          topPlayersDataArr[i] = p.queryCount;
+        }
         
         const topPlayersChart = charts.find(c => c.canvas && c.canvas.id === 'topPlayersChart');
         if (topPlayersChart) {
-          topPlayersChart.data.labels = topPlayersLabels;
+          topPlayersChart.data.labels = localTopPlayersLabels;
           topPlayersChart.data.datasets[0].data = topPlayersDataArr;
           topPlayersChart.update();
           if (chartConfigs['topPlayersChart']) {
-            chartConfigs['topPlayersChart'].config.data.labels = topPlayersLabels;
+            chartConfigs['topPlayersChart'].config.data.labels = localTopPlayersLabels;
             chartConfigs['topPlayersChart'].config.data.datasets[0].data = topPlayersDataArr;
           }
         }
