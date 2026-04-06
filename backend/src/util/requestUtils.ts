@@ -11,6 +11,13 @@ export interface BatchResolvedPlayer {
   source: ResolvedPlayer['source'];
 }
 
+/**
+ * Parses and validates batch identifiers from an unknown array.
+ * Trims whitespace, enforces IDENTIFIER_MAX_LENGTH, deduplicates, and checks IDENTIFIER_PATTERN.
+ * Non-strings, empty strings after trim, and over-length strings set hasInvalid.
+ * When hasInvalid is true, uniqueUuids may still include identifiers that fail IDENTIFIER_PATTERN;
+ * callers must check hasInvalid before using uniqueUuids.
+ */
 export function parseAndValidateBatchIdentifiers(
   uuidsValue: unknown[]
 ): { uniqueUuids: string[]; hasInvalid: boolean } {
@@ -20,14 +27,22 @@ export function parseAndValidateBatchIdentifiers(
 
   for (let i = 0; i < uuidsValue.length; i++) {
     const value = uuidsValue[i];
-    if (typeof value === 'string' && value.length <= IDENTIFIER_MAX_LENGTH) {
-      const trimmed = value.trim();
-      if (trimmed.length > 0 && !seenUuids.has(trimmed)) {
-        seenUuids.add(trimmed);
-        uniqueUuids.push(trimmed);
-        if (!IDENTIFIER_PATTERN.test(trimmed)) {
-          hasInvalid = true;
-        }
+    if (typeof value !== 'string') {
+      hasInvalid = true;
+      continue;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length === 0 || value.length > IDENTIFIER_MAX_LENGTH) {
+      hasInvalid = true;
+      continue;
+    }
+
+    if (!seenUuids.has(trimmed)) {
+      seenUuids.add(trimmed);
+      uniqueUuids.push(trimmed);
+      if (!IDENTIFIER_PATTERN.test(trimmed)) {
+        hasInvalid = true;
       }
     }
   }
