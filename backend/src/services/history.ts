@@ -333,7 +333,7 @@ async function flushHistoryBuffer(): Promise<void> {
     }
 
     if (deadLettered.length > 0) {
-        logger.error(`[history] Dropped ${deadLettered.length} records after ${MAX_RETRY_ATTEMPTS} failed attempts`, { sample: deadLettered.slice(0, 3) });
+        logger.error({ sample: deadLettered.slice(0, 3) }, `[history] Dropped ${deadLettered.length} records after ${MAX_RETRY_ATTEMPTS} failed attempts`);
     }
 
     if (toRetry.length > 0) {

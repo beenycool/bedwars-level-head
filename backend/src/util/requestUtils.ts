@@ -101,12 +101,12 @@ export async function recordQuerySafely(payload: Parameters<typeof recordPlayerQ
     try {
         recordPlayerQuery(payload);
     } catch (error) {
-        logger.error('Failed to record player query', {
-            error,
+        logger.error({
+            err: error,
             identifier: payload.identifier,
             lookupType: payload.lookupType,
-            responseStatus: payload.responseStatus,
-        });
+            responseStatus: payload.responseStatus
+        }, 'Failed to record player query');
     }
 }
 
