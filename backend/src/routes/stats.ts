@@ -2983,22 +2983,22 @@ router.get('/', async (req, res, next) => {
         // 8. Top Players Chart
         // ⚡ Bolt: Replaced multiple .slice().map() passes with a single loop
         // Impact: Avoids redundant array copies and O(N) allocations
-        const topPlayersLimit = Math.min(topPlayers.length, 20);
-        const topPlayersLabels = new Array(topPlayersLimit);
-        const topPlayersDataArr = new Array(topPlayersLimit);
-        for (let i = 0; i < topPlayersLimit; i++) {
+        const localTopPlayersLimit = Math.min(topPlayers.length, 20);
+        const localTopPlayersLabels = new Array(localTopPlayersLimit);
+        const topPlayersDataArr = new Array(localTopPlayersLimit);
+        for (let i = 0; i < localTopPlayersLimit; i++) {
           const p = topPlayers[i];
-          topPlayersLabels[i] = p.resolvedUsername || p.identifier;
+          localTopPlayersLabels[i] = p.resolvedUsername || p.identifier;
           topPlayersDataArr[i] = p.queryCount;
         }
         
         const topPlayersChart = charts.find(c => c.canvas && c.canvas.id === 'topPlayersChart');
         if (topPlayersChart) {
-          topPlayersChart.data.labels = topPlayersLabels;
+          topPlayersChart.data.labels = localTopPlayersLabels;
           topPlayersChart.data.datasets[0].data = topPlayersDataArr;
           topPlayersChart.update();
           if (chartConfigs['topPlayersChart']) {
-            chartConfigs['topPlayersChart'].config.data.labels = topPlayersLabels;
+            chartConfigs['topPlayersChart'].config.data.labels = localTopPlayersLabels;
             chartConfigs['topPlayersChart'].config.data.datasets[0].data = topPlayersDataArr;
           }
         }
