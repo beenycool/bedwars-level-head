@@ -154,7 +154,7 @@ object WhoisService {
         val nameComponent = ChatComponentText(result.displayName).apply {
             chatStyle.color = ChatColor.YELLOW
             chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, result.uuid.toString())
-            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to fill UUID"))
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("Click to fill UUID").apply { chatStyle.color = ChatColor.GREEN })
         }
 
         return nameComponent.appendSibling(
