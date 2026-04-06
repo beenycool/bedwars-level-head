@@ -201,6 +201,30 @@ const rawPoolMax = process.env.DB_POOL_MAX || process.env.CACHE_DB_POOL_MAX;
 const dbPoolMax = rawPoolMax ? parseInt(rawPoolMax, 10) : (dbType === DatabaseType.POSTGRESQL ? 20 : 10);
 const validatedPoolMax = Number.isFinite(dbPoolMax) && dbPoolMax > 0 ? dbPoolMax : 10;
 
+// Optional TTL ALTER may fail on some CockroachDB builds; cockroachTtl logs that at debug, so avoid duplicate ERROR from Kysely.
+function isOptionalTtlAlterErrorSql(sqlText: string): boolean {
+  const s = sqlText.toLowerCase();
+  if (!s.includes('alter table')) {
+    return false;
+  }
+  return /\bset\s*\([^)]*(ttl_expiration_expression|ttl_job_cron)/.test(s);
+}
+
+const DB_QUERY_ERROR_MSG = '[db] Query Error';
+const DB_QUERY_ERROR_TTL_DEBUG_MSG = '[db] Query Error (optional TTL skipped)';
+
+function logQueryError(
+  event: { error: unknown; query: { sql: string; parameters: unknown } },
+  options: { allowTtlDowngrade: boolean },
+): void {
+  const payload = { err: event.error, sql: event.query.sql, params: event.query.parameters };
+  if (options.allowTtlDowngrade && isOptionalTtlAlterErrorSql(event.query.sql)) {
+    logger.debug(payload, DB_QUERY_ERROR_TTL_DEBUG_MSG);
+  } else {
+    logger.error(payload, DB_QUERY_ERROR_MSG);
+  }
+}
+
 let db: Kysely<Database>;
 
 if (dbType === DatabaseType.POSTGRESQL) {
@@ -216,7 +240,7 @@ if (dbType === DatabaseType.POSTGRESQL) {
     }),
     log: (event) => {
       if (event.level === 'error') {
-        logger.error({ err: event.error, sql: event.query.sql, params: event.query.parameters }, '[db] Query Error');
+        logQueryError(event, { allowTtlDowngrade: true });
       }
     },
   });
@@ -239,7 +263,7 @@ if (dbType === DatabaseType.POSTGRESQL) {
     }),
     log: (event) => {
       if (event.level === 'error') {
-        logger.error({ err: event.error, sql: event.query.sql, params: event.query.parameters }, '[db] Query Error');
+        logQueryError(event, { allowTtlDowngrade: false });
       }
     },
   });

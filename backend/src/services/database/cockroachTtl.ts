@@ -10,6 +10,23 @@ interface CockroachTtlOptions {
 
 const ttlSetupPromises = new Map<string, Promise<boolean>>();
 const ttlManagedTables = new Set<string>();
+/** Tables where TTL ALTER failed this process; avoid repeating failing statements until restart. */
+const ttlSkippedTables = new Set<string>();
+
+function databaseErrorCode(error: unknown): string | undefined {
+  if (error === null || typeof error !== 'object' || !('code' in error)) {
+    return undefined;
+  }
+  const code = (error as { code?: unknown }).code;
+  return code === undefined || code === null ? undefined : String(code);
+}
+
+function shouldPermanentlySkipTtl(error: unknown): boolean {
+  const code = databaseErrorCode(error);
+  // Focused on known non-retriable "TTL unsupported/invalid" classes (Postgres/Cockroach).
+  return code === '42704' || code === '0A000';
+}
+
 
 function quoteSqlLiteral(value: string): string {
   return `'${value.replace(/'/g, "''")}'`;
@@ -34,6 +51,9 @@ export async function ensureCockroachRowLevelTtl({
   if (ttlManagedTables.has(tableName)) {
     return true;
   }
+  if (ttlSkippedTables.has(tableName)) {
+    return false;
+  }
 
   const existingPromise = ttlSetupPromises.get(tableName);
   if (existingPromise) {
@@ -52,7 +72,14 @@ export async function ensureCockroachRowLevelTtl({
       logger.info(`[db] enabled Cockroach row-level TTL for ${tableName}`);
       return true;
     } catch (error) {
-      logger.warn({ error, tableName }, '[db] failed to enable Cockroach row-level TTL');
+      if (shouldPermanentlySkipTtl(error)) {
+        ttlSkippedTables.add(tableName);
+      }
+      const code = databaseErrorCode(error);
+      logger.debug(
+        { err: error, tableName, ...(code !== undefined ? { code } : {}) },
+        '[db] Cockroach row-level TTL is optional; skipped after setup failed (table will work without TTL)',
+      );
       return false;
     } finally {
       if (!ttlManagedTables.has(tableName)) {
