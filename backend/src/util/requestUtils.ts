@@ -3,6 +3,52 @@ import { recordPlayerQuery } from '../services/history';
 import { ResolvedPlayer } from '../services/player';
 import { isValidBedwarsObject } from './typeChecks';
 import { logger } from './logger';
+import { IDENTIFIER_PATTERN, IDENTIFIER_MAX_LENGTH } from './validationConstants';
+
+export interface BatchResolvedPlayer {
+  identifier: string;
+  payload: ResolvedPlayer['payload'] & { nicked: boolean; stale?: true };
+  source: ResolvedPlayer['source'];
+}
+
+/**
+ * Parses and validates batch identifiers from an unknown array.
+ * Trims whitespace, enforces IDENTIFIER_MAX_LENGTH, deduplicates, and checks IDENTIFIER_PATTERN.
+ * Non-strings, empty strings after trim, and over-length strings set hasInvalid.
+ * When hasInvalid is true, uniqueUuids may still include identifiers that fail IDENTIFIER_PATTERN;
+ * callers must check hasInvalid before using uniqueUuids.
+ */
+export function parseAndValidateBatchIdentifiers(
+  uuidsValue: unknown[]
+): { uniqueUuids: string[]; hasInvalid: boolean } {
+  const uniqueUuids: string[] = [];
+  const seenUuids = new Set<string>();
+  let hasInvalid = false;
+
+  for (let i = 0; i < uuidsValue.length; i++) {
+    const value = uuidsValue[i];
+    if (typeof value !== 'string') {
+      hasInvalid = true;
+      continue;
+    }
+
+    const trimmed = value.trim();
+    if (trimmed.length === 0 || value.length > IDENTIFIER_MAX_LENGTH) {
+      hasInvalid = true;
+      continue;
+    }
+
+    if (!seenUuids.has(trimmed)) {
+      seenUuids.add(trimmed);
+      uniqueUuids.push(trimmed);
+      if (!IDENTIFIER_PATTERN.test(trimmed)) {
+        hasInvalid = true;
+      }
+    }
+  }
+
+  return { uniqueUuids, hasInvalid };
+}
 
 export function isIPInCIDR(ip: string, cidr: string): boolean {
   try {
