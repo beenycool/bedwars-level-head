@@ -18,17 +18,16 @@ const usePrettyTransport =
   process.env.NODE_ENV !== 'production' &&
   process.env.NODE_ENV !== 'test';
 
-export const logger = usePrettyTransport
-  ? pino(
-      pinoOptions,
-      pino.transport({
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          translateTime: 'SYS:standard',
-        },
-      }),
-    )
-  : pino(pinoOptions);
+const transport = usePrettyTransport
+  ? pino.transport({
+      target: 'pino-pretty',
+      options: {
+        colorize: true,
+        translateTime: 'SYS:standard',
+      },
+    })
+  : undefined;
+
+export const logger = pino(pinoOptions, transport);
 
 export default logger;
