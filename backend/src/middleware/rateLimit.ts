@@ -21,6 +21,7 @@ import {
 import { calculateDynamicRateLimit } from '../services/dynamicRateLimit';
 import { logger } from '../util/logger';
 import { MAX_BATCH_SIZE } from '../util/validationConstants';
+import { extractBatchIdentifiersFromBody } from '../util/requestUtils';
 
 interface DynamicLimitCacheEntry {
   value: number | null;
@@ -263,13 +264,13 @@ export const enforceAdminRateLimit = createRateLimitMiddleware({
  * Common logic to resolve batch request cost based on unique identifiers.
  */
 export function resolveBatchCost(req: Request): number {
-  const body = req.body as { uuids?: unknown } | undefined;
-  if (!body || !Array.isArray(body.uuids)) {
+  const uuidsValue = extractBatchIdentifiersFromBody(req.body);
+  if (!uuidsValue) {
     return 1; // Minimum cost for invalid/empty requests
   }
   // Count unique, non-empty strings in a single pass
   const uniqueIdentifiers = new Set<string>();
-  for (const value of body.uuids) {
+  for (const value of uuidsValue) {
     if (typeof value === 'string') {
       const trimmed = value.trim();
       if (trimmed.length > 0) {

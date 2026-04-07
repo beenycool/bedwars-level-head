@@ -1,7 +1,7 @@
 import ipaddr from 'ipaddr.js';
 import { recordPlayerQuery } from '../services/history';
 import { ResolvedPlayer } from '../services/player';
-import { isValidBedwarsObject } from './typeChecks';
+import { isValidBedwarsObject, isNonArrayObject } from './typeChecks';
 import { logger } from './logger';
 import { IDENTIFIER_PATTERN, IDENTIFIER_MAX_LENGTH } from './validationConstants';
 
@@ -9,6 +9,17 @@ export interface BatchResolvedPlayer {
   identifier: string;
   payload: ResolvedPlayer['payload'] & { nicked: boolean; stale?: true };
   source: ResolvedPlayer['source'];
+}
+
+
+/**
+ * Safely extracts an array of identifiers from a request body without inline 'as' casts.
+ */
+export function extractBatchIdentifiersFromBody(body: unknown): unknown[] | undefined {
+  if (isNonArrayObject(body) && Array.isArray(body.uuids)) {
+    return body.uuids;
+  }
+  return undefined;
 }
 
 /**
@@ -115,45 +126,49 @@ export async function recordQuerySafely(payload: Parameters<typeof recordPlayerQ
  * Returns null if the experience cannot be found or is invalid.
  */
 export function extractBedwarsExperience(payload: ResolvedPlayer['payload']): number | null {
-    if (payload && typeof payload === 'object' && 'bedwars_experience' in payload) {
-        const rawValue = (payload as { bedwars_experience?: unknown }).bedwars_experience;
+    if (isNonArrayObject(payload)) {
+        if ('bedwars_experience' in payload) {
+            const rawValue = payload.bedwars_experience;
+            if (rawValue === undefined || rawValue === null) {
+                return null;
+            }
+            const numeric = Number(rawValue);
+            if (!Number.isFinite(numeric) || numeric < 0) {
+                return null;
+            }
+            return numeric;
+        }
+
+        const dataCandidate = payload.data;
+        const bedwarsCandidate = payload.bedwars;
+
+        let bedwars: unknown = undefined;
+        if (isNonArrayObject(dataCandidate) && 'bedwars' in dataCandidate) {
+            bedwars = dataCandidate.bedwars;
+        } else if (bedwarsCandidate !== undefined) {
+            bedwars = bedwarsCandidate;
+        } else if (isValidBedwarsObject(dataCandidate)) {
+            bedwars = dataCandidate;
+        }
+
+        if (!isValidBedwarsObject(bedwars)) {
+            return null;
+        }
+
+        const rawValue = bedwars.bedwars_experience ?? bedwars.Experience ?? bedwars.experience;
         if (rawValue === undefined || rawValue === null) {
             return null;
         }
+
         const numeric = Number(rawValue);
         if (!Number.isFinite(numeric) || numeric < 0) {
             return null;
         }
+
         return numeric;
     }
 
-    if (!payload) {
-        return null;
-    }
-
-    const payloadRecord = payload as Record<string, unknown>;
-    const dataCandidate = (payloadRecord as { data?: unknown }).data;
-    const bedwarsCandidate = (payloadRecord as { bedwars?: unknown }).bedwars;
-    const bedwars =
-        (dataCandidate as { bedwars?: unknown } | undefined)?.bedwars ??
-        bedwarsCandidate ??
-        (isValidBedwarsObject(dataCandidate) ? dataCandidate : undefined);
-    if (!isValidBedwarsObject(bedwars)) {
-        return null;
-    }
-
-    const record = bedwars as Record<string, unknown>;
-    const rawValue = record.bedwars_experience ?? record.Experience ?? record.experience;
-    if (rawValue === undefined || rawValue === null) {
-        return null;
-    }
-
-    const numeric = Number(rawValue);
-    if (!Number.isFinite(numeric) || numeric < 0) {
-        return null;
-    }
-
-    return numeric;
+    return null;
 }
 
 export function sanitizeUrlForLogs(target: string): string {

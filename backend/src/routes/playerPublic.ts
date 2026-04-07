@@ -4,7 +4,7 @@ import { enforcePublicRateLimit, enforcePublicBatchRateLimit } from '../middlewa
 import { resolvePlayer, ResolvedPlayer, warmupPlayerCache } from '../services/player';
 import { computeBedwarsStar } from '../util/bedwars';
 import { HttpError } from '../util/httpError';
-import { extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely, parseAndValidateBatchIdentifiers, BatchResolvedPlayer } from '../util/requestUtils';
+import { extractBatchIdentifiersFromBody, extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely, parseAndValidateBatchIdentifiers, BatchResolvedPlayer } from '../util/requestUtils';
 import { getCircuitBreakerState } from '../services/hypixel';
 import { MAX_BATCH_SIZE, IDENTIFIER_PATTERN } from '../util/validationConstants';
 
@@ -90,9 +90,10 @@ router.get('/:identifier', enforcePublicRateLimit, async (req, res, next) => {
 
 router.post('/batch', enforcePublicBatchRateLimit, async (req, res, next) => {
   res.locals.metricsRoute = '/api/public/player/batch';
-  const uuidsValue = (req.body as { uuids?: unknown })?.uuids;
 
-  if (!Array.isArray(uuidsValue)) {
+  const uuidsValue = extractBatchIdentifiersFromBody(req.body);
+
+  if (!uuidsValue) {
     next(new HttpError(400, 'BAD_REQUEST', 'Expected body.uuids to be an array.'));
     return;
   }
