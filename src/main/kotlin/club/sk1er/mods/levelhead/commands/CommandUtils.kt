@@ -19,7 +19,7 @@ object CommandUtils {
 
     fun createClickableCommand(command: String, run: Boolean = false, suggestedCommand: String = command): IChatComponent {
         val action = if (run) ClickEvent.Action.RUN_COMMAND else ClickEvent.Action.SUGGEST_COMMAND
-        val hoverText = if (run) "${ChatColor.GREEN}Click to run" else "${ChatColor.GREEN}Click to fill"
+        val hoverText = if (run) "${ChatColor.GREEN}Click to run command" else "${ChatColor.GREEN}Click to fill command"
 
         return ChatComponentText("${ChatColor.GOLD}$command").apply {
             chatStyle.chatClickEvent = ClickEvent(action, suggestedCommand)
