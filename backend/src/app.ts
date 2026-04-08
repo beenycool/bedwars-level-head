@@ -19,6 +19,7 @@ import configRouter from './routes/config';
 import cronRouter from './routes/cron';
 import helmet from 'helmet';
 import crypto from 'crypto';
+import type { ServerResponse } from 'http';
 import { enforceAdminRateLimit } from './middleware/rateLimit';
 import { sanitizeUrlForLogs, isIPInCIDR } from './util/requestUtils';
 import { requestId } from './middleware/requestId';
@@ -92,7 +93,10 @@ export function createApp(): express.Express {
   app.use(pinoHttp({
     logger,
     genReqId: (req) => req.id,
-    customLogLevel: (_req, res, err) => {
+    customLogLevel: (req, res, err) => {
+      const isCronPing =
+        req.method === 'POST' && (req.url ?? '').startsWith('/api/cron/ping');
+      if (isCronPing && !err && res.statusCode < 400) return 'silent';
       if (res.statusCode >= 500 || err) return 'error';
       if (res.statusCode >= 400) return 'warn';
       return 'info';
@@ -103,6 +107,16 @@ export function createApp(): express.Express {
         method: req.method,
         url: sanitizeUrlForLogs(req.url),
       }),
+      res: (res: ServerResponse) => {
+        const contentLength =
+          typeof res.getHeader === 'function' ? res.getHeader('content-length') : undefined;
+        return {
+          statusCode: res.statusCode,
+          ...(contentLength != null && contentLength !== ''
+            ? { contentLength: String(contentLength) }
+            : {}),
+        };
+      },
     },
     customSuccessMessage: (req, res, responseTime) => {
       return `[request] ${req.method} ${sanitizeUrlForLogs(req.url)} -> ${res.statusCode} (${responseTime.toFixed(2)} ms)`;

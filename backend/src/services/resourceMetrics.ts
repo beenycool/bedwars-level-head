@@ -269,7 +269,7 @@ async function flushBuffer(): Promise<void> {
     try {
       await persistAggregate(aggregates);
       const uniqueBuckets = aggregates.length;
-      logger.info(`[resourceMetrics] flushed ${samples.length} samples across ${uniqueBuckets} bucket${uniqueBuckets > 1 ? 's' : ''}`);
+      logger.debug(`[resourceMetrics] flushed ${samples.length} samples across ${uniqueBuckets} bucket${uniqueBuckets > 1 ? 's' : ''}`);
     } catch (error) {
       logger.warn({ err: error }, 'Failed to flush resource metrics buffer, retaining for retry:');
       // Prepend failed samples back to buffer

@@ -17,11 +17,17 @@ object CommandUtils {
         }
     }
 
-    fun createClickableCommand(command: String, run: Boolean = false, suggestedCommand: String = command): IChatComponent {
+    fun createClickableCommand(
+        command: String,
+        run: Boolean = false,
+        suggestedCommand: String = command,
+        displayText: String? = null
+    ): IChatComponent {
         val action = if (run) ClickEvent.Action.RUN_COMMAND else ClickEvent.Action.SUGGEST_COMMAND
-        val hoverText = if (run) "${ChatColor.GREEN}Click to run" else "${ChatColor.GREEN}Click to fill"
+        val hoverText = if (run) "${ChatColor.GREEN}Click to run command" else "${ChatColor.GREEN}Click to fill command"
+        val text = displayText ?: "${ChatColor.GOLD}$command"
 
-        return ChatComponentText("${ChatColor.GOLD}$command").apply {
+        return ChatComponentText(text).apply {
             chatStyle.chatClickEvent = ClickEvent(action, suggestedCommand)
             chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText(hoverText))
         }

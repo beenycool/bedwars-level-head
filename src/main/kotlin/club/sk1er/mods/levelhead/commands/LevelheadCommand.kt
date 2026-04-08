@@ -651,14 +651,11 @@ class LevelheadCommand {
                 sendMessage("${ChatColor.GREEN}Available presets:")
                 ConfigProfiles.Preset.entries.forEach { preset ->
                     val line = ChatComponentText("${ChatColor.YELLOW}- ").appendSibling(
-                        ChatComponentText("${ChatColor.GOLD}${preset.displayName}").apply {
-                            chatStyle.chatClickEvent =
-                                ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/levelhead profile apply ${preset.name}")
-                            chatStyle.chatHoverEvent = HoverEvent(
-                                HoverEvent.Action.SHOW_TEXT,
-                                ChatComponentText("${ChatColor.GREEN}Click to fill apply command for ${preset.displayName}")
-                            )
-                        }
+                        CommandUtils.createClickableCommand(
+                            preset.displayName,
+                            run = false,
+                            suggestedCommand = "/levelhead profile apply ${preset.name}"
+                        )
                     ).appendSibling(ChatComponentText("${ChatColor.YELLOW}: ${ChatColor.GRAY}${preset.description}"))
                     sendMessage(line)
                 }
@@ -702,13 +699,13 @@ class LevelheadCommand {
                 val exported = ConfigProfiles.exportProfile()
                 GuiScreen.setClipboardString(exported)
                 val msg = ChatComponentText("${ChatColor.GREEN}Exported current configuration to clipboard. Share it with others!")
-                    .appendSibling(ChatComponentText(" ${ChatColor.GRAY}[Click to import]").apply {
-                        chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, "/levelhead profile import")
-                        chatStyle.chatHoverEvent = HoverEvent(
-                            HoverEvent.Action.SHOW_TEXT,
-                            ChatComponentText("${ChatColor.GREEN}Click to fill import command (confirm required)")
+                    .appendSibling(
+                        CommandUtils.createClickableCommand(
+                            "/levelhead profile import",
+                            run = false,
+                            displayText = " ${ChatColor.GRAY}[Click to import]"
                         )
-                    })
+                    )
                 sendMessage(msg)
             }
             "import" -> {
