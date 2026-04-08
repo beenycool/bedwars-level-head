@@ -19,8 +19,6 @@ import net.minecraft.client.Minecraft
 import net.minecraft.util.ChatComponentText
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.util.IChatComponent
-import net.minecraft.event.ClickEvent
-import net.minecraft.event.HoverEvent
 import net.minecraft.util.EnumChatFormatting as ChatColor
 import okhttp3.HttpUrl
 import okhttp3.Request
@@ -151,11 +149,12 @@ object WhoisService {
     private fun formatResultComponent(result: WhoisResult): IChatComponent {
         val nickedText = if (result.nicked) " ${ChatColor.GRAY}(nicked)" else ""
 
-        val nameComponent = ChatComponentText(result.displayName).apply {
-            chatStyle.color = ChatColor.YELLOW
-            chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.SUGGEST_COMMAND, result.uuid.toString())
-            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("Click to fill UUID").apply { chatStyle.color = ChatColor.GREEN })
-        }
+        val nameComponent = CommandUtils.createClickableCommand(
+            result.displayName,
+            run = false,
+            suggestedCommand = result.uuid.toString(),
+            displayText = "${ChatColor.YELLOW}${result.displayName}"
+        )
 
         return nameComponent.appendSibling(
             ChatComponentText("$nickedText ${ChatColor.YELLOW}is ${ChatColor.GOLD}${result.statValue} ${ChatColor.YELLOW}(${result.gameMode.displayName} ${result.statName})")
