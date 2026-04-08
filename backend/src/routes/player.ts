@@ -5,8 +5,9 @@ import { enforceApiKeyAuth } from '../middleware/apiKeyAuth';
 import { resolvePlayer, ResolvedPlayer, warmupPlayerCache } from '../services/player';
 import { computeBedwarsStar } from '../util/bedwars';
 import { HttpError } from '../util/httpError';
-import { extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely, parseAndValidateBatchIdentifiers, BatchResolvedPlayer } from '../util/requestUtils';
+import { extractBatchIdentifiersFromBody, extractBedwarsExperience, parseIfModifiedSince, recordQuerySafely, parseAndValidateBatchIdentifiers, BatchResolvedPlayer } from '../util/requestUtils';
 import { getCircuitBreakerState } from '../services/hypixel';
+import { isNonArrayObject } from '../util/typeChecks';
 import { logger } from '../util/logger';
 import { IDENTIFIER_PATTERN } from '../util/validationConstants';
 import { submissionService } from '../services/submissionService';
@@ -96,9 +97,10 @@ router.get('/:identifier', enforceApiKeyAuth, enforceRateLimit, async (req, res,
 
 router.post('/batch', enforceApiKeyAuth, enforceBatchRateLimit, async (req, res, next) => {
   res.locals.metricsRoute = '/api/player/batch';
-  const uuidsValue = (req.body as { uuids?: unknown })?.uuids;
 
-  if (!Array.isArray(uuidsValue)) {
+  const uuidsValue = extractBatchIdentifiersFromBody(req.body);
+
+  if (!uuidsValue) {
     next(new HttpError(400, 'BAD_REQUEST', 'Expected body.uuids to be an array.'));
     return;
   }
@@ -212,15 +214,14 @@ const uuidOnlyPattern = /^[0-9a-f]{32}$/i;
 
 router.post('/submit', enforceApiKeyAuth, enforceRateLimit, async (req, res, next) => {
   res.locals.metricsRoute = '/api/player/submit';
-  const body = req.body as { uuid?: unknown; data?: unknown; signature?: unknown } | undefined;
 
   // Validate request body structure
-  if (!body || typeof body !== 'object') {
+  if (!isNonArrayObject(req.body)) {
     next(new HttpError(400, 'BAD_REQUEST', 'Expected JSON body with uuid and data fields.'));
     return;
   }
 
-  const { uuid, data, signature: rawSignature } = body;
+  const { uuid, data, signature: rawSignature } = req.body;
 
   // Validate UUID format
   if (typeof uuid !== 'string' || !uuidOnlyPattern.test(uuid.trim())) {
