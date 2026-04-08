@@ -125,7 +125,7 @@ export async function recordQuerySafely(payload: Parameters<typeof recordPlayerQ
  * Extracts Bedwars experience from a resolved player payload.
  * Returns null if the experience cannot be found or is invalid.
  */
-export function extractBedwarsExperience(payload: ResolvedPlayer['payload']): number | null {
+export function extractBedwarsExperience(payload: unknown): number | null {
     if (isNonArrayObject(payload)) {
         if ('bedwars_experience' in payload) {
             const rawValue = payload.bedwars_experience;
@@ -142,14 +142,10 @@ export function extractBedwarsExperience(payload: ResolvedPlayer['payload']): nu
         const dataCandidate = payload.data;
         const bedwarsCandidate = payload.bedwars;
 
-        let bedwars: unknown = undefined;
-        if (isNonArrayObject(dataCandidate) && 'bedwars' in dataCandidate) {
-            bedwars = dataCandidate.bedwars;
-        } else if (bedwarsCandidate !== undefined) {
-            bedwars = bedwarsCandidate;
-        } else if (isValidBedwarsObject(dataCandidate)) {
-            bedwars = dataCandidate;
-        }
+        const bedwars =
+            (isNonArrayObject(dataCandidate) ? dataCandidate.bedwars : undefined) ??
+            bedwarsCandidate ??
+            (isValidBedwarsObject(dataCandidate) ? dataCandidate : undefined);
 
         if (!isValidBedwarsObject(bedwars)) {
             return null;

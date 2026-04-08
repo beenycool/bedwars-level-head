@@ -268,6 +268,9 @@ export function resolveBatchCost(req: Request): number {
   if (!uuidsValue) {
     return 1; // Minimum cost for invalid/empty requests
   }
+  if (uuidsValue.length > MAX_BATCH_SIZE) {
+    return MAX_BATCH_SIZE;
+  }
   // Count unique, non-empty strings in a single pass
   const uniqueIdentifiers = new Set<string>();
   for (const value of uuidsValue) {
