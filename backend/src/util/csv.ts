@@ -9,8 +9,8 @@ const escapeCell = (val: unknown): string => {
   // Ensure the check evaluates the stringified `str` variable without
   // restricting it with `typeof val === 'string'` to protect non-string
   // types (like arrays or objects with custom toString) from formula injection,
-  // while explicitly allowing primitive numbers like -5 to bypass quoting.
-  if (typeof val !== 'number' && /^[ \t\r]*[=+\-@]/.test(str)) {
+  // while explicitly allowing primitive numbers like -5 or -5n to bypass quoting.
+  if (typeof val !== 'number' && typeof val !== 'bigint' && /^[ \t\r]*[=+\-@]/.test(str)) {
     sanitized = `'${str}`;
   }
 
