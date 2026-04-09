@@ -413,16 +413,12 @@ export async function deleteCacheEntries(keys: string[]): Promise<number> {
     deleted += await deletePlayerCacheEntries(keys);
   }
 
-  let result;
-  if (dbType === DatabaseType.POSTGRESQL) {
-    result = await sql`DELETE FROM player_stats_cache WHERE cache_key = ANY(${keys})`.execute(db);
-  } else {
-    // SQL Server doesn't support ANY(${key}) with an array directly.
-    const placeholders = keys.map((_, i) => `@p${i + 1}`).join(',');
-    result = await sql`DELETE FROM player_stats_cache WHERE cache_key IN (${keys})`.execute(db);
-  }
+  const result = await db.deleteFrom('player_stats_cache')
+    .where('cache_key', 'in', keys)
+    .executeTakeFirst();
+
   markDbAccess();
-  return deleted + Number(result.numAffectedRows ?? 0);
+  return deleted + Number(result.numDeletedRows ?? 0);
 }
 
 export async function closeCache(): Promise<void> {
@@ -434,9 +430,9 @@ export async function getActivePrivateUserCount(since: number): Promise<number> 
   await ensureInitialized();
   let result;
   if (dbType === DatabaseType.POSTGRESQL) {
-    result = await sql<{ count: string }>`${since}`.execute(db);
+    result = await sql<{ count: string }>`SELECT COUNT(*) as count FROM rate_limits WHERE window_start >= ${since}`.execute(db);
   } else {
-    result = await sql<{ count: number }>`${since}`.execute(db);
+    result = await sql<{ count: number }>`SELECT COUNT(*) as count FROM rate_limits WHERE window_start >= ${since}`.execute(db);
   }
   markDbAccess();
   const raw = result.rows[0]?.count ?? '0';
@@ -448,9 +444,9 @@ export async function getPrivateRequestCount(since: number): Promise<number> {
   await ensureInitialized();
   let result;
   if (dbType === DatabaseType.POSTGRESQL) {
-    result = await sql<{ total: string | number | null }>`${since}`.execute(db);
+    result = await sql<{ total: string | number | null }>`SELECT SUM(count) as total FROM rate_limits WHERE window_start >= ${since}`.execute(db);
   } else {
-    result = await sql<{ total: string | number | null }>`${since}`.execute(db);
+    result = await sql<{ total: string | number | null }>`SELECT SUM(count) as total FROM rate_limits WHERE window_start >= ${since}`.execute(db);
   }
   markDbAccess();
   const raw = result.rows[0]?.total ?? '0';
