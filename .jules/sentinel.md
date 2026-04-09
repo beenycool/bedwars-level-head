@@ -2,6 +2,7 @@
 **Vulnerability:** SQL injection vulnerability via an unescaped raw string literal representing the table name in `sql.raw` in `ensureCockroachRowLevelTtl` within `cockroachTtl.ts`.
 **Learning:** Raw SQL query strings often bypass Kysely's built-in protections if not using the tagged template literals correctly or quoting identifiers. When fixing SQL injection vulnerabilities by validating identifiers, standard validation regex (`/[^a-zA-Z0-9_]/`) can be overly strict and break functionality relying on schema-qualified tables (e.g. `schema.table`).
 **Prevention:** Always escape standard SQL identifiers using `""` and doubling internal quotes `""`.
+
 ## 2026-04-09 - Fix SQL Injection and Raw Interpolation Vulnerabilities in Cache Service
 **Vulnerability:** Found multiple methods in `cache.ts` using raw template literals vulnerable to syntax mangling or injection:
 1. `getActivePrivateUserCount` and `getPrivateRequestCount` passed a bare `since` parameter directly into a Kysely `sql` tagged literal without any SQL query structure (e.g. `sql\`${since}\``), treating the raw number as the query itself.
