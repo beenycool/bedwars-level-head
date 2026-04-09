@@ -298,10 +298,7 @@ class DisplayManager(val file: File) {
 
             synchronized(pendingRequests) {
                 val key = RequestKey(uuid.trimmed, activeMode.typeId)
-                val existing = pendingRequests[key]
-                if (existing != null) {
-                    pendingRequests[key] = existing.copy(reason = Levelhead.RequestReason.TAB_LIST)
-                } else {
+                if (!pendingRequests.containsKey(key)) {
                     pendingRequests[key] = Levelhead.LevelheadRequest(
                         uuid = uuid.trimmed,
                         displays = emptySet(),
