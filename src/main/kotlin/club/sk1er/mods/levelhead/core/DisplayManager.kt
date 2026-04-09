@@ -286,18 +286,27 @@ class DisplayManager(val file: File) {
      */
     @OptIn(ExperimentalStdlibApi::class)
     private fun requestTabListPlayers() {
-        if (!config.enabled) return
+        if (!LevelheadConfig.showTabStats) return
         if (!ModeManager.shouldRequestData()) return
         val activeMode = ModeManager.getActiveGameMode() ?: return
-        val display = primaryDisplay() ?: return
-        if (!display.config.enabled) return
 
         val netHandler = Minecraft.getMinecraft().thePlayer?.sendQueue ?: return
         for (info in netHandler.playerInfoMap) {
             val uuid = info.gameProfile.id ?: continue
             if (uuid.version() == 2) continue
             if (Levelhead.getCachedStats(uuid, activeMode) != null) continue
-            enqueueRequest(uuid.trimmed, display, activeMode.typeId, Levelhead.RequestReason.TAB_LIST)
+
+            synchronized(pendingRequests) {
+                val key = RequestKey(uuid.trimmed, activeMode.typeId)
+                if (!pendingRequests.containsKey(key)) {
+                    pendingRequests[key] = Levelhead.LevelheadRequest(
+                        uuid = uuid.trimmed,
+                        displays = emptySet(),
+                        type = activeMode.typeId,
+                        reason = Levelhead.RequestReason.TAB_LIST
+                    )
+                }
+            }
         }
     }
 
