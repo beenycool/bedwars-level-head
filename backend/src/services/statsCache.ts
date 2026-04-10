@@ -13,6 +13,7 @@ import {
 } from '../config';
 import { CacheEntry, CacheMetadata, CacheSource, ensureInitialized, markDbAccess, shouldReadFromDb } from './cache';
 import { DatabaseType } from './database/db';
+import { isNonArrayObject } from '../util/typeChecks';
 import { recordCacheHit, recordCacheMiss, recordCacheTierHit, recordCacheTierMiss, recordCacheSourceHit, recordCacheRefresh } from './metrics';
 import { fetchHypixelPlayer, HypixelFetchOptions, MinimalPlayerStats, extractMinimalStats } from './hypixel';
 import { getRedisClient, isRedisAvailable } from './redis';
@@ -128,8 +129,8 @@ export interface PlayerCachePayload {
 }
 
 function isPlayerCachePayload(value: unknown): value is PlayerCachePayload {
-  if (!value || typeof value !== 'object') return false;
-  const v = value as Record<string, unknown>;
+  if (!isNonArrayObject(value)) return false;
+  const v = value;
   return (
     (typeof v.payload === 'string' || (typeof v.payload === 'object' && v.payload !== null)) &&
     typeof v.expires_at === 'number' &&
