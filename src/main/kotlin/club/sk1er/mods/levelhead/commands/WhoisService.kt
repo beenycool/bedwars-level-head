@@ -153,7 +153,8 @@ object WhoisService {
             result.displayName,
             run = false,
             suggestedCommand = result.uuid.toString(),
-            displayText = "${ChatColor.YELLOW}${result.displayName}"
+            displayText = "${ChatColor.YELLOW}${result.displayName}",
+            hoverTextOverride = "${ChatColor.GREEN}Click to fill UUID"
         )
 
         return nameComponent.appendSibling(
