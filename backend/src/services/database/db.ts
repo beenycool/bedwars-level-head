@@ -234,6 +234,10 @@ if (dbType === DatabaseType.POSTGRESQL) {
     idleTimeoutMillis: 30000,
   });
 
+  pool.on('error', (err) => {
+    logger.error({ err }, '[db] Unexpected error on idle PostgreSQL client');
+  });
+
   db = new Kysely<Database>({
     dialect: new PostgresDialect({
       pool,
