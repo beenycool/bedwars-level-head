@@ -254,6 +254,15 @@ if (dbType === DatabaseType.POSTGRESQL) {
 } else {
   const config = parseMssqlConfig(connectionString);
   const pool = new mssql.ConnectionPool(config);
+  // Add error listener to MSSQL pool to mirror PostgreSQL handling and
+  // prevent the Node.js process from crashing on unexpected pool errors.
+  // mssql's ConnectionPool emits 'error' for connection-level issues.
+  // Log the error so the pool can handle cleanup without bringing down the app.
+  // See PR feedback requesting parity with PostgreSQL pool handling.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (pool as any).on('error', (err: unknown) => {
+    logger.error({ err }, '[db] Unexpected error on MSSQL connection pool');
+  });
 
   db = new Kysely<Database>({
     dialect: new MssqlDialect({
