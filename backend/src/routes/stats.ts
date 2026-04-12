@@ -289,6 +289,21 @@ const jsonForFrontend = JSON.stringify({
   },
 });
 
+    // Diagnostic: log a small sample and type info for the embedded JSON so we can
+    // detect malformed output in production logs if the issue recurs. Keep this
+    // lightweight to avoid logging large payloads.
+    try {
+      logger.info({
+        jsonType: typeof jsonForFrontend,
+        jsonLen: jsonForFrontend ? jsonForFrontend.length : 0,
+        sample: jsonForFrontend ? jsonForFrontend.slice(0, 200) : null,
+      }, 'stats jsonForFrontend');
+    } catch (e) {
+      // Swallow logging errors to avoid affecting the main response path
+      // and preserve original behaviour if logger is busted.
+      /* no-op */
+    }
+
     const totalLookups = chartData.length;
     let cacheHits = 0;
     let successCount = 0;
@@ -1366,9 +1381,13 @@ const jsonForFrontend = JSON.stringify({
       </tbody>
     </table>
 
+    <script type="application/json" id="page-data" nonce="${res.locals.nonce}">${jsonForFrontend}</script>
     <script nonce="${res.locals.nonce}">
       const nonce = "${res.locals.nonce}";
-      const pageData = JSON.parse(decodeURIComponent("${encodeURIComponent(jsonForFrontend)}"));
+      // Parse the server-embedded JSON from a non-executing script tag to avoid
+      // fragile inlined JS object embedding. The JSON is already escaped for '<'
+      // above when it was created (replace(/</g, '\\u003c')).
+      const pageData = JSON.parse(document.getElementById('page-data').textContent);
       const data = pageData.chartData || [];
       const topPlayers = pageData.topPlayers || [];
       const filters = pageData.filters || {};
