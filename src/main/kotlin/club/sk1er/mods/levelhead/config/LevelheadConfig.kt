@@ -823,36 +823,37 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             save()
             BedwarsFetcher.resetWarnings()
         }
-@Dropdown(
-    name = "DNS Resolution Mode",
-    description = "Choose how to resolve domain names. IPv4 First is recommended for most users.",
-    category = "Advanced",
-    options = ["IPv4 Only", "IPv4 First", "System Default"]
-)
-var dnsModeIndex: Int = 1 // Default to IPv4 First
-set(value) {
-    field = value.coerceIn(0, DnsMode.entries.size - 1)
-    save()
-}
 
-@Switch(
-    name = "Force On All Servers",
-    description = "Enable Levelhead on all servers, not just Hypixel. Useful when using proxy services that change your server IP.",
-    category = "Advanced"
-)
-var forceEnabled: Boolean = false
-set(value) {
-    field = value
-    save()
-}
+    @Dropdown(
+        name = "DNS Resolution Mode",
+        description = "Choose how to resolve domain names. IPv4 First is recommended for most users.",
+        category = "Advanced",
+        options = ["IPv4 Only", "IPv4 First", "System Default"]
+    )
+    var dnsModeIndex: Int = 1 // Default to IPv4 First
+        set(value) {
+            field = value.coerceIn(0, DnsMode.entries.size - 1)
+            save()
+        }
 
-@Info(
-    text = "Proxy Auth Token is recommended when using a private backend.",
-    type = InfoType.INFO,
-    category = "Advanced"
-)
-@Transient
-var proxyAuthInfo: String = ""
+    @Switch(
+        name = "Force On All Servers",
+        description = "Enable Levelhead on all servers, not just Hypixel. Useful when using proxy services that change your server IP.",
+        category = "Advanced"
+    )
+    var forceEnabled: Boolean = false
+        set(value) {
+            field = value
+            save()
+        }
+
+    @Info(
+        text = "Proxy Auth Token is recommended when using a private backend.",
+        type = InfoType.INFO,
+        category = "Advanced"
+    )
+    @Transient
+    var proxyAuthInfo: String = ""
 
     @Text(
         name = "Proxy Auth Token",

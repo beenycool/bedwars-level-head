@@ -147,15 +147,15 @@ object Levelhead {
     private val minecraft: Minecraft
         get() = Minecraft.getMinecraft()
 
-fun isOnHypixel(): Boolean {
-    if (LevelheadConfig.forceEnabled) return true
-    if (minecraft.isSingleplayer) {
-        return false
+    fun isOnHypixel(): Boolean {
+        if (LevelheadConfig.forceEnabled) return true
+        if (minecraft.isSingleplayer) {
+            return false
+        }
+        val serverIp = minecraft.currentServerData?.serverIP ?: return false
+        val normalized = serverIp.lowercase(Locale.ROOT)
+        return normalized.contains("hypixel")
     }
-    val serverIp = minecraft.currentServerData?.serverIP ?: return false
-    val normalized = serverIp.lowercase(Locale.ROOT)
-    return normalized.contains("hypixel")
-}
 
     fun sendChat(message: String) {
         val formatted = "${ChatColor.AQUA}[Levelhead] ${ChatColor.RESET}$message"
