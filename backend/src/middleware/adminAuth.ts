@@ -59,11 +59,11 @@ export function validateAdminToken(token: string): boolean {
   const tokenHash = crypto.scryptSync(token, SALT, KEY_LEN, HASH_OPTS);
 
   // To prevent timing attacks, we must iterate through all keys and not short-circuit.
-  // Using reduce with a bitwise OR ensures we process every key without conditional branching.
-  const match = ALLOWED_KEY_HASHES.reduce(
-    (acc, keyHash) => acc | Number(crypto.timingSafeEqual(tokenHash, keyHash)),
-    0
-  );
+  // ⚡ Bolt: Replaced .reduce() with a standard for loop to avoid closure invocation overhead.
+  let match = 0;
+  for (let i = 0; i < ALLOWED_KEY_HASHES.length; i++) {
+    match |= Number(crypto.timingSafeEqual(tokenHash, ALLOWED_KEY_HASHES[i]));
+  }
 
   return Boolean(match);
 }
