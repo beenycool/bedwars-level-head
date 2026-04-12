@@ -39,8 +39,7 @@ object TabRender {
      */
     @JvmStatic
     fun beginFrame(objective: ScoreObjective?) {
-        if (!Levelhead.displayManager.config.enabled ||
-            !LevelheadConfig.showTabStats ||
+        if (!LevelheadConfig.showTabStats ||
             !Levelhead.isOnHypixel()
         ) {
             frameState = null

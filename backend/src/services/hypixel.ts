@@ -13,6 +13,7 @@ import {
   OUTBOUND_USER_AGENT,
 } from '../config';
 import { HttpError } from '../util/httpError';
+import { isNonArrayObject } from '../util/typeChecks';
 import { recordHypixelApiCall } from './hypixelTracker';
 import { logger } from '../util/logger';
 
@@ -192,7 +193,8 @@ export function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayloa
     throw new HttpError(502, cause, 'Hypixel returned an error response.');
   }
 
-  const bedwarsStats = response.player?.stats?.Bedwars ?? {} as Record<string, unknown>;
+  const bedwarsStatsRaw = response.player?.stats?.Bedwars;
+  const bedwarsStats = isNonArrayObject(bedwarsStatsRaw) ? bedwarsStatsRaw : {};
   const getNumericStat = (stats: Record<string, unknown>, key: string): number | undefined => {
     const val = stats[key];
     return typeof val === 'number' ? val : undefined;
@@ -211,7 +213,7 @@ export function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayloa
   const fkdr = finalDeaths <= 0 ? finalKills : finalKills / finalDeaths;
 
   // Clone to avoid hidden mutation
-  const shapedStats = { ...bedwarsStats } as Record<string, unknown>;
+  const shapedStats: Record<string, unknown> = { ...bedwarsStats };
 
   if (experience !== undefined) {
     shapedStats.bedwars_experience = experience;
@@ -287,7 +289,7 @@ function extractRetryAfterHeader(
     return undefined;
   }
 
-  const headerValue = (headers as Record<string, unknown>)['retry-after'];
+  const headerValue = isNonArrayObject(headers) ? headers['retry-after'] : undefined;
   if (!headerValue) {
     return undefined;
   }
@@ -467,9 +469,12 @@ function extractModeStats(
 }
 
 export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPlayerStats {
-  const bedwarsStats = response.player?.stats?.Bedwars ?? {};
-  const duelsStats = response.player?.stats?.Duels ?? {};
-  const skywarsStats = response.player?.stats?.SkyWars ?? {};
+  const bedwarsStatsRaw = response.player?.stats?.Bedwars;
+  const duelsStatsRaw = response.player?.stats?.Duels;
+  const skywarsStatsRaw = response.player?.stats?.SkyWars;
+  const bedwarsStats = isNonArrayObject(bedwarsStatsRaw) ? bedwarsStatsRaw : {};
+  const duelsStats = isNonArrayObject(duelsStatsRaw) ? duelsStatsRaw : {};
+  const skywarsStats = isNonArrayObject(skywarsStatsRaw) ? skywarsStatsRaw : {};
 
   const bedwars = bedwarsStats as Record<string, number | undefined>;
   const skywars = skywarsStats as Record<string, number | undefined>;

@@ -29,3 +29,8 @@
 **Tech Debt:** Inline `as { ... }` and `as Record<string, unknown>` type assertions were repeatedly used to access properties on `req.body` and payload objects, bypassing strict type safety.
 **Learning:** Extracting type assertions into shared utilities (e.g., `extractBatchIdentifiersFromBody`) is a solid refactor, but doing so blindly can introduce DoS vulnerabilities if bounding checks (e.g., length verification) are inadvertently moved to *after* iteration/deduplication steps.
 **Prevention:** When refactoring payload extraction, always ensure that array length limits and bounding gates remain placed *before* any unbounded iteration (like deduplication loops or regex validations). Use the `isNonArrayObject` type guard directly to satisfy TypeScript without inline casting.
+
+## 2026-04-09 - Remove inline type assertions for object validation
+**Tech Debt:** Inline `as Record<string, unknown>` type assertions were repeatedly used to bypass type checking across various validation functions in Node.js backend (`submissionService.ts`, `statsCache.ts`, `hypixel.ts`, etc.).
+**Learning:** This approach undermines the strict null/array checking required for robust TypeScript, particularly since `typeof null` and `typeof []` both evaluate to `'object'`, posing logic bugs.
+**Prevention:** Always rely on a central type guard utility like `isNonArrayObject` that checks for `value !== null && typeof value === 'object' && !Array.isArray(value)` to strictly narrow unknown objects before safely accessing their properties.

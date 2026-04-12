@@ -3,7 +3,7 @@ import { COMMUNITY_SUBMIT_SECRET } from '../config';
 import { logger } from '../util/logger';
 import { validateTimestampAndNonce, validatePlayerSubmission, matchesCriticalFields, extractBedwarsRecord } from '../util/validation';
 import { canonicalize } from '../util/signature';
-import { isValidBedwarsObject } from '../util/typeChecks';
+import { isValidBedwarsObject, isNonArrayObject } from '../util/typeChecks';
 import { MinimalPlayerStats, extractMinimalStats } from './hypixel';
 import { getPlayerStatsFromCache, setIgnMapping, setPlayerStatsBoth } from './statsCache';
 import { CacheSource } from './cache';
@@ -23,9 +23,8 @@ interface SignedData {
 }
 
 function isSignedData(data: unknown): data is SignedData {
-    if (!data || typeof data !== 'object') return false;
-    const obj = data as Record<string, unknown>;
-    return typeof obj.timestamp === 'number' && typeof obj.nonce === 'string';
+    if (!isNonArrayObject(data)) return false;
+    return typeof data.timestamp === 'number' && typeof data.nonce === 'string';
 }
 
 export class SubmissionService {
@@ -104,8 +103,8 @@ export class SubmissionService {
         return { valid: false, source: null };
       }
 
-      if (matchesCriticalFields(hypixelData, data as Record<string, unknown>)) {
-        const submittedName = (data as Record<string, unknown>).displayname;
+      if (isNonArrayObject(data) && matchesCriticalFields(hypixelData, data)) {
+        const submittedName = data.displayname;
         const actualName = result.payload.player?.displayname;
 
         if (typeof submittedName === 'string' && typeof actualName === 'string') {
@@ -169,6 +168,15 @@ export class SubmissionService {
   ): Promise<{ success: boolean; message?: string; statusCode?: number; error?: string; errorCode?: string }> {
     const normalizedUuid = uuid.trim().toLowerCase();
 
+    if (!isNonArrayObject(data)) {
+      return {
+        success: false,
+        statusCode: 422,
+        errorCode: 'VALIDATION_FAILED',
+        error: `Player data validation failed: Expected a JSON object`
+      };
+    }
+
     // Validate submission data structure
     const jsonString = JSON.stringify(data);
     const validation = validatePlayerSubmission(jsonString, data);
@@ -198,7 +206,7 @@ export class SubmissionService {
     }
 
     const cacheKey = `player:${normalizedUuid}`;
-    const submission = data as Record<string, unknown>;
+    const submission = data;
     const record = extractBedwarsRecord(submission) ?? submission;
     const existingEntry = await getPlayerStatsFromCache(cacheKey, true);
 
