@@ -1,3 +1,4 @@
+import { isNonArrayObject } from './typeChecks';
 /**
  * Serializes an object into a canonical JSON string format.
  * This ensures that objects with identical data but different key orders
@@ -29,8 +30,8 @@ export function canonicalize(value: unknown): string {
         return str;
     }
 
-    if (typeof value === 'object') {
-        const obj = value as Record<string, unknown>;
+    if (isNonArrayObject(value)) {
+        const obj = value;
         const keys = Object.keys(obj).sort();
         let str = '{';
         for (let i = 0; i < keys.length; i++) {
