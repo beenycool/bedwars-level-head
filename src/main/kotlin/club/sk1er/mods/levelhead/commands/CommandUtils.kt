@@ -25,7 +25,7 @@ object CommandUtils {
         hoverTextOverride: String? = null
     ): IChatComponent {
         val action = if (run) ClickEvent.Action.RUN_COMMAND else ClickEvent.Action.SUGGEST_COMMAND
-        val hoverText = hoverTextOverride ?: if (run) "${ChatColor.GREEN}Click to run command" else "${ChatColor.GREEN}Click to fill command"
+        val hoverText = hoverTextOverride ?: "${ChatColor.GREEN}Click to ${if (run) "run" else "fill"} command"
         val text = displayText ?: "${ChatColor.GOLD}$command"
 
         return ChatComponentText(text).apply {

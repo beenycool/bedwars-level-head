@@ -150,9 +150,8 @@ object WhoisService {
         val nickedText = if (result.nicked) " ${ChatColor.GRAY}(nicked)" else ""
 
         val nameComponent = CommandUtils.createClickableCommand(
-            result.displayName,
+            result.uuid.toString(),
             run = false,
-            suggestedCommand = result.uuid.toString(),
             displayText = "${ChatColor.YELLOW}${result.displayName}",
             hoverTextOverride = "${ChatColor.GREEN}Click to fill UUID"
         )
