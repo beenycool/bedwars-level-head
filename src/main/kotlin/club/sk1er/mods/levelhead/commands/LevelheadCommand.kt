@@ -149,8 +149,8 @@ class LevelheadCommand {
             chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead proxy")
             chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to view proxy options"))
         }
-        val statusLink = CommandUtils.createClickableCommand("/levelhead status", run = true)
-        val displayLink = CommandUtils.createClickableCommand("/levelhead display", run = true)
+        val statusLink = CommandUtils.createClickableCommand("/levelhead status", run = true, hoverTextOverride = "${ChatColor.GREEN}Click to check proxy status")
+        val displayLink = CommandUtils.createClickableCommand("/levelhead display", run = true, hoverTextOverride = "${ChatColor.GREEN}Click to view display settings")
         val msg2 = ChatComponentText("${ChatColor.YELLOW}Proxy: ")
             .appendSibling(proxyClickable)
             .appendSibling(ChatComponentText("${ChatColor.YELLOW}. ${ChatColor.GRAY}Try "))
@@ -657,7 +657,7 @@ class LevelheadCommand {
                             preset.displayName,
                             run = false,
                             suggestedCommand = "/levelhead profile apply ${preset.name}",
-                            hoverTextOverride = "${ChatColor.GREEN}Click to prepare to apply ${preset.displayName}"
+hoverTextOverride = "${ChatColor.GREEN}Click to fill apply command"
                         )
                     ).appendSibling(ChatComponentText("${ChatColor.YELLOW}: ${ChatColor.GRAY}${preset.description}"))
                     sendMessage(line)
@@ -707,7 +707,7 @@ class LevelheadCommand {
                             "/levelhead profile import",
                             run = false,
                             displayText = " ${ChatColor.GRAY}[Click to import]",
-                            hoverTextOverride = "${ChatColor.GREEN}Click to prepare import"
+hoverTextOverride = "${ChatColor.GREEN}Click to fill import command"
                         )
                     )
                 sendMessage(msg)
@@ -716,7 +716,7 @@ class LevelheadCommand {
                 val clipboard = GuiScreen.getClipboardString()
                 if (clipboard.isNullOrBlank()) {
                     val msg = ChatComponentText("${ChatColor.RED}Clipboard is empty.${ChatColor.YELLOW} Try using ")
-                        .appendSibling(CommandUtils.createClickableCommand("/levelhead profile export", run = true))
+                        .appendSibling(CommandUtils.createClickableCommand("/levelhead profile export", run = true, hoverTextOverride = "${ChatColor.GREEN}Click to export current profile"))
                         .appendSibling(ChatComponentText("${ChatColor.YELLOW} to create a profile JSON first."))
                     sendMessage(msg)
                     return
