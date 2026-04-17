@@ -81,6 +81,8 @@
 
 **Learning:** When using `.map()` on arrays that are fetched from cache, databases, or inside loop structures for endpoints handling dynamic requests, Node.js has to allocate new intermediate array references for mapping over elements, generating O(N) short-lived objects. Combined with `.forEach()` or similar functional array aggregators, this introduces latency and overhead.
 **Action:** Replace `.map()` allocations inside frequently hit components, specifically those like the express api batch routes, cron routes, and api stat endpoints, and `.forEach()` with pre-allocated arrays `new Array(size)` and simple `for` loops respectively to minimize transient object generation and GC delays.
+
 ## 2024-11-20 - Unmeasurable Micro-Optimizations in Cryptographic Paths
+
 **Learning:** Replacing `.reduce()` with a `for` loop to avoid closure invocation overhead yields technically faster execution, but is entirely unmeasurable in paths dominated by heavily CPU-bound operations like cryptographic hashing (e.g., `crypto.scryptSync()`). The time spent in the cryptographic function eclipses any saved closure overhead by orders of magnitude.
 **Action:** Before optimizing array operations (like `.reduce()`, `.map()`, `.filter()`), ensure the surrounding context doesn't contain inherently slow or computationally expensive operations that render the optimization meaningless. Focus array optimizations exclusively on hot paths devoid of heavy crypto or I/O operations.
