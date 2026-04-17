@@ -58,12 +58,12 @@ export function validateCronToken(token: string): boolean {
   // Hash the incoming token using Scrypt with the same low-cost parameters
   const tokenHash = crypto.scryptSync(token, SALT, KEY_LEN, HASH_OPTS);
 
-  // To prevent timing attacks, we must iterate through all keys and not short-circuit.
-  // Using reduce with a bitwise OR ensures we process every key without conditional branching.
-  const match = ALLOWED_KEY_HASHES.reduce(
-    (acc, keyHash) => acc | Number(crypto.timingSafeEqual(tokenHash, keyHash)),
-    0
-  );
+// To prevent timing attacks, we must iterate through all keys and not short-circuit.
+ // Using reduce with a bitwise OR ensures we process every key without conditional branching.
+ const match = ALLOWED_KEY_HASHES.reduce(
+ (acc, keyHash) => acc | Number(crypto.timingSafeEqual(tokenHash, keyHash)),
+ 0
+ );
 
   return Boolean(match);
 }
