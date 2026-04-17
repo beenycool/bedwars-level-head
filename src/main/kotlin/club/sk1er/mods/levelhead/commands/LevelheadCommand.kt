@@ -240,7 +240,8 @@ class LevelheadCommand {
                 command = "/levelhead whois <player>",
                 run = false,
                 suggestedCommand = "/levelhead whois ",
-                suffix = "${ChatColor.YELLOW} to lookup stats manually."
+                suffix = "${ChatColor.YELLOW} to lookup stats manually.",
+                hoverTextOverride = "${ChatColor.GREEN}Click to fill whois command"
             )
             sendMessage(msg)
             return
@@ -514,7 +515,8 @@ class LevelheadCommand {
                 command = "/levelhead whois <player>",
                 run = false,
                 suggestedCommand = "/levelhead whois ",
-                suffix = "${ChatColor.YELLOW} using an in-game name, UUID, or someone nearby."
+                suffix = "${ChatColor.YELLOW} using an in-game name, UUID, or someone nearby.",
+                hoverTextOverride = "${ChatColor.GREEN}Click to fill whois command"
             )
             sendMessage(msg)
             return
@@ -654,7 +656,8 @@ class LevelheadCommand {
                         CommandUtils.createClickableCommand(
                             preset.displayName,
                             run = false,
-                            suggestedCommand = "/levelhead profile apply ${preset.name}"
+                            suggestedCommand = "/levelhead profile apply ${preset.name}",
+                            hoverTextOverride = "${ChatColor.GREEN}Click to prepare to apply ${preset.displayName}"
                         )
                     ).appendSibling(ChatComponentText("${ChatColor.YELLOW}: ${ChatColor.GRAY}${preset.description}"))
                     sendMessage(line)
@@ -703,7 +706,8 @@ class LevelheadCommand {
                         CommandUtils.createClickableCommand(
                             "/levelhead profile import",
                             run = false,
-                            displayText = " ${ChatColor.GRAY}[Click to import]"
+                            displayText = " ${ChatColor.GRAY}[Click to import]",
+                            hoverTextOverride = "${ChatColor.GREEN}Click to prepare import"
                         )
                     )
                 sendMessage(msg)

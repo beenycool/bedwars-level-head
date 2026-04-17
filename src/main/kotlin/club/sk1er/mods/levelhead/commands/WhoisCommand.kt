@@ -25,9 +25,14 @@ class WhoisCommand {
     fun handle(@Greedy identifier: String = "") {
         val trimmedIdentifier = identifier.trim()
         if (trimmedIdentifier.isEmpty()) {
-            val msg = ChatComponentText("${ChatColor.RED}Tell me who to inspect.${ChatColor.YELLOW} Try ")
-                .appendSibling(CommandUtils.createClickableCommand("/whois <player|uuid>", run = false, suggestedCommand = "/whois "))
-                .appendSibling(ChatComponentText("${ChatColor.YELLOW} using an in-game name, UUID, or someone nearby."))
+            val msg = CommandUtils.buildInteractiveFeedback(
+                messagePrefix = "${ChatColor.RED}Tell me who to inspect.${ChatColor.YELLOW} Try ",
+                command = "/whois <player|uuid>",
+                suggestedCommand = "/whois ",
+                run = false,
+                suffix = "${ChatColor.YELLOW} using an in-game name, UUID, or someone nearby.",
+                hoverTextOverride = "${ChatColor.GREEN}Click to fill whois command"
+            )
             sendMessage(msg)
             return
         }

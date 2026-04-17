@@ -46,10 +46,11 @@ object CommandUtils {
         command: String,
         suggestedCommand: String = command,
         run: Boolean = false,
-        suffix: String = ""
+        suffix: String = "",
+        hoverTextOverride: String? = null
     ): IChatComponent {
         val component = ChatComponentText(messagePrefix)
-        component.appendSibling(createClickableCommand(command, run, suggestedCommand))
+        component.appendSibling(createClickableCommand(command, run, suggestedCommand, hoverTextOverride = hoverTextOverride))
         if (suffix.isNotEmpty()) {
             component.appendSibling(ChatComponentText(suffix))
         }
