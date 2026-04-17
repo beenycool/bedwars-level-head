@@ -657,7 +657,7 @@ class LevelheadCommand {
                             preset.displayName,
                             run = false,
                             suggestedCommand = "/levelhead profile apply ${preset.name}",
-                            hoverTextOverride = "${ChatColor.GREEN}Click to prepare to apply ${preset.name}"
+                            hoverTextOverride = "${ChatColor.GREEN}Click to prepare to apply ${preset.displayName}"
                         )
                     ).appendSibling(ChatComponentText("${ChatColor.YELLOW}: ${ChatColor.GRAY}${preset.description}"))
                     sendMessage(line)
