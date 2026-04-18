@@ -21,10 +21,11 @@ object CommandUtils {
         command: String,
         run: Boolean = false,
         suggestedCommand: String = command,
-        displayText: String? = null
+        displayText: String? = null,
+        hoverTextOverride: String? = null
     ): IChatComponent {
         val action = if (run) ClickEvent.Action.RUN_COMMAND else ClickEvent.Action.SUGGEST_COMMAND
-        val hoverText = if (run) "${ChatColor.GREEN}Click to run command" else "${ChatColor.GREEN}Click to fill command"
+        val hoverText = hoverTextOverride ?: "${ChatColor.GREEN}Click to ${if (run) "run" else "fill"} command"
         val text = displayText ?: "${ChatColor.GOLD}$command"
 
         return ChatComponentText(text).apply {
@@ -45,10 +46,11 @@ object CommandUtils {
         command: String,
         suggestedCommand: String = command,
         run: Boolean = false,
-        suffix: String = ""
+        suffix: String = "",
+        hoverTextOverride: String? = null
     ): IChatComponent {
         val component = ChatComponentText(messagePrefix)
-        component.appendSibling(createClickableCommand(command, run, suggestedCommand))
+        component.appendSibling(createClickableCommand(command, run, suggestedCommand, hoverTextOverride = hoverTextOverride))
         if (suffix.isNotEmpty()) {
             component.appendSibling(ChatComponentText(suffix))
         }

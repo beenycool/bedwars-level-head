@@ -148,6 +148,7 @@ object Levelhead {
         get() = Minecraft.getMinecraft()
 
     fun isOnHypixel(): Boolean {
+        if (LevelheadConfig.forceEnabled) return true
         if (minecraft.isSingleplayer) {
             return false
         }
