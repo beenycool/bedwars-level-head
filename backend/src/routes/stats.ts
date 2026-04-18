@@ -277,18 +277,17 @@ router.get('/', async (req, res, next) => {
       })()
     ]);
 
-    // Serialise the data so the frontend script can use it
-    // Securely escape < characters to prevent XSS via script injection
-    const jsonForFrontend = JSON.stringify({
-      chartData,
-      topPlayers,
-      resourceMetricsHistory,
-      filters: {
-        from: validStartDate?.toISOString(),
-        to: validEndDate?.toISOString(),
-        limit: validLimit,
-      },
-    }).replace(/</g, '\\u003c');
+// Serialise the data so the frontend script can use it
+const jsonForFrontend = JSON.stringify({
+  chartData,
+  topPlayers,
+  resourceMetricsHistory,
+  filters: {
+    from: validStartDate?.toISOString(),
+    to: validEndDate?.toISOString(),
+    limit: validLimit,
+  },
+});
 
     const totalLookups = chartData.length;
     let cacheHits = 0;
@@ -1369,7 +1368,7 @@ router.get('/', async (req, res, next) => {
 
     <script nonce="${res.locals.nonce}">
       const nonce = "${res.locals.nonce}";
-      const pageData = ${jsonForFrontend};
+      const pageData = JSON.parse(decodeURIComponent("${encodeURIComponent(jsonForFrontend)}"));
       const data = pageData.chartData || [];
       const topPlayers = pageData.topPlayers || [];
       const filters = pageData.filters || {};
