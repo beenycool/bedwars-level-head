@@ -23,3 +23,8 @@
 **Learning:** Vague tooltip messages in `HoverEvent`s, such as "Click to fill command" or "Click to run command", can confuse users about what exactly is being filled or run, especially when commands involve external data like UUIDs or complex configuration values.
 
 **Action:** Ensure `HoverEvent` tooltips are explicit about the outcome. For standard commands, prefer "Click to fill command" or "Click to run command". For specific data, use "Click to fill UUID", etc. When using `CommandUtils.createClickableCommand`, utilize the `hoverTextOverride` parameter to provide this explicitly descriptive tooltip text.
+
+## 2024-05-24 - Explicit Tooltips for Clickable Text
+
+**Learning:** Vague tooltips like "Click to fill command" or "Click to run command" do not provide enough context for users navigating interactive chat configurations.
+**Action:** Always provide explicitly descriptive tooltips detailing exactly what happens (e.g., "Click to fill apply command", "Click to view display settings") using the `hoverTextOverride` parameter when creating `CommandUtils.createClickableCommand` elements.
