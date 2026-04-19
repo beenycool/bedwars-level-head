@@ -389,7 +389,7 @@ function mapRowToSummary(row: PlayerQueryHistoryRow): PlayerQuerySummary {
   return {
     identifier: row.identifier,
     normalizedIdentifier: row.normalized_identifier,
-    lookupType: row.lookup_type as 'uuid' | 'ign',
+    lookupType: row.lookup_type === 'uuid' ? 'uuid' : 'ign',
     resolvedUuid: row.resolved_uuid,
     resolvedUsername: row.resolved_username,
     stars: row.stars,
