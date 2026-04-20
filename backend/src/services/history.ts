@@ -322,13 +322,12 @@ async function flushHistoryBuffer(): Promise<void> {
 
     for (let i = 0; i < batch.length; i++) {
       const record = batch[i];
-      const retryCount = (record.retryCount || 0) + 1;
-      const updatedRecord = { ...record, retryCount };
+      record.retryCount = (record.retryCount || 0) + 1;
 
-      if (retryCount >= MAX_RETRY_ATTEMPTS) {
-        deadLettered.push(updatedRecord);
+      if (record.retryCount >= MAX_RETRY_ATTEMPTS) {
+        deadLettered.push(record);
       } else {
-        toRetry.push(updatedRecord);
+        toRetry.push(record);
       }
     }
 
