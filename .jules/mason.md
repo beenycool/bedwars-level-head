@@ -34,3 +34,9 @@
 **Tech Debt:** Inline `as Record<string, unknown>` type assertions were repeatedly used to bypass type checking across various validation functions in Node.js backend (`submissionService.ts`, `statsCache.ts`, `hypixel.ts`, etc.).
 **Learning:** This approach undermines the strict null/array checking required for robust TypeScript, particularly since `typeof null` and `typeof []` both evaluate to `'object'`, posing logic bugs.
 **Prevention:** Always rely on a central type guard utility like `isNonArrayObject` that checks for `value !== null && typeof value === 'object' && !Array.isArray(value)` to strictly narrow unknown objects before safely accessing their properties.
+
+## 2026-04-20 - Eliminate spread object allocations in hot loops
+
+**Tech Debt:** Found an unnecessary object allocation using the spread operator (`const updatedRecord = { ...record, retryCount };`) inside the hot `flushHistoryBuffer` loop.
+**Learning:** In very hot paths (like processing large batch arrays or flushing memory history queues continuously), native functional destructuring or spread allocations generate unnecessary memory overhead and pressure on the Garbage Collector per iteration.
+**Prevention:** Rather than allocating new objects, mutate the existing properties on objects directly inside loops when processing batches before passing them to queues or dead letters.
