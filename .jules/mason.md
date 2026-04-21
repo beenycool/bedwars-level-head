@@ -40,3 +40,8 @@
 **Tech Debt:** Found an unnecessary object allocation using the spread operator (`const updatedRecord = { ...record, retryCount };`) inside the hot `flushHistoryBuffer` loop.
 **Learning:** In very hot paths (like processing large batch arrays or flushing memory history queues continuously), native functional destructuring or spread allocations generate unnecessary memory overhead and pressure on the Garbage Collector per iteration.
 **Prevention:** Rather than allocating new objects, mutate the existing properties on objects directly inside loops when processing batches before passing them to queues or dead letters.
+
+## 2026-04-21 - Extract HypixelPlayerResponse type guard
+**Tech Debt:** Type `any`/`unknown` casting like `submission as unknown as import('./hypixel').HypixelPlayerResponse` was used for type coercion in `SubmissionService`.
+**Learning:** Chaining type casts via `unknown` completely disables compiler type checks and allows arbitrarily structured user input to bypass strict TS protections, risking runtime errors.
+**Prevention:** Rather than inline casting, introduce a strict structural type guard checking primitive and deep object fields (`isNonArrayObject(value) && typeof value.success === 'boolean'`) to properly narrow the type before property access.

@@ -27,6 +27,16 @@ function isSignedData(data: unknown): data is SignedData {
     return typeof data.timestamp === 'number' && typeof data.nonce === 'string';
 }
 
+function isHypixelPlayerResponse(value: unknown): value is import('./hypixel').HypixelPlayerResponse {
+  if (!isNonArrayObject(value)) return false;
+  if (typeof value.success !== 'boolean') return false;
+
+  if (value.player !== undefined && value.player !== null) {
+      if (!isNonArrayObject(value.player)) return false;
+  }
+  return true;
+}
+
 export class SubmissionService {
   private buildSubmitterKeyId(ipAddress: string): string {
     if (!COMMUNITY_SUBMIT_SECRET || COMMUNITY_SUBMIT_SECRET.length === 0) {
@@ -211,16 +221,12 @@ export class SubmissionService {
     const existingEntry = await getPlayerStatsFromCache(cacheKey, true);
 
     let minimalStats: MinimalPlayerStats;
-    const isFullResponse = (
-      typeof submission.success === 'boolean' &&
-      submission.player &&
-      typeof submission.player === 'object'
-    );
+    const isFullResponse = isHypixelPlayerResponse(submission);
 
     if (isFullResponse) {
-      minimalStats = extractMinimalStats(submission as unknown as import('./hypixel').HypixelPlayerResponse);
+      minimalStats = extractMinimalStats(submission);
     } else {
-      minimalStats = this.buildMinimalStatsFromSubmission(submission);
+      minimalStats = this.buildMinimalStatsFromSubmission(submission as Record<string, unknown>);
     }
 
     const verifiedName = verificationResult.verifiedDisplayname;
