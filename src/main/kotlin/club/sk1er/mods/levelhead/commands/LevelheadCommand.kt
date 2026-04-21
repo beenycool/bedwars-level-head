@@ -123,7 +123,11 @@ class LevelheadCommand {
         }
 
         val mainComponent = ChatComponentText("").apply {
-            appendSibling(ChatComponentText("BedWars Levelhead ").apply { chatStyle.color = ChatColor.AQUA })
+            appendSibling(ChatComponentText("BedWars Levelhead ").apply {
+                chatStyle.color = ChatColor.AQUA
+                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead gui")
+                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to open settings GUI"))
+            })
             appendSibling(ChatComponentText("v${Levelhead.VERSION}").apply { chatStyle.color = ChatColor.GOLD })
             appendSibling(ChatComponentText(": ").apply { chatStyle.color = ChatColor.YELLOW })
             appendSibling(statusComponent)
