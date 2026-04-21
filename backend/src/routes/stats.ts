@@ -6,6 +6,7 @@ import {
   getPlayerQueriesStats,
   getTopPlayersByQueryCount,
   getSystemStats,
+  type PlayerQuerySummary,
 } from '../services/history';
 import { getRedisStats } from '../services/redis';
 import { getResourceMetricsHistory } from '../services/resourceMetrics';
@@ -47,11 +48,83 @@ function timeAgo(date: Date): string {
 }
 
 function formatStars(stars: number | null): string {
-  if (stars === null || Number.isNaN(stars)) {
+    if (stars === null || typeof stars !== 'number' || !Number.isFinite(stars)) {
     return '--';
   }
 
   return `${stars}`;
+}
+
+/** Coerce DB / JSON quirks so table render and CSV never throw on bad rows. */
+function normalizePlayerQuerySummaryEntry(entry: PlayerQuerySummary): PlayerQuerySummary {
+  const identifier =
+    typeof entry.identifier === 'string' ? entry.identifier : String(entry.identifier ?? '');
+  const lookupType: 'uuid' | 'ign' = entry.lookupType === 'uuid' ? 'uuid' : 'ign';
+
+  const resolvedUsername =
+    entry.resolvedUsername === null || entry.resolvedUsername === undefined
+      ? null
+      : typeof entry.resolvedUsername === 'string'
+        ? entry.resolvedUsername
+        : String(entry.resolvedUsername);
+
+  const resolvedUuid =
+    entry.resolvedUuid === null || entry.resolvedUuid === undefined
+      ? null
+      : typeof entry.resolvedUuid === 'string'
+        ? entry.resolvedUuid
+        : String(entry.resolvedUuid);
+
+  let requestedAt: Date;
+  if (entry.requestedAt instanceof Date && !Number.isNaN(entry.requestedAt.getTime())) {
+    requestedAt = entry.requestedAt;
+  } else {
+    const d = new Date(entry.requestedAt as unknown as string | number);
+    requestedAt = Number.isNaN(d.getTime()) ? new Date(0) : d;
+  }
+
+  const responseStatus = Number.isFinite(Number(entry.responseStatus)) ? Number(entry.responseStatus) : 0;
+
+  const stars =
+    typeof entry.stars === 'number' && Number.isFinite(entry.stars) ? entry.stars : null;
+  const latencyMs =
+    entry.latencyMs === null || entry.latencyMs === undefined
+      ? null
+      : typeof entry.latencyMs === 'number' && Number.isFinite(entry.latencyMs)
+        ? entry.latencyMs
+        : null;
+
+  const normalizedIdentifier =
+    typeof entry.normalizedIdentifier === 'string'
+      ? entry.normalizedIdentifier
+      : String(entry.normalizedIdentifier ?? identifier);
+
+  const installId =
+    entry.installId === null || entry.installId === undefined
+      ? null
+      : typeof entry.installId === 'string'
+        ? entry.installId
+        : String(entry.installId);
+
+  const cacheSource: 'cache' | 'network' = entry.cacheSource === 'network' ? 'network' : 'cache';
+
+  return {
+    ...entry,
+    identifier,
+    normalizedIdentifier,
+    lookupType,
+    resolvedUuid,
+    resolvedUsername,
+    stars,
+    nicked: !!entry.nicked,
+    cacheSource,
+    cacheHit: !!entry.cacheHit,
+    revalidated: !!entry.revalidated,
+    installId,
+    responseStatus,
+    latencyMs,
+    requestedAt,
+  };
 }
 
 function formatLatency(latency: number | null): string {
@@ -121,7 +194,7 @@ router.get('/csv', async (req, res) => {
       endDate: validEndDate,
       });
 
-      const csv = toCSV(data);
+      const csv = toCSV(data as unknown as Record<string, unknown>[]);
 
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename="memory_stats.csv"');
@@ -137,11 +210,14 @@ router.get('/csv', async (req, res) => {
     const hasTimeFilter = Boolean(validStartDate || validEndDate);
     const effectiveLimit = validLimit ?? (hasTimeFilter ? MAX_ALLOWED_LIMIT : DEFAULT_CHART_LIMIT);
 
-    const data = await getPlayerQueriesWithFilters({
+    const rawData = await getPlayerQueriesWithFilters({
       startDate: validStartDate,
       endDate: validEndDate,
       limit: effectiveLimit,
     });
+    const data = (Array.isArray(rawData) ? rawData : []).map((entry) =>
+      normalizePlayerQuerySummaryEntry(entry),
+    ) as unknown as Record<string, unknown>[];
 
     const csv = toCSV(data);
 
@@ -149,7 +225,7 @@ router.get('/csv', async (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename="stats.csv"');
     res.send(csv);
   } catch (error) {
-    logger.error('Failed to generate CSV', error);
+    logger.error({ err: error }, 'Failed to generate CSV');
     res.status(500).send('Internal Server Error');
   }
 });
@@ -198,13 +274,27 @@ router.get('/data', async (req, res, next) => {
       getResourceMetricsHistory({ startDate: validStartDate, endDate: validEndDate }),
     ]);
 
+    const safeChartData = Array.isArray(chartData) ? chartData : [];
+    const safeTopPlayers = Array.isArray(topPlayers) ? topPlayers : [];
+    const safeResourceMetricsHistory = Array.isArray(resourceMetricsHistory) ? resourceMetricsHistory : [];
+    const safePageDataRows = Array.isArray(pageData?.rows) ? pageData.rows : [];
+    const safePageDataTotalCount =
+      typeof pageData?.totalCount === 'number' && Number.isFinite(pageData.totalCount)
+        ? pageData.totalCount
+        : 0;
+    const normalizedPageData = {
+      ...pageData,
+      totalCount: safePageDataTotalCount,
+      rows: safePageDataRows.map((r) => normalizePlayerQuerySummaryEntry(r as PlayerQuerySummary)),
+    };
+
     res.json({
-      chartData,
-      topPlayers,
+      chartData: safeChartData,
+      topPlayers: safeTopPlayers,
       sysStats,
       redisStats,
-      pageData,
-      resourceMetricsHistory,
+      pageData: normalizedPageData,
+      resourceMetricsHistory: safeResourceMetricsHistory,
       filters: {
         from: validStartDate?.toISOString(),
         to: validEndDate?.toISOString(),
@@ -277,19 +367,29 @@ router.get('/', async (req, res, next) => {
       })()
     ]);
 
-// Serialise the data so the frontend script can use it
-const jsonForFrontend = JSON.stringify({
-  chartData,
-  topPlayers,
-  resourceMetricsHistory,
-  filters: {
-    from: validStartDate?.toISOString(),
-    to: validEndDate?.toISOString(),
-    limit: validLimit,
-  },
-});
+    // Serialise the data so the frontend script can use it
+    // Securely escape < characters to prevent XSS via script injection
+    const safeChartData = Array.isArray(chartData) ? chartData : [];
+    const safeTopPlayers = Array.isArray(topPlayers) ? topPlayers : [];
+    const safeResourceMetricsHistory = Array.isArray(resourceMetricsHistory) ? resourceMetricsHistory : [];
+    const safePageDataRows = Array.isArray(pageData?.rows) ? pageData.rows : [];
+    const safePageDataTotalCount =
+      typeof pageData?.totalCount === 'number' && Number.isFinite(pageData.totalCount)
+        ? pageData.totalCount
+        : 0;
 
-    const totalLookups = chartData.length;
+    const jsonForFrontend = JSON.stringify({
+      chartData: safeChartData,
+      topPlayers: safeTopPlayers,
+      resourceMetricsHistory: safeResourceMetricsHistory,
+      filters: {
+        from: validStartDate?.toISOString(),
+        to: validEndDate?.toISOString(),
+        limit: validLimit,
+      },
+    }).replace(/</g, '\\u003c');
+
+    const totalLookups = safeChartData.length;
     let cacheHits = 0;
     let successCount = 0;
     const latencyValues: number[] = [];
@@ -298,7 +398,7 @@ const jsonForFrontend = JSON.stringify({
     // Why: reduce() creates an intermediate accumulator object and invokes a callback for every element.
     // Impact: For arrays with thousands of lookups, this eliminates O(N) object allocations and function
     // call overhead, reducing GC pressure and improving CPU time on this hot path.
-    for (const d of chartData) {
+    for (const d of safeChartData) {
       if (d.cacheHit) {
         cacheHits++;
       }
@@ -327,25 +427,28 @@ const jsonForFrontend = JSON.stringify({
     // to eliminate allocating intermediate arrays for both the mapped results and the join operation,
     // significantly reducing GC pressure.
     let rows = '';
-    for (let i = 0; i < pageData.rows.length; i++) {
-      const entry = pageData.rows[i];
-      const lookupIdentifier =
-        entry.lookupType === 'uuid' && entry.resolvedUsername
-          ? entry.resolvedUsername
-          : entry.identifier;
-      const lookup = `${entry.lookupType.toUpperCase()}: ${lookupIdentifier}`;
-      const resolved = entry.nicked === true ? '(nicked)' : entry.resolvedUsername ?? entry.resolvedUuid ?? 'unknown';
-      const cacheSource = entry.cacheHit ? 'Cache' : entry.cacheSource === 'network' ? 'Network' : entry.cacheSource;
+    let rowRenderIndex = -1;
+    try {
+      for (let i = 0; i < safePageDataRows.length; i++) {
+        rowRenderIndex = i;
+        const entry = normalizePlayerQuerySummaryEntry(safePageDataRows[i] as PlayerQuerySummary);
+        const lookupIdentifier =
+          entry.lookupType === 'uuid' && entry.resolvedUsername
+            ? entry.resolvedUsername
+            : entry.identifier;
+        const lookup = `${entry.lookupType.toUpperCase()}: ${lookupIdentifier}`;
+        const resolved = entry.nicked === true ? '(nicked)' : entry.resolvedUsername ?? entry.resolvedUuid ?? 'unknown';
+        const cacheSource = entry.cacheHit ? 'Cache' : entry.cacheSource === 'network' ? 'Network' : entry.cacheSource;
 
-      // URL encode the identifier to prevent XSS in href
-      const encodedIdentifier = encodeURIComponent(entry.identifier);
-      const lookupLink = entry.lookupType === 'uuid'
-        ? `https://namemc.com/profile/${encodedIdentifier}`
-        : `https://namemc.com/search?q=${encodedIdentifier}`;
+        // URL encode the identifier to prevent XSS in href
+        const encodedIdentifier = encodeURIComponent(entry.identifier);
+        const lookupLink = entry.lookupType === 'uuid'
+          ? `https://namemc.com/profile/${encodedIdentifier}`
+          : `https://namemc.com/search?q=${encodedIdentifier}`;
 
-      const statusClass = `status-${Math.floor(entry.responseStatus / 100)}xx`;
+        const statusClass = `status-${Math.floor(entry.responseStatus / 100)}xx`;
 
-      rows += `<tr>
+        rows += `<tr>
         <td title="${escapeHtml(formatDate(entry.requestedAt))}">${escapeHtml(timeAgo(entry.requestedAt))}</td>
         <td>
           <div class="lookup-cell">
@@ -361,6 +464,29 @@ const jsonForFrontend = JSON.stringify({
         <td><span class="status-badge ${statusClass}">${escapeHtml(String(entry.responseStatus))}</span></td>
         <td class="latency">${escapeHtml(formatLatency(entry.latencyMs))}</td>
       </tr>\n`;
+      }
+    } catch (err) {
+      const sampleRow =
+        rowRenderIndex >= 0 && rowRenderIndex < safePageDataRows.length
+          ? safePageDataRows[rowRenderIndex]
+          : null;
+      logger.error(
+        {
+          err,
+          rowRenderIndex,
+          sampleRowShape:
+            sampleRow && typeof sampleRow === 'object'
+              ? Object.fromEntries(
+                  Object.entries(sampleRow as Record<string, unknown>).map(([key, value]) => [
+                    key,
+                    value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value,
+                  ]),
+                )
+              : null,
+          pageDataKeys: pageData && typeof pageData === 'object' ? Object.keys(pageData) : [],
+        },
+        '[stats] row render failed',
+      );
     }
 
     if (!rows) {
@@ -1313,7 +1439,7 @@ const jsonForFrontend = JSON.stringify({
 
 
     <h2>Recent Player Lookups</h2>
-    <p class="meta">${pageData.totalCount === 0 ? 'No lookups recorded yet.' : `Showing page ${page} of ${totalPages} (${pageData.totalCount} total lookups).`}</p>
+    <p class="meta">${safePageDataTotalCount === 0 ? 'No lookups recorded yet.' : `Showing page ${page} of ${totalPages} (${safePageDataTotalCount} total lookups).`}</p>
     <div class="controls">
       <form class="search-box" method="GET">
         <div class="search-wrapper">
@@ -1366,9 +1492,13 @@ const jsonForFrontend = JSON.stringify({
       </tbody>
     </table>
 
+    <script type="application/json" id="page-data" nonce="${res.locals.nonce}">${jsonForFrontend}</script>
     <script nonce="${res.locals.nonce}">
       const nonce = "${res.locals.nonce}";
-      const pageData = JSON.parse(decodeURIComponent("${encodeURIComponent(jsonForFrontend)}"));
+      // Parse the server-embedded JSON from a non-executing script tag to avoid
+      // fragile inlined JS object embedding. The JSON is already escaped for '<'
+      // above when it was created (replace(/</g, '\\u003c')).
+      const pageData = JSON.parse(document.getElementById('page-data').textContent);
       const data = pageData.chartData || [];
       const topPlayers = pageData.topPlayers || [];
       const filters = pageData.filters || {};
@@ -1905,7 +2035,7 @@ const jsonForFrontend = JSON.stringify({
       charts.push(new Chart(starChartEl, starChartConfig));
 
       function updateLatencyChart() {
-        // ⚡ Bolt: Replace multiple `.filter()` and `.map()` passes with a single loop.
+        // ⚡ Bolt: Replace multiple .filter() and .map() passes with a single loop.
         // Impact: Eliminates O(N) intermediate array allocations and closure overhead.
         const totalPoints = allLatencySeries.length;
         const filteredLabels = new Array(totalPoints);
@@ -2648,13 +2778,61 @@ const jsonForFrontend = JSON.stringify({
     }
       
       function formatStarsClient(stars) {
-        if (stars === null || stars === undefined || Number.isNaN(stars)) return '--';
+        if (stars === null || stars === undefined || typeof stars !== 'number' || !Number.isFinite(stars)) return '--';
         return String(stars);
     }
       
       function formatLatencyClient(latency) {
         if (latency === null || latency === undefined || Number.isNaN(latency) || latency < 0) return '--';
         return \`\${new Intl.NumberFormat('en-US').format(latency)} ms\`;
+    }
+
+      function normalizeLookupTableRowClient(entry) {
+        const identifier = typeof entry.identifier === 'string' ? entry.identifier : String(entry.identifier ?? '');
+        const lookupType = entry.lookupType === 'uuid' ? 'uuid' : 'ign';
+        const resolvedUsername =
+          entry.resolvedUsername === null || entry.resolvedUsername === undefined
+            ? null
+            : typeof entry.resolvedUsername === 'string'
+              ? entry.resolvedUsername
+              : String(entry.resolvedUsername);
+        const resolvedUuid =
+          entry.resolvedUuid === null || entry.resolvedUuid === undefined
+            ? null
+            : typeof entry.resolvedUuid === 'string'
+              ? entry.resolvedUuid
+              : String(entry.resolvedUuid);
+        let requestedAt;
+        if (entry.requestedAt instanceof Date && !Number.isNaN(entry.requestedAt.getTime())) {
+          requestedAt = entry.requestedAt;
+        } else {
+          const d = new Date(entry.requestedAt);
+          requestedAt = Number.isNaN(d.getTime()) ? new Date(0) : d;
+        }
+        const responseStatus = Number.isFinite(Number(entry.responseStatus)) ? Number(entry.responseStatus) : 0;
+        const stars =
+          typeof entry.stars === 'number' && Number.isFinite(entry.stars) ? entry.stars : null;
+        const latencyMs =
+          entry.latencyMs === null || entry.latencyMs === undefined
+            ? null
+            : typeof entry.latencyMs === 'number' && Number.isFinite(entry.latencyMs)
+              ? entry.latencyMs
+              : null;
+        return {
+          ...entry,
+          identifier,
+          lookupType,
+          resolvedUsername,
+          resolvedUuid,
+          requestedAt,
+          responseStatus,
+          stars,
+          latencyMs,
+          nicked: !!entry.nicked,
+          cacheHit: !!entry.cacheHit,
+          revalidated: !!entry.revalidated,
+          cacheSource: entry.cacheSource === 'network' ? 'network' : 'cache',
+        };
     }
 
       function getEmptyStateForSearch(searchTerm, clearUrl) {
@@ -2666,7 +2844,7 @@ const jsonForFrontend = JSON.stringify({
                     <path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
                   </svg>
                   <p>No players found matching "<strong>\${escapeHtmlClient(searchTerm)}</strong>"</p>
-                  <a href="${clearUrl || '?'}" class="clear-search-btn">Clear Search</a>
+                  <a href="\${clearUrl || '?'}" class="clear-search-btn">Clear Search</a>
                 </div>
               </td>
             </tr>\`;
@@ -3031,12 +3209,12 @@ const jsonForFrontend = JSON.stringify({
         });
         
         // 6. Update Recent Player Lookups Table
-        if (pageData && pageData.rows) {
+        if (pageData && Array.isArray(pageData.rows)) {
           const tbody = document.querySelector('table tbody');
           if (tbody) {
             let rowsHtml = '';
             for (let i = 0; i < pageData.rows.length; i++) {
-              const entry = pageData.rows[i];
+              const entry = normalizeLookupTableRowClient(pageData.rows[i]);
               const lookupIdentifier =
                 entry.lookupType === 'uuid' && entry.resolvedUsername
                   ? entry.resolvedUsername

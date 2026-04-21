@@ -847,13 +847,13 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             save()
         }
 
-    @Info(
-        text = "Proxy Auth Token is recommended when using a private backend.",
-        type = InfoType.INFO,
-        category = "Advanced"
-    )
-    @Transient
-    var proxyAuthInfo: String = ""
+@Info(
+    text = "Proxy Auth Token is recommended when using a private backend.",
+    type = InfoType.INFO,
+    category = "Advanced"
+)
+@Transient
+var proxyAuthInfo: String = ""
 
     @Text(
         name = "Proxy Auth Token",

@@ -389,7 +389,7 @@ function mapRowToSummary(row: PlayerQueryHistoryRow): PlayerQuerySummary {
   return {
     identifier: row.identifier,
     normalizedIdentifier: row.normalized_identifier,
-    lookupType: row.lookup_type as 'uuid' | 'ign',
+    lookupType: row.lookup_type === 'uuid' ? 'uuid' : 'ign',
     resolvedUuid: row.resolved_uuid,
     resolvedUsername: row.resolved_username,
     stars: row.stars,
@@ -472,7 +472,7 @@ function mapRowToStatsSummary(row: PlayerQueryStatsRow): PlayerQueryStatsSummary
   const parsedLatency = row.latency_ms === null ? null : Number(row.latency_ms);
 
   return {
-    lookupType: row.lookup_type as 'uuid' | 'ign',
+    lookupType: row.lookup_type === 'uuid' ? 'uuid' : 'ign',
     stars: row.stars,
     cacheHit: !!row.cache_hit,
     responseStatus: Number.isFinite(parsedResponseStatus) ? parsedResponseStatus : 0,
