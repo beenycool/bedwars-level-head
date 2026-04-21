@@ -8,8 +8,8 @@ object FetchErrorMessages {
     fun permanentError(
         reason: String?,
         modeName: String,
-        suggestion: String? = null,
-        onMissesKey: () -> IChatComponent? = { null },
+    suggestion: String? = null,
+    onMissingKey: () -> IChatComponent? = { null },
         onOffline: () -> IChatComponent? = { null },
         onGeneric: (humanMessage: String) -> IChatComponent? = { null },
         fallbackCommand: String? = null,
@@ -18,8 +18,8 @@ object FetchErrorMessages {
         when (reason) {
             "MISSING_KEY" -> {
                 val msg = "${modeName} needs your Hypixel API key. Use /levelhead apikey <key> to set it."
-                return msg to (onMissesKey() ?: CommandUtils.buildInteractiveFeedback(
-                    messagePrefix = "${ChatColor.YELLOW}$suggestion${ChatColor.YELLOW}",
+        return msg to (onMissingKey() ?: CommandUtils.buildInteractiveFeedback(
+            messagePrefix = "${ChatColor.YELLOW}${suggestion.orEmpty()}${ChatColor.YELLOW}",
                     command = "/levelhead apikey <key>",
                     suggestedCommand = "/levelhead apikey ",
                     suffix = "${ChatColor.YELLOW} with your Hypixel API key."
@@ -140,9 +140,9 @@ object FetchErrorMessages {
     private fun formatGenericReason(reason: String?, modeName: String): String {
         if (reason == null) return "$modeName request failed"
         return when {
-            reason.startsWith("HYPIXEL_") -> "Hypixel API returned an error (${reason.removePrefix("HYPIXEL_")}). Server may be busy."
-            reason.startsWith("HTTP_") -> "Proxy returned HTTP error (${reason.removePrefix("HTTP_")})."
-            reason.startsWith("PROXY_") -> "Proxy error: ${reason.removePrefix("PROXY_").lowercase().replace('_', ' ')}."
+            reason.startsWith("HYPIXEL_") -> "Hypixel API returned an error (${reason.removePrefix("HYPIXEL_")}). Server may be busy"
+            reason.startsWith("HTTP_") -> "Proxy returned HTTP error (${reason.removePrefix("HTTP_")})"
+            reason.startsWith("PROXY_") -> "Proxy error: ${reason.removePrefix("PROXY_").lowercase().replace('_', ' ')}"
             reason.isBlank() -> "$modeName request failed"
             else -> "$modeName request failed ($reason)"
         }

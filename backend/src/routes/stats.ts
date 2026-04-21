@@ -48,7 +48,7 @@ function timeAgo(date: Date): string {
 }
 
 function formatStars(stars: number | null): string {
-  if (stars === null || typeof stars !== 'number' || Number.isNaN(stars)) {
+    if (stars === null || typeof stars !== 'number' || !Number.isFinite(stars)) {
     return '--';
   }
 
@@ -466,19 +466,27 @@ router.get('/', async (req, res, next) => {
       </tr>\n`;
       }
     } catch (err) {
+      const sampleRow =
+        rowRenderIndex >= 0 && rowRenderIndex < safePageDataRows.length
+          ? safePageDataRows[rowRenderIndex]
+          : null;
       logger.error(
         {
           err,
           rowRenderIndex,
-          sampleRow:
-            rowRenderIndex >= 0 && rowRenderIndex < safePageDataRows.length
-              ? safePageDataRows[rowRenderIndex]
+          sampleRowShape:
+            sampleRow && typeof sampleRow === 'object'
+              ? Object.fromEntries(
+                  Object.entries(sampleRow as Record<string, unknown>).map(([key, value]) => [
+                    key,
+                    value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value,
+                  ]),
+                )
               : null,
           pageDataKeys: pageData && typeof pageData === 'object' ? Object.keys(pageData) : [],
         },
         '[stats] row render failed',
       );
-      throw err;
     }
 
     if (!rows) {
@@ -2770,7 +2778,7 @@ router.get('/', async (req, res, next) => {
     }
       
       function formatStarsClient(stars) {
-        if (stars === null || stars === undefined || typeof stars !== 'number' || Number.isNaN(stars)) return '--';
+        if (stars === null || stars === undefined || typeof stars !== 'number' || !Number.isFinite(stars)) return '--';
         return String(stars);
     }
       
