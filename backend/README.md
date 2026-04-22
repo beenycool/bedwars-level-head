@@ -4,6 +4,15 @@ The backend for the BedWars Levelhead mod. It sits between the mod and the Hypix
 
 Built with Express + TypeScript, targeting Node.js 20+.
 
+## Deploy
+
+Quick deploy buttons (one-click) for non-technical users:
+
+- Deploy to Render: [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://dashboard.render.com/deploy?repo=https://github.com/beenycool/bedwars-level-head)
+- Deploy to Railway: [![Deploy to Railway](https://railway.app/button.svg)](https://railway.app/new/project?template=https://github.com/beenycool/bedwars-level-head)
+
+Note: Render will read the included `render.yaml`. Railway will import the repo and let you configure environment variables. For either platform you still need to provide a `HYPIXEL_API_KEY` and database/Redis credentials if you don't use their managed add-ons.
+
 ## Quick Start (Docker Compose)
 
 1. Install [Docker](https://docs.docker.com/get-docker/) and [Docker Compose](https://docs.docker.com/compose/).

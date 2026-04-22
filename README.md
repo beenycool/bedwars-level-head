@@ -76,6 +76,11 @@ The mod talks to a Node.js proxy backend that handles Hypixel API calls and cach
 
 See [backend/README.md](backend/README.md) for self-hosting instructions (Docker Compose or manual setup) and the full configuration reference.
 
+Quick deploy (one-click) options for the backend:
+
+- Render: [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://dashboard.render.com/deploy?repo=https://github.com/beenycool/bedwars-level-head)
+- Railway: [![Deploy to Railway](https://railway.app/button.svg)](https://railway.app/new/project?template=https://github.com/beenycool/bedwars-level-head)
+
 ## Building from Source
 
 Requires JDK 8+ and Gradle.
