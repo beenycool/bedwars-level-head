@@ -78,8 +78,8 @@ See [backend/README.md](backend/README.md) for self-hosting instructions (Docker
 
 Quick deploy (one-click) options for the backend:
 
-- Render: [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://dashboard.render.com/deploy?repo=https://github.com/beenycool/bedwars-level-head)
-- Railway: [![Deploy to Railway](https://railway.app/button.svg)](https://railway.app/new/project?template=https://github.com/beenycool/bedwars-level-head)
+- Render: [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/beenycool/bedwars-level-head)
+- Railway: [![Deploy to Railway](https://railway.app/button.svg)](https://railway.app/new/template?template=https://github.com/beenycool/bedwars-level-head)
 
 ## Building from Source
 
