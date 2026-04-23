@@ -3,6 +3,8 @@
  * Prevents cache poisoning by enforcing strict schema validation.
  */
 
+import { Type } from '@sinclair/typebox';
+import Ajv from 'ajv';
 import { isNonArrayObject } from './typeChecks';
 import { getRedisClient } from '../services/redis';
 import { SUBMISSION_TTL_MS } from '../config';
@@ -34,70 +36,48 @@ const MAX_PAYLOAD_SIZE_BYTES = 1024 * 1024;
  */
 const MAX_OBJECT_DEPTH = 10;
 
-/**
- * Expected Bedwars stats schema fields with their types
- */
-const BEDWARS_STATS_SCHEMA: Record<string, 'number' | 'string' | 'boolean' | 'object'> = {
-    // Core experience and level fields
-    bedwars_experience: 'number',
-    Experience: 'number',
-    experience: 'number',
+const BedwarsStatsSchema = Type.Object(
+  {
+    bedwars_experience: Type.Optional(Type.Number({ minimum: 0 })),
+    Experience: Type.Optional(Type.Number({ minimum: 0 })),
+    experience: Type.Optional(Type.Number({ minimum: 0 })),
+    kills_bedwars: Type.Optional(Type.Number({ minimum: 0 })),
+    deaths_bedwars: Type.Optional(Type.Number({ minimum: 0 })),
+    final_kills_bedwars: Type.Optional(Type.Number({ minimum: 0 })),
+    final_deaths_bedwars: Type.Optional(Type.Number({ minimum: 0 })),
+    wins_bedwars: Type.Optional(Type.Number({ minimum: 0 })),
+    losses_bedwars: Type.Optional(Type.Number({ minimum: 0 })),
+    games_played_bedwars: Type.Optional(Type.Number({ minimum: 0 })),
+    beds_broken_bedwars: Type.Optional(Type.Number({ minimum: 0 })),
+    beds_lost_bedwars: Type.Optional(Type.Number({ minimum: 0 })),
+    fkdr: Type.Optional(Type.Number({ minimum: 0 })),
+    winstreak: Type.Optional(Type.Number({ minimum: 0 })),
+    displayname: Type.Optional(Type.String()),
+    display: Type.Optional(Type.String()),
+    nicked: Type.Optional(Type.Boolean()),
+    eight_one_: Type.Optional(Type.Object({}, { additionalProperties: true })),
+    eight_two_: Type.Optional(Type.Object({}, { additionalProperties: true })),
+    four_three_: Type.Optional(Type.Object({}, { additionalProperties: true })),
+    four_four_: Type.Optional(Type.Object({}, { additionalProperties: true })),
+    two_four_: Type.Optional(Type.Object({}, { additionalProperties: true })),
+    activeProjectileTrail: Type.Optional(Type.String()),
+    activeDeathCry: Type.Optional(Type.String()),
+    activeGlyph: Type.Optional(Type.String()),
+    activeVictoryDance: Type.Optional(Type.String()),
+    activeSprays: Type.Optional(Type.String()),
+    activeKillEffect: Type.Optional(Type.String()),
+    activeIslandTopper: Type.Optional(Type.String()),
+    coins: Type.Optional(Type.Number({ minimum: 0 })),
+    bedwars_level: Type.Optional(Type.Number({ minimum: 0 })),
+    items_purchased_bedwars: Type.Optional(Type.Number({ minimum: 0 })),
+    resources_collected_bedwars: Type.Optional(Type.Number({ minimum: 0 })),
+    castle_: Type.Optional(Type.Object({}, { additionalProperties: true })),
+  },
+  { additionalProperties: true },
+);
 
-    // Kill/Death stats
-    kills_bedwars: 'number',
-    deaths_bedwars: 'number',
-    final_kills_bedwars: 'number',
-    final_deaths_bedwars: 'number',
-
-    // Win/Loss stats
-    wins_bedwars: 'number',
-    losses_bedwars: 'number',
-    games_played_bedwars: 'number',
-
-    // Bed stats
-    beds_broken_bedwars: 'number',
-    beds_lost_bedwars: 'number',
-
-    // Computed stats
-    fkdr: 'number',
-    winstreak: 'number',
-
-    // Display fields
-    displayname: 'string',
-    display: 'string',
-
-    // Nicked flag
-    nicked: 'boolean',
-
-    // Mode-specific stats (nested objects)
-    eight_one_: 'object',
-    eight_two_: 'object',
-    four_three_: 'object',
-    four_four_: 'object',
-    two_four_: 'object',
-
-    // Cosmetics and achievements
-    activeProjectileTrail: 'string',
-    activeDeathCry: 'string',
-    activeGlyph: 'string',
-    activeVictoryDance: 'string',
-    activeSprays: 'string',
-    activeKillEffect: 'string',
-    activeIslandTopper: 'string',
-
-    // Coins and resources
-    coins: 'number',
-
-    // Achievements
-    bedwars_level: 'number',
-
-    // Other common fields
-    items_purchased_bedwars: 'number',
-    resources_collected_bedwars: 'number',
-
-    // Castle mode
-    castle_: 'object',
-};
+const ajv = new Ajv({ strict: false, allErrors: true });
+const bedwarsStatsValidator = ajv.compile(BedwarsStatsSchema);
 
 /**
  * Check if payload size exceeds maximum allowed
@@ -166,28 +146,6 @@ export function validateObjectDepth(data: unknown): ValidationResult {
 }
 
 /**
- * Validate that a value matches the expected type
- */
-function validateType(value: unknown, expectedType: string): boolean {
-    if (value === null || value === undefined) {
-        return true; // Allow optional fields
-    }
-
-    switch (expectedType) {
-        case 'number':
-            return typeof value === 'number' && Number.isFinite(value);
-        case 'string':
-            return typeof value === 'string';
-        case 'boolean':
-            return typeof value === 'boolean';
-        case 'object':
-            return typeof value === 'object' && !Array.isArray(value);
-        default:
-            return false;
-    }
-}
-
-/**
  * Helper to extract bedwars stats object from various nested structures.
  * Uses isNonArrayObject helper to standardize validation.
  */
@@ -222,69 +180,47 @@ export function extractBedwarsRecord(data: unknown): Record<string, unknown> | n
  * Ensures known fields match expected types but allows extra Hypixel fields
  */
 export function validateBedwarsStats(data: unknown): ValidationResult {
-    const errors: ValidationError[] = [];
+  const errors: ValidationError[] = [];
 
-    // Removed redundant isNonArrayObject check here.
-    // extractBedwarsRecord handles the check internally and returns null if invalid.
+  const record = extractBedwarsRecord(data);
 
-    const record = extractBedwarsRecord(data);
-
-    if (!record) {
-         return {
-            valid: false,
-            errors: [{
-                field: 'data',
-                message: 'Data must be a non-null object',
-            }],
-        };
-    }
-
-    // Validate known fields have correct types
-    // ⚡ Bolt: Replace Object.entries() to avoid creating intermediate arrays for keys and values
-    // on every validation run, significantly reducing garbage collection pressure on the hot path.
-    for (const field in BEDWARS_STATS_SCHEMA) {
-        if (Object.prototype.hasOwnProperty.call(BEDWARS_STATS_SCHEMA, field)) {
-            const expectedType = BEDWARS_STATS_SCHEMA[field];
-            const value = record[field];
-
-            if (value != null) {
-                if (!validateType(value, expectedType)) {
-                    errors.push({
-                        field,
-                        message: `Field '${field}' must be of type ${expectedType}, got ${typeof value}`,
-                    });
-                }
-
-                // Additional validation for numeric fields
-                if (expectedType === 'number' && typeof value === 'number') {
-                    if (value < 0) {
-                        errors.push({
-                            field,
-                            message: `Field '${field}' must be non-negative, got ${value}`,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    // Require at least one of the core experience fields
-    const hasExperience =
-        (typeof record.bedwars_experience === 'number' && Number.isFinite(record.bedwars_experience)) ||
-        (typeof record.Experience === 'number' && Number.isFinite(record.Experience)) ||
-        (typeof record.experience === 'number' && Number.isFinite(record.experience));
-
-    if (!hasExperience) {
-        errors.push({
-            field: 'bedwars_experience',
-            message: 'At least one of bedwars_experience, Experience or experience must be present and valid',
-        });
-    }
-
+  if (!record) {
     return {
-        valid: errors.length === 0,
-        errors,
+      valid: false,
+      errors: [{
+        field: 'data',
+        message: 'Data must be a non-null object',
+      }],
     };
+  }
+
+  const valid = bedwarsStatsValidator(record);
+  if (!valid && bedwarsStatsValidator.errors) {
+    for (const error of bedwarsStatsValidator.errors) {
+      const field = error.instancePath.replace(/^\//, '');
+      errors.push({
+        field: field || error.schemaPath.split('/').pop() || 'unknown',
+        message: error.message ?? 'Validation failed',
+      });
+    }
+  }
+
+  const hasExperience =
+    (typeof record.bedwars_experience === 'number' && Number.isFinite(record.bedwars_experience)) ||
+    (typeof record.Experience === 'number' && Number.isFinite(record.Experience)) ||
+    (typeof record.experience === 'number' && Number.isFinite(record.experience));
+
+  if (!hasExperience) {
+    errors.push({
+      field: 'bedwars_experience',
+      message: 'At least one of bedwars_experience, Experience or experience must be present and valid',
+    });
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+  };
 }
 
 /**

@@ -109,17 +109,7 @@ object SkyWarsModeDetector : BaseModeDetector() {
              return lastScoreboardContext
         }
 
-        val displayComponent: Any? = objective.displayName
-        val rawTitle = when (displayComponent) {
-            null -> ""
-            is net.minecraft.util.IChatComponent -> displayComponent.formattedText
-            else -> {
-                runCatching {
-                    displayComponent::class.java.getMethod("getFormattedText")
-                        .invoke(displayComponent) as? String
-                }.getOrNull() ?: displayComponent.toString()
-            }
-        }
+        val rawTitle = getFormattedTextSafely(objective.displayName)
         val title = StringUtils.stripControlCodes(rawTitle).uppercase(Locale.ROOT)
         val normalizedTitle = title.replace(WHITESPACE_PATTERN, "")
         if (!normalizedTitle.contains("SKYWARS")) {

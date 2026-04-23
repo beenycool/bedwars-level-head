@@ -1,6 +1,8 @@
 package club.sk1er.mods.levelhead.core
 
 import com.github.benmanes.caffeine.cache.Caffeine
+import com.github.benmanes.caffeine.cache.Expiry
+import club.sk1er.mods.levelhead.config.LevelheadConfig
 import java.time.Duration
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
@@ -32,6 +34,30 @@ class StatsCacheMetrics {
     }
 }
 
+private class StatsExpiry : Expiry<StatsCacheKey, GameStats> {
+    override fun expireAfterCreate(key: StatsCacheKey, value: GameStats, currentTime: Long): Long {
+        return LevelheadConfig.starCacheTtl.toNanos()
+    }
+
+    override fun expireAfterUpdate(
+        key: StatsCacheKey,
+        value: GameStats,
+        currentTime: Long,
+        currentDuration: Long
+    ): Long {
+        return LevelheadConfig.starCacheTtl.toNanos()
+    }
+
+    override fun expireAfterRead(
+        key: StatsCacheKey,
+        value: GameStats,
+        currentTime: Long,
+        currentDuration: Long
+    ): Long {
+        return currentDuration
+    }
+}
+
 /**
  * Bounded, thread-safe cache for [GameStats] keyed by (UUID, GameMode).
  *
@@ -52,6 +78,7 @@ class StatsRepository(private val maxSizeProvider: () -> Int) {
 
     private val cache = Caffeine.newBuilder()
         .maximumSize(maxSize)
+        .expireAfter(StatsExpiry())
         .build<StatsCacheKey, GameStats>()
 
     private val metrics = StatsCacheMetrics()
@@ -87,11 +114,9 @@ class StatsRepository(private val maxSizeProvider: () -> Int) {
     }
 
     /**
-     * Runs pending Caffeine maintenance (eviction of entries that exceeded
-     * [maxSize]). The TTL-expired entries are not automatically evicted by
-     * Caffeine here because no `expireAfter` policy was configured — freshness
-     * is checked explicitly in [getIfFresh]. This is intentional: the caller
-     * controls TTL policy per lookup.
+     * Runs pending Caffeine maintenance, including eviction of entries that exceeded
+     * the ceiling TTL (via [StatsExpiry]) and size-based eviction ([maxSize]).
+     * Per-lookup freshness with shorter TTLs is still handled by [getIfFresh] / [isExpired].
      */
     fun trimIfNeeded(ttl: Duration, now: Long = System.currentTimeMillis()) {
         cache.cleanUp()

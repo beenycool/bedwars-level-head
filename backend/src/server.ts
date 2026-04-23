@@ -16,72 +16,92 @@ import {
   flushBeforeClose,
   safeCloseCache,
 } from './scheduler';
+import { initAllowedKeyHashes as initAdminKeyHashes } from './middleware/adminAuth';
+import { initAllowedKeyHashes as initCronKeyHashes } from './middleware/cronAuth';
 
-const app = createApp();
+async function main(): Promise<void> {
+  await Promise.all([initAdminKeyHashes(), initCronKeyHashes()]);
 
-startBackgroundServices();
+  const app = createApp();
 
-const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
-  const location = CLOUD_FLARE_TUNNEL || `http://${SERVER_HOST}:${SERVER_PORT}`;
-  console.log(`Levelhead proxy listening at ${location}`);
-  console.log(`Cache DB pool configured with min=${CACHE_DB_POOL_MIN} max=${CACHE_DB_POOL_MAX}.`);
+  startBackgroundServices();
 
-  startPostListenServices();
+  const server = await new Promise<ReturnType<typeof app.listen>>((resolve, reject) => {
+    const onError = (err: Error) => reject(err);
+    const listeningServer = app.listen(SERVER_PORT, SERVER_HOST, () => {
+      listeningServer.off('error', onError);
 
-  void Promise.all([
-    getRedisClient()?.ping().catch(() => {}),
-    sql`SELECT 1`.execute(cachePool).catch(() => {}),
-  ]).then(() => console.info('[startup] connections warmed'));
-});
+      const location = CLOUD_FLARE_TUNNEL || `http://${SERVER_HOST}:${SERVER_PORT}`;
+      console.log(`Levelhead proxy listening at ${location}`);
+      console.log(`Cache DB pool configured with min=${CACHE_DB_POOL_MIN} max=${CACHE_DB_POOL_MAX}.`);
 
-let shuttingDown = false;
+      startPostListenServices();
 
-async function shutdown(signal: NodeJS.Signals): Promise<void> {
-  if (shuttingDown) {
-    return;
-  }
+      void Promise.all([
+        getRedisClient()?.ping().catch(() => {}),
+        sql`SELECT 1`.execute(cachePool).catch(() => {}),
+      ]).then(() => console.info('[startup] connections warmed'));
 
-  shuttingDown = true;
-  console.log(`Received ${signal}. Shutting down gracefully...`);
-  await stopAllServices();
+      resolve(listeningServer);
+    });
 
-  const forcedShutdown = setTimeout(() => {
-    console.error('Forcing shutdown.');
-    void safeCloseCache();
-    process.exit(1);
-  }, 15000);
-  forcedShutdown.unref();
+    listeningServer.once('error', onError);
+  });
 
-  try {
-    await new Promise<void>((resolve) => {
-      server.close((err?: Error) => {
-        if (err) {
-          console.error('Error closing HTTP server', err);
-          process.exitCode = 1;
-        }
+  let shuttingDown = false;
 
-        resolve();
+  async function shutdown(signal: NodeJS.Signals): Promise<void> {
+    if (shuttingDown) {
+      return;
+    }
+
+    shuttingDown = true;
+    console.log(`Received ${signal}. Shutting down gracefully...`);
+    await stopAllServices();
+
+    const forcedShutdown = setTimeout(() => {
+      console.error('Forcing shutdown.');
+      void safeCloseCache();
+      process.exit(1);
+    }, 15000);
+    forcedShutdown.unref();
+
+    try {
+      await new Promise<void>((resolve) => {
+        server.close((err?: Error) => {
+          if (err) {
+            console.error('Error closing HTTP server', err);
+            process.exitCode = 1;
+          }
+
+          resolve();
+        });
       });
-    });
-    await flushBeforeClose();
-  } finally {
-    safeCloseCache().finally(() => {
-      clearTimeout(forcedShutdown);
+      await flushBeforeClose();
+    } finally {
+      safeCloseCache().finally(() => {
+        clearTimeout(forcedShutdown);
 
-      const exitCode = typeof process.exitCode === 'number' ? process.exitCode : 0;
-      process.exit(exitCode);
-    });
+        const exitCode = typeof process.exitCode === 'number' ? process.exitCode : 0;
+        process.exit(exitCode);
+      });
+    }
   }
+
+  const shutdownSignals = ['SIGINT', 'SIGTERM'] as const;
+
+  shutdownSignals.forEach((signal) => {
+    process.on(signal, () => {
+      void shutdown(signal);
+    });
+  });
+
+  process.once('beforeExit', () => {
+    void safeCloseCache();
+  });
 }
 
-const shutdownSignals = ['SIGINT', 'SIGTERM'] as const;
-
-shutdownSignals.forEach((signal) => {
-  process.on(signal, () => {
-    void shutdown(signal);
-  });
-});
-
-process.on('exit', () => {
-  void safeCloseCache();
+main().catch((err) => {
+  console.error('Fatal startup error:', err);
+  process.exit(1);
 });

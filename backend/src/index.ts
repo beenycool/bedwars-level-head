@@ -17,29 +17,43 @@ import {
   flushBeforeClose,
   safeCloseCache,
 } from './scheduler';
+import { initAllowedKeyHashes as initAdminKeyHashes } from './middleware/adminAuth';
+import { initAllowedKeyHashes as initCronKeyHashes } from './middleware/cronAuth';
 
-const app = createApp();
+async function main(): Promise<void> {
+  await Promise.all([initAdminKeyHashes(), initCronKeyHashes()]);
 
-// Initialize background services (metrics, history flush, leader election)
-startBackgroundServices();
+  const app = createApp();
 
-const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
-  const location = CLOUD_FLARE_TUNNEL || `http://${SERVER_HOST}:${SERVER_PORT}`;
-  logger.info(`Levelhead proxy listening at ${location}`);
-  logger.info(`Cache DB pool configured with min=${CACHE_DB_POOL_MIN} max=${CACHE_DB_POOL_MAX}.`);
+  // Initialize background services (metrics, history flush, leader election)
+  startBackgroundServices();
 
-  // Start services that should only run after we start listening
-  startPostListenServices();
+  const server = await new Promise<ReturnType<typeof app.listen>>((resolve, reject) => {
+    const onError = (err: Error) => reject(err);
+    const listeningServer = app.listen(SERVER_PORT, SERVER_HOST, () => {
+      listeningServer.off('error', onError);
 
-  void Promise.all([
-    getRedisClient()?.ping().catch(() => {}),
-    sql`SELECT 1`.execute(cachePool).catch(() => {}),
-  ]).then(() => logger.info('[startup] connections warmed'));
-});
+      const location = CLOUD_FLARE_TUNNEL || `http://${SERVER_HOST}:${SERVER_PORT}`;
+      logger.info(`Levelhead proxy listening at ${location}`);
+      logger.info(`Cache DB pool configured with min=${CACHE_DB_POOL_MIN} max=${CACHE_DB_POOL_MAX}.`);
 
-let shuttingDown = false;
+      // Start services that should only run after we start listening
+      startPostListenServices();
 
-async function shutdown(signal: NodeJS.Signals): Promise<void> {
+      void Promise.all([
+        getRedisClient()?.ping().catch(() => {}),
+        sql`SELECT 1`.execute(cachePool).catch(() => {}),
+      ]).then(() => logger.info('[startup] connections warmed'));
+
+      resolve(listeningServer);
+    });
+
+    listeningServer.once('error', onError);
+  });
+
+  let shuttingDown = false;
+
+  async function shutdown(signal: NodeJS.Signals): Promise<void> {
   if (shuttingDown) {
     return;
   }
@@ -90,7 +104,13 @@ shutdownSignals.forEach((signal) => {
   });
 });
 
-// Best-effort cleanup for unexpected exits
-process.on('exit', () => {
-  void safeCloseCache();
+  // Best-effort cleanup when the event loop drains naturally.
+  process.once('beforeExit', () => {
+    void safeCloseCache();
+  });
+}
+
+main().catch((err) => {
+  console.error('Fatal startup error:', err);
+  process.exit(1);
 });

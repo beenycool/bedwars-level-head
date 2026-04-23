@@ -45,6 +45,7 @@ export interface PlayerQueryRecord {
 }
 
 export interface PlayerQuerySummary {
+  id: number;
   identifier: string;
   normalizedIdentifier: string;
   lookupType: 'uuid' | 'ign';
@@ -82,6 +83,7 @@ interface PlayerQueryStatsRow {
 export interface PlayerQueryPage {
   rows: PlayerQuerySummary[];
   totalCount: number;
+  nextCursor: number | null;
 }
 
 export interface TopPlayer {
@@ -322,13 +324,12 @@ async function flushHistoryBuffer(): Promise<void> {
 
     for (let i = 0; i < batch.length; i++) {
       const record = batch[i];
-      const retryCount = (record.retryCount || 0) + 1;
-      const updatedRecord = { ...record, retryCount };
+      record.retryCount = (record.retryCount || 0) + 1;
 
-      if (retryCount >= MAX_RETRY_ATTEMPTS) {
-        deadLettered.push(updatedRecord);
+      if (record.retryCount >= MAX_RETRY_ATTEMPTS) {
+        deadLettered.push(record);
       } else {
-        toRetry.push(updatedRecord);
+        toRetry.push(record);
       }
     }
 
@@ -388,9 +389,10 @@ function mapRowToSummary(row: PlayerQueryHistoryRow): PlayerQuerySummary {
   const parsedLatency = row.latency_ms === null ? null : Number(row.latency_ms);
 
   return {
+    id: Number(row.id),
     identifier: row.identifier,
     normalizedIdentifier: row.normalized_identifier,
-    lookupType: row.lookup_type as 'uuid' | 'ign',
+    lookupType: row.lookup_type === 'uuid' ? 'uuid' : 'ign',
     resolvedUuid: row.resolved_uuid,
     resolvedUsername: row.resolved_username,
     stars: row.stars,
@@ -473,7 +475,7 @@ function mapRowToStatsSummary(row: PlayerQueryStatsRow): PlayerQueryStatsSummary
   const parsedLatency = row.latency_ms === null ? null : Number(row.latency_ms);
 
   return {
-    lookupType: row.lookup_type as 'uuid' | 'ign',
+    lookupType: row.lookup_type === 'uuid' ? 'uuid' : 'ign',
     stars: row.stars,
     cacheHit: !!row.cache_hit,
     responseStatus: Number.isFinite(parsedResponseStatus) ? parsedResponseStatus : 0,
@@ -542,24 +544,26 @@ export async function getPlayerQueryCount(params: { search?: string }): Promise<
 }
 
 export async function getPlayerQueryPage(params: {
-  page: number;
+  cursor?: number;
   pageSize: number;
   search?: string;
   totalCountOverride?: number;
 }): Promise<PlayerQueryPage> {
   await ensureInitialized();
 
-  const page = Math.max(Math.floor(params.page) || 1, 1);
   const pageSize = Math.min(Math.max(Math.floor(params.pageSize) || 1, 1), 200);
-  const offset = (page - 1) * pageSize;
   const searchTerm = params.search?.trim();
+  const cursor = params.cursor;
 
   let query = db
     .selectFrom('player_query_history')
     .selectAll()
-    .orderBy('requested_at', 'desc')
-    .limit(pageSize)
-    .offset(offset);
+    .orderBy('id', 'desc')
+    .limit(pageSize + 1);
+
+  if (cursor !== undefined && cursor !== null) {
+    query = query.where('id', '<', cursor);
+  }
 
   query = buildSearchClause(query, searchTerm);
 
@@ -572,11 +576,16 @@ export async function getPlayerQueryPage(params: {
     totalCountPromise = getPlayerQueryCount({ search: searchTerm });
   }
 
-  const [rows, totalCount] = await Promise.all([rowsPromise, totalCountPromise]);
+  const [allRows, totalCount] = await Promise.all([rowsPromise, totalCountPromise]);
+
+  const hasNextPage = allRows.length > pageSize;
+  const rows = hasNextPage ? allRows.slice(0, pageSize) : allRows;
+  const nextCursor = hasNextPage && rows.length > 0 ? Number(rows[rows.length - 1].id) : null;
 
   return {
     rows: rows.map(mapRowToSummary),
     totalCount,
+    nextCursor,
   };
 }
 

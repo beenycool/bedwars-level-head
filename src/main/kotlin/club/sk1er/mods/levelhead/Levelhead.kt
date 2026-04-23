@@ -154,8 +154,8 @@ object Levelhead {
         }
         val serverIp = minecraft.currentServerData?.serverIP ?: return false
         val normalized = serverIp.lowercase(Locale.ROOT)
-        return normalized.contains("hypixel")
-    }
+return normalized.contains("hypixel")
+}
 
     fun sendChat(message: String) {
         val formatted = "${ChatColor.AQUA}[Levelhead] ${ChatColor.RESET}$message"

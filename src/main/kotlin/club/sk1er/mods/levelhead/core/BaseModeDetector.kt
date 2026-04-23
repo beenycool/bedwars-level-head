@@ -10,6 +10,29 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import java.util.Locale
 
 abstract class BaseModeDetector {
+  companion object {
+    private val getFormattedTextMethod: java.lang.reflect.Method? by lazy {
+      runCatching {
+        Class.forName("net.minecraft.util.IChatComponent")
+          .getMethod("getFormattedText")
+      }.getOrNull()
+    }
+  }
+
+  protected fun getFormattedTextSafely(component: Any?): String {
+    return when (component) {
+      null -> ""
+      is CharSequence -> component.toString()
+      is IChatComponent -> component.formattedText
+      else -> {
+        runCatching {
+          val method = getFormattedTextMethod ?: component::class.java.getMethod("getFormattedText")
+          method.invoke(component) as? String
+        }.getOrNull() ?: component.toString()
+      }
+    }
+  }
+
     protected val WHITESPACE_PATTERN = Regex("""\s+""")
 
     enum class Context {
@@ -76,17 +99,7 @@ abstract class BaseModeDetector {
         val scoreboard = world.scoreboard ?: return true
         val objective = scoreboard.getObjectiveInDisplaySlot(1) ?: return true
 
-        val displayComponent: Any? = objective.displayName
-        val rawTitle = when (displayComponent) {
-            null -> ""
-            is IChatComponent -> displayComponent.formattedText
-            else -> {
-                runCatching {
-                    displayComponent::class.java.getMethod("getFormattedText")
-                        .invoke(displayComponent) as? String
-                }.getOrNull() ?: displayComponent.toString()
-            }
-        }
+        val rawTitle = getFormattedTextSafely(objective.displayName)
         val title = StringUtils.stripControlCodes(rawTitle).uppercase(Locale.ROOT).replace(WHITESPACE_PATTERN, "")
         
         return title == "HYPIXEL" || title == "PROTOTYPE" || title.isBlank()

@@ -40,9 +40,9 @@ function createTestApp(): Express {
   const app = express();
   app.use(express.json());
 
-  app.get('/healthz', enforceAdminRateLimit, (req, res) => {
+  app.get('/healthz', enforceAdminRateLimit, async (req, res) => {
     // lgtm[js/missing-rate-limiting]
-    const isAuthorized = isAuthorizedMonitoring(req);
+    const isAuthorized = await isAuthorizedMonitoring(req);
     if (isAuthorized) {
       res.json({ status: 'ok', secret: 'operational-detail' });
     } else {
