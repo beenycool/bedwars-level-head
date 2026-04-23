@@ -226,7 +226,7 @@ export class SubmissionService {
     if (isFullResponse) {
       minimalStats = extractMinimalStats(submission);
     } else {
-      minimalStats = this.buildMinimalStatsFromSubmission(submission as Record<string, unknown>);
+      minimalStats = this.buildMinimalStatsFromSubmission(submission);
     }
 
     const verifiedName = verificationResult.verifiedDisplayname;
