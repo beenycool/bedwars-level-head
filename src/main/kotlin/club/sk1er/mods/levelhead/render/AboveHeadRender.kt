@@ -16,7 +16,6 @@ import gg.essential.api.EssentialAPI
 import gg.essential.elementa.utils.withAlpha
 import gg.essential.universal.UGraphics
 import gg.essential.universal.UMatrixStack
-import gg.essential.universal.render.ManagedGlState
 import gg.essential.universal.UMinecraft
 import gg.essential.universal.UMinecraft.getFontRenderer
 import gg.essential.universal.UMinecraft.getMinecraft
@@ -191,26 +190,31 @@ object AboveHeadRender {
  matrixStack.rotate(-renderManager.playerViewY, 0.0f, 1.0f, 0.0f)
  matrixStack.rotate(renderManager.playerViewX * xMultiplier, 1.0f, 0.0f, 0.0f)
  matrixStack.scale(-textScale, -textScale, textScale)
- matrixStack.runWithGlobalState {
- val savedState = ManagedGlState.active()
- UGraphics.disableLighting()
- UGraphics.depthMask(false)
- UGraphics.disableDepth()
- UGraphics.enableBlend()
- UGraphics.tryBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO)
- val stringWidth = tag.getTotalWidth(fontrenderer) shr 1
- if (displayManager.config.showBackground) {
- val bgAlpha = displayManager.config.backgroundOpacity
- val uGraphics = UGraphics.getFromTessellator().beginWithDefaultShader(UGraphics.DrawMode.QUADS, DefaultVertexFormats.POSITION_COLOR)
- uGraphics.pos(matrixStack, (-stringWidth - 2).toDouble(), -1.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
- uGraphics.pos(matrixStack, (-stringWidth - 2).toDouble(), 8.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
- uGraphics.pos(matrixStack, (stringWidth + 2).toDouble(), 8.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
- uGraphics.pos(matrixStack, (stringWidth + 2).toDouble(), -1.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
- uGraphics.drawDirect()
- }
- renderString(matrixStack, fontrenderer, tag, displayManager.config.textShadow, stringWidth)
- savedState.activate(ManagedGlState.active(), false)
- }
+  matrixStack.runWithGlobalState {
+    UGraphics.disableLighting()
+    UGraphics.depthMask(false)
+    UGraphics.disableDepth()
+    UGraphics.enableBlend()
+    UGraphics.tryBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO)
+    try {
+      val stringWidth = tag.getTotalWidth(fontrenderer) shr 1
+      if (displayManager.config.showBackground) {
+        val bgAlpha = displayManager.config.backgroundOpacity
+        val uGraphics = UGraphics.getFromTessellator().beginWithDefaultShader(UGraphics.DrawMode.QUADS, DefaultVertexFormats.POSITION_COLOR)
+        uGraphics.pos(matrixStack, (-stringWidth - 2).toDouble(), -1.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
+        uGraphics.pos(matrixStack, (-stringWidth - 2).toDouble(), 8.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
+        uGraphics.pos(matrixStack, (stringWidth + 2).toDouble(), 8.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
+        uGraphics.pos(matrixStack, (stringWidth + 2).toDouble(), -1.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
+        uGraphics.drawDirect()
+      }
+      renderString(matrixStack, fontrenderer, tag, displayManager.config.textShadow, stringWidth)
+    } finally {
+      UGraphics.disableBlend()
+      UGraphics.enableDepth()
+      UGraphics.depthMask(true)
+      UGraphics.enableLighting()
+    }
+  }
  }
 
     private fun renderString(matrixStack: UMatrixStack, renderer: FontRenderer, tag: LevelheadTag, shadow: Boolean, stringWidthHalf: Int) {

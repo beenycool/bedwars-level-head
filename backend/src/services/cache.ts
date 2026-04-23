@@ -276,6 +276,9 @@ export async function purgeExpiredEntries(now: number = Date.now()): Promise<voi
   }
 
   markDbAccess();
+  } finally {
+    isPurging = false;
+  }
 }
 
 function mapRow<T>(row: CacheRow): CacheEntry<T> {

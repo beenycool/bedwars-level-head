@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import {
-  getPlayerQueryCount,
   getPlayerQueryPage,
   getPlayerQueriesWithFilters,
   getPlayerQueriesStats,
@@ -343,7 +342,7 @@ router.get('/', async (req, res, next) => {
   const clearUrl = '?' + clearParams.toString();
 
     // Fetch filtered data for charts and page data in parallel
-  const [chartData, topPlayers, sysStats, redisStats, resourceMetricsHistory, { pageData, totalCount }] = await Promise.all([
+  const [chartData, topPlayers, sysStats, redisStats, resourceMetricsHistory, pageData] = await Promise.all([
     getPlayerQueriesStats({
       startDate: validStartDate,
       endDate: validEndDate,
@@ -357,11 +356,7 @@ router.get('/', async (req, res, next) => {
     getSystemStats(),
     getRedisStats(),
     getResourceMetricsHistory({ startDate: validStartDate, endDate: validEndDate }),
-    (async () => {
-      const totalCount = await getPlayerQueryCount({ search });
-      const pageData = await getPlayerQueryPage({ cursor: validCursor, pageSize: PAGE_SIZE, search, totalCountOverride: totalCount });
-      return { pageData, totalCount };
-    })()
+    getPlayerQueryPage({ cursor: validCursor, pageSize: PAGE_SIZE, search })
   ]);
 
     // Serialise the data so the frontend script can use it
@@ -1462,7 +1457,7 @@ router.get('/', async (req, res, next) => {
         ${validStartDate ? `<input type="hidden" name="from" value="${validStartDate.toISOString()}" />` : ''}
         ${validEndDate ? `<input type="hidden" name="to" value="${validEndDate.toISOString()}" />` : ''}
         ${validLimit ? `<input type="hidden" name="limit" value="${validLimit}" />` : ''}
-        <button type="submit" ${validCursor === undefined ? 'disabled' : ''}>Previous</button>
+        <button type="submit" ${validCursor === undefined ? 'disabled' : ''}>⇤ First</button>
       </form>
       <form method="GET">
         <input type="hidden" name="cursor" value="${pageData.nextCursor ?? ''}" />

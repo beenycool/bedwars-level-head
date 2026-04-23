@@ -76,7 +76,7 @@ const BedwarsStatsSchema = Type.Object(
   { additionalProperties: true },
 );
 
-const ajv = new Ajv({ strict: false });
+const ajv = new Ajv({ strict: false, allErrors: true });
 const bedwarsStatsValidator = ajv.compile(BedwarsStatsSchema);
 
 /**

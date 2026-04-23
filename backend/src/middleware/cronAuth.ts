@@ -27,7 +27,7 @@ let ALLOWED_KEY_HASHES: Buffer[] = [];
 
 async function initAllowedKeyHashes(): Promise<void> {
   ALLOWED_KEY_HASHES = await Promise.all(
-    CRON_API_KEYS.map((key) => scryptAsync(key, SALT, KEY_LEN, HASH_OPTS) as Promise<Buffer>)
+    CRON_API_KEYS.map((key) => scryptAsync(key, SALT, KEY_LEN, HASH_OPTS))
   );
 }
 
@@ -63,7 +63,7 @@ export async function validateCronToken(token: string): Promise<boolean> {
   if (token.length > MAX_TOKEN_LENGTH) return false;
 
   // Hash the incoming token using Scrypt with the same low-cost parameters
-  const tokenHash = await scryptAsync(token, SALT, KEY_LEN, HASH_OPTS) as Buffer;
+  const tokenHash = await scryptAsync(token, SALT, KEY_LEN, HASH_OPTS);
 
 // To prevent timing attacks, we must iterate through all keys and not short-circuit.
  // Using reduce with a bitwise OR ensures we process every key without conditional branching.

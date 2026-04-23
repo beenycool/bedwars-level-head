@@ -3,7 +3,7 @@
 # ============================================================
 # Stage 1: builder – install deps + esbuild bundle
 # ============================================================
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 WORKDIR /app
 
@@ -11,7 +11,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 
 # Install ALL dependencies (including devDependencies for esbuild)
-RUN npm install --no-audit --no-fund && npm cache clean --force
+RUN npm ci --no-audit --no-fund && npm cache clean --force
 
 # Copy source code
 COPY . .
@@ -22,12 +22,13 @@ RUN npm run bundle
 # ============================================================
 # Stage 2: runner – minimal production image
 # ============================================================
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 
 WORKDIR /app
 
 # Copy only the esbuild bundle from builder (no node_modules needed)
 COPY --from=builder /app/dist/index.js ./dist/index.js
+COPY --from=builder /app/package.json ./package.json
 
 ENV NODE_ENV=production
 ENV NODE_OPTIONS="--max-old-space-size=512"

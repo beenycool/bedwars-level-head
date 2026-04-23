@@ -43,7 +43,7 @@ export async function isAuthorizedMonitoring(req: Request): Promise<boolean> {
 /**
  * Middleware that blocks unauthorized monitoring requests.
  */
-export const enforceMonitoringAuth: RequestHandler = async (req, _res, next) => {
+export const enforceMonitoringAuth: RequestHandler = async (req: Request, _res: Response, next: NextFunction) => {
   try {
     if (!(await isAuthorizedMonitoring(req))) {
       next(new HttpError(403, 'FORBIDDEN', 'Access to operational metrics is restricted.'));

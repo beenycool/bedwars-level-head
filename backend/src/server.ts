@@ -26,17 +26,26 @@ async function main(): Promise<void> {
 
   startBackgroundServices();
 
-  const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
-    const location = CLOUD_FLARE_TUNNEL || `http://${SERVER_HOST}:${SERVER_PORT}`;
-    console.log(`Levelhead proxy listening at ${location}`);
-    console.log(`Cache DB pool configured with min=${CACHE_DB_POOL_MIN} max=${CACHE_DB_POOL_MAX}.`);
+  const server = await new Promise<ReturnType<typeof app.listen>>((resolve, reject) => {
+    const onError = (err: Error) => reject(err);
+    const listeningServer = app.listen(SERVER_PORT, SERVER_HOST, () => {
+      listeningServer.off('error', onError);
 
-    startPostListenServices();
+      const location = CLOUD_FLARE_TUNNEL || `http://${SERVER_HOST}:${SERVER_PORT}`;
+      console.log(`Levelhead proxy listening at ${location}`);
+      console.log(`Cache DB pool configured with min=${CACHE_DB_POOL_MIN} max=${CACHE_DB_POOL_MAX}.`);
 
-    void Promise.all([
-      getRedisClient()?.ping().catch(() => {}),
-      sql`SELECT 1`.execute(cachePool).catch(() => {}),
-    ]).then(() => console.info('[startup] connections warmed'));
+      startPostListenServices();
+
+      void Promise.all([
+        getRedisClient()?.ping().catch(() => {}),
+        sql`SELECT 1`.execute(cachePool).catch(() => {}),
+      ]).then(() => console.info('[startup] connections warmed'));
+
+      resolve(listeningServer);
+    });
+
+    listeningServer.once('error', onError);
   });
 
   let shuttingDown = false;
@@ -87,7 +96,7 @@ async function main(): Promise<void> {
     });
   });
 
-  process.on('exit', () => {
+  process.once('beforeExit', () => {
     void safeCloseCache();
   });
 }

@@ -10,27 +10,28 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import java.util.Locale
 
 abstract class BaseModeDetector {
-    companion object {
-        private val getFormattedTextMethod: java.lang.reflect.Method? by lazy {
-            runCatching {
-                Class.forName("net.minecraft.util.IChatComponent")
-                    .getMethod("getFormattedText")
-            }.getOrNull()
-        }
-
-        fun getFormattedTextSafely(component: Any?): String {
-            return when (component) {
-                null -> ""
-                is IChatComponent -> component.formattedText
-                else -> {
-                    runCatching {
-                        val method = getFormattedTextMethod ?: component::class.java.getMethod("getFormattedText")
-                        method.invoke(component) as? String
-                    }.getOrNull() ?: component.toString()
-                }
-            }
-        }
+  companion object {
+    private val getFormattedTextMethod: java.lang.reflect.Method? by lazy {
+      runCatching {
+        Class.forName("net.minecraft.util.IChatComponent")
+          .getMethod("getFormattedText")
+      }.getOrNull()
     }
+  }
+
+  protected fun getFormattedTextSafely(component: Any?): String {
+    return when (component) {
+      null -> ""
+      is CharSequence -> component.toString()
+      is IChatComponent -> component.formattedText
+      else -> {
+        runCatching {
+          val method = getFormattedTextMethod ?: component::class.java.getMethod("getFormattedText")
+          method.invoke(component) as? String
+        }.getOrNull() ?: component.toString()
+      }
+    }
+  }
 
     protected val WHITESPACE_PATTERN = Regex("""\s+""")
 

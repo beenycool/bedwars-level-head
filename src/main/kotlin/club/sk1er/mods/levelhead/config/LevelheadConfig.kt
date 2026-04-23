@@ -48,7 +48,18 @@ private const val CHANGELOG_URL = "https://github.com/beenycool/bedwars-level-he
 private const val ABOUT_VERSION_TEXT = "Version: " + Levelhead.VERSION
 
 object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedwars-levelhead.json") {
-    // Expose constants as @JvmStatic functions - functions are not serialized by Gson
+@Transient
+var suppressRefresh: Boolean = false
+
+private fun maybeRefreshDisplay() {
+  if (suppressRefresh) return
+  Levelhead.displayManager.updatePrimaryDisplay { true }
+  Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
+  Levelhead.displayManager.refreshVisibleDisplays()
+  save()
+}
+
+// Expose constants as @JvmStatic functions - functions are not serialized by Gson
     @JvmStatic
     fun getMinStarCacheTtlMinutes() = _MIN_STAR_CACHE_TTL_MINUTES
     
@@ -252,17 +263,15 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         }
 
     @Color(name = "Header Color", description = "Color for the header text.", category = "Display")
-    var headerColor: OneColor = OneColor(85, 255, 255)
-        set(value) {
-            field = value
-            Levelhead.displayManager.updatePrimaryDisplay { config ->
-                config.headerColor = value.toJavaColor()
-                true
-            }
-            Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
-            Levelhead.displayManager.refreshVisibleDisplays()
-            save()
-        }
+var headerColor: OneColor = OneColor(85, 255, 255)
+  set(value) {
+    field = value
+    Levelhead.displayManager.updatePrimaryDisplay { config ->
+      config.headerColor = value.toJavaColor()
+      true
+    }
+    maybeRefreshDisplay()
+  }
 
     @Header(text = "Footer (Star) Text", category = "Display")
     @Transient
@@ -387,17 +396,15 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         }
 
     @Color(name = "Footer Color", description = "Color for the footer text.", category = "Display")
-    var footerColor: OneColor = OneColor(255, 255, 85)
-        set(value) {
-            field = value
-            Levelhead.displayManager.updatePrimaryDisplay { config ->
-                config.footerColor = value.toJavaColor()
-                true
-            }
-            Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
-            Levelhead.displayManager.refreshVisibleDisplays()
-            save()
-        }
+var footerColor: OneColor = OneColor(255, 255, 85)
+  set(value) {
+    field = value
+    Levelhead.displayManager.updatePrimaryDisplay { config ->
+      config.footerColor = value.toJavaColor()
+      true
+    }
+    maybeRefreshDisplay()
+  }
 
     // ===============================
     // Category: Appearance (Fine-tuning visual settings)
@@ -1436,12 +1443,20 @@ hideIf("customDatabaseUrl") { !showAdvancedOptions }
             migrated = true
         }
 
-        // Migrate headerColorHex string -> headerColor OneColor
-        if (jsonObj.has("headerColorHex") && !jsonObj.has("headerColor")) {
-            try {
-                val hexStr = jsonObj.get("headerColorHex").asString
-                val c = java.awt.Color.decode(hexStr)
-                jsonObj.addProperty("headerColor", c.rgb)
+      // Migrate headerColorHex string -> headerColor OneColor
+      if (jsonObj.has("headerColorHex") && !jsonObj.has("headerColor")) {
+        try {
+          val hexStr = jsonObj.get("headerColorHex").asString
+          val c = java.awt.Color.decode(hexStr)
+          val colorObj = com.google.gson.JsonObject()
+          colorObj.addProperty("r", c.red.toFloat() / 255f)
+          colorObj.addProperty("g", c.green.toFloat() / 255f)
+          colorObj.addProperty("b", c.blue.toFloat() / 255f)
+          colorObj.addProperty("a", 1.0f)
+          colorObj.addProperty("chroma", 0)
+          colorObj.addProperty("chromaSpeed", 0.0f)
+          colorObj.addProperty("rainbow", false)
+          jsonObj.add("headerColor", colorObj)
                 jsonObj.remove("headerColorHex")
                 migrated = true
             } catch (_: Exception) {
@@ -1450,12 +1465,20 @@ hideIf("customDatabaseUrl") { !showAdvancedOptions }
             }
         }
 
-        // Migrate footerColorHex string -> footerColor OneColor
-        if (jsonObj.has("footerColorHex") && !jsonObj.has("footerColor")) {
-            try {
-                val hexStr = jsonObj.get("footerColorHex").asString
-                val c = java.awt.Color.decode(hexStr)
-                jsonObj.addProperty("footerColor", c.rgb)
+      // Migrate footerColorHex string -> footerColor OneColor
+      if (jsonObj.has("footerColorHex") && !jsonObj.has("footerColor")) {
+        try {
+          val hexStr = jsonObj.get("footerColorHex").asString
+          val c = java.awt.Color.decode(hexStr)
+          val colorObj = com.google.gson.JsonObject()
+          colorObj.addProperty("r", c.red.toFloat() / 255f)
+          colorObj.addProperty("g", c.green.toFloat() / 255f)
+          colorObj.addProperty("b", c.blue.toFloat() / 255f)
+          colorObj.addProperty("a", 1.0f)
+          colorObj.addProperty("chroma", 0)
+          colorObj.addProperty("chromaSpeed", 0.0f)
+          colorObj.addProperty("rainbow", false)
+          jsonObj.add("footerColor", colorObj)
                 jsonObj.remove("footerColorHex")
                 migrated = true
             } catch (_: Exception) {
@@ -1524,48 +1547,53 @@ hideIf("customDatabaseUrl") { !showAdvancedOptions }
         BedwarsFetcher.resetWarnings()
     }
 
-    private fun resetToDefaults() {
-        apiKey = ""
-        backendModeIndex = 2
-        communityDatabase = true
-        showTabStats = true
-        proxyEnabled = true
-        proxyBaseUrl = DEFAULT_PROXY_URL
-        dnsModeIndex = 1
-        proxyAuthToken = ""
-        communitySubmitSecret = ""
-        customDatabaseUrl = ""
-        starCacheTtlMinutes = DEFAULT_STAR_CACHE_TTL_MINUTES
-        levelheadEnabled = true
-        displayPositionIndex = 0
-        showSelf = true
-        showInInventory = true
-        verticalOffset = 0.0f
-        showBackground = true
-        backgroundOpacity = 0.25f
-        textShadow = true
-        renderDistance = 64
-        frameSkip = 1
-        renderThrottleMs = 0
-        cacheSizeLimit = 500
-        headerText = GameMode.BEDWARS.defaultHeader
-        headerColor = OneColor(85, 255, 255)
-        footerFormat = "%star%"
-        bedwarsStatDisplayIndex = BedwarsStatMode.STAR.ordinal
-        duelsStatDisplayIndex = DuelsStatMode.DIVISION_TITLE.ordinal
-        skywarsStatDisplayIndex = SkyWarsStatMode.STAR.ordinal
-        bedwarsCustomFooterFormat = "%star%"
-        duelsCustomFooterFormat = "%division%"
-        skywarsCustomFooterFormat = "%star%"
-        footerColor = OneColor(255, 255, 85)
-        showAdvancedOptions = false
-        debugConfigSync = false
-        debugRequests = false
-        debugRenderSampling = false
-        save()
-        BedwarsFetcher.resetWarnings()
-        Levelhead.displayManager.resetToDefaults()
-    }
+private fun resetToDefaults() {
+  suppressRefresh = true
+  try {
+    apiKey = ""
+    backendModeIndex = 2
+    communityDatabase = true
+    showTabStats = true
+    proxyEnabled = true
+    proxyBaseUrl = DEFAULT_PROXY_URL
+    dnsModeIndex = 1
+    proxyAuthToken = ""
+    communitySubmitSecret = ""
+    customDatabaseUrl = ""
+    starCacheTtlMinutes = DEFAULT_STAR_CACHE_TTL_MINUTES
+    levelheadEnabled = true
+    displayPositionIndex = 0
+    showSelf = true
+    showInInventory = true
+    verticalOffset = 0.0f
+    showBackground = true
+    backgroundOpacity = 0.25f
+    textShadow = true
+    renderDistance = 64
+    frameSkip = 1
+    renderThrottleMs = 0
+    cacheSizeLimit = 500
+    headerText = GameMode.BEDWARS.defaultHeader
+    headerColor = OneColor(85, 255, 255)
+    footerFormat = "%star%"
+    bedwarsStatDisplayIndex = BedwarsStatMode.STAR.ordinal
+    duelsStatDisplayIndex = DuelsStatMode.DIVISION_TITLE.ordinal
+    skywarsStatDisplayIndex = SkyWarsStatMode.STAR.ordinal
+    bedwarsCustomFooterFormat = "%star%"
+    duelsCustomFooterFormat = "%division%"
+    skywarsCustomFooterFormat = "%star%"
+    footerColor = OneColor(255, 255, 85)
+    showAdvancedOptions = false
+    debugConfigSync = false
+    debugRequests = false
+    debugRenderSampling = false
+  } finally {
+    suppressRefresh = false
+  }
+  save()
+  BedwarsFetcher.resetWarnings()
+  Levelhead.displayManager.resetToDefaults()
+}
 
     fun updateStarCacheTtlMinutes(minutes: Int) {
         val clamped = minutes.coerceIn(MIN_STAR_CACHE_TTL_MINUTES, MAX_STAR_CACHE_TTL_MINUTES)
