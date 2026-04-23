@@ -17,29 +17,34 @@ import {
   flushBeforeClose,
   safeCloseCache,
 } from './scheduler';
+import { initAllowedKeyHashes as initAdminKeyHashes } from './middleware/adminAuth';
+import { initAllowedKeyHashes as initCronKeyHashes } from './middleware/cronAuth';
 
-const app = createApp();
+async function main(): Promise<void> {
+  await Promise.all([initAdminKeyHashes(), initCronKeyHashes()]);
 
-// Initialize background services (metrics, history flush, leader election)
-startBackgroundServices();
+  const app = createApp();
 
-const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
-  const location = CLOUD_FLARE_TUNNEL || `http://${SERVER_HOST}:${SERVER_PORT}`;
-  logger.info(`Levelhead proxy listening at ${location}`);
-  logger.info(`Cache DB pool configured with min=${CACHE_DB_POOL_MIN} max=${CACHE_DB_POOL_MAX}.`);
+  // Initialize background services (metrics, history flush, leader election)
+  startBackgroundServices();
 
-  // Start services that should only run after we start listening
-  startPostListenServices();
+  const server = app.listen(SERVER_PORT, SERVER_HOST, () => {
+    const location = CLOUD_FLARE_TUNNEL || `http://${SERVER_HOST}:${SERVER_PORT}`;
+    logger.info(`Levelhead proxy listening at ${location}`);
+    logger.info(`Cache DB pool configured with min=${CACHE_DB_POOL_MIN} max=${CACHE_DB_POOL_MAX}.`);
 
-  void Promise.all([
-    getRedisClient()?.ping().catch(() => {}),
-    sql`SELECT 1`.execute(cachePool).catch(() => {}),
-  ]).then(() => logger.info('[startup] connections warmed'));
-});
+    // Start services that should only run after we start listening
+    startPostListenServices();
 
-let shuttingDown = false;
+    void Promise.all([
+      getRedisClient()?.ping().catch(() => {}),
+      sql`SELECT 1`.execute(cachePool).catch(() => {}),
+    ]).then(() => logger.info('[startup] connections warmed'));
+  });
 
-async function shutdown(signal: NodeJS.Signals): Promise<void> {
+  let shuttingDown = false;
+
+  async function shutdown(signal: NodeJS.Signals): Promise<void> {
   if (shuttingDown) {
     return;
   }
@@ -90,7 +95,13 @@ shutdownSignals.forEach((signal) => {
   });
 });
 
-// Best-effort cleanup for unexpected exits
-process.on('exit', () => {
-  void safeCloseCache();
+  // Best-effort cleanup for unexpected exits
+  process.on('exit', () => {
+    void safeCloseCache();
+  });
+}
+
+main().catch((err) => {
+  console.error('Fatal startup error:', err);
+  process.exit(1);
 });

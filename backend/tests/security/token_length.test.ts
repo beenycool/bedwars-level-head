@@ -13,8 +13,8 @@ describe('Token Length Validation (DoS Protection)', () => {
   let scryptSpy: jest.SpyInstance;
 
   beforeAll(() => {
-    // Spy on crypto.scryptSync to verify if it's called
-    scryptSpy = jest.spyOn(crypto, 'scryptSync');
+    // Spy on crypto.scrypt to verify if it's called
+    scryptSpy = jest.spyOn(crypto, 'scrypt');
   });
 
   afterEach(() => {
@@ -29,21 +29,21 @@ describe('Token Length Validation (DoS Protection)', () => {
     { name: 'validateAdminToken', validateFn: validateAdminToken },
     { name: 'validateCronToken', validateFn: validateCronToken },
   ])('$name', ({ validateFn }) => {
-    it('should process tokens within length limit', () => {
+    it('should process tokens within length limit', async () => {
       const validLengthToken = 'a'.repeat(128);
-      validateFn(validLengthToken);
+      await validateFn(validLengthToken);
       expect(scryptSpy).toHaveBeenCalled();
     });
 
-    it('should reject tokens exceeding length limit without hashing', () => {
+    it('should reject tokens exceeding length limit without hashing', async () => {
       const longToken = 'a'.repeat(129);
-      const result = validateFn(longToken);
+      const result = await validateFn(longToken);
       expect(result).toBe(false);
       expect(scryptSpy).not.toHaveBeenCalled();
     });
 
-    it('should reject empty tokens immediately', () => {
-      const result = validateFn('');
+    it('should reject empty tokens immediately', async () => {
+      const result = await validateFn('');
       expect(result).toBe(false);
       expect(scryptSpy).not.toHaveBeenCalled();
     });

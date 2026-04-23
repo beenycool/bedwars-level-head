@@ -194,7 +194,7 @@ export function createApp(): express.Express {
       timestamp: new Date().toISOString(),
     };
 
-    if (isAuthorizedMonitoring(req)) {
+    if (await isAuthorizedMonitoring(req)) {
       response.circuitBreaker = {
         state: circuitBreaker.state,
         failureCount: circuitBreaker.failureCount,

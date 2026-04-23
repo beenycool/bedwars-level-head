@@ -15,11 +15,11 @@ import {
 import { shutdown as shutdownHypixelTracker } from './services/hypixelTracker';
 import { startGlobalLeaderElection, stopGlobalLeaderElection } from './services/globalLeader';
 
-let globalPurgeInterval: ReturnType<typeof setInterval> | null = null;
+let globalPurgeTimeout: ReturnType<typeof setTimeout> | null = null;
 let cacheClosePromise: Promise<void> | null = null;
 
 async function startLeaderScopedServices(): Promise<void> {
-  if (globalPurgeInterval) {
+  if (globalPurgeTimeout) {
     return;
   }
 
@@ -34,18 +34,26 @@ async function startLeaderScopedServices(): Promise<void> {
 
   startKeyCountRefresher();
 
-  globalPurgeInterval = setInterval(() => {
-    void purgeExpiredEntries().catch((error) => {
-      logger.error('Failed to purge expired cache entries', error);
-    });
-  }, 60 * 60 * 1000);
-  globalPurgeInterval.unref();
+  function scheduleNextPurge(): void {
+    void purgeExpiredEntries()
+      .catch((error) => {
+        logger.error('Failed to purge expired cache entries', error);
+      })
+      .finally(() => {
+        if (globalPurgeTimeout !== null) {
+          globalPurgeTimeout = setTimeout(scheduleNextPurge, 60 * 60 * 1000);
+          globalPurgeTimeout.unref();
+        }
+      });
+  }
+
+  scheduleNextPurge();
 }
 
 async function stopLeaderScopedServices(): Promise<void> {
-  if (globalPurgeInterval) {
-    clearInterval(globalPurgeInterval);
-    globalPurgeInterval = null;
+  if (globalPurgeTimeout) {
+    clearTimeout(globalPurgeTimeout);
+    globalPurgeTimeout = null;
   }
 
   stopDynamicRateLimitService();

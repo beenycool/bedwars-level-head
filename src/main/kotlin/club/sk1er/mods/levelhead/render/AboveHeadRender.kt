@@ -16,6 +16,7 @@ import gg.essential.api.EssentialAPI
 import gg.essential.elementa.utils.withAlpha
 import gg.essential.universal.UGraphics
 import gg.essential.universal.UMatrixStack
+import gg.essential.universal.render.ManagedGlState
 import gg.essential.universal.UMinecraft
 import gg.essential.universal.UMinecraft.getFontRenderer
 import gg.essential.universal.UMinecraft.getMinecraft
@@ -27,7 +28,7 @@ import net.minecraft.entity.EntityLivingBase
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraftforge.client.event.RenderLivingEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
-import org.lwjgl.opengl.GL11
+
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 
@@ -41,6 +42,10 @@ object AboveHeadRender {
     private const val OPAQUE_TEXT_ALPHA = 1.0f
     private const val SEE_THROUGH_SHADOW_ALPHA = 51
     private const val OPAQUE_SHADOW_ALPHA = 255
+    private const val GL_SRC_ALPHA = 770
+    private const val GL_ONE_MINUS_SRC_ALPHA = 771
+    private const val GL_ONE = 1
+    private const val GL_ZERO = 0
     private val SEE_THROUGH_SHADOW_COLOR = java.awt.Color(0, 0, 0, SEE_THROUGH_SHADOW_ALPHA).rgb
     private val OPAQUE_SHADOW_COLOR = java.awt.Color(0, 0, 0, OPAQUE_SHADOW_ALPHA).rgb
 
@@ -167,51 +172,48 @@ object AboveHeadRender {
     private val EntityPlayer.isSelf: Boolean
         get() = UPlayer.getUUID() == this.uniqueID
 
-    private fun renderName(tag: LevelheadTag, entityIn: EntityPlayer, x: Double, y: Double, z: Double) {
-        val fontrenderer = getFontRenderer()
-        val textScale = TEXT_SCALE
-        UGraphics.GL.pushMatrix()
-        val mc = getMinecraft()
-        val xMultiplier = if (
-            mc.gameSettings?.let { it.thirdPersonView == 2 } == true
-        ) {
-            -1
-        } else {
-            1
-        }
-        
-        // The y parameter already includes the direction for ABOVE/BELOW. Offset from the player's head.
-        val yOffset = entityIn.height + 0.5f
+ private fun renderName(tag: LevelheadTag, entityIn: EntityPlayer, x: Double, y: Double, z: Double) {
+ val fontrenderer = getFontRenderer()
+ val textScale = TEXT_SCALE
+ val matrixStack = UMatrixStack()
+ val mc = getMinecraft()
+ val xMultiplier = if (
+ mc.gameSettings?.let { it.thirdPersonView == 2 } == true
+ ) {
+ -1
+ } else {
+ 1
+ }
 
-        UGraphics.GL.translate(x.toFloat() + 0.0f, y.toFloat() + yOffset, z.toFloat())
-        GL11.glNormal3f(0.0f, 1.0f, 0.0f)
-        val renderManager = mc.renderManager
-        UGraphics.GL.rotate(-renderManager.playerViewY, 0.0f, 1.0f, 0.0f)
-        UGraphics.GL.rotate(renderManager.playerViewX * xMultiplier, 1.0f, 0.0f, 0.0f)
-        UGraphics.GL.scale(-textScale, -textScale, textScale)
-        UGraphics.disableLighting()
-        UGraphics.depthMask(false)
-        UGraphics.disableDepth()
-        UGraphics.enableBlend()
-        UGraphics.tryBlendFuncSeparate(GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO)
-        val stringWidth = tag.getTotalWidth(fontrenderer) shr 1
-        if (displayManager.config.showBackground) {
-            val bgAlpha = displayManager.config.backgroundOpacity
-            val uGraphics = UGraphics.getFromTessellator().beginWithDefaultShader(UGraphics.DrawMode.QUADS, DefaultVertexFormats.POSITION_COLOR)
-            uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), -1.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
-            uGraphics.pos(UMatrixStack.Compat.get(), (-stringWidth - 2).toDouble(), 8.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
-            uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 2).toDouble(), 8.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
-            uGraphics.pos(UMatrixStack.Compat.get(), (stringWidth + 2).toDouble(), -1.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
-            uGraphics.drawDirect()
-        }
-        renderString(fontrenderer, tag, displayManager.config.textShadow, stringWidth)
-        UGraphics.enableLighting()
-        UGraphics.disableBlend()
-        UGraphics.color4f(1.0f, 1.0f, 1.0f, 1.0f)
-        UGraphics.GL.popMatrix()
-    }
+ val yOffset = entityIn.height + 0.5f
+ matrixStack.translate(x.toFloat() + 0.0f, y.toFloat() + yOffset, z.toFloat())
+ val renderManager = mc.renderManager
+ matrixStack.rotate(-renderManager.playerViewY, 0.0f, 1.0f, 0.0f)
+ matrixStack.rotate(renderManager.playerViewX * xMultiplier, 1.0f, 0.0f, 0.0f)
+ matrixStack.scale(-textScale, -textScale, textScale)
+ matrixStack.runWithGlobalState {
+ val savedState = ManagedGlState.active()
+ UGraphics.disableLighting()
+ UGraphics.depthMask(false)
+ UGraphics.disableDepth()
+ UGraphics.enableBlend()
+ UGraphics.tryBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO)
+ val stringWidth = tag.getTotalWidth(fontrenderer) shr 1
+ if (displayManager.config.showBackground) {
+ val bgAlpha = displayManager.config.backgroundOpacity
+ val uGraphics = UGraphics.getFromTessellator().beginWithDefaultShader(UGraphics.DrawMode.QUADS, DefaultVertexFormats.POSITION_COLOR)
+ uGraphics.pos(matrixStack, (-stringWidth - 2).toDouble(), -1.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
+ uGraphics.pos(matrixStack, (-stringWidth - 2).toDouble(), 8.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
+ uGraphics.pos(matrixStack, (stringWidth + 2).toDouble(), 8.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
+ uGraphics.pos(matrixStack, (stringWidth + 2).toDouble(), -1.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
+ uGraphics.drawDirect()
+ }
+ renderString(matrixStack, fontrenderer, tag, displayManager.config.textShadow, stringWidth)
+ savedState.activate(ManagedGlState.active(), false)
+ }
+ }
 
-    private fun renderString(renderer: FontRenderer, tag: LevelheadTag, shadow: Boolean, stringWidthHalf: Int) {
+    private fun renderString(matrixStack: UMatrixStack, renderer: FontRenderer, tag: LevelheadTag, shadow: Boolean, stringWidthHalf: Int) {
         val x = -stringWidthHalf
 
         val headerComp = tag.header
@@ -228,10 +230,13 @@ object AboveHeadRender {
         UGraphics.enableDepth()
         UGraphics.depthMask(true)
         UGraphics.directColor3f(1.0f, 1.0f, 1.0f)
-        UGraphics.GL.translate(0f, 0f, -0.01f)
+        matrixStack.push()
+ matrixStack.translate(0f, 0f, -0.01f)
+ matrixStack.applyToGlobalState()
         renderComponent(renderer, headerComp, x, shadow, false)
         renderComponent(renderer, footerComp, x + headerWidth, shadow, false)
-        UGraphics.GL.translate(0f, 0f, 0.01f)
+        matrixStack.pop()
+ matrixStack.applyToGlobalState()
     }
 
     private fun renderComponent(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int, shadow: Boolean, seeThrough: Boolean) {

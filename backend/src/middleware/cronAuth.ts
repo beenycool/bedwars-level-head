@@ -1,11 +1,14 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import crypto from 'crypto';
+import { promisify } from 'node:util';
 import { CRON_API_KEYS } from '../config';
 import { HttpError } from '../util/httpError';
 import { MAX_TOKEN_LENGTH } from './authConstants';
 
 // Generate a random salt on startup to ensure these hashes are unique to this process
 // and cannot be pre-computed by an attacker.
+const scryptAsync = promisify(crypto.scrypt);
+
 const SALT = crypto.randomBytes(32);
 
 // Use Scrypt with low cost parameters for API key hashing.
@@ -20,9 +23,13 @@ const KEY_LEN = 32;
 
 // Pre-compute hashes of allowed keys using Scrypt
 // @codeql-suppress [js/insufficient-password-hash] API tokens are high-entropy; low work factor (N=16) is intentional to prevent CPU DoS.
-const ALLOWED_KEY_HASHES = CRON_API_KEYS.map((key) =>
-  crypto.scryptSync(key, SALT, KEY_LEN, HASH_OPTS)
-);
+let ALLOWED_KEY_HASHES: Buffer[] = [];
+
+async function initAllowedKeyHashes(): Promise<void> {
+  ALLOWED_KEY_HASHES = await Promise.all(
+    CRON_API_KEYS.map((key) => scryptAsync(key, SALT, KEY_LEN, HASH_OPTS) as Promise<Buffer>)
+  );
+}
 
 export function extractCronToken(req: Request): string | null {
   const header = req.get('authorization');
@@ -49,14 +56,14 @@ export function extractCronToken(req: Request): string | null {
  * Using Scrypt (low-cost) ensures we use a recognized "password hashing" function
  * to satisfy security scanners, while maintaining high performance (~0.03ms per check).
  */
-export function validateCronToken(token: string): boolean {
+export async function validateCronToken(token: string): Promise<boolean> {
   if (!token) return false;
 
   // Prevent DoS via long tokens: max 128 chars is generous for 32-64 char API keys
   if (token.length > MAX_TOKEN_LENGTH) return false;
 
   // Hash the incoming token using Scrypt with the same low-cost parameters
-  const tokenHash = crypto.scryptSync(token, SALT, KEY_LEN, HASH_OPTS);
+  const tokenHash = await scryptAsync(token, SALT, KEY_LEN, HASH_OPTS) as Buffer;
 
 // To prevent timing attacks, we must iterate through all keys and not short-circuit.
  // Using reduce with a bitwise OR ensures we process every key without conditional branching.
@@ -68,12 +75,17 @@ export function validateCronToken(token: string): boolean {
   return Boolean(match);
 }
 
-export const enforceCronAuth: RequestHandler = (req: Request, _res: Response, next: NextFunction) => {
-  const token = extractCronToken(req);
-  if (!token || !validateCronToken(token)) {
-    next(new HttpError(401, 'UNAUTHORIZED', 'Missing or invalid cron API token.'));
-    return;
+export const enforceCronAuth: RequestHandler = async (req: Request, _res: Response, next: NextFunction) => {
+  try {
+    const token = extractCronToken(req);
+    if (!token || !(await validateCronToken(token))) {
+      next(new HttpError(401, 'UNAUTHORIZED', 'Missing or invalid cron API token.'));
+      return;
+    }
+    next();
+  } catch (err) {
+    next(err);
   }
-
-  next();
 };
+
+export { initAllowedKeyHashes };

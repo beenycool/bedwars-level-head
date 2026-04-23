@@ -12,7 +12,9 @@ import cc.polyfrost.oneconfig.config.annotations.Header
 import cc.polyfrost.oneconfig.config.annotations.Info
 import cc.polyfrost.oneconfig.config.annotations.Slider
 import cc.polyfrost.oneconfig.config.annotations.Switch
+import cc.polyfrost.oneconfig.config.annotations.Color
 import cc.polyfrost.oneconfig.config.annotations.Text
+import cc.polyfrost.oneconfig.config.core.OneColor
 import cc.polyfrost.oneconfig.config.data.InfoType
 import cc.polyfrost.oneconfig.config.data.Mod
 import cc.polyfrost.oneconfig.config.data.ModType
@@ -249,26 +251,16 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             save()
         }
 
-    @Text(
-        name = "Header Color",
-        placeholder = "#55FFFF",
-        description = "Hex color for the header text. Default: #55FFFF (cyan)",
-        category = "Display"
-    )
-    var headerColorHex: String = "#55FFFF"
+    @Color(name = "Header Color", description = "Color for the header text.", category = "Display")
+    var headerColor: OneColor = OneColor(85, 255, 255)
         set(value) {
             field = value
-            try {
-                val color = java.awt.Color.decode(value)
-                Levelhead.displayManager.updatePrimaryDisplay { config ->
-                    config.headerColor = color
-                    true
-                }
-                Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
-                Levelhead.displayManager.refreshVisibleDisplays()
-            } catch (e: NumberFormatException) {
-                // Invalid color, ignore
+            Levelhead.displayManager.updatePrimaryDisplay { config ->
+                config.headerColor = value.toJavaColor()
+                true
             }
+            Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
+            Levelhead.displayManager.refreshVisibleDisplays()
             save()
         }
 
@@ -394,26 +386,16 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             save()
         }
 
-    @Text(
-        name = "Footer Color",
-        placeholder = "#FFFF55",
-        description = "Hex color for the footer text. Default: #FFFF55 (yellow)",
-        category = "Display"
-    )
-    var footerColorHex: String = "#FFFF55"
+    @Color(name = "Footer Color", description = "Color for the footer text.", category = "Display")
+    var footerColor: OneColor = OneColor(255, 255, 85)
         set(value) {
             field = value
-            try {
-                val color = java.awt.Color.decode(value)
-                Levelhead.displayManager.updatePrimaryDisplay { config ->
-                    config.footerColor = color
-                    true
-                }
-                Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
-                Levelhead.displayManager.refreshVisibleDisplays()
-            } catch (e: NumberFormatException) {
-                // Invalid color, ignore
+            Levelhead.displayManager.updatePrimaryDisplay { config ->
+                config.footerColor = value.toJavaColor()
+                true
             }
+            Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
+            Levelhead.displayManager.refreshVisibleDisplays()
             save()
         }
 
@@ -1446,15 +1428,43 @@ hideIf("customDatabaseUrl") { !showAdvancedOptions }
             val jsonObj = json.asJsonObject
             var migrated = false
 
-            // Migrate "enabled" -> "bedwarsEnabled"
-            if (jsonObj.has("enabled") && !jsonObj.has("bedwarsEnabled")) {
-                val enabledValue = jsonObj.get("enabled")
-                jsonObj.add("bedwarsEnabled", enabledValue)
-                jsonObj.remove("enabled")
+        // Migrate "enabled" -> "bedwarsEnabled"
+        if (jsonObj.has("enabled") && !jsonObj.has("bedwarsEnabled")) {
+            val enabledValue = jsonObj.get("enabled")
+            jsonObj.add("bedwarsEnabled", enabledValue)
+            jsonObj.remove("enabled")
+            migrated = true
+        }
+
+        // Migrate headerColorHex string -> headerColor OneColor
+        if (jsonObj.has("headerColorHex") && !jsonObj.has("headerColor")) {
+            try {
+                val hexStr = jsonObj.get("headerColorHex").asString
+                val c = java.awt.Color.decode(hexStr)
+                jsonObj.addProperty("headerColor", c.rgb)
+                jsonObj.remove("headerColorHex")
+                migrated = true
+            } catch (_: Exception) {
+                jsonObj.remove("headerColorHex")
                 migrated = true
             }
+        }
 
-            if (migrated) {
+        // Migrate footerColorHex string -> footerColor OneColor
+        if (jsonObj.has("footerColorHex") && !jsonObj.has("footerColor")) {
+            try {
+                val hexStr = jsonObj.get("footerColorHex").asString
+                val c = java.awt.Color.decode(hexStr)
+                jsonObj.addProperty("footerColor", c.rgb)
+                jsonObj.remove("footerColorHex")
+                migrated = true
+            } catch (_: Exception) {
+                jsonObj.remove("footerColorHex")
+                migrated = true
+            }
+        }
+
+        if (migrated) {
                 FileUtils.writeStringToFile(configFile, jsonObj.toString(), StandardCharsets.UTF_8)
                 // Reload the config after migration
                 initialize()
@@ -1539,7 +1549,7 @@ hideIf("customDatabaseUrl") { !showAdvancedOptions }
         renderThrottleMs = 0
         cacheSizeLimit = 500
         headerText = GameMode.BEDWARS.defaultHeader
-        headerColorHex = "#55FFFF"
+        headerColor = OneColor(85, 255, 255)
         footerFormat = "%star%"
         bedwarsStatDisplayIndex = BedwarsStatMode.STAR.ordinal
         duelsStatDisplayIndex = DuelsStatMode.DIVISION_TITLE.ordinal
@@ -1547,7 +1557,7 @@ hideIf("customDatabaseUrl") { !showAdvancedOptions }
         bedwarsCustomFooterFormat = "%star%"
         duelsCustomFooterFormat = "%division%"
         skywarsCustomFooterFormat = "%star%"
-        footerColorHex = "#FFFF55"
+        footerColor = OneColor(255, 255, 85)
         showAdvancedOptions = false
         debugConfigSync = false
         debugRequests = false

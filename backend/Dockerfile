@@ -1,23 +1,37 @@
 # syntax=docker/dockerfile:1
 
-# Ultra-fast build using pre-built base image
-# The base image has node_modules pre-installed
-FROM ghcr.io/beenycool/bedwars-level-head-base:latest
+# ============================================================
+# Stage 1: builder – install deps + esbuild bundle
+# ============================================================
+FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# Copy source code (node_modules already present from base image)
+# Copy package manifests first (cache-friendly: only re-install on dependency changes)
+COPY package.json package-lock.json ./
+
+# Install ALL dependencies (including devDependencies for esbuild)
+RUN npm install --no-audit --no-fund && npm cache clean --force
+
+# Copy source code
 COPY . .
 
-# Install dependencies (base image may be missing some packages)
-RUN npm install
-
-# Build the application (esbuild creates self-contained bundle)
+# Build the self-contained bundle (esbuild inlines all deps into dist/index.js)
 RUN npm run bundle
 
-ENV NODE_ENV=production
+# ============================================================
+# Stage 2: runner – minimal production image
+# ============================================================
+FROM node:20-alpine AS runner
 
+WORKDIR /app
+
+# Copy only the esbuild bundle from builder (no node_modules needed)
+COPY --from=builder /app/dist/index.js ./dist/index.js
+
+ENV NODE_ENV=production
 ENV NODE_OPTIONS="--max-old-space-size=512"
+
 EXPOSE 3000
 
 CMD ["node", "dist/index.js"]

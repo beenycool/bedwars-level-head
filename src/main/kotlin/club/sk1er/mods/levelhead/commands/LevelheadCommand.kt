@@ -1,6 +1,7 @@
 package club.sk1er.mods.levelhead.commands
 
 import club.sk1er.mods.levelhead.Levelhead
+import cc.polyfrost.oneconfig.config.core.OneColor
 import club.sk1er.mods.levelhead.commands.WhoisService
 import club.sk1er.mods.levelhead.config.ConfigProfiles
 import club.sk1er.mods.levelhead.config.LevelheadConfig
@@ -820,10 +821,12 @@ hoverTextOverride = "${ChatColor.GREEN}Click to fill import command"
                     sendMessage(finalMsg)
                     return
                 }
-                val hexColor = formatColor(color)
-                val previous = LevelheadConfig.headerColorHex
-                if (previous != hexColor) {
-                    LevelheadConfig.headerColorHex = hexColor
+        val hexColor = formatColor(color)
+        val decoded = java.awt.Color.decode(hexColor)
+        val newColor = OneColor(decoded.red, decoded.green, decoded.blue)
+        val previous = LevelheadConfig.headerColor
+        if (previous != newColor) {
+            LevelheadConfig.headerColor = newColor
                     sendSuccessWithDisplayLink("${ChatColor.GREEN}Updated header color to ${ChatColor.GOLD}$hexColor${ChatColor.GREEN}.")
                 } else {
                     sendMessage("${ChatColor.YELLOW}Header color is already $hexColor${ChatColor.YELLOW}.")
