@@ -45,6 +45,7 @@ export interface CacheMetadata {
 }
 
 let lastDbAccessAt = 0;
+let isPurging = false;
 
 export function markDbAccess(): void {
   lastDbAccessAt = Date.now();
@@ -221,7 +222,12 @@ export async function ensureInitialized(): Promise<void> {
 }
 
 export async function purgeExpiredEntries(now: number = Date.now()): Promise<void> {
-  await ensureInitialized();
+  if (isPurging) {
+    return;
+  }
+  isPurging = true;
+  try {
+    await ensureInitialized();
 
   if (!isCockroachTtlManaged('player_stats_cache')) {
     // Redis L1 handles TTL automatically - purge SQL L2 entries only when Cockroach TTL is unavailable.
@@ -270,6 +276,9 @@ export async function purgeExpiredEntries(now: number = Date.now()): Promise<voi
   }
 
   markDbAccess();
+  } finally {
+    isPurging = false;
+  }
 }
 
 function mapRow<T>(row: CacheRow): CacheEntry<T> {

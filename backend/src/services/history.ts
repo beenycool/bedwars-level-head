@@ -45,6 +45,7 @@ export interface PlayerQueryRecord {
 }
 
 export interface PlayerQuerySummary {
+  id: number;
   identifier: string;
   normalizedIdentifier: string;
   lookupType: 'uuid' | 'ign';
@@ -82,6 +83,7 @@ interface PlayerQueryStatsRow {
 export interface PlayerQueryPage {
   rows: PlayerQuerySummary[];
   totalCount: number;
+  nextCursor: number | null;
 }
 
 export interface TopPlayer {
@@ -387,6 +389,7 @@ function mapRowToSummary(row: PlayerQueryHistoryRow): PlayerQuerySummary {
   const parsedLatency = row.latency_ms === null ? null : Number(row.latency_ms);
 
   return {
+    id: Number(row.id),
     identifier: row.identifier,
     normalizedIdentifier: row.normalized_identifier,
     lookupType: row.lookup_type === 'uuid' ? 'uuid' : 'ign',
@@ -541,24 +544,26 @@ export async function getPlayerQueryCount(params: { search?: string }): Promise<
 }
 
 export async function getPlayerQueryPage(params: {
-  page: number;
+  cursor?: number;
   pageSize: number;
   search?: string;
   totalCountOverride?: number;
 }): Promise<PlayerQueryPage> {
   await ensureInitialized();
 
-  const page = Math.max(Math.floor(params.page) || 1, 1);
   const pageSize = Math.min(Math.max(Math.floor(params.pageSize) || 1, 1), 200);
-  const offset = (page - 1) * pageSize;
   const searchTerm = params.search?.trim();
+  const cursor = params.cursor;
 
   let query = db
     .selectFrom('player_query_history')
     .selectAll()
-    .orderBy('requested_at', 'desc')
-    .limit(pageSize)
-    .offset(offset);
+    .orderBy('id', 'desc')
+    .limit(pageSize + 1);
+
+  if (cursor !== undefined && cursor !== null) {
+    query = query.where('id', '<', cursor);
+  }
 
   query = buildSearchClause(query, searchTerm);
 
@@ -571,11 +576,16 @@ export async function getPlayerQueryPage(params: {
     totalCountPromise = getPlayerQueryCount({ search: searchTerm });
   }
 
-  const [rows, totalCount] = await Promise.all([rowsPromise, totalCountPromise]);
+  const [allRows, totalCount] = await Promise.all([rowsPromise, totalCountPromise]);
+
+  const hasNextPage = allRows.length > pageSize;
+  const rows = hasNextPage ? allRows.slice(0, pageSize) : allRows;
+  const nextCursor = hasNextPage && rows.length > 0 ? Number(rows[rows.length - 1].id) : null;
 
   return {
     rows: rows.map(mapRowToSummary),
     totalCount,
+    nextCursor,
   };
 }
 

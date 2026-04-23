@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import {
-  getPlayerQueryCount,
   getPlayerQueryPage,
   getPlayerQueriesWithFilters,
   getPlayerQueriesStats,
@@ -253,10 +252,9 @@ router.get('/data', async (req, res, next) => {
     const effectiveLimit = validLimit ?? (hasTimeFilter ? MAX_ALLOWED_LIMIT : DEFAULT_CHART_LIMIT);
 
     // Additional data for table update (dashboard is usually page 1)
-    const search = sanitizeSearchQuery(req.query.q);
-    const page = 1;
+  const search = sanitizeSearchQuery(req.query.q);
 
-    // Fetch all data in parallel
+  // Fetch all data in parallel
     const [chartData, topPlayers, sysStats, redisStats, pageData, resourceMetricsHistory] = await Promise.all([
       getPlayerQueriesStats({
         startDate: validStartDate,
@@ -270,7 +268,7 @@ router.get('/data', async (req, res, next) => {
       }),
       getSystemStats(),
       getRedisStats(),
-      getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search }),
+      getPlayerQueryPage({ pageSize: PAGE_SIZE, search }),
       getResourceMetricsHistory({ startDate: validStartDate, endDate: validEndDate }),
     ]);
 
@@ -309,9 +307,10 @@ router.get('/data', async (req, res, next) => {
 
 router.get('/', async (req, res, next) => {
   try {
-    const requestedPage = Number.parseInt((req.query.page as string) ?? '1', 10);
-    const search = sanitizeSearchQuery(req.query.q);
-    const safePage = Number.isFinite(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  const cursorParam = req.query.cursor as string | undefined;
+  const search = sanitizeSearchQuery(req.query.q);
+  const safeCursor = cursorParam ? Number.parseInt(cursorParam, 10) : undefined;
+  const validCursor = safeCursor !== undefined && Number.isFinite(safeCursor) && safeCursor > 0 ? safeCursor : undefined;
 
     // Parse filter parameters
     const fromParam = typeof req.query.from === 'string' ? req.query.from : undefined;
@@ -335,37 +334,30 @@ router.get('/', async (req, res, next) => {
     // But if time filters are present, use MAX_ALLOWED_LIMIT to show all data in range
     const effectiveLimit = validLimit ?? (hasTimeFilter ? MAX_ALLOWED_LIMIT : DEFAULT_CHART_LIMIT);
 
-    // Construct the clear search URL (preserve filters, remove q, page=1)
+    // Construct the clear search URL (preserve filters, remove q)
     const clearParams = new URLSearchParams();
     if (validStartDate) clearParams.append('from', validStartDate.toISOString());
     if (validEndDate) clearParams.append('to', validEndDate.toISOString());
     if (validLimit) clearParams.append('limit', String(validLimit));
-    // page defaults to 1 if omitted
-    const clearUrl = '?' + clearParams.toString();
+  const clearUrl = '?' + clearParams.toString();
 
     // Fetch filtered data for charts and page data in parallel
-    const [chartData, topPlayers, sysStats, redisStats, resourceMetricsHistory, { pageData, totalPages, page, totalCount }] = await Promise.all([
-      getPlayerQueriesStats({
-        startDate: validStartDate,
-        endDate: validEndDate,
-        limit: effectiveLimit,
-      }),
-      getTopPlayersByQueryCount({
-        startDate: validStartDate,
-        endDate: validEndDate,
-        limit: 20,
-      }),
-      getSystemStats(),
-      getRedisStats(),
-      getResourceMetricsHistory({ startDate: validStartDate, endDate: validEndDate }),
-      (async () => {
-        const totalCount = await getPlayerQueryCount({ search });
-        const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
-        const page = Math.min(safePage, totalPages);
-        const pageData = await getPlayerQueryPage({ page, pageSize: PAGE_SIZE, search, totalCountOverride: totalCount });
-        return { pageData, totalPages, page, totalCount };
-      })()
-    ]);
+  const [chartData, topPlayers, sysStats, redisStats, resourceMetricsHistory, pageData] = await Promise.all([
+    getPlayerQueriesStats({
+      startDate: validStartDate,
+      endDate: validEndDate,
+      limit: effectiveLimit,
+    }),
+    getTopPlayersByQueryCount({
+      startDate: validStartDate,
+      endDate: validEndDate,
+      limit: 20,
+    }),
+    getSystemStats(),
+    getRedisStats(),
+    getResourceMetricsHistory({ startDate: validStartDate, endDate: validEndDate }),
+    getPlayerQueryPage({ cursor: validCursor, pageSize: PAGE_SIZE, search })
+  ]);
 
     // Serialise the data so the frontend script can use it
     // Securely escape < characters to prevent XSS via script injection
@@ -1130,8 +1122,7 @@ router.get('/', async (req, res, next) => {
 
     <div class="filter-controls">
       <form id="filterForm" method="GET" class="filter-form">
-        <input type="hidden" name="page" value="1" />
-        ${search ? `<input type="hidden" name="q" value="${escapeHtml(search)}" />` : ''}
+      <input type="hidden" name="q" value="${escapeHtml(search)}" />
         <div class="filter-group">
           <label for="fromDate">From:</label>
           <input type="datetime-local" id="fromDate" name="from" />
@@ -1439,41 +1430,44 @@ router.get('/', async (req, res, next) => {
 
 
     <h2>Recent Player Lookups</h2>
-    <p class="meta">${safePageDataTotalCount === 0 ? 'No lookups recorded yet.' : `Showing page ${page} of ${totalPages} (${safePageDataTotalCount} total lookups).`}</p>
+    <p class="meta">${safePageDataTotalCount === 0 ? 'No lookups recorded yet.' : `${new Intl.NumberFormat('en-US').format(safePageDataTotalCount)} total lookups${pageData.nextCursor !== null ? ' &middot; more below' : ''}`}</p>
     <div class="controls">
       <form class="search-box" method="GET">
-        <div class="search-wrapper">
-          <input
-            type="search"
-            name="q"
-            id="searchInput"
-            aria-label="Search players"
-            aria-keyshortcuts="/"
-            placeholder="Search by username or UUID"
-            value="${escapeHtml(search)}"
-          />
-          <kbd class="search-shortcut" aria-hidden="true">/</kbd>
-        </div>
-        <input type="hidden" name="page" value="1" />
+      <div class="search-wrapper">
+        <input
+        type="search"
+        name="q"
+        id="searchInput"
+        aria-label="Search players"
+        aria-keyshortcuts="/"
+        placeholder="Search by username or UUID"
+        value="${escapeHtml(search)}"
+        />
+        <kbd class="search-shortcut" aria-hidden="true">/</kbd>
+      </div>
+      ${validStartDate ? `<input type="hidden" name="from" value="${validStartDate.toISOString()}" />` : ''}
+      ${validEndDate ? `<input type="hidden" name="to" value="${validEndDate.toISOString()}" />` : ''}
+      ${validLimit ? `<input type="hidden" name="limit" value="${validLimit}" />` : ''}
+      <button type="submit">Search</button>
+      ${search ? `<a href="${clearUrl}" class="reset-btn" aria-label="Clear search">Clear</a>` : ''}
+    </form>
+    <div class="pager">
+      <form method="GET">
+        <input type="hidden" name="q" value="${escapeHtml(search)}" />
         ${validStartDate ? `<input type="hidden" name="from" value="${validStartDate.toISOString()}" />` : ''}
         ${validEndDate ? `<input type="hidden" name="to" value="${validEndDate.toISOString()}" />` : ''}
         ${validLimit ? `<input type="hidden" name="limit" value="${validLimit}" />` : ''}
-        <button type="submit">Search</button>
-        ${search ? `<a href="${clearUrl}" class="reset-btn" aria-label="Clear search">Clear</a>` : ''}
+        <button type="submit" ${validCursor === undefined ? 'disabled' : ''}>⇤ First</button>
       </form>
-      <div class="pager">
-        <form method="GET">
-          <input type="hidden" name="page" value="${page - 1}" />
-          <input type="hidden" name="q" value="${escapeHtml(search)}" />
-          <button type="submit" ${page <= 1 ? 'disabled' : ''}>Previous</button>
-        </form>
-        <p class="muted">Page ${page} of ${totalPages}</p>
-        <form method="GET">
-          <input type="hidden" name="page" value="${page + 1}" />
-          <input type="hidden" name="q" value="${escapeHtml(search)}" />
-          <button type="submit" ${page >= totalPages ? 'disabled' : ''}>Next</button>
-        </form>
-      </div>
+      <form method="GET">
+        <input type="hidden" name="cursor" value="${pageData.nextCursor ?? ''}" />
+        <input type="hidden" name="q" value="${escapeHtml(search)}" />
+        ${validStartDate ? `<input type="hidden" name="from" value="${validStartDate.toISOString()}" />` : ''}
+        ${validEndDate ? `<input type="hidden" name="to" value="${validEndDate.toISOString()}" />` : ''}
+        ${validLimit ? `<input type="hidden" name="limit" value="${validLimit}" />` : ''}
+        <button type="submit" ${pageData.nextCursor === null ? 'disabled' : ''}>Next</button>
+      </form>
+    </div>
     </div>
     <table>
       <thead>
@@ -1629,7 +1623,7 @@ router.get('/', async (req, res, next) => {
           url.searchParams.delete('from');
           url.searchParams.delete('to');
           url.searchParams.delete('limit');
-          url.searchParams.set('page', '1');
+          url.searchParams.delete('cursor');
           window.location.href = url.toString();
         });
     }
