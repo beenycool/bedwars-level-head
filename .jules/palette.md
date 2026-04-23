@@ -28,3 +28,7 @@
 
 **Learning:** Vague tooltips like "Click to fill command" or "Click to run command" do not provide enough context for users navigating interactive chat configurations.
 **Action:** Always provide explicitly descriptive tooltips detailing exactly what happens (e.g., "Click to fill apply command", "Click to view display settings") using the `hoverTextOverride` parameter when creating `CommandUtils.createClickableCommand` elements.
+
+## 2024-05-24 - Clickable Mod Title for GUI Discovery
+**Learning:** Users often run the base command (`/levelhead`) to see what the mod does, but might miss the `/levelhead gui` subcommand in the long list of text options.
+**Action:** Make the primary mod title text in the status header clickable (with an explicit `HoverEvent` tooltip) to execute the GUI command, providing an intuitive, discoverable shortcut to the main settings interface.
