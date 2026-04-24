@@ -12,6 +12,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.ZonedDateTime
+import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
 object BedwarsHttpUtils {
@@ -89,7 +90,7 @@ object BedwarsHttpUtils {
         }
 
         return kotlin.runCatching {
-            val targetInstant = ZonedDateTime.parse(raw, DateTimeFormatter.RFC_1123_DATE_TIME).toInstant()
+            val targetInstant = ZonedDateTime.parse(raw, DateTimeFormatter.RFC_1123_DATE_TIME.withZone(ZoneId.of("UTC"))).toInstant()
             val now = Instant.now()
             val millis = Duration.between(now, targetInstant).toMillis()
             if (millis <= 0) null else millis
