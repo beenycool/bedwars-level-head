@@ -70,12 +70,17 @@ export function shouldReadFromDb(): boolean {
 export { db as pool };
 
 function buildCockroachTimestampExpression(columnName: string): string {
+  if (!/^[a-z_]+$/.test(columnName)) {
+    throw new Error('Invalid columnName for CockroachDB expression');
+  }
   return `to_timestamp(${columnName}::FLOAT / 1000.0)`;
 }
 
 function buildCockroachRetentionExpression(columnName: string, ttlMs: number): string {
-  const ttlSeconds = Math.max(1, Math.ceil(ttlMs / 1000));
-  return `${buildCockroachTimestampExpression(columnName)} + '${ttlSeconds} seconds'::INTERVAL`;
+  if (!/^[a-z_]+$/.test(columnName)) {
+    throw new Error('Invalid columnName for CockroachDB expression');
+  }
+  return `to_timestamp((${columnName}::FLOAT + ${ttlMs}::FLOAT) / 1000.0)`;
 }
 
 async function ensureRateLimitTable(): Promise<void> {

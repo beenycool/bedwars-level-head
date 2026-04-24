@@ -60,6 +60,10 @@ export async function ensureCockroachRowLevelTtl({
     return await existingPromise;
   }
 
+  if (!/^[\w_()':/., \-+]+$/.test(expirationExpression)) {
+    throw new Error('Invalid expirationExpression format for Cockroach TTL');
+  }
+
   const setupPromise = (async () => {
     if (!(await isCockroachDb())) {
       return false;
