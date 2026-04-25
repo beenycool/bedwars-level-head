@@ -32,3 +32,6 @@
 ## 2024-05-24 - Clickable Mod Title for GUI Discovery
 **Learning:** Users often run the base command (`/levelhead`) to see what the mod does, but might miss the `/levelhead gui` subcommand in the long list of text options.
 **Action:** Make the primary mod title text in the status header clickable (with an explicit `HoverEvent` tooltip) to execute the GUI command, providing an intuitive, discoverable shortcut to the main settings interface.
+## 2026-04-25 - Explicit Tooltips for Confirmation and Status Links
+**Learning:** Default tooltips like "Click to run command" are insufficient for critical pending actions or status links. Users benefit from explicitly descriptive hover texts that state exactly what the link will do. Also, support URLs in error messages should link directly to issue trackers rather than repository roots.
+**Action:** Always utilize the `hoverTextOverride` parameter in `CommandUtils.buildInteractiveFeedback` to provide clear context (e.g., "Click to confirm pending action"), and point GitHub URLs directly to the `/issues` endpoint.

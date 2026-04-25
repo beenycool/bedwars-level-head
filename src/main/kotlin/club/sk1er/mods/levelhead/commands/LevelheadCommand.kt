@@ -542,9 +542,10 @@ class LevelheadCommand {
                     messagePrefix = "${ChatColor.RED}Unexpected error while fetching stats. Try ",
                     command = "/levelhead status",
                     run = true,
-                    suffix = "${ChatColor.RED} to check your connection or check logs for details. If this issue persists, please make an issue on GitHub: "
+                    suffix = "${ChatColor.RED} to check your connection or check logs for details. If this issue persists, please make an issue on GitHub: ",
+                    hoverTextOverride = "${ChatColor.GREEN}Click to check proxy status"
                 )
-                errorMsg.appendSibling(CommandUtils.createClickableUrl("https://github.com/beenycool/bedwars-level-head/", "${ChatColor.AQUA}GitHub."))
+                errorMsg.appendSibling(CommandUtils.createClickableUrl("https://github.com/beenycool/bedwars-level-head/issues", "${ChatColor.AQUA}GitHub."))
             }
         }
     }
@@ -1334,13 +1335,15 @@ private fun requireConfirmation(warningMessage: String, action: () -> Unit) {
             messagePrefix = "${ChatColor.RED}An action is already pending. Please ",
             command = "/levelhead confirm",
             run = true,
-            suffix = "${ChatColor.RED} or "
+            suffix = "${ChatColor.RED} or ",
+            hoverTextOverride = "${ChatColor.GREEN}Click to confirm pending action"
         )
         errorMsg.appendSibling(CommandUtils.buildInteractiveFeedback(
             messagePrefix = "",
             command = "/levelhead cancel",
             run = true,
-            suffix = "${ChatColor.RED} it."
+            suffix = "${ChatColor.RED} it.",
+            hoverTextOverride = "${ChatColor.RED}Click to cancel pending action"
         ))
         CommandUtils.sendPrefixedChat(errorMsg)
         return
