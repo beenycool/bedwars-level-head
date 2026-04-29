@@ -140,16 +140,15 @@ async function flushHypixelCallBuffer(): Promise<void> {
         const chunkEnd = Math.min(inflightOffset + maxRecordsPerChunk, inflightBatch.length);
         const chunk = inflightBatch.slice(inflightOffset, chunkEnd);
 
-        // Optimized from flatMap to reduce array allocations
-        const PARAMS_PER_RECORD = 2;
-        const params = new Array(chunk.length * PARAMS_PER_RECORD);
+        // ⚡ Bolt: Removed dead raw SQL params array and replaced chunk.map() with a pre-sized array loop
+        // to avoid O(N) dynamic array allocations and closure overhead on high-throughput paths.
+        const values = new Array(chunk.length);
         for (let i = 0; i < chunk.length; i++) {
-          params[i * PARAMS_PER_RECORD] = chunk[i].calledAt;
-          params[i * PARAMS_PER_RECORD + 1] = chunk[i].uuid;
+          const item = chunk[i];
+          values[i] = { called_at: item.calledAt, uuid: item.uuid };
         }
 
         try {
-          const values = chunk.map(item => ({ called_at: item.calledAt, uuid: item.uuid }));
           await pool.insertInto('hypixel_api_calls').values(values).execute();
           // Success: advance offset. Items before offset are in DB; items at/after offset are pending.
           inflightOffset += chunk.length;
