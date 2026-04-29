@@ -131,3 +131,6 @@
 **Learning:** In ESBuild output, interpolating `JSON.stringify(data)` into a template string in Node script blocks can break code if ASI decides that the `{"json": "content"}` object was meant to evaluate, then missing a semicolon breaks syntax execution logic resulting in `jsonForFrontend.filter is not a function`.
 
 **Action:** When injecting backend JSON into inline template strings (e.g. `const html = \`…\``-style template literals), wrap the payload in `JSON.parse(decodeURIComponent("..."))` rather than interpolating raw object syntax.
+## 2026-04-29 - [Avoid lockfile pollution on build checks]
+**Learning:** Running pnpm install without `--frozen-lockfile` in verification steps can unintentionally pull in root level dependencies and pollute lockfiles.
+**Action:** Always run `pnpm install --frozen-lockfile` during tests/build checks to maintain lockfile integrity.
