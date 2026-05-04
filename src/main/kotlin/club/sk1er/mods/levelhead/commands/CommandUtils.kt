@@ -10,8 +10,13 @@ import net.minecraft.util.EnumChatFormatting as ChatColor
 object CommandUtils {
     fun sendPrefixedChat(component: IChatComponent) {
         val minecraft = Minecraft.getMinecraft()
-        val formatted = ChatComponentText("${ChatColor.AQUA}[Levelhead] ${ChatColor.RESET}")
-        formatted.appendSibling(component)
+        val formatted = ChatComponentText("")
+            .appendSibling(ChatComponentText("${ChatColor.AQUA}[Levelhead]").apply {
+                chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.RUN_COMMAND, "/levelhead gui")
+                chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to open settings GUI"))
+            })
+            .appendSibling(ChatComponentText(" ${ChatColor.RESET}"))
+            .appendSibling(component)
         minecraft.addScheduledTask {
             minecraft.thePlayer?.addChatMessage(formatted)
         }
