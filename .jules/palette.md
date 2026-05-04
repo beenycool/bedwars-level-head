@@ -32,3 +32,8 @@
 ## 2024-05-24 - Clickable Mod Title for GUI Discovery
 **Learning:** Users often run the base command (`/levelhead`) to see what the mod does, but might miss the `/levelhead gui` subcommand in the long list of text options.
 **Action:** Make the primary mod title text in the status header clickable (with an explicit `HoverEvent` tooltip) to execute the GUI command, providing an intuitive, discoverable shortcut to the main settings interface.
+
+## 2024-05-24 - Mod Title Discoverability
+
+**Learning:** Users often overlook the GUI command (`/levelhead gui`) in favor of standard chat commands. The globally visible mod title `[Levelhead]` prefix serves as an excellent, omnipresent anchor for a shortcut.
+**Action:** Make the universally appended `[Levelhead]` chat prefix clickable to directly run the mod's configuration command, accompanied by a clear `HoverEvent` tooltip. Ensure isolated styling by chaining sibling text components.
