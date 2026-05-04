@@ -46,3 +46,8 @@
 **Tech Debt:** Type `any`/`unknown` casting like `submission as unknown as import('./hypixel').HypixelPlayerResponse` was used for type coercion in `SubmissionService`.
 **Learning:** Chaining type casts via `unknown` completely disables compiler type checks and allows arbitrarily structured user input to bypass strict TS protections, risking runtime errors.
 **Prevention:** Rather than inline casting, introduce a strict structural type guard checking primitive and deep object fields (`isNonArrayObject(value) && typeof value.success === 'boolean'`) to properly narrow the type before property access.
+
+## 2025-05-04 - Generic Type Parameters in Utilities Processing Arrays of Objects
+**Tech Debt:** Utilities that process an array of generic objects (like `toCSV`) used strict parameter types such as `Record<string, unknown>[]`, forcing callers in `routes/stats.ts` to implement unsafe type coercions (`as unknown as Record<string, unknown>[]`) when passing their strongly-typed domain objects.
+**Learning:** Forcing domain objects into strict maps like `Record<string, unknown>[]` nullifies TypeScript's ability to natively infer and bridge interface types into generic object shapes. This encourages widespread `as unknown` masking, turning off compiler type checking entirely at caller boundaries.
+**Prevention:** In utilities that iterate over generic object arrays, employ generic type parameters (`<T extends object>(data: T[])`). This allows TypeScript to automatically inherit and map the types from the caller, retaining full strictness and eliminating the need for `as unknown` coercions.

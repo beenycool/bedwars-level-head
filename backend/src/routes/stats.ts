@@ -193,7 +193,7 @@ router.get('/csv', async (req, res) => {
       endDate: validEndDate,
       });
 
-      const csv = toCSV(data as unknown as Record<string, unknown>[]);
+      const csv = toCSV(data);
 
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename="memory_stats.csv"');
@@ -216,7 +216,7 @@ router.get('/csv', async (req, res) => {
     });
     const data = (Array.isArray(rawData) ? rawData : []).map((entry) =>
       normalizePlayerQuerySummaryEntry(entry),
-    ) as unknown as Record<string, unknown>[];
+    );
 
     const csv = toCSV(data);
 
