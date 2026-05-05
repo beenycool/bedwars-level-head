@@ -32,3 +32,7 @@
 ## 2024-05-24 - Clickable Mod Title for GUI Discovery
 **Learning:** Users often run the base command (`/levelhead`) to see what the mod does, but might miss the `/levelhead gui` subcommand in the long list of text options.
 **Action:** Make the primary mod title text in the status header clickable (with an explicit `HoverEvent` tooltip) to execute the GUI command, providing an intuitive, discoverable shortcut to the main settings interface.
+
+## 2024-05-24 - Deep Linking for Support
+**Learning:** Linking users to a repository root when they encounter an error forces them to hunt for the Issues tab, adding friction to the bug reporting process.
+**Action:** When providing support or error links, always deep-link directly to the `/issues` page to save users an extra navigation step and encourage reporting.
