@@ -32,3 +32,7 @@
 ## 2024-05-24 - Clickable Mod Title for GUI Discovery
 **Learning:** Users often run the base command (`/levelhead`) to see what the mod does, but might miss the `/levelhead gui` subcommand in the long list of text options.
 **Action:** Make the primary mod title text in the status header clickable (with an explicit `HoverEvent` tooltip) to execute the GUI command, providing an intuitive, discoverable shortcut to the main settings interface.
+
+## 2024-05-25 - Interactive Chat Mod Prefix & Link Targeting
+**Learning:** Users often run base commands (`/levelhead`) to see status, but miss commands like `/levelhead gui`. Additionally, when providing GitHub repository links in error messages or interactive chat components, pointing the URL to the repository root forces users to navigate to the issues page manually.
+**Action:** Make the primary mod title text in the status header clickable (with an explicitly descriptive `HoverEvent` tooltip) using `ClickEvent.Action.RUN_COMMAND` to execute the GUI command, providing an intuitive, discoverable shortcut to the main settings interface. When providing GitHub links for bug reporting, point the URL directly to the `/issues` page (e.g., `https://github.com/user/repo/issues`) instead of the repository root to save users an extra navigation step.
