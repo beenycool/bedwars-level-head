@@ -27,7 +27,7 @@ const escapeCell = (val: unknown): string => {
   return sanitized;
 };
 
-export function toCSV(data: Record<string, unknown>[]): string {
+export function toCSV<T extends object>(data: T[]): string {
   if (data.length === 0) return '';
   const headers = Object.keys(data[0]);
 
@@ -44,7 +44,7 @@ export function toCSV(data: Record<string, unknown>[]): string {
   }
 
   for (let r = 0; r < numRows; r++) {
-    const row = data[r];
+    const row = data[r] as Record<string, unknown>;
     if (numCols === 0) {
       result += '\n';
       continue;
