@@ -1096,21 +1096,24 @@ private fun sendDisplayUsage() {
         command = "/levelhead display header <text|color>",
         suggestedCommand = "/levelhead display header ",
         run = false,
-        suffix = "${ChatColor.GRAY}, "
+        suffix = "${ChatColor.GRAY}, ",
+        hoverTextOverride = "${ChatColor.GREEN}Click to fill display header command"
     )
     msg.appendSibling(CommandUtils.buildInteractiveFeedback(
         messagePrefix = "",
         command = "/levelhead display offset <value>",
         suggestedCommand = "/levelhead display offset ",
         run = false,
-        suffix = "${ChatColor.GRAY}, "
+        suffix = "${ChatColor.GRAY}, ",
+        hoverTextOverride = "${ChatColor.GREEN}Click to fill display offset command"
     ))
     msg.appendSibling(CommandUtils.buildInteractiveFeedback(
         messagePrefix = "",
         command = "/levelhead display showself <on|off>",
         suggestedCommand = "/levelhead display showself ",
         run = false,
-        suffix = "${ChatColor.GRAY} to make changes."
+        suffix = "${ChatColor.GRAY} to make changes.",
+        hoverTextOverride = "${ChatColor.GREEN}Click to fill display showself command"
     ))
         sendMessage(msg)
     }
@@ -1121,7 +1124,8 @@ private fun sendDisplayHeaderDetails() {
         command = "/levelhead display header text <value>",
         suggestedCommand = "/levelhead display header text ",
         run = false,
-        suffix = "${ChatColor.YELLOW} to change it."
+        suffix = "${ChatColor.YELLOW} to change it.",
+        hoverTextOverride = "${ChatColor.GREEN}Click to fill header text command"
     )
         sendMessage(msg)
         sendDisplayHeaderColorHelp()
@@ -1133,7 +1137,8 @@ private fun sendDisplayHeaderColorHelp() {
         command = DISPLAY_HEADER_COLOR_COMMAND,
         suggestedCommand = DISPLAY_HEADER_COLOR_SUGGESTION,
         run = false,
-        suffix = "${ChatColor.YELLOW} with a hex code, RGB value, or "
+        suffix = "${ChatColor.YELLOW} with a hex code, RGB value, or ",
+        hoverTextOverride = "${ChatColor.GREEN}Click to fill header color command"
     )
             .appendSibling(getMinecraftColorNameHelpComponent())
             .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
@@ -1147,7 +1152,8 @@ private fun sendDisplayOffsetDetails() {
         command = "/levelhead display offset <value>",
         suggestedCommand = "/levelhead display offset ",
         run = false,
-        suffix = "${ChatColor.YELLOW} with a value between "
+        suffix = "${ChatColor.YELLOW} with a value between ",
+        hoverTextOverride = "${ChatColor.GREEN}Click to fill display offset command"
     )
             .appendSibling(ChatComponentText(String.format(Locale.ROOT, "%.1f", MIN_DISPLAY_OFFSET)).apply { chatStyle.color = ChatColor.GOLD })
             .appendSibling(ChatComponentText("${ChatColor.YELLOW} and "))
