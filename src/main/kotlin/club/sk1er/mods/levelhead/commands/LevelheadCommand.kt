@@ -137,9 +137,9 @@ class LevelheadCommand {
         }
 
         sendMessage(mainComponent)
-        val headerClickable = CommandUtils.createClickableCommand("${ChatColor.GOLD}$header", run = false, suggestedCommand = "/levelhead display header text \"$header\"").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit text")) }
+        val headerClickable = CommandUtils.createClickableCommand("${ChatColor.GOLD}$header", run = false, suggestedCommand = "/levelhead display header text \"$header\"", hoverTextOverride = "${ChatColor.GREEN}Click to edit text")
         val offsetText = String.format(Locale.ROOT, "%.2f", offset)
-        val offsetClickable = CommandUtils.createClickableCommand("${ChatColor.GOLD}$offsetText", run = false, suggestedCommand = "/levelhead display offset $offsetText").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit offset")) }
+        val offsetClickable = CommandUtils.createClickableCommand("${ChatColor.GOLD}$offsetText", run = false, suggestedCommand = "/levelhead display offset $offsetText", hoverTextOverride = "${ChatColor.GREEN}Click to edit offset")
         val toggleClickable = createShowSelfToggleComponent(showSelf)
 
         val msg1 = ChatComponentText("${ChatColor.YELLOW}Header: ")
@@ -542,7 +542,8 @@ class LevelheadCommand {
                     messagePrefix = "${ChatColor.RED}Unexpected error while fetching stats. Try ",
                     command = "/levelhead status",
                     run = true,
-                    suffix = "${ChatColor.RED} to check your connection or check logs for details. If this issue persists, please make an issue on GitHub: "
+                    suffix = "${ChatColor.RED} to check your connection or check logs for details. If this issue persists, please make an issue on GitHub: ",
+                    hoverTextOverride = "${ChatColor.GREEN}Click to check proxy status"
                 )
                 errorMsg.appendSibling(CommandUtils.createClickableUrl("https://github.com/beenycool/bedwars-level-head/", "${ChatColor.AQUA}GitHub."))
             }
@@ -583,7 +584,8 @@ class LevelheadCommand {
             messagePrefix = "${ChatColor.GRAY}Click ",
             command = "/levelhead debugrender",
             run = true,
-            suffix = "${ChatColor.GRAY} to toggle render debug (logs header/footer above nametags to latest.log)"
+            suffix = "${ChatColor.GRAY} to toggle render debug (logs header/footer above nametags to latest.log)",
+            hoverTextOverride = "${ChatColor.GREEN}Click to toggle render debug"
         )
         sendMessage(debugRenderMsg)
     }
@@ -639,7 +641,8 @@ class LevelheadCommand {
             messagePrefix = "${ChatColor.GRAY}Use ",
             command = "/levelhead perf reset",
             run = true,
-            suffix = "${ChatColor.GRAY} to zero counters."
+            suffix = "${ChatColor.GRAY} to zero counters.",
+            hoverTextOverride = "${ChatColor.GREEN}Click to reset performance counters"
         )
         sendMessage(resetMsg)
     }
@@ -1074,16 +1077,16 @@ hoverTextOverride = "${ChatColor.GREEN}Click to fill import command"
         val offset = Levelhead.displayManager.config.offset
 
         val msg1 = ChatComponentText("${ChatColor.YELLOW}Primary header: ")
-        msg1.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$headerText", run = false, suggestedCommand = "/levelhead display header text \"$headerText\"").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit text")) })
+        msg1.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$headerText", run = false, suggestedCommand = "/levelhead display header text \"$headerText\"", hoverTextOverride = "${ChatColor.GREEN}Click to edit text"))
         msg1.appendSibling(ChatComponentText("${ChatColor.YELLOW} ("))
         val colorHex = formatColor(headerColor)
-        msg1.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$colorHex", run = false, suggestedCommand = "$DISPLAY_HEADER_COLOR_SUGGESTION\"$colorHex\"").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit color")) })
+        msg1.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$colorHex", run = false, suggestedCommand = "$DISPLAY_HEADER_COLOR_SUGGESTION\"$colorHex\"", hoverTextOverride = "${ChatColor.GREEN}Click to edit color"))
         msg1.appendSibling(ChatComponentText("${ChatColor.YELLOW})."))
         sendMessage(msg1)
 
         val msg2 = ChatComponentText("${ChatColor.YELLOW}Display offset: ")
         val offsetText = String.format(Locale.ROOT, "%.2f", offset)
-        msg2.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$offsetText", run = false, suggestedCommand = "/levelhead display offset $offsetText").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit offset")) })
+        msg2.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$offsetText", run = false, suggestedCommand = "/levelhead display offset $offsetText", hoverTextOverride = "${ChatColor.GREEN}Click to edit offset"))
         msg2.appendSibling(ChatComponentText("${ChatColor.YELLOW}, show self "))
         msg2.appendSibling(createShowSelfToggleComponent(showSelf))
         msg2.appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
@@ -1171,7 +1174,8 @@ private fun sendDisplayShowSelfDetails() {
         messagePrefix = "${ChatColor.YELLOW}Self display visibility is currently ${formatToggle(currentShowSelf())}${ChatColor.YELLOW}. Click here: ",
         command = "/levelhead display showself ${if (currentShowSelf()) "off" else "on"}",
         run = true,
-        suffix = "${ChatColor.YELLOW} to toggle it."
+        suffix = "${ChatColor.YELLOW} to toggle it.",
+        hoverTextOverride = "${ChatColor.GREEN}Click to toggle self visibility"
     )
     sendMessage(msg)
 }
@@ -1334,13 +1338,15 @@ private fun requireConfirmation(warningMessage: String, action: () -> Unit) {
             messagePrefix = "${ChatColor.RED}An action is already pending. Please ",
             command = "/levelhead confirm",
             run = true,
-            suffix = "${ChatColor.RED} or "
+            suffix = "${ChatColor.RED} or ",
+            hoverTextOverride = "${ChatColor.GREEN}Click to confirm pending action"
         )
         errorMsg.appendSibling(CommandUtils.buildInteractiveFeedback(
             messagePrefix = "",
             command = "/levelhead cancel",
             run = true,
-            suffix = "${ChatColor.RED} it."
+            suffix = "${ChatColor.RED} it.",
+            hoverTextOverride = "${ChatColor.RED}Click to cancel pending action"
         ))
         CommandUtils.sendPrefixedChat(errorMsg)
         return
