@@ -29,6 +29,8 @@ jest.mock('../../src/services/redis', () => ({
 jest.mock('../../src/services/database/db', () => ({}));
 jest.mock('../../src/services/metrics', () => ({ registry: { metrics: jest.fn(), contentType: 'text/plain' } }));
 
+import { initAllowedKeyHashes as initAdmin } from '../../src/middleware/adminAuth';
+import { initAllowedKeyHashes as initCron } from '../../src/middleware/cronAuth';
 import { isAuthorizedMonitoring, enforceMonitoringAuth } from '../../src/middleware/monitoringAuth';
 import { enforceAdminRateLimit } from '../../src/middleware/rateLimit';
 import * as rateLimit from '../../src/middleware/rateLimit';
@@ -109,6 +111,8 @@ describe('Operational detail leak protection', () => {
   let port: number;
 
   beforeAll(async () => {
+    await initAdmin();
+    await initCron();
     server = app.listen(0);
     port = (server.address() as AddressInfo).port;
   });

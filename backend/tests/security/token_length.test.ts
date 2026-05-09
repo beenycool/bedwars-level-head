@@ -1,20 +1,19 @@
 import crypto from 'crypto';
-import { validateAdminToken } from '../../src/middleware/adminAuth';
-import { validateCronToken } from '../../src/middleware/cronAuth';
+// Initialize spy before dynamically importing module
+const scryptSpy = jest.spyOn(crypto, 'scrypt');
 
-// Mock config to ensure we have known keys to test against if needed,
-// but for length check we rely on crypto spy.
 jest.mock('../../src/config', () => ({
   ADMIN_API_KEYS: ['valid-admin-key'],
   CRON_API_KEYS: ['valid-cron-key'],
 }));
 
-describe('Token Length Validation (DoS Protection)', () => {
-  let scryptSpy: jest.SpyInstance;
+import { validateAdminToken, initAllowedKeyHashes as initAdmin } from '../../src/middleware/adminAuth';
+import { validateCronToken, initAllowedKeyHashes as initCron } from '../../src/middleware/cronAuth';
 
-  beforeAll(() => {
-    // Spy on crypto.scrypt to verify if it's called
-    scryptSpy = jest.spyOn(crypto, 'scrypt');
+describe('Token Length Validation (DoS Protection)', () => {
+  beforeAll(async () => {
+    await initAdmin();
+    await initCron();
   });
 
   afterEach(() => {

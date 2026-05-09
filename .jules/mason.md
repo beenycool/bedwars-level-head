@@ -46,3 +46,8 @@
 **Tech Debt:** Type `any`/`unknown` casting like `submission as unknown as import('./hypixel').HypixelPlayerResponse` was used for type coercion in `SubmissionService`.
 **Learning:** Chaining type casts via `unknown` completely disables compiler type checks and allows arbitrarily structured user input to bypass strict TS protections, risking runtime errors.
 **Prevention:** Rather than inline casting, introduce a strict structural type guard checking primitive and deep object fields (`isNonArrayObject(value) && typeof value.success === 'boolean'`) to properly narrow the type before property access.
+
+## 2024-05-09 - Extract Duplicate Timing-Safe Token Validation
+**Tech Debt:** Both `adminAuth.ts` and `cronAuth.ts` implemented identical, complex timing-safe token validation logic using Scrypt hashing and bitwise reduction.
+**Learning:** Replicating security-sensitive timing-safe code introduces risks if one is updated but not the other. Extracting it requires careful parameterization of the allowed hashes to preserve the bitwise `reduce` over the array. Furthermore, tests that rely on asynchronously initialized state (like dynamically derived key hashes in module scope) will fail when directly importing the validation function.
+**Prevention:** Centralize security mechanisms like timing-safe string comparison into shared utilities. When testing these flows, explicitly invoke their respective asynchronous initialization functions (e.g., `initAllowedKeyHashes()`) in `beforeAll` blocks.

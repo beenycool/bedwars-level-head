@@ -3,7 +3,7 @@ import crypto from 'crypto';
 import { promisify } from 'node:util';
 import { CRON_API_KEYS } from '../config';
 import { HttpError } from '../util/httpError';
-import { MAX_TOKEN_LENGTH } from './authConstants';
+import { timingSafeTokenValidation } from './authUtils';
 
 // Generate a random salt on startup to ensure these hashes are unique to this process
 // and cannot be pre-computed by an attacker.
@@ -57,22 +57,7 @@ export function extractCronToken(req: Request): string | null {
  * to satisfy security scanners, while maintaining high performance (~0.03ms per check).
  */
 export async function validateCronToken(token: string): Promise<boolean> {
-  if (!token) return false;
-
-  // Prevent DoS via long tokens: max 128 chars is generous for 32-64 char API keys
-  if (token.length > MAX_TOKEN_LENGTH) return false;
-
-  // Hash the incoming token using Scrypt with the same low-cost parameters
-  const tokenHash = await scryptAsync(token, SALT, KEY_LEN, HASH_OPTS);
-
-// To prevent timing attacks, we must iterate through all keys and not short-circuit.
- // Using reduce with a bitwise OR ensures we process every key without conditional branching.
- const match = ALLOWED_KEY_HASHES.reduce(
- (acc, keyHash) => acc | Number(crypto.timingSafeEqual(tokenHash, keyHash)),
- 0
- );
-
-  return Boolean(match);
+  return timingSafeTokenValidation(token, ALLOWED_KEY_HASHES, SALT, KEY_LEN, HASH_OPTS);
 }
 
 export const enforceCronAuth: RequestHandler = async (req: Request, _res: Response, next: NextFunction) => {

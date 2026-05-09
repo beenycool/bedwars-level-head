@@ -1,4 +1,3 @@
-
 import { performance } from 'perf_hooks';
 
 // We need to mock the config module before importing the auth middleware
@@ -8,11 +7,16 @@ jest.mock('../../src/config', () => ({
   CRON_API_KEYS: ['test-cron-key-1', 'test-cron-key-2'],
 }));
 
-import { validateAdminToken } from '../../src/middleware/adminAuth';
-import { validateCronToken } from '../../src/middleware/cronAuth';
+import { validateAdminToken, initAllowedKeyHashes as initAdmin } from '../../src/middleware/adminAuth';
+import { validateCronToken, initAllowedKeyHashes as initCron } from '../../src/middleware/cronAuth';
 
 describe('Auth Middleware Performance Benchmark', () => {
   const iterations = 100;
+
+  beforeAll(async () => {
+    await initAdmin();
+    await initCron();
+  });
 
   test('validateAdminToken performance', async () => {
     const start = performance.now();
