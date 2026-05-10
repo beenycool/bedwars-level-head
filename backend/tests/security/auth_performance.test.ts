@@ -8,11 +8,16 @@ jest.mock('../../src/config', () => ({
   CRON_API_KEYS: ['test-cron-key-1', 'test-cron-key-2'],
 }));
 
-import { validateAdminToken } from '../../src/middleware/adminAuth';
-import { validateCronToken } from '../../src/middleware/cronAuth';
+import { validateAdminToken, initAllowedKeyHashes as initAdminHashes } from '../../src/middleware/adminAuth';
+import { validateCronToken, initAllowedKeyHashes as initCronHashes } from '../../src/middleware/cronAuth';
 
 describe('Auth Middleware Performance Benchmark', () => {
   const iterations = 100;
+
+  beforeAll(async () => {
+    await initAdminHashes();
+    await initCronHashes();
+  });
 
   test('validateAdminToken performance', async () => {
     const start = performance.now();
