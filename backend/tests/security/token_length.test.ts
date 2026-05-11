@@ -1,6 +1,4 @@
 import crypto from 'crypto';
-import { validateAdminToken } from '../../src/middleware/adminAuth';
-import { validateCronToken } from '../../src/middleware/cronAuth';
 
 // Mock config to ensure we have known keys to test against if needed,
 // but for length check we rely on crypto spy.
@@ -12,9 +10,27 @@ jest.mock('../../src/config', () => ({
 describe('Token Length Validation (DoS Protection)', () => {
   let scryptSpy: jest.SpyInstance;
 
-  beforeAll(() => {
-    // Spy on crypto.scrypt to verify if it's called
+  let validateAdminToken: any;
+  let validateCronToken: any;
+  let initAdmin: any;
+  let initCron: any;
+
+  beforeAll(async () => {
+    // Spy on crypto.scrypt to verify if it's called BEFORE importing module so we can spy on it properly!
     scryptSpy = jest.spyOn(crypto, 'scrypt');
+
+    const adminAuth = await import('../../src/middleware/adminAuth');
+    validateAdminToken = adminAuth.validateAdminToken;
+    initAdmin = adminAuth.initAllowedKeyHashes;
+
+    const cronAuth = await import('../../src/middleware/cronAuth');
+    validateCronToken = cronAuth.validateCronToken;
+    initCron = cronAuth.initAllowedKeyHashes;
+
+    // NOTE: Need to initialize before testing, but want to clear spy afterwards!
+    await initAdmin();
+    await initCron();
+    scryptSpy.mockClear();
   });
 
   afterEach(() => {
@@ -25,25 +41,43 @@ describe('Token Length Validation (DoS Protection)', () => {
     scryptSpy.mockRestore();
   });
 
-  describe.each([
-    { name: 'validateAdminToken', validateFn: validateAdminToken },
-    { name: 'validateCronToken', validateFn: validateCronToken },
-  ])('$name', ({ validateFn }) => {
+  describe('validateAdminToken', () => {
     it('should process tokens within length limit', async () => {
       const validLengthToken = 'a'.repeat(128);
-      await validateFn(validLengthToken);
+      await validateAdminToken(validLengthToken);
       expect(scryptSpy).toHaveBeenCalled();
     });
 
     it('should reject tokens exceeding length limit without hashing', async () => {
       const longToken = 'a'.repeat(129);
-      const result = await validateFn(longToken);
+      const result = await validateAdminToken(longToken);
       expect(result).toBe(false);
       expect(scryptSpy).not.toHaveBeenCalled();
     });
 
     it('should reject empty tokens immediately', async () => {
-      const result = await validateFn('');
+      const result = await validateAdminToken('');
+      expect(result).toBe(false);
+      expect(scryptSpy).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('validateCronToken', () => {
+    it('should process tokens within length limit', async () => {
+      const validLengthToken = 'a'.repeat(128);
+      await validateCronToken(validLengthToken);
+      expect(scryptSpy).toHaveBeenCalled();
+    });
+
+    it('should reject tokens exceeding length limit without hashing', async () => {
+      const longToken = 'a'.repeat(129);
+      const result = await validateCronToken(longToken);
+      expect(result).toBe(false);
+      expect(scryptSpy).not.toHaveBeenCalled();
+    });
+
+    it('should reject empty tokens immediately', async () => {
+      const result = await validateCronToken('');
       expect(result).toBe(false);
       expect(scryptSpy).not.toHaveBeenCalled();
     });

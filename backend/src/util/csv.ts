@@ -27,9 +27,10 @@ const escapeCell = (val: unknown): string => {
   return sanitized;
 };
 
-export function toCSV(data: Record<string, unknown>[]): string {
+export function toCSV<T extends object>(data: T[]): string {
   if (data.length === 0) return '';
-  const headers = Object.keys(data[0]);
+  const firstRow = data[0] as Record<string, unknown>;
+  const headers = Object.keys(firstRow);
 
   // ⚡ Bolt: Replaced .map().join('\n') and intermediate array allocations with direct string concatenation (+=) and a single loop to reduce GC pressure when generating large CSVs
   const numRows = data.length;
@@ -44,7 +45,7 @@ export function toCSV(data: Record<string, unknown>[]): string {
   }
 
   for (let r = 0; r < numRows; r++) {
-    const row = data[r];
+    const row = data[r] as Record<string, unknown>;
     if (numCols === 0) {
       result += '\n';
       continue;
