@@ -32,3 +32,7 @@
 ## 2024-05-24 - Clickable Mod Title for GUI Discovery
 **Learning:** Users often run the base command (`/levelhead`) to see what the mod does, but might miss the `/levelhead gui` subcommand in the long list of text options.
 **Action:** Make the primary mod title text in the status header clickable (with an explicit `HoverEvent` tooltip) to execute the GUI command, providing an intuitive, discoverable shortcut to the main settings interface.
+
+## 2024-05-25 - Standardize Clickable Issue Links
+**Learning:** In Minecraft chat interfaces, users often struggle to manually copy and paste long plain-text URLs, especially bug report links in error messages or welcome messages. Pointing them to the repository root instead of the direct `/issues` page adds unnecessary friction for bug reporting.
+**Action:** When providing GitHub repository links in error messages or interactive chat components, use `CommandUtils.createClickableUrl` to wrap the URLs in `ClickEvent.Action.OPEN_URL` so users can click them directly. Point the URLs directly to the `/issues` page to save an extra navigation step.

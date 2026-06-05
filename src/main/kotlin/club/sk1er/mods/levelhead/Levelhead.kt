@@ -222,9 +222,17 @@ return normalized.contains("hypixel")
         }
         LevelheadConfig.markWelcomeMessageShown()
         sendChat("${ChatColor.GREEN}Thanks for installing Levelhead!")
-        sendChat(
-            "${ChatColor.YELLOW}The mod is in alpha, so bugs may occur. ${ChatColor.GOLD}Report issues on GitHub or message ${ChatColor.AQUA}beenyiscool${ChatColor.GOLD} on Discord to request new features."
-        )
+
+        val welcomeMsg = net.minecraft.util.ChatComponentText("${ChatColor.YELLOW}The mod is in alpha, so bugs may occur. ${ChatColor.GOLD}Report issues on ")
+        welcomeMsg.appendSibling(club.sk1er.mods.levelhead.commands.CommandUtils.createClickableUrl("https://github.com/beenycool/bedwars-level-head/issues", "${ChatColor.AQUA}GitHub"))
+        welcomeMsg.appendSibling(net.minecraft.util.ChatComponentText("${ChatColor.GOLD} or message ${ChatColor.AQUA}beenyiscool${ChatColor.GOLD} on Discord to request new features."))
+
+        val formatted = net.minecraft.util.ChatComponentText("${ChatColor.AQUA}[Levelhead] ${ChatColor.RESET}")
+        formatted.appendSibling(welcomeMsg)
+
+        minecraft.addScheduledTask {
+            minecraft.thePlayer?.addChatMessage(formatted)
+        }
     }
 
     fun preInit(@Suppress("UNUSED_PARAMETER") event: FMLPreInitializationEvent) {
