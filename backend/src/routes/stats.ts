@@ -77,9 +77,11 @@ function normalizePlayerQuerySummaryEntry(entry: PlayerQuerySummary): PlayerQuer
   let requestedAt: Date;
   if (entry.requestedAt instanceof Date && !Number.isNaN(entry.requestedAt.getTime())) {
     requestedAt = entry.requestedAt;
-  } else {
-    const d = new Date(entry.requestedAt as unknown as string | number);
+  } else if (typeof entry.requestedAt === 'string' || typeof entry.requestedAt === 'number') {
+    const d = new Date(entry.requestedAt);
     requestedAt = Number.isNaN(d.getTime()) ? new Date(0) : d;
+  } else {
+    requestedAt = new Date(0);
   }
 
   const responseStatus = Number.isFinite(Number(entry.responseStatus)) ? Number(entry.responseStatus) : 0;
@@ -193,7 +195,7 @@ router.get('/csv', async (req, res) => {
       endDate: validEndDate,
       });
 
-      const csv = toCSV(data as unknown as Record<string, unknown>[]);
+      const csv = toCSV(data);
 
       res.setHeader('Content-Type', 'text/csv');
       res.setHeader('Content-Disposition', 'attachment; filename="memory_stats.csv"');
@@ -216,7 +218,7 @@ router.get('/csv', async (req, res) => {
     });
     const data = (Array.isArray(rawData) ? rawData : []).map((entry) =>
       normalizePlayerQuerySummaryEntry(entry),
-    ) as unknown as Record<string, unknown>[];
+    );
 
     const csv = toCSV(data);
 

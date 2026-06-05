@@ -27,7 +27,7 @@ const escapeCell = (val: unknown): string => {
   return sanitized;
 };
 
-export function toCSV(data: Record<string, unknown>[]): string {
+export function toCSV<T extends Record<string, unknown>>(data: T[]): string {
   if (data.length === 0) return '';
   const headers = Object.keys(data[0]);
 

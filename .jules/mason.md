@@ -46,3 +46,7 @@
 **Tech Debt:** Type `any`/`unknown` casting like `submission as unknown as import('./hypixel').HypixelPlayerResponse` was used for type coercion in `SubmissionService`.
 **Learning:** Chaining type casts via `unknown` completely disables compiler type checks and allows arbitrarily structured user input to bypass strict TS protections, risking runtime errors.
 **Prevention:** Rather than inline casting, introduce a strict structural type guard checking primitive and deep object fields (`isNonArrayObject(value) && typeof value.success === 'boolean'`) to properly narrow the type before property access.
+## $(date +%Y-%m-%d) - [Fix CSV generic constraints]
+**Tech Debt:** The `toCSV` utility function expected `Record<string, unknown>[]` strictly. This forced callers to use unsafe `as unknown as Record<string, unknown>[]` casts when passing arrays of interfaces with known properties (like `PlayerQuerySummary[]`).
+**Learning:** TypeScript object assignability rules make passing specific interfaces into generic index-signature arrays tricky without exact structural matches, leading developers to bypass the type checker completely with `as unknown`.
+**Prevention:** Use generic type parameters (e.g., `<T extends Record<string, unknown>>(data: T[])`) on utility functions handling collections of objects. This allows inference of the domain object's specific structure while still enforcing the base object constraint, eliminating the need for `as unknown` casts at the call site.
