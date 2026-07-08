@@ -37,7 +37,7 @@ object CommandUtils {
     fun createClickableUrl(url: String, text: String = url): IChatComponent {
         return ChatComponentText(text).apply {
             chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.OPEN_URL, url)
-            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to open link"))
+            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to open: $url"))
         }
     }
 

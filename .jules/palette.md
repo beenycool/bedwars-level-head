@@ -32,3 +32,4 @@
 ## 2024-05-24 - Clickable Mod Title for GUI Discovery
 **Learning:** Users often run the base command (`/levelhead`) to see what the mod does, but might miss the `/levelhead gui` subcommand in the long list of text options.
 **Action:** Make the primary mod title text in the status header clickable (with an explicit `HoverEvent` tooltip) to execute the GUI command, providing an intuitive, discoverable shortcut to the main settings interface.
+## 2026-05-10 - Explicit Tooltips for Clickable Text\n**Learning:** Vague tooltips like "Click to edit text" or "Click to open link" lack context for users navigating interactive chat configurations.\n**Action:** Always provide explicitly descriptive tooltips detailing exactly what happens (e.g., "Click to fill text command", "Click to open: url") when creating clickable text elements in chat.

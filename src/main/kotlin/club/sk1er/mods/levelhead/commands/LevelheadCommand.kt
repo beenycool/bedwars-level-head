@@ -137,9 +137,9 @@ class LevelheadCommand {
         }
 
         sendMessage(mainComponent)
-        val headerClickable = CommandUtils.createClickableCommand("${ChatColor.GOLD}$header", run = false, suggestedCommand = "/levelhead display header text \"$header\"").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit text")) }
+        val headerClickable = CommandUtils.createClickableCommand("${ChatColor.GOLD}$header", run = false, suggestedCommand = "/levelhead display header text \"$header\"").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to fill text command")) }
         val offsetText = String.format(Locale.ROOT, "%.2f", offset)
-        val offsetClickable = CommandUtils.createClickableCommand("${ChatColor.GOLD}$offsetText", run = false, suggestedCommand = "/levelhead display offset $offsetText").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit offset")) }
+        val offsetClickable = CommandUtils.createClickableCommand("${ChatColor.GOLD}$offsetText", run = false, suggestedCommand = "/levelhead display offset $offsetText").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to fill offset command")) }
         val toggleClickable = createShowSelfToggleComponent(showSelf)
 
         val msg1 = ChatComponentText("${ChatColor.YELLOW}Header: ")
@@ -1074,16 +1074,16 @@ hoverTextOverride = "${ChatColor.GREEN}Click to fill import command"
         val offset = Levelhead.displayManager.config.offset
 
         val msg1 = ChatComponentText("${ChatColor.YELLOW}Primary header: ")
-        msg1.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$headerText", run = false, suggestedCommand = "/levelhead display header text \"$headerText\"").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit text")) })
+        msg1.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$headerText", run = false, suggestedCommand = "/levelhead display header text \"$headerText\"").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to fill text command")) })
         msg1.appendSibling(ChatComponentText("${ChatColor.YELLOW} ("))
         val colorHex = formatColor(headerColor)
-        msg1.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$colorHex", run = false, suggestedCommand = "$DISPLAY_HEADER_COLOR_SUGGESTION\"$colorHex\"").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit color")) })
+        msg1.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$colorHex", run = false, suggestedCommand = "$DISPLAY_HEADER_COLOR_SUGGESTION\"$colorHex\"").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to fill color command")) })
         msg1.appendSibling(ChatComponentText("${ChatColor.YELLOW})."))
         sendMessage(msg1)
 
         val msg2 = ChatComponentText("${ChatColor.YELLOW}Display offset: ")
         val offsetText = String.format(Locale.ROOT, "%.2f", offset)
-        msg2.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$offsetText", run = false, suggestedCommand = "/levelhead display offset $offsetText").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to edit offset")) })
+        msg2.appendSibling(CommandUtils.createClickableCommand("${ChatColor.GOLD}$offsetText", run = false, suggestedCommand = "/levelhead display offset $offsetText").apply { chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to fill offset command")) })
         msg2.appendSibling(ChatComponentText("${ChatColor.YELLOW}, show self "))
         msg2.appendSibling(createShowSelfToggleComponent(showSelf))
         msg2.appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
@@ -1096,21 +1096,24 @@ private fun sendDisplayUsage() {
         command = "/levelhead display header <text|color>",
         suggestedCommand = "/levelhead display header ",
         run = false,
-        suffix = "${ChatColor.GRAY}, "
+        suffix = "${ChatColor.GRAY}, ",
+        hoverTextOverride = "${ChatColor.GREEN}Click to fill header command"
     )
     msg.appendSibling(CommandUtils.buildInteractiveFeedback(
         messagePrefix = "",
         command = "/levelhead display offset <value>",
         suggestedCommand = "/levelhead display offset ",
         run = false,
-        suffix = "${ChatColor.GRAY}, "
+        suffix = "${ChatColor.GRAY}, ",
+        hoverTextOverride = "${ChatColor.GREEN}Click to fill offset command"
     ))
     msg.appendSibling(CommandUtils.buildInteractiveFeedback(
         messagePrefix = "",
         command = "/levelhead display showself <on|off>",
         suggestedCommand = "/levelhead display showself ",
         run = false,
-        suffix = "${ChatColor.GRAY} to make changes."
+        suffix = "${ChatColor.GRAY} to make changes.",
+        hoverTextOverride = "${ChatColor.GREEN}Click to fill showself command"
     ))
         sendMessage(msg)
     }
@@ -1121,7 +1124,8 @@ private fun sendDisplayHeaderDetails() {
         command = "/levelhead display header text <value>",
         suggestedCommand = "/levelhead display header text ",
         run = false,
-        suffix = "${ChatColor.YELLOW} to change it."
+        suffix = "${ChatColor.YELLOW} to change it.",
+        hoverTextOverride = "${ChatColor.GREEN}Click to fill header text command"
     )
         sendMessage(msg)
         sendDisplayHeaderColorHelp()
@@ -1133,7 +1137,8 @@ private fun sendDisplayHeaderColorHelp() {
         command = DISPLAY_HEADER_COLOR_COMMAND,
         suggestedCommand = DISPLAY_HEADER_COLOR_SUGGESTION,
         run = false,
-        suffix = "${ChatColor.YELLOW} with a hex code, RGB value, or "
+        suffix = "${ChatColor.YELLOW} with a hex code, RGB value, or ",
+        hoverTextOverride = "${ChatColor.GREEN}Click to fill color command"
     )
             .appendSibling(getMinecraftColorNameHelpComponent())
             .appendSibling(ChatComponentText("${ChatColor.YELLOW}."))
@@ -1147,7 +1152,8 @@ private fun sendDisplayOffsetDetails() {
         command = "/levelhead display offset <value>",
         suggestedCommand = "/levelhead display offset ",
         run = false,
-        suffix = "${ChatColor.YELLOW} with a value between "
+        suffix = "${ChatColor.YELLOW} with a value between ",
+        hoverTextOverride = "${ChatColor.GREEN}Click to fill offset command"
     )
             .appendSibling(ChatComponentText(String.format(Locale.ROOT, "%.1f", MIN_DISPLAY_OFFSET)).apply { chatStyle.color = ChatColor.GOLD })
             .appendSibling(ChatComponentText("${ChatColor.YELLOW} and "))
