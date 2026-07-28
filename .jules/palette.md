@@ -32,3 +32,7 @@
 ## 2024-05-24 - Clickable Mod Title for GUI Discovery
 **Learning:** Users often run the base command (`/levelhead`) to see what the mod does, but might miss the `/levelhead gui` subcommand in the long list of text options.
 **Action:** Make the primary mod title text in the status header clickable (with an explicit `HoverEvent` tooltip) to execute the GUI command, providing an intuitive, discoverable shortcut to the main settings interface.
+## 2024-05-24 - Explicit Tooltips in Interactive Chat Feedback
+
+**Learning:** Vague tooltips like "Click to fill command" do not provide sufficient context when using `CommandUtils.buildInteractiveFeedback` for complex configuration submenus (e.g., `/levelhead display offset <value>`).
+**Action:** When constructing `/levelhead display` subcommand help texts, actively populate the `hoverTextOverride` parameter inside `CommandUtils.buildInteractiveFeedback` with specific actions (e.g., "Click to fill display header command") to increase intuitive interface interaction.
