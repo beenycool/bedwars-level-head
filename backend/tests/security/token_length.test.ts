@@ -1,6 +1,6 @@
 import crypto from 'crypto';
-import { validateAdminToken } from '../../src/middleware/adminAuth';
-import { validateCronToken } from '../../src/middleware/cronAuth';
+import { validateAdminToken, initAllowedKeyHashes as initAdminKeyHashes } from '../../src/middleware/adminAuth';
+import { validateCronToken, initAllowedKeyHashes as initCronKeyHashes } from '../../src/middleware/cronAuth';
 
 // Mock config to ensure we have known keys to test against if needed,
 // but for length check we rely on crypto spy.
@@ -12,9 +12,16 @@ jest.mock('../../src/config', () => ({
 describe('Token Length Validation (DoS Protection)', () => {
   let scryptSpy: jest.SpyInstance;
 
-  beforeAll(() => {
+  beforeAll(async () => {
+    await Promise.all([initAdminKeyHashes(), initCronKeyHashes()]);
     // Spy on crypto.scrypt to verify if it's called
-    scryptSpy = jest.spyOn(crypto, 'scrypt');
+    scryptSpy = jest.spyOn(crypto, 'scrypt').mockImplementation((...args) => {
+        const cb = args[args.length - 1];
+        if (typeof cb === 'function') {
+            cb(null, Buffer.alloc(32));
+        }
+        return undefined as any;
+    });
   });
 
   afterEach(() => {

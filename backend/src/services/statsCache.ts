@@ -852,7 +852,7 @@ function triggerBackgroundRefresh(
       logger.warn({ err: error }, `[statsCache] background refresh failed for ${uuid}`);
       recordCacheRefresh('fail');
     } finally {
-      backgroundRefreshLocks.delete(key);
+      setTimeout(() => backgroundRefreshLocks.delete(key), 500);
     }
   })();
 
