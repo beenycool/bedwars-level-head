@@ -32,3 +32,7 @@
 ## 2024-05-24 - Clickable Mod Title for GUI Discovery
 **Learning:** Users often run the base command (`/levelhead`) to see what the mod does, but might miss the `/levelhead gui` subcommand in the long list of text options.
 **Action:** Make the primary mod title text in the status header clickable (with an explicit `HoverEvent` tooltip) to execute the GUI command, providing an intuitive, discoverable shortcut to the main settings interface.
+
+## 2024-05-24 - Issue Links
+**Learning:** Pointing GitHub repository links in error messages directly to the `/issues` page saves users an extra navigation step when they need to report a problem.
+**Action:** When providing links for error reporting, use the `/issues` URL (e.g. `https://github.com/user/repo/issues`) instead of the repository root.
