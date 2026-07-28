@@ -33,6 +33,10 @@ import { isAuthorizedMonitoring, enforceMonitoringAuth } from '../../src/middlew
 import { enforceAdminRateLimit } from '../../src/middleware/rateLimit';
 import * as rateLimit from '../../src/middleware/rateLimit';
 
+// Initialize the hash keys to actually test auth
+import { initAllowedKeyHashes as initAdmin } from '../../src/middleware/adminAuth';
+import { initAllowedKeyHashes as initCron } from '../../src/middleware/cronAuth';
+
 // Mock getClientIpAddress
 const getClientIpAddressSpy = jest.spyOn(rateLimit, 'getClientIpAddress');
 
@@ -109,6 +113,8 @@ describe('Operational detail leak protection', () => {
   let port: number;
 
   beforeAll(async () => {
+    await initAdmin();
+    await initCron();
     server = app.listen(0);
     port = (server.address() as AddressInfo).port;
   });

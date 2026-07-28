@@ -46,3 +46,8 @@
 **Tech Debt:** Type `any`/`unknown` casting like `submission as unknown as import('./hypixel').HypixelPlayerResponse` was used for type coercion in `SubmissionService`.
 **Learning:** Chaining type casts via `unknown` completely disables compiler type checks and allows arbitrarily structured user input to bypass strict TS protections, risking runtime errors.
 **Prevention:** Rather than inline casting, introduce a strict structural type guard checking primitive and deep object fields (`isNonArrayObject(value) && typeof value.success === 'boolean'`) to properly narrow the type before property access.
+## 2026-04-26 - Eliminate intermediate .forEach closures in Node.js
+
+**Tech Debt:** The codebase relied on `Array.prototype.forEach` to loop over sets or small config-like collections on hot API paths.
+**Learning:** `forEach` introduces overhead through function calls per item and creates intermediate closures that allocate memory, negatively impacting performance across high-traffic HTTP responses compared to procedural loops.
+**Prevention:** Always prefer `for...of` loops, as they avoid function call overhead and eliminate intermediate closure allocations.

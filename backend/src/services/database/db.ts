@@ -55,12 +55,12 @@ export function parseMssqlConfig(connString: string): mssql.config {
         parsedConfig.database = database;
       }
 
-      url.searchParams.forEach((value, key) => {
+      for (const [key, value] of url.searchParams) {
         const lowerKey = key.toLowerCase();
         if (lowerKey === 'encrypt') parsedConfig.options.encrypt = value.toLowerCase() === 'true';
         else if (lowerKey === 'trustservercertificate') parsedConfig.options.trustServerCertificate = value.toLowerCase() === 'true';
         else if (lowerKey === 'database') parsedConfig.database = value;
-      });
+      }
 
       if (parsedConfig.server) {
         if (parsedConfig.server.endsWith('.database.windows.net') && parsedConfig.user && !parsedConfig.user.includes('@')) {

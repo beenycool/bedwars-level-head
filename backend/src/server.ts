@@ -90,11 +90,11 @@ async function main(): Promise<void> {
 
   const shutdownSignals = ['SIGINT', 'SIGTERM'] as const;
 
-  shutdownSignals.forEach((signal) => {
+  for (const signal of shutdownSignals) {
     process.on(signal, () => {
       void shutdown(signal);
     });
-  });
+  }
 
   process.once('beforeExit', () => {
     void safeCloseCache();

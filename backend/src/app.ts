@@ -226,11 +226,11 @@ export function createApp(): express.Express {
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     if (err instanceof HttpError) {
       if (err.headers) {
-        Object.entries(err.headers).forEach(([key, value]) => {
+        for (const [key, value] of Object.entries(err.headers)) {
           if (!res.headersSent) {
             res.set(key, value);
           }
-        });
+        }
       }
       const responseBody: Record<string, unknown> = { success: false, cause: err.causeCode, message: err.message };
       if (err.status === 429 && err.headers?.['Retry-After']) {
