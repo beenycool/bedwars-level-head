@@ -544,7 +544,7 @@ class LevelheadCommand {
                     run = true,
                     suffix = "${ChatColor.RED} to check your connection or check logs for details. If this issue persists, please make an issue on GitHub: "
                 )
-                errorMsg.appendSibling(CommandUtils.createClickableUrl("https://github.com/beenycool/bedwars-level-head/", "${ChatColor.AQUA}GitHub."))
+                errorMsg.appendSibling(CommandUtils.createClickableUrl("https://github.com/beenycool/bedwars-level-head/issues", "${ChatColor.AQUA}GitHub."))
             }
         }
     }
@@ -937,7 +937,7 @@ hoverTextOverride = "${ChatColor.GREEN}Click to fill import command"
                         run = true,
                         suffix = "${ChatColor.RED} to check your connection or check logs for details. If this issue persists, please make an issue on GitHub: "
                     )
-                errorMsg.appendSibling(CommandUtils.createClickableUrl("https://github.com/beenycool/bedwars-level-head/", "${ChatColor.AQUA}GitHub."))
+                errorMsg.appendSibling(CommandUtils.createClickableUrl("https://github.com/beenycool/bedwars-level-head/issues", "${ChatColor.AQUA}GitHub."))
                     sendMessage(errorMsg)
                 }
             }
