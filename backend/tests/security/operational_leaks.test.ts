@@ -109,6 +109,10 @@ describe('Operational detail leak protection', () => {
   let port: number;
 
   beforeAll(async () => {
+    const { initAllowedKeyHashes: initAdminHashes } = await import('../../src/middleware/adminAuth');
+    const { initAllowedKeyHashes: initCronHashes } = await import('../../src/middleware/cronAuth');
+    await initAdminHashes();
+    await initCronHashes();
     server = app.listen(0);
     port = (server.address() as AddressInfo).port;
   });
