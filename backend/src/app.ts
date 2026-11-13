@@ -75,6 +75,15 @@ export function createApp(): express.Express {
     app.use('/api/admin', adminRouter);
   }
 
+  /**
+   * Keep-alive target for the platform's idle sleep (free instances unload after ~15 min).
+   * Deliberately does no work: no database query, no Hypixel call, no rate limiter. Use
+   * /healthz for real probes so a scheduled pinger does not hit upstream services forever.
+   */
+  app.get('/ping', (_req, res) => {
+    res.status(200).type('text/plain').send('pong');
+  });
+
   /** Liveness probe: no auth, no rate limiter, always reachable. */
   app.get('/healthz', async (_req, res) => {
     const [dbHealthy, hypixelHealthy] = await Promise.all([
