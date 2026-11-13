@@ -1,0 +1,187 @@
+{
+  "$comment": [
+    "Shared mod<->backend contract fixture. Both test suites read this file.",
+    "upstream    : a realistic Hypixel /v2/player response for one UUID, with the extra",
+    "              fields a real response carries that the backend deliberately ignores.",
+    "minimalStats: exactly MinimalPlayerStats as extractMinimalStats() emits it. The",
+    "              HTTP layer adds `nicked` next to these fields.",
+    "expectedFooter: the literal tag footer StatsFormatter renders with the default",
+    "              per-mode footer template (star / division / star).",
+    "expectedTag : default per-mode header + ': ' + expectedFooter, i.e. the whole",
+    "              rendered tag string. '§' is U+00A7."
+  ],
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "mode": "BEDWARS",
+      "description": "Rainbow prestige (star 1050): must use the multicolour colormap and the sub-1100 ✫ icon.",
+      "uuid": "0b3d7a1c4e5f42d8a9c6b1e2f3a4c5d6",
+      "upstream": {
+        "success": true,
+        "player": {
+          "uuid": "0b3d7a1c4e5f42d8a9c6b1e2f3a4c5d6",
+          "displayname": "BedwarsLegend",
+          "stats": {
+            "Bedwars": {
+              "bedwars_experience": 5107000,
+              "Experience": 5107000,
+              "final_kills_bedwars": 12345,
+              "final_deaths_bedwars": 1000,
+              "wins_bedwars": 4321,
+              "losses_bedwars": 987,
+              "kills_bedwars": 54321,
+              "deaths_bedwars": 9876,
+              "beds_broken_bedwars": 2500,
+              "winstreak": 12,
+              "coins": 1234567
+            },
+            "Duels": {
+              "wins": 321,
+              "losses": 123,
+              "kills": 4567,
+              "deaths": 2345,
+              "wins_speed_duels": 50,
+              "losses_speed_duels": 10
+            },
+            "SkyWars": {
+              "skywars_experience": 50000,
+              "wins": 210,
+              "losses": 340,
+              "kills": 1500,
+              "deaths": 1200,
+              "wins_solo_normal": 100
+            }
+          }
+        }
+      },
+      "minimalStats": {
+        "displayname": "BedwarsLegend",
+        "bedwars_experience": 5107000,
+        "bedwars_final_kills": 12345,
+        "bedwars_final_deaths": 1000,
+        "duels_wins": 321,
+        "duels_losses": 123,
+        "duels_kills": 4567,
+        "duels_deaths": 2345,
+        "skywars_experience": 50000,
+        "skywars_wins": 210,
+        "skywars_losses": 340,
+        "skywars_kills": 1500,
+        "skywars_deaths": 1200
+      },
+      "expectedFooter": "§c[§61§e0§a5§b0§d✫§5]",
+      "expectedTag": "BedWars Star: §c[§61§e0§a5§b0§d✫§5]"
+    },
+    {
+      "mode": "DUELS",
+      "description": "Overall Legend III (6500 wins): bold division title, with a non-empty roman level.",
+      "uuid": "1c4e8b2d5f6a43e9b0d7c2f3a5b6d7e8",
+      "upstream": {
+        "success": true,
+        "player": {
+          "uuid": "1c4e8b2d5f6a43e9b0d7c2f3a5b6d7e8",
+          "displayname": "DuelsDuelist",
+          "stats": {
+            "Bedwars": {
+              "bedwars_experience": 500000,
+              "final_kills_bedwars": 450,
+              "final_deaths_bedwars": 300,
+              "wins_bedwars": 40,
+              "losses_bedwars": 35,
+              "kills_bedwars": 900,
+              "deaths_bedwars": 700
+            },
+            "Duels": {
+              "wins": 6500,
+              "losses": 500,
+              "kills": 20000,
+              "deaths": 9000,
+              "wins_bridge": 20,
+              "losses_bridge": 5,
+              "kills_bridge": 60,
+              "deaths_bridge": 40
+            },
+            "SkyWars": {
+              "skywars_experience": 100000,
+              "wins": 100,
+              "losses": 200,
+              "kills": 800,
+              "deaths": 700
+            }
+          }
+        }
+      },
+      "minimalStats": {
+        "displayname": "DuelsDuelist",
+        "bedwars_experience": 500000,
+        "bedwars_final_kills": 450,
+        "bedwars_final_deaths": 300,
+        "duels_wins": 6500,
+        "duels_losses": 500,
+        "duels_kills": 20000,
+        "duels_deaths": 9000,
+        "skywars_experience": 100000,
+        "skywars_wins": 100,
+        "skywars_losses": 200,
+        "skywars_kills": 800,
+        "skywars_deaths": 700
+      },
+      "expectedFooter": "§lLegend III",
+      "expectedTag": "Duels Division: §lLegend III"
+    },
+    {
+      "mode": "SKYWARS",
+      "description": "Exact level 100 XP: mythic prestige colour, level shown as an integer with the level-100 emblem.",
+      "uuid": "2d5f9c3e6a7b44f0c1e8d3a4b6c7e8f9",
+      "upstream": {
+        "success": true,
+        "player": {
+          "uuid": "2d5f9c3e6a7b44f0c1e8d3a4b6c7e8f9",
+          "displayname": "SkyWarsSage",
+          "stats": {
+            "Bedwars": {
+              "bedwars_experience": 301000,
+              "final_kills_bedwars": 800,
+              "final_deaths_bedwars": 400,
+              "wins_bedwars": 75,
+              "losses_bedwars": 60,
+              "kills_bedwars": 1800,
+              "deaths_bedwars": 1200
+            },
+            "Duels": {
+              "wins": 1500,
+              "losses": 700,
+              "kills": 5000,
+              "deaths": 3000
+            },
+            "SkyWars": {
+              "skywars_experience": 431760,
+              "wins": 3000,
+              "losses": 2500,
+              "kills": 12000,
+              "deaths": 10000,
+              "wins_solo_normal": 1200
+            }
+          }
+        }
+      },
+      "minimalStats": {
+        "displayname": "SkyWarsSage",
+        "bedwars_experience": 301000,
+        "bedwars_final_kills": 800,
+        "bedwars_final_deaths": 400,
+        "duels_wins": 1500,
+        "duels_losses": 700,
+        "duels_kills": 5000,
+        "duels_deaths": 3000,
+        "skywars_experience": 431760,
+        "skywars_wins": 3000,
+        "skywars_losses": 2500,
+        "skywars_kills": 12000,
+        "skywars_deaths": 10000
+      },
+      "expectedFooter": "100@_@",
+      "expectedTag": "SkyWars Star: 100@_@"
+    }
+  ]
+}

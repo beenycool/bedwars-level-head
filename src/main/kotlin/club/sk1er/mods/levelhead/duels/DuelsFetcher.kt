@@ -20,34 +20,9 @@ object DuelsFetcher : BaseStatsFetcher() {
         val losses = DuelsStats.parseLosses(payload)
         val kills = DuelsStats.parseKills(payload)
         val deaths = DuelsStats.parseDeaths(payload)
-        val winstreak = DuelsStats.parseWinstreak(payload)
-        val bestWinstreak = DuelsStats.parseBestWinstreak(payload)
         return GameStats.Duels(
             wins = wins, losses = losses, kills = kills, deaths = deaths,
-            winstreak = winstreak, bestWinstreak = bestWinstreak,
             nicked = nicked, fetchedAt = System.currentTimeMillis(), etag = etag
-        )
-    }
-
-    /**
-     * Build CachedDuelsStats from a JSON response.
-     */
-    fun buildCachedStats(payload: JsonObject, etag: String? = null): CachedDuelsStats {
-        val wins = DuelsStats.parseWins(payload)
-        val losses = DuelsStats.parseLosses(payload)
-        val kills = DuelsStats.parseKills(payload)
-        val deaths = DuelsStats.parseDeaths(payload)
-        val winstreak = DuelsStats.parseWinstreak(payload)
-        val bestWinstreak = DuelsStats.parseBestWinstreak(payload)
-        return CachedDuelsStats(
-            wins = wins,
-            losses = losses,
-            kills = kills,
-            deaths = deaths,
-            winstreak = winstreak,
-            bestWinstreak = bestWinstreak,
-            fetchedAt = System.currentTimeMillis(),
-            etag = etag
         )
     }
 }

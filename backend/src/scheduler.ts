@@ -1,110 +1,43 @@
 import { purgeExpiredEntries, closeCache } from './services/cache';
 import { logger } from './util/logger';
-import { flushHistoryBuffer, startHistoryFlushInterval, stopHistoryFlushInterval } from './services/history';
-import {
-  initializeDynamicRateLimitService,
-  stopDynamicRateLimitService,
-} from './services/dynamicRateLimit';
-import { startAdaptiveTtlRefresh, stopAdaptiveTtlRefresh } from './services/statsCache';
-import { startKeyCountRefresher, stopKeyCountRefresher } from './services/redis';
-import {
-  initializeResourceMetrics,
-  stopResourceMetrics,
-  flushResourceMetricsOnShutdown,
-} from './services/resourceMetrics';
-import { shutdown as shutdownHypixelTracker } from './services/hypixelTracker';
-import { startGlobalLeaderElection, stopGlobalLeaderElection } from './services/globalLeader';
 
-let globalPurgeTimeout: ReturnType<typeof setTimeout> | null = null;
-let purgeSchedulerActive = false;
+const PURGE_INTERVAL_MS = 60 * 60 * 1000;
+
+let purgeTimer: ReturnType<typeof setTimeout> | null = null;
+let running = false;
 let cacheClosePromise: Promise<void> | null = null;
 
-async function startLeaderScopedServices(): Promise<void> {
-  if (purgeSchedulerActive) {
-    return;
-  }
-  purgeSchedulerActive = true;
-
+async function runPurge(): Promise<void> {
   await purgeExpiredEntries().catch((error) => {
-    logger.error('Failed to purge expired cache entries', error);
+    logger.error({ err: error }, '[scheduler] purge failed');
   });
 
-  await initializeDynamicRateLimitService().catch((error) => {
-    logger.error('Failed initializing dynamic rate limit service', error);
-    throw error; // Let the caller (transitionToLeader) handle the failure
-  });
-
-  startKeyCountRefresher();
-
-  function scheduleNextPurge(): void {
-    void purgeExpiredEntries()
-      .catch((error) => {
-        logger.error('Failed to purge expired cache entries', error);
-      })
-      .finally(() => {
-        if (purgeSchedulerActive) {
-          globalPurgeTimeout = setTimeout(scheduleNextPurge, 60 * 60 * 1000);
-          globalPurgeTimeout.unref();
-        }
-      });
+  if (running) {
+    purgeTimer = setTimeout(() => void runPurge(), PURGE_INTERVAL_MS);
+    purgeTimer.unref();
   }
-
-  globalPurgeTimeout = setTimeout(scheduleNextPurge, 60 * 60 * 1000);
-  globalPurgeTimeout.unref();
-}
-
-async function stopLeaderScopedServices(): Promise<void> {
-  purgeSchedulerActive = false;
-  if (globalPurgeTimeout) {
-    clearTimeout(globalPurgeTimeout);
-    globalPurgeTimeout = null;
-  }
-
-  stopDynamicRateLimitService();
-  stopKeyCountRefresher();
 }
 
 export function startBackgroundServices(): void {
-  void initializeResourceMetrics().catch((error) => {
-    logger.error('Failed initializing resource metrics', error);
-    process.exit(1);
-  });
-
-  startHistoryFlushInterval();
-
-  startGlobalLeaderElection({
-    onLeaderStart: startLeaderScopedServices,
-    onLeaderStop: stopLeaderScopedServices,
-  });
+  if (running) {
+    return;
+  }
+  running = true;
+  void runPurge();
 }
 
-export function startPostListenServices(): void {
-  startAdaptiveTtlRefresh();
-}
-
-export async function stopAllServices(): Promise<void> {
-  await stopGlobalLeaderElection();
-  stopHistoryFlushInterval();
-  stopAdaptiveTtlRefresh();
-  stopResourceMetrics();
-}
-
-export async function flushBeforeClose(): Promise<void> {
-  await flushHistoryBuffer().catch((error) => {
-    logger.error('Error flushing history buffer during shutdown', error);
-  });
-  await shutdownHypixelTracker().catch((error) => {
-    logger.error('Error shutting down hypixel tracker during shutdown', error);
-  });
-  await flushResourceMetricsOnShutdown().catch((err) =>
-    logger.error('Failed to flush resource metrics on shutdown', err),
-  );
+export async function stopBackgroundServices(): Promise<void> {
+  running = false;
+  if (purgeTimer) {
+    clearTimeout(purgeTimer);
+    purgeTimer = null;
+  }
 }
 
 export function safeCloseCache(): Promise<void> {
   if (!cacheClosePromise) {
     cacheClosePromise = closeCache().catch((error) => {
-      logger.error('Error closing cache database', error);
+      logger.error({ err: error }, '[scheduler] error closing the database');
     });
   }
   return cacheClosePromise;

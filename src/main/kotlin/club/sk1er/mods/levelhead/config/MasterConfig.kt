@@ -1,25 +1,68 @@
 package club.sk1er.mods.levelhead.config
 
-
-import club.sk1er.mods.levelhead.config.migration.ConfigMigrator
-
-
+/**
+ * Runtime view over the OneConfig settings.
+ *
+ * The mod used to keep a second, serialized copy of these values in
+ * `config/levelhead.json`; every writer had to remember to copy one into the
+ * other, which is where the "settings revert on restart" bugs came from. These
+ * properties now read and write [LevelheadConfig] directly, so there is exactly
+ * one value and no sync step to forget.
+ *
+ * The class is kept because the render package addresses
+ * `displayManager.config.<field>` and `MasterConfig.DisplayPosition`.
+ */
 class MasterConfig {
-    var version: Int = ConfigMigrator.CURRENT_VERSION
-    var enabled: Boolean = true
-    var offset: Double = 0.0
-    var displayPosition: DisplayPosition = DisplayPosition.ABOVE
+    var enabled: Boolean
+        get() = LevelheadConfig.levelheadEnabled
+        set(value) {
+            LevelheadConfig.levelheadEnabled = value
+        }
 
-    var renderDistance: Int = 64
-    var purgeSize: Int = 500
-    var backgroundOpacity: Float = 0.25f // 25% opacity (0.0-1.0)
-    var showBackground: Boolean = true
-    var renderThrottleMs: Long = 0L
-    var frameSkip: Int = 1 // Render every N frames (1 = every frame, 2 = every other frame, etc.)
-    var textShadow: Boolean = true // Whether to render text with shadow (disable to match Patcher nametag settings)
+    var offset: Double
+        get() = LevelheadConfig.verticalOffset.toDouble()
+        set(value) {
+            LevelheadConfig.verticalOffset = value.toFloat()
+        }
+
+    var showBackground: Boolean
+        get() = LevelheadConfig.showBackground
+        set(value) {
+            LevelheadConfig.showBackground = value
+        }
+
+    var backgroundOpacity: Float
+        get() = LevelheadConfig.backgroundOpacity
+        set(value) {
+            LevelheadConfig.backgroundOpacity = value
+        }
+
+    var textShadow: Boolean
+        get() = LevelheadConfig.textShadow
+        set(value) {
+            LevelheadConfig.textShadow = value
+        }
+
+    var displayPosition: DisplayPosition
+        get() = DisplayPosition.entries.getOrNull(LevelheadConfig.displayPositionIndex) ?: DisplayPosition.ABOVE
+        set(value) {
+            LevelheadConfig.displayPositionIndex = value.ordinal
+        }
+
+    var renderDistance: Int
+        get() = LevelheadConfig.renderDistance
+        set(value) {
+            LevelheadConfig.renderDistance = value
+        }
+
+    var purgeSize: Int
+        get() = LevelheadConfig.cacheSizeLimit
+        set(value) {
+            LevelheadConfig.cacheSizeLimit = value
+        }
 
     enum class DisplayPosition {
-        ABOVE,  // Display levelhead above the nametag (default)
-        BELOW   // Display levelhead below the nametag
+        ABOVE,
+        BELOW
     }
 }

@@ -1,20 +1,8 @@
 import ipaddr from 'ipaddr.js';
-import { recordPlayerQuery } from '../services/history';
-import { ResolvedPlayer } from '../services/player';
-import { isValidBedwarsObject, isNonArrayObject } from './typeChecks';
-import { logger } from './logger';
+import { isNonArrayObject } from './typeChecks';
 import { IDENTIFIER_PATTERN, IDENTIFIER_MAX_LENGTH } from './validationConstants';
 
-export interface BatchResolvedPlayer {
-  identifier: string;
-  payload: ResolvedPlayer['payload'] & { nicked: boolean; stale?: true };
-  source: ResolvedPlayer['source'];
-}
-
-
-/**
- * Safely extracts an array of identifiers from a request body without inline 'as' casts.
- */
+/** Safely extracts the `uuids` array from a request body without inline casts. */
 export function extractBatchIdentifiersFromBody(body: unknown): unknown[] | undefined {
   if (isNonArrayObject(body) && Array.isArray(body.uuids)) {
     return body.uuids;
@@ -23,21 +11,17 @@ export function extractBatchIdentifiersFromBody(body: unknown): unknown[] | unde
 }
 
 /**
- * Parses and validates batch identifiers from an unknown array.
- * Trims whitespace, enforces IDENTIFIER_MAX_LENGTH, deduplicates, and checks IDENTIFIER_PATTERN.
- * Non-strings, empty strings after trim, and over-length strings set hasInvalid.
- * When hasInvalid is true, uniqueUuids may still include identifiers that fail IDENTIFIER_PATTERN;
- * callers must check hasInvalid before using uniqueUuids.
+ * Trims, length-checks, dedupes and validates batch identifiers.
+ * Non-strings, empty strings and over-length values set `hasInvalid`.
  */
 export function parseAndValidateBatchIdentifiers(
-  uuidsValue: unknown[]
+  uuidsValue: unknown[],
 ): { uniqueUuids: string[]; hasInvalid: boolean } {
   const uniqueUuids: string[] = [];
-  const seenUuids = new Set<string>();
+  const seen = new Set<string>();
   let hasInvalid = false;
 
-  for (let i = 0; i < uuidsValue.length; i++) {
-    const value = uuidsValue[i];
+  for (const value of uuidsValue) {
     if (typeof value !== 'string') {
       hasInvalid = true;
       continue;
@@ -49,12 +33,14 @@ export function parseAndValidateBatchIdentifiers(
       continue;
     }
 
-    if (!seenUuids.has(trimmed)) {
-      seenUuids.add(trimmed);
-      uniqueUuids.push(trimmed);
-      if (!IDENTIFIER_PATTERN.test(trimmed)) {
-        hasInvalid = true;
-      }
+    if (seen.has(trimmed)) {
+      continue;
+    }
+
+    seen.add(trimmed);
+    uniqueUuids.push(trimmed);
+    if (!IDENTIFIER_PATTERN.test(trimmed)) {
+      hasInvalid = true;
     }
   }
 
@@ -68,7 +54,6 @@ export function isIPInCIDR(ip: string, cidr: string): boolean {
     const prefix = parsed[1];
     let parsedIp = ipaddr.parse(ip);
 
-    // Handle IPv4-mapped IPv6 addresses
     if (parsedIp.kind() === 'ipv6') {
       const ipv6 = parsedIp as ipaddr.IPv6;
       if (ipv6.isIPv4MappedAddress()) {
@@ -76,129 +61,28 @@ export function isIPInCIDR(ip: string, cidr: string): boolean {
       }
     }
 
-    // Match requires same address family
     if (parsedIp.kind() !== network.kind()) {
       return false;
     }
 
-    // Use the match method with array format [address, prefix]
-    if (parsedIp.kind() === 'ipv4') {
-      return (parsedIp as ipaddr.IPv4).match([network as ipaddr.IPv4, prefix]);
-    } else {
-      return (parsedIp as ipaddr.IPv6).match([network as ipaddr.IPv6, prefix]);
-    }
+    return parsedIp.kind() === 'ipv4'
+      ? (parsedIp as ipaddr.IPv4).match([network as ipaddr.IPv4, prefix])
+      : (parsedIp as ipaddr.IPv6).match([network as ipaddr.IPv6, prefix]);
   } catch {
     return false;
   }
 }
 
-/**
- * Parses the If-Modified-Since header string into a timestamp number.
- * Returns undefined if the header is missing or invalid.
- */
-export function parseIfModifiedSince(value: string | undefined): number | undefined {
-    if (!value) {
-        return undefined;
-    }
+// Control characters (newlines, escapes, unicode line separators) are replaced with
+// their hex escape sequence (e.g. \x0a) to prevent log injection.
+const CONTROL_CHAR_REGEX = /[\x00-\x1F\x7F-\x9F\u0085\u2028\u2029]/g;
 
-    const parsed = Date.parse(value);
-    return Number.isNaN(parsed) ? undefined : parsed;
-}
-
-/**
- * Records a player query to the history service, handling any errors gracefully.
- */
-export async function recordQuerySafely(payload: Parameters<typeof recordPlayerQuery>[0]): Promise<void> {
-    try {
-        recordPlayerQuery(payload);
-    } catch (error) {
-        logger.error({
-            err: error,
-            identifier: payload.identifier,
-            lookupType: payload.lookupType,
-            responseStatus: payload.responseStatus
-        }, 'Failed to record player query');
-    }
-}
-
-/**
- * Extracts Bedwars experience from a resolved player payload.
- * Returns null if the experience cannot be found or is invalid.
- */
-export function extractBedwarsExperience(payload: unknown): number | null {
-    if (isNonArrayObject(payload)) {
-        if ('bedwars_experience' in payload) {
-            const rawValue = payload.bedwars_experience;
-            if (rawValue === undefined || rawValue === null) {
-                return null;
-            }
-            const numeric = Number(rawValue);
-            if (!Number.isFinite(numeric) || numeric < 0) {
-                return null;
-            }
-            return numeric;
-        }
-
-        const dataCandidate = payload.data;
-        const bedwarsCandidate = payload.bedwars;
-
-        const bedwars =
-            (isNonArrayObject(dataCandidate) ? dataCandidate.bedwars : undefined) ??
-            bedwarsCandidate ??
-            (isValidBedwarsObject(dataCandidate) ? dataCandidate : undefined);
-
-        if (!isValidBedwarsObject(bedwars)) {
-            return null;
-        }
-
-        const rawValue = bedwars.bedwars_experience ?? bedwars.Experience ?? bedwars.experience;
-        if (rawValue === undefined || rawValue === null) {
-            return null;
-        }
-
-        const numeric = Number(rawValue);
-        if (!Number.isFinite(numeric) || numeric < 0) {
-            return null;
-        }
-
-        return numeric;
-    }
-
-    return null;
+function escapeControlChar(char: string): string {
+  return `\\x${char.charCodeAt(0).toString(16).padStart(2, '0')}`;
 }
 
 export function sanitizeUrlForLogs(target: string): string {
-  // Prevent Log Injection: Remove control characters (newlines, etc.)
-  // We replace control characters (ASCII 0-31 and 127) with their hex escape sequence (e.g. \x0a)
-  const sanitized = target.replace(/[\x00-\x1F\x7F-\x9F\u0085\u2028\u2029]/g, (char) => {
-    return `\\x${char.charCodeAt(0).toString(16).padStart(2, '0')}`;
-  });
-
+  const sanitized = target.replace(CONTROL_CHAR_REGEX, escapeControlChar);
   const queryIndex = sanitized.indexOf('?');
-  if (queryIndex === -1) {
-    return sanitized;
-  }
-
-  const path = sanitized.slice(0, queryIndex);
-  return `${path}?<redacted>`;
-}
-
-/**
- * Sanitizes and validates a search query parameter.
- * Trims whitespace, truncates to a maximum length, and removes SQL wildcards
- * to prevent SQL Wildcard Denial of Service attacks on LIKE queries.
- *
- * @param query - The raw query parameter (usually from req.query.q)
- * @param maxLength - Maximum allowed length (default: 100)
- * @returns The sanitized query string, or empty string if invalid
- */
-export function sanitizeSearchQuery(query: unknown, maxLength = 100): string {
-  if (typeof query !== 'string') {
-    return '';
-  }
-
-  // Strip '%' which is a SQL multi-character wildcard to prevent slow queries.
-  // Underscores '_' are valid in Minecraft usernames so we keep them,
-  // but '%' is invalid in both UUIDs and usernames anyway.
-  return query.trim().replace(/%/g, '').slice(0, maxLength);
+  return queryIndex === -1 ? sanitized : `${sanitized.slice(0, queryIndex)}?<redacted>`;
 }

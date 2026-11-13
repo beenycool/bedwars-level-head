@@ -59,8 +59,6 @@ object SkyWarsStats {
      * Each prestige tier unlocks every 10 levels.
      */
     data class PrestigeStyle(
-        val id: String,
-        val name: String,
         val minLevel: Int,
         val color: Color,
         val colorCode: String
@@ -72,59 +70,59 @@ object SkyWarsStats {
      */
     private val prestigeStyles = listOf(
         // Base prestiges (0-90)
-        PrestigeStyle("stone_prestige", "Stone", 0, Color(170, 170, 170), "7"),
-        PrestigeStyle("iron_prestige", "Iron", 10, Color(255, 255, 255), "f"),
-        PrestigeStyle("gold_prestige", "Gold", 20, Color(255, 170, 0), "6"),
-        PrestigeStyle("diamond_prestige", "Diamond", 30, Color(85, 255, 255), "b"),
-        PrestigeStyle("ruby_prestige", "Ruby", 40, Color(255, 85, 85), "c"),
-        PrestigeStyle("crystal_prestige", "Crystal", 50, Color(255, 85, 255), "d"),
-        PrestigeStyle("amethyst_prestige", "Amethyst", 60, Color(170, 0, 170), "5"),
-        PrestigeStyle("opal_prestige", "Opal", 70, Color(85, 85, 255), "9"),
-        PrestigeStyle("topaz_prestige", "Topaz", 80, Color(255, 255, 85), "e"),
-        PrestigeStyle("jade_prestige", "Jade", 90, Color(85, 255, 85), "a"),
+        PrestigeStyle(0, Color(170, 170, 170), "7"),
+        PrestigeStyle(10, Color(255, 255, 255), "f"),
+        PrestigeStyle(20, Color(255, 170, 0), "6"),
+        PrestigeStyle(30, Color(85, 255, 255), "b"),
+        PrestigeStyle(40, Color(255, 85, 85), "c"),
+        PrestigeStyle(50, Color(255, 85, 255), "d"),
+        PrestigeStyle(60, Color(170, 0, 170), "5"),
+        PrestigeStyle(70, Color(85, 85, 255), "9"),
+        PrestigeStyle(80, Color(255, 255, 85), "e"),
+        PrestigeStyle(90, Color(85, 255, 85), "a"),
         
         // Mythic tiers (100-500)
-        PrestigeStyle("mythic_i_prestige", "Mythic", 100, Color(255, 85, 85), "c"),
-        PrestigeStyle("bloody_prestige", "Bloody", 110, Color(255, 85, 85), "c"),
-        PrestigeStyle("cobalt_prestige", "Cobalt", 120, Color(0, 0, 170), "1"),
-        PrestigeStyle("content_prestige", "Content", 130, Color(255, 255, 255), "f"),
-        PrestigeStyle("crimson_prestige", "Crimson", 140, Color(170, 0, 0), "4"),
-        PrestigeStyle("firefly_prestige", "Firefly", 150, Color(255, 255, 85), "e"),
-        PrestigeStyle("emerald_prestige", "Emerald", 160, Color(0, 170, 0), "2"),
-        PrestigeStyle("abyss_prestige", "Abyss", 170, Color(85, 85, 255), "9"),
-        PrestigeStyle("sapphire_prestige", "Sapphire", 180, Color(0, 170, 170), "3"),
-        PrestigeStyle("emergency_prestige", "Emergency", 190, Color(255, 255, 85), "e"),
-        PrestigeStyle("mythic_ii_prestige", "Mythic II", 200, Color(255, 255, 85), "e"),
-        PrestigeStyle("mulberry_prestige", "Mulberry", 210, Color(255, 85, 255), "d"),
-        PrestigeStyle("slate_prestige", "Slate", 220, Color(85, 85, 85), "8"),
-        PrestigeStyle("blood_god_prestige", "Blood God", 230, Color(85, 255, 255), "b"),
-        PrestigeStyle("midnight_prestige", "Midnight", 240, Color(0, 0, 0), "0"),
-        PrestigeStyle("sun_prestige", "Sun", 250, Color(255, 255, 85), "e"),
-        PrestigeStyle("bulb_prestige", "Bulb", 260, Color(255, 170, 0), "6"),
-        PrestigeStyle("twilight_prestige", "Twilight", 270, Color(0, 170, 170), "3"),
-        PrestigeStyle("natural_prestige", "Natural", 280, Color(85, 255, 85), "a"),
-        PrestigeStyle("icile_prestige", "Icicle", 290, Color(85, 255, 255), "b"),
-        PrestigeStyle("mythic_iii_prestige", "Mythic III", 300, Color(85, 255, 85), "a"),
-        PrestigeStyle("graphite_prestige", "Graphite", 310, Color(85, 85, 85), "8"),
-        PrestigeStyle("punk_prestige", "Punk", 320, Color(85, 255, 85), "a"),
-        PrestigeStyle("meltdown_prestige", "Meltdown", 330, Color(255, 85, 85), "c"),
-        PrestigeStyle("iridescent_prestige", "Iridescent", 340, Color(85, 255, 255), "b"),
-        PrestigeStyle("marigold_prestige", "Marigold", 350, Color(255, 255, 85), "e"),
-        PrestigeStyle("beach_prestige", "Beach", 360, Color(85, 255, 255), "b"),
-        PrestigeStyle("spark_prestige", "Spark", 370, Color(255, 255, 255), "f"),
-        PrestigeStyle("target_prestige", "Target", 380, Color(255, 85, 85), "c"),
-        PrestigeStyle("limelight_prestige", "Limelight", 390, Color(85, 255, 85), "a"),
-        PrestigeStyle("mythic_iv_prestige", "Mythic IV", 400, Color(85, 255, 255), "b"),
-        PrestigeStyle("cerulean_prestige", "Cerulean", 410, Color(0, 170, 170), "3"),
-        PrestigeStyle("magical_prestige", "Magical", 420, Color(170, 0, 170), "5"),
-        PrestigeStyle("luminous_prestige", "Luminous", 430, Color(255, 255, 255), "f"),
-        PrestigeStyle("synthesis_prestige", "Synthesis", 440, Color(85, 255, 85), "a"),
-        PrestigeStyle("burn_prestige", "Burn", 450, Color(255, 85, 85), "c"),
-        PrestigeStyle("dramatic_prestige", "Dramatic", 460, Color(0, 170, 170), "3"),
-        PrestigeStyle("radiant_prestige", "Radiant", 470, Color(255, 255, 255), "f"),
-        PrestigeStyle("tidal_prestige", "Tidal", 480, Color(0, 170, 170), "3"),
-        PrestigeStyle("firework_prestige", "Firework", 490, Color(255, 255, 255), "f"),
-        PrestigeStyle("mythic_v_prestige", "Mythic V", 500, Color(255, 85, 255), "d")
+        PrestigeStyle(100, Color(255, 85, 85), "c"),
+        PrestigeStyle(110, Color(255, 85, 85), "c"),
+        PrestigeStyle(120, Color(0, 0, 170), "1"),
+        PrestigeStyle(130, Color(255, 255, 255), "f"),
+        PrestigeStyle(140, Color(170, 0, 0), "4"),
+        PrestigeStyle(150, Color(255, 255, 85), "e"),
+        PrestigeStyle(160, Color(0, 170, 0), "2"),
+        PrestigeStyle(170, Color(85, 85, 255), "9"),
+        PrestigeStyle(180, Color(0, 170, 170), "3"),
+        PrestigeStyle(190, Color(255, 255, 85), "e"),
+        PrestigeStyle(200, Color(255, 255, 85), "e"),
+        PrestigeStyle(210, Color(255, 85, 255), "d"),
+        PrestigeStyle(220, Color(85, 85, 85), "8"),
+        PrestigeStyle(230, Color(85, 255, 255), "b"),
+        PrestigeStyle(240, Color(0, 0, 0), "0"),
+        PrestigeStyle(250, Color(255, 255, 85), "e"),
+        PrestigeStyle(260, Color(255, 170, 0), "6"),
+        PrestigeStyle(270, Color(0, 170, 170), "3"),
+        PrestigeStyle(280, Color(85, 255, 85), "a"),
+        PrestigeStyle(290, Color(85, 255, 255), "b"),
+        PrestigeStyle(300, Color(85, 255, 85), "a"),
+        PrestigeStyle(310, Color(85, 85, 85), "8"),
+        PrestigeStyle(320, Color(85, 255, 85), "a"),
+        PrestigeStyle(330, Color(255, 85, 85), "c"),
+        PrestigeStyle(340, Color(85, 255, 255), "b"),
+        PrestigeStyle(350, Color(255, 255, 85), "e"),
+        PrestigeStyle(360, Color(85, 255, 255), "b"),
+        PrestigeStyle(370, Color(255, 255, 255), "f"),
+        PrestigeStyle(380, Color(255, 85, 85), "c"),
+        PrestigeStyle(390, Color(85, 255, 85), "a"),
+        PrestigeStyle(400, Color(85, 255, 255), "b"),
+        PrestigeStyle(410, Color(0, 170, 170), "3"),
+        PrestigeStyle(420, Color(170, 0, 170), "5"),
+        PrestigeStyle(430, Color(255, 255, 255), "f"),
+        PrestigeStyle(440, Color(85, 255, 85), "a"),
+        PrestigeStyle(450, Color(255, 85, 85), "c"),
+        PrestigeStyle(460, Color(0, 170, 170), "3"),
+        PrestigeStyle(470, Color(255, 255, 255), "f"),
+        PrestigeStyle(480, Color(0, 170, 170), "3"),
+        PrestigeStyle(490, Color(255, 255, 255), "f"),
+        PrestigeStyle(500, Color(255, 85, 255), "d")
     )
 
     /**
@@ -187,14 +185,6 @@ object SkyWarsStats {
      */
     fun getPrestigeStyle(level: Int): PrestigeStyle {
         return prestigeStyles.lastOrNull { level >= it.minLevel } ?: prestigeStyles.first()
-    }
-
-    /**
-     * Get prestige style for a given level (Double version).
-     * Uses floor of the level for prestige calculation.
-     */
-    fun getPrestigeStyle(level: Double): PrestigeStyle {
-        return getPrestigeStyle(level.toInt())
     }
 
     /**
@@ -286,56 +276,5 @@ object SkyWarsStats {
      */
     private fun findSkyWarsStats(json: JsonObject): JsonObject? {
         return club.sk1er.mods.levelhead.core.StatsPayloadParser.findStatsObject(json, club.sk1er.mods.levelhead.core.GameMode.SKYWARS)
-    }
-
-    /**
-     * Format a SkyWars level for display with appropriate prestige color and emblem.
-     * Returns format: [Level{Emblem}]
-     * Example: §c[100@_@] for Mythic prestige at level 100
-     * 
-     * Uses floor of the level for display (integer only).
-     */
-    fun formatLevelTag(level: Int): String {
-        val style = getPrestigeStyle(level)
-        val emblem = getDefaultEmblem(level)
-        return "§${style.colorCode}[$level$emblem]"
-    }
-
-    /**
-     * Format a SkyWars level for display (Double version).
-     * Uses floor of the level for display (integer only).
-     * Example: §c[100@_@] for Mythic prestige at level 100.5
-     */
-    fun formatLevelTag(level: Double): String {
-        return formatLevelTag(level.toInt())
-    }
-}
-
-/**
- * Cached SkyWars stats for a player.
- */
-data class CachedSkyWarsStats(
-    val level: Double?,
-    val experience: Long?,
-    val wins: Int?,
-    val losses: Int?,
-    val kills: Int?,
-    val deaths: Int?,
-    val fetchedAt: Long,
-    val etag: String? = null
-) {
-    val kdr: Double? get() = SkyWarsStats.calculateKDR(kills, deaths)
-    val wlr: Double? get() = SkyWarsStats.calculateWLR(wins, losses)
-    val prestigeStyle: SkyWarsStats.PrestigeStyle?
-        get() = level?.let { SkyWarsStats.getPrestigeStyle(it) }
-
-    /**
-     * Integer version of level for display purposes.
-     * Uses floor of the decimal level.
-     */
-    val levelInt: Int get() = level?.toInt() ?: 0
-
-    fun isExpired(ttlMillis: Long, now: Long = System.currentTimeMillis()): Boolean {
-        return now - fetchedAt >= ttlMillis
     }
 }

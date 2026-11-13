@@ -12,13 +12,12 @@ import java.util.UUID
  * Provides a unified interface for fetching stats regardless of game mode.
  */
 object StatsFetcher {
-    private val fetchers: Map<GameMode, GameModeFetcher> = mapOf(
-        GameMode.BEDWARS to BedwarsFetcher,
-        GameMode.DUELS to DuelsFetcher,
-        GameMode.SKYWARS to SkyWarsFetcher
-    )
 
-    fun fetcher(gameMode: GameMode): GameModeFetcher = fetchers.getValue(gameMode)
+    private fun fetcher(gameMode: GameMode): GameModeFetcher = when (gameMode) {
+        GameMode.BEDWARS -> BedwarsFetcher
+        GameMode.DUELS -> DuelsFetcher
+        GameMode.SKYWARS -> SkyWarsFetcher
+    }
 
     /**
      * Fetch stats for a player in the specified game mode.
@@ -29,7 +28,7 @@ object StatsFetcher {
         lastFetchedAt: Long? = null,
         etag: String? = null
     ): FetchResult {
-        return fetchers.getValue(gameMode).fetch(uuid, CacheHint(lastFetchedAt, etag))
+        return fetcher(gameMode).fetch(uuid, CacheHint(lastFetchedAt, etag))
     }
 
     /**
@@ -37,21 +36,15 @@ object StatsFetcher {
      * Returns null if the payload does not contain stats for the specified game mode.
      */
     fun buildGameStats(payload: JsonObject, gameMode: GameMode, etag: String? = null): GameStats? {
-        return fetchers.getValue(gameMode).buildStats(payload, etag)
-    }
-
-    /**
-     * Find a game mode stats object in a JSON payload.
-     * Delegates to StatsPayloadParser for backward compatibility.
-     */
-    fun findStatsObject(json: JsonObject, gameMode: GameMode): JsonObject? {
-        return StatsPayloadParser.findStatsObject(json, gameMode)
+        return fetcher(gameMode).buildStats(payload, etag)
     }
 
     /**
      * Reset all fetcher warnings.
      */
     fun resetWarnings() {
-        fetchers.values.forEach { it.resetWarnings() }
+        BedwarsFetcher.resetWarnings()
+        DuelsFetcher.resetWarnings()
+        SkyWarsFetcher.resetWarnings()
     }
 }

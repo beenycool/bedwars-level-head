@@ -14,7 +14,6 @@ import {
 } from '../config';
 import { HttpError } from '../util/httpError';
 import { isNonArrayObject } from '../util/typeChecks';
-import { recordHypixelApiCall } from './hypixelTracker';
 import { logger } from '../util/logger';
 
 const dnsCache = new CacheableLookup({ maxTtl: 300, fallbackDuration: 0 });
@@ -81,7 +80,7 @@ function circuitBreakerFailure(): void {
   }
 }
 
-export interface CircuitBreakerState {
+interface CircuitBreakerState {
   state: 'closed' | 'open' | 'half-open';
   failureCount: number;
   lastFailureAt: number | null;
@@ -116,7 +115,7 @@ export interface HypixelPlayerResponse {
   } | null;
 }
 
-export interface ProxyPlayerPayload {
+interface ProxyPlayerPayload {
   success: boolean;
   cause?: string;
   message?: string;
@@ -137,24 +136,10 @@ export interface ProxyPlayerPayload {
   display?: string;
 }
 
-export interface HypixelFetchOptions {
-  etag?: string;
-  lastModified?: number;
-}
-
 export interface HypixelFetchResult {
-  payload?: ProxyPlayerPayload;
+  payload: ProxyPlayerPayload;
   etag: string | null;
   lastModified: number | null;
-  notModified: boolean;
-}
-
-function toHttpDate(ms?: number): string | undefined {
-  if (typeof ms !== 'number' || Number.isNaN(ms)) {
-    return undefined;
-  }
-
-  return new Date(ms).toUTCString();
 }
 
 function parseLastModified(value?: string): number | null {
@@ -249,21 +234,8 @@ export function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayloa
   };
 }
 
-function buildHeaders(options?: HypixelFetchOptions): Record<string, string> {
-  const headers: Record<string, string> = {
-    'API-Key': HYPIXEL_API_KEY,
-  };
-
-  if (options?.etag) {
-    headers['If-None-Match'] = options.etag;
-  }
-
-  const modifiedSince = toHttpDate(options?.lastModified);
-  if (modifiedSince) {
-    headers['If-Modified-Since'] = modifiedSince;
-  }
-
-  return headers;
+function buildHeaders(): Record<string, string> {
+  return { 'API-Key': HYPIXEL_API_KEY };
 }
 
 function shouldRetry(error: unknown): boolean {
@@ -301,10 +273,7 @@ function extractRetryAfterHeader(
   return String(headerValue);
 }
 
-export async function fetchHypixelPlayer(
-  uuid: string,
-  options?: HypixelFetchOptions,
-): Promise<HypixelFetchResult> {
+export async function fetchHypixelPlayer(uuid: string): Promise<HypixelFetchResult> {
   let attempt = 0;
   let lastError: unknown;
   circuitBreakerCheck();
@@ -313,30 +282,16 @@ export async function fetchHypixelPlayer(
     try {
       const response = await hypixelClient.get<HypixelPlayerResponse>('/v2/player', {
         params: { uuid },
-        headers: buildHeaders(options),
+        headers: buildHeaders(),
         timeout: HYPIXEL_TIMEOUT_MS,
-        validateStatus: (status) => (status >= 200 && status < 300) || status === 304,
-      });
-
-      const etag = response.headers['etag'] ?? null;
-      const lastModified = parseLastModified(response.headers['last-modified']);
-      void recordHypixelApiCall(uuid).catch((error) => {
-        logger.error({ err: error }, 'Failed to record Hypixel API call');
       });
 
       circuitBreakerSuccess();
 
-      if (response.status === 304) {
-        return { payload: undefined, etag, lastModified, notModified: true };
-      }
-
-      const payload = shapePayload(response.data);
-
       return {
-        payload,
-        etag,
-        lastModified,
-        notModified: false,
+        payload: shapePayload(response.data),
+        etag: response.headers['etag'] ?? null,
+        lastModified: parseLastModified(response.headers['last-modified']),
       };
     } catch (error) {
       lastError = error;

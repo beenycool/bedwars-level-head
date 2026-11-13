@@ -8,7 +8,6 @@ import club.sk1er.mods.levelhead.core.GameStats
 import club.sk1er.mods.levelhead.core.ModeManager
 import club.sk1er.mods.levelhead.core.await
 import club.sk1er.mods.levelhead.core.dashUUID
-import club.sk1er.mods.levelhead.duels.DuelsStats
 import club.sk1er.mods.levelhead.skywars.SkyWarsStats
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -37,7 +36,8 @@ object WhoisService {
                     command = "/levelhead whois <player>",
                     run = false,
                     suggestedCommand = "/levelhead whois ",
-                    suffix = "${ChatColor.YELLOW} with a valid name or UUID."
+                    suffix = "${ChatColor.YELLOW} with a valid name or UUID.",
+                    hoverTextOverride = "${ChatColor.GREEN}Click to fill whois command"
                 )
             )
         
@@ -51,65 +51,77 @@ object WhoisService {
         return formatResultComponent(result)
     }
 
+    /**
+     * Shared /whois entry point used by both /whois and /levelhead whois.
+     * Sends progress, result and error feedback through [CommandUtils].
+     */
+    suspend fun runWhoisCommand(
+        identifier: String,
+        hintCommand: String = "/whois <player|uuid>",
+        hintSuggestion: String = "/whois "
+    ) {
+        val trimmed = identifier.trim()
+        if (trimmed.isEmpty()) {
+            CommandUtils.sendPrefixedChat(
+                CommandUtils.buildInteractiveFeedback(
+                    messagePrefix = "${ChatColor.RED}Tell me who to inspect.${ChatColor.YELLOW} Try ",
+                    command = hintCommand,
+                    suggestedCommand = hintSuggestion,
+                    run = false,
+                    suffix = "${ChatColor.YELLOW} using an in-game name, UUID, or someone nearby.",
+                    hoverTextOverride = "${ChatColor.GREEN}Click to fill whois command"
+                )
+            )
+            return
+        }
+
+        CommandUtils.sendPrefixedChat(
+            ChatComponentText("${ChatColor.YELLOW}Looking up stats for ${ChatColor.GOLD}$trimmed${ChatColor.YELLOW}...")
+        )
+        try {
+            CommandUtils.sendPrefixedChat(lookupWhoisComponent(trimmed))
+        } catch (ex: CommandException) {
+            CommandUtils.sendPrefixedChat(ex.component ?: ChatComponentText("${ChatColor.RED}${ex.message}"))
+        } catch (throwable: Throwable) {
+            if (throwable is kotlinx.coroutines.CancellationException) throw throwable
+            Levelhead.logger.error("Failed to resolve stats for {}", trimmed, throwable)
+            CommandUtils.sendPrefixedChat(FetchFeedback.unexpectedErrorFeedback("fetching stats"))
+        }
+    }
+
     private suspend fun fetchWhois(resolved: ResolvedIdentifier, gameMode: GameMode): WhoisResult = withContext(Dispatchers.IO) {
-        Levelhead.rateLimiter.consume()
-        
+        if (!Levelhead.rateLimiter.tryAcquire()) {
+            throw CommandException(
+                "Stats requests are paused by the rate limit.",
+                CommandUtils.buildInteractiveFeedback(
+                    messagePrefix = "${ChatColor.RED}Stats requests are paused by the rate limit.${ChatColor.YELLOW} Try again in a moment or check ",
+                    command = "/levelhead status",
+                    run = true,
+                    suffix = "${ChatColor.YELLOW}.",
+                    hoverTextOverride = "${ChatColor.GREEN}Click to check status"
+                )
+            )
+        }
+
         when (val result = StatsFetcher.fetchPlayer(resolved.uuid, gameMode)) {
             is FetchResult.Success -> {
                 val stats = StatsFetcher.buildGameStats(result.payload, gameMode, result.etag)
                 parseWhoisResult(result.payload, stats, resolved.displayName ?: resolved.uuid.toString(), gameMode, resolved.uuid)
             }
-            FetchResult.NotModified -> {
-                val baseError = "No fresh data available for ${resolved.displayName ?: resolved.uuid}"
-                throw CommandException(
-                    "$baseError.",
-                    CommandUtils.buildInteractiveFeedback(
-                        messagePrefix = "${ChatColor.RED}$baseError.${ChatColor.YELLOW} Check ",
-                        command = "/levelhead status",
-                        run = true,
-                        suffix = "${ChatColor.YELLOW} to see your cache settings."
-                    )
-                )
-            }
             is FetchResult.TemporaryError -> {
-                val baseError = "${gameMode.displayName} stats temporarily unavailable (${result.reason ?: "unknown"})"
                 throw CommandException(
-                    "$baseError.",
-                    CommandUtils.buildInteractiveFeedback(
-                        messagePrefix = "${ChatColor.RED}$baseError.${ChatColor.YELLOW} Check ",
-                        command = "/levelhead status",
-                        run = true,
-                        suffix = "${ChatColor.YELLOW} to see your connection status."
-                    )
+                    "${gameMode.displayName} stats temporarily unavailable (${result.reason ?: "unknown"}).",
+                    FetchFeedback.temporaryErrorFeedback(result.reason, gameMode.displayName)
                 )
             }
             is FetchResult.PermanentError -> {
-                val (errorMessage, interactiveFeedback) = when (result.reason) {
-                    "MISSING_KEY" -> "Set your Hypixel API key with /levelhead apikey <key> to query players." to
-                        CommandUtils.buildInteractiveFeedback(
-                            messagePrefix = "${ChatColor.RED}Set your Hypixel API key with ",
-                            command = "/levelhead apikey <key>",
-                            suggestedCommand = "/levelhead apikey ",
-                            suffix = "${ChatColor.RED} to query players."
-                        )
-                    "OFFLINE_MODE" -> "Mod is in offline mode. Use /levelhead gui to change the backend." to
-                        CommandUtils.buildInteractiveFeedback(
-                            messagePrefix = "${ChatColor.RED}Mod is in offline mode. Use ",
-                            command = "/levelhead gui",
-                            run = true,
-                            suffix = "${ChatColor.RED} to change the backend."
-                        )
-                    else -> {
-                        val baseError = "${gameMode.displayName} request failed (${result.reason ?: "unknown"})"
-                        "$baseError." to CommandUtils.buildInteractiveFeedback(
-                            messagePrefix = "${ChatColor.RED}$baseError.${ChatColor.YELLOW} Check ",
-                            command = "/levelhead status",
-                            run = true,
-                            suffix = "${ChatColor.YELLOW} to see your connection status."
-                        )
-                    }
-                }
-                throw CommandException(errorMessage, interactiveFeedback)
+                throw CommandException(
+                    when (result.reason) {
+                        "OFFLINE_MODE" -> "The stats backend is unreachable."
+                        else -> "${gameMode.displayName} request failed (${result.reason ?: "unknown"})."
+                    },
+                    FetchFeedback.permanentErrorFeedback(result.reason, gameMode.displayName)
+                )
             }
         }
     }
@@ -230,7 +242,8 @@ object WhoisService {
                         command = "/levelhead whois <player>",
                         run = false,
                         suggestedCommand = "/levelhead whois ",
-                        suffix = "${ChatColor.YELLOW} again."
+                        suffix = "${ChatColor.YELLOW} again.",
+                        hoverTextOverride = "${ChatColor.GREEN}Click to fill whois command"
                     )
                 )
             }

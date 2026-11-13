@@ -1,0 +1,12 @@
+/**
+ * Typecheck config covering src and tests (the base tsconfig only includes src).
+ */
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true
+  },
+  "include": ["src/**/*", "tests/**/*", "jest.setup.ts"],
+  "exclude": ["node_modules", "dist"]
+}

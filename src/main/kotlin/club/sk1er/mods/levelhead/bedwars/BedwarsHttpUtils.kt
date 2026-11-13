@@ -10,7 +10,6 @@ import java.io.InterruptedIOException
 import java.net.SocketTimeoutException
 import java.time.Duration
 import java.time.Instant
-import java.time.ZoneOffset
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
@@ -23,7 +22,7 @@ object BedwarsHttpUtils {
     fun String.sanitizeForLogs(): String {
         if (isEmpty()) return this
         var sanitized = this
-        listOf(LevelheadConfig.apiKey, LevelheadConfig.proxyAuthToken, LevelheadConfig.installId)
+        listOf(LevelheadConfig.installId)
             .filter { it.isNotBlank() }
             .forEach { secret ->
                 sanitized = sanitized.replace(secret, "***")
@@ -94,9 +93,5 @@ object BedwarsHttpUtils {
             val millis = Duration.between(now, targetInstant).toMillis()
             if (millis <= 0) null else millis
         }.getOrNull()
-    }
-    
-    fun Long.toHttpDateString(): String {
-        return DateTimeFormatter.RFC_1123_DATE_TIME.withZone(ZoneOffset.UTC).format(Instant.ofEpochMilli(this))
     }
 }

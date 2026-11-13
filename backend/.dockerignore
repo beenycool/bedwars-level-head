@@ -46,6 +46,3 @@ docker-compose*
 # Logs
 logs
 *.log
-
-# Database migrations (only needed for local dev, Render uses managed DB)
-migrations

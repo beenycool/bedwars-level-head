@@ -2,256 +2,243 @@ package club.sk1er.mods.levelhead.render
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.Levelhead.displayManager
-import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.config.MasterConfig
-import club.sk1er.mods.levelhead.display.LevelheadTag
-import club.sk1er.mods.levelhead.core.DebugLogging
-import club.sk1er.mods.levelhead.core.DebugLogging.formatAsHex
-import club.sk1er.mods.levelhead.core.DebugLogging.logRenderDebug
-import club.sk1er.mods.levelhead.core.DebugLogging.maskForLogs
-import club.sk1er.mods.levelhead.core.DebugLogging.truncateForLogs
 import club.sk1er.mods.levelhead.core.ModeManager
-import club.sk1er.mods.levelhead.core.PerformanceMetrics
-import gg.essential.api.EssentialAPI
-import gg.essential.elementa.utils.withAlpha
-import gg.essential.universal.UGraphics
-import gg.essential.universal.UMatrixStack
-import gg.essential.universal.UMinecraft
-import gg.essential.universal.UMinecraft.getFontRenderer
-import gg.essential.universal.UMinecraft.getMinecraft
-import gg.essential.universal.wrappers.UPlayer
-import net.minecraft.client.gui.inventory.GuiInventory
+import club.sk1er.mods.levelhead.core.TagFormatter
+import club.sk1er.mods.levelhead.display.LevelheadTag
+import net.minecraft.client.Minecraft
 import net.minecraft.client.gui.FontRenderer
+import net.minecraft.client.renderer.GlStateManager
+import net.minecraft.client.renderer.Tessellator
 import net.minecraft.client.renderer.vertex.DefaultVertexFormats
 import net.minecraft.entity.EntityLivingBase
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraftforge.client.event.RenderLivingEvent
 import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
+import org.lwjgl.opengl.GL11
+import java.awt.Color
 
-import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
-
+/**
+ * Draws the stats tag above (or below) a player's vanilla nametag.
+ *
+ * Everything here is plain vanilla 1.8.9 rendering: [GlStateManager], [Tessellator]
+ * and [FontRenderer]. No Essential / UniversalCraft / Elementa classes are used, so
+ * the jar renders on Forge alone (B27).
+ *
+ * State discipline follows `Render.renderLivingLabel` (see the end of [renderName]):
+ * depth test, depth mask, texture2D, blend and lighting are always restored, whether
+ * or not any optional branch ran (B22).
+ */
 object AboveHeadRender {
-    private var nextSelfSkipLogAt: Long = 0L
-    private val nextRenderDebugLogAt = ConcurrentHashMap<UUID, Long>()
 
+    /**
+     * Height of one line of nametag text in blocks at the scale used here.
+     *
+     * Derivation (1.8.9): vanilla renders nametags at
+     * `GlStateManager.scale(-0.02666667F, -0.02666667F, 0.02666667F)` (1/37.5) and
+     * draws the background quad from text-space y = -1 to y = 8, i.e. 9 px tall.
+     * Our tag uses the same scale (textScale = 0.016666668 * 1.6 = 0.02666667), so
+     * the tag block is 9 * 0.02666667 = 0.24 blocks tall.
+     */
+    private const val TAG_LINE_HEIGHT_BLOCKS = 9f * 0.016666668f * 1.6f
+
+    /** Small gap between the vanilla nametag block and a BELOW-position tag. */
+    private const val BELOW_NAMETAG_GAP = 0.03f
+
+    /**
+     * Distance from the vanilla nametag anchor to the BELOW-position translate point:
+     * clear the full vanilla nametag block (0.24) plus [BELOW_NAMETAG_GAP].
+     */
+    private const val BELOW_NAMETAG_DROP = TAG_LINE_HEIGHT_BLOCKS + BELOW_NAMETAG_GAP
+
+    /** 1 / 37.5, the vanilla nametag scale. */
     private const val TEXT_SCALE = 0.016666668f * 1.6f
-    private const val RENDER_LOG_INTERVAL_MS = 2000L
-    private const val SEE_THROUGH_TEXT_ALPHA = 0.2f
-    private const val OPAQUE_TEXT_ALPHA = 1.0f
-    private const val SEE_THROUGH_SHADOW_ALPHA = 51
-    private const val OPAQUE_SHADOW_ALPHA = 255
-    private const val GL_SRC_ALPHA = 770
-    private const val GL_ONE_MINUS_SRC_ALPHA = 771
-    private const val GL_ONE = 1
-    private const val GL_ZERO = 0
-    private val SEE_THROUGH_SHADOW_COLOR = java.awt.Color(0, 0, 0, SEE_THROUGH_SHADOW_ALPHA).rgb
-    private val OPAQUE_SHADOW_COLOR = java.awt.Color(0, 0, 0, OPAQUE_SHADOW_ALPHA).rgb
+
+    /** Vanilla's see-through label pass colour (white, alpha 0x20). */
+    private const val SEE_THROUGH_TEXT_COLOR = 0x20FFFFFF
 
     @SubscribeEvent
     fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
-        if (!displayManager.config.enabled) return
-        if (!EssentialAPI.getMinecraftUtil().isHypixel()) return
-        if (getMinecraft().gameSettings.hideGUI) return
-        if (!ModeManager.shouldRenderTags()) return
+        // B25: reject the entity type before touching Minecraft, config or displays,
+        // and before allocating anything. Armour stands / holograms never get past here.
+        val entity = event.entity
+        if (entity !is EntityPlayer) return
 
-        val player = event.entity as? EntityPlayer ?: return
+        val mc = Minecraft.getMinecraft()
+        val gameSettings = mc.gameSettings ?: return
+        if (gameSettings.hideGUI) return
 
-        val localPlayer = UMinecraft.getPlayer()
-        val displayPosition = displayManager.config.displayPosition
-        val isInventoryScreen = getMinecraft().currentScreen is GuiInventory
+        val config = displayManager.config
+        if (!config.enabled) return
 
-        // Hoist activeMode lookup outside the loop to avoid redundant calls
-        val activeMode = ModeManager.getActiveGameMode()
+        val displays = displayManager.aboveHead
+        if (displays.isEmpty()) return
 
-        displayManager.aboveHead.forEachIndexed { index, display ->
-            if (!display.config.enabled) return@forEachIndexed
-            if (isInventoryScreen && player.isSelf && !LevelheadConfig.showInInventory) {
-                return@forEachIndexed
+        // Per-entity invariants: resolved once for the whole display loop.
+        if (!Levelhead.isOnHypixel()) return
+        val activeMode = ModeManager.getActiveGameMode() ?: return
+        // No stats is absence: render nothing rather than a "?" tag.
+        val stats = Levelhead.getCachedStats(entity.uniqueID, activeMode) ?: return
+        val statsVersion = Levelhead.statsStore.version(entity.uniqueID, activeMode)
+
+        val player = entity
+        val localPlayer = mc.thePlayer
+        val isSelf = localPlayer != null && localPlayer.uniqueID == player.uniqueID
+
+        // Vertical distance from the vanilla nametag anchor. `y` below already carries
+        // this, so BELOW mode must not add it a second time (B24).
+        val anchoredOffset = if (isSelf) {
+            config.offset
+        } else {
+            var offset = 0.3
+            if (localPlayer != null &&
+                player.worldScoreboard.getObjectiveInDisplaySlot(2) != null &&
+                player.getDistanceSqToEntity(localPlayer) < 100.0
+            ) {
+                offset *= 2
             }
-            if (player.isSelf && !display.config.showSelf) {
-                maybeLogSelfHidden(displayPosition)
-                return@forEachIndexed
-            }
-            // Look up tag by (uuid, activeMode) to ensure mode-specific tags are served
-            // When activeMode is null, tags are not rendered (intentional behavior)
-            val tag = if (activeMode != null) {
-                display.cache[Levelhead.DisplayCacheKey(player.uniqueID, activeMode)]
-            } else {
-                null
-            }
-            if (display.loadOrRender(player) && tag != null) {
-                tag.lastSeen = System.currentTimeMillis()
-                var offset = when (displayPosition) {
-                    MasterConfig.DisplayPosition.ABOVE -> 0.3
-                    MasterConfig.DisplayPosition.BELOW -> -0.1
+            offset + config.offset
+        }
+
+        var index = 0
+        while (index < displays.size) {
+            val display = displays[index]
+            // B25: a missing tag is the common case in a hub; resolve the boolean
+            // checks before loadOrRender builds display names.
+            if (display.config.enabled &&
+                !(isSelf && !display.config.showSelf)
+            ) {
+                val tag = TagFormatter.formatTag(
+                    player.uniqueID,
+                    stats,
+                    display.config,
+                    activeMode,
+                    statsVersion = statsVersion
+                )
+                if (display.loadOrRender(player)) {
+                    val offset = anchoredOffset + index * 0.3
+                    renderName(tag, player, event.x, event.y + offset, event.z, offset)
                 }
-                
-                val hasScoreboardObjective = player.worldScoreboard?.getObjectiveInDisplaySlot(2) != null
-                val isCloseToLocalPlayer = localPlayer?.let { player.getDistanceSqToEntity(it) < 100 } ?: false
-                
-                // Adjust offset for scoreboard when displaying above
-                if (displayPosition == MasterConfig.DisplayPosition.ABOVE && hasScoreboardObjective && isCloseToLocalPlayer) {
-                    offset *= 2
-                }
-                
-                offset += displayManager.config.offset
-                
-                // Adjust index offset direction based on position
-                val indexOffset = when (displayPosition) {
-                    MasterConfig.DisplayPosition.ABOVE -> index * 0.3
-                    MasterConfig.DisplayPosition.BELOW -> -(index * 0.3)
-                }
-
-                // Render sampling debug logging (throttled per player)
-                logRenderSamplingIfEnabled(tag, player.uniqueID, player.name, displayPosition, offset + indexOffset)
-
-                PerformanceMetrics.recordTagRender()
-                renderName(tag, player, event.x, event.y + offset + indexOffset, event.z)
             }
+            index++
         }
     }
 
-    private fun maybeLogSelfHidden(displayPosition: MasterConfig.DisplayPosition) {
-        if (!LevelheadConfig.debugConfigSync) {
-            return
-        }
-        val now = System.currentTimeMillis()
-        if (now < nextSelfSkipLogAt) {
-            return
-        }
-        nextSelfSkipLogAt = now + 2000L
-        Levelhead.logger.info(
-            "[LevelheadRender] skipping self tag (showSelf=false, displayPosition={}, offset={})",
-            displayPosition,
-            String.format(java.util.Locale.ROOT, "%.2f", displayManager.config.offset)
-        )
-    }
-
-    private fun logRenderSamplingIfEnabled(
+    private fun renderName(
         tag: LevelheadTag,
-        playerUuid: UUID,
-        playerName: String,
-        displayPosition: MasterConfig.DisplayPosition,
-        yOffset: Double
+        entityIn: EntityPlayer,
+        x: Double,
+        y: Double,
+        z: Double,
+        aboveHeadOffset: Double
     ) {
-        if (!DebugLogging.isRenderDebugEnabled()) {
-            return
-        }
-        val now = System.currentTimeMillis()
-        val nextLogAt = nextRenderDebugLogAt.getOrDefault(playerUuid, 0L)
-        if (now < nextLogAt) {
-            return
-        }
-        nextRenderDebugLogAt[playerUuid] = now + RENDER_LOG_INTERVAL_MS
+        val mc = Minecraft.getMinecraft()
+        val fontRenderer = mc.fontRendererObj
+        val config = displayManager.config
 
-        DebugLogging.logRenderDebug {
-            val maskedUuid = playerUuid.maskForLogs()
-            val tagString = tag.getString().truncateForLogs(200)
-            val headerValue = tag.header.value.truncateForLogs(100)
-            val footerValue = tag.footer.value.truncateForLogs(100)
-            val headerColor = tag.header.color.formatAsHex()
-            val footerColor = tag.footer.color.formatAsHex()
-            val offsetFormatted = String.format(java.util.Locale.ROOT, "%.2f", yOffset)
-            val backgroundOpacity = String.format(java.util.Locale.ROOT, "%.2f", displayManager.config.backgroundOpacity)
+        // `y` is positioned for ABOVE mode. BELOW mode anchors to the vanilla nametag
+        // block and then drops by the same distance, in the same direction as ABOVE
+        // grows, so the offset slider keeps working once and stacked displays separate.
+        val vanillaAnchorY = y.toFloat() + entityIn.height + 0.5f
+        val renderY = when (config.displayPosition) {
+            MasterConfig.DisplayPosition.ABOVE -> vanillaAnchorY
+            MasterConfig.DisplayPosition.BELOW ->
+                vanillaAnchorY - BELOW_NAMETAG_DROP - aboveHeadOffset.toFloat()
+        }
 
-            "[LevelheadDebug][render] player=${playerName} uuid=${maskedUuid} tag=\"${tagString}\" " +
-                "header=\"${headerValue}\" headerColor=${headerColor} " +
-                "footer=\"${footerValue}\" footerColor=${footerColor} " +
-                "position=${displayPosition} yOffset=${offsetFormatted} " +
-                "shadow=${displayManager.config.textShadow} background=${displayManager.config.showBackground} " +
-                "backgroundOpacity=${backgroundOpacity} textAlpha=${SEE_THROUGH_TEXT_ALPHA}/${OPAQUE_TEXT_ALPHA}"
+        // StatsFormatter already emits the prestige-aware star tag, including its
+        // inline `§` colour codes, so both components are drawn exactly as stored.
+        val header = tag.header
+        val footer = tag.footer
+        val footerText = footer.value
+
+        GlStateManager.pushMatrix()
+        try {
+            GlStateManager.translate(x.toFloat(), renderY, z.toFloat())
+            GL11.glNormal3f(0.0f, 1.0f, 0.0f)
+            val renderManager = mc.renderManager
+            val viewXMultiplier = if (mc.gameSettings != null && mc.gameSettings.thirdPersonView == 2) -1f else 1f
+            GlStateManager.rotate(-renderManager.playerViewY, 0.0f, 1.0f, 0.0f)
+            GlStateManager.rotate(renderManager.playerViewX * viewXMultiplier, 1.0f, 0.0f, 0.0f)
+            GlStateManager.scale(-TEXT_SCALE, -TEXT_SCALE, TEXT_SCALE)
+
+            GlStateManager.disableLighting()
+            GlStateManager.depthMask(false)
+            GlStateManager.disableDepth()
+            GlStateManager.enableBlend()
+            GlStateManager.tryBlendFuncSeparate(
+                GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO
+            )
+
+            val headerWidth = fontRenderer.getStringWidth(header.value)
+            val totalWidth = headerWidth + fontRenderer.getStringWidth(footerText)
+            val left = -(totalWidth shr 1)
+
+            if (config.showBackground) {
+                drawBackground(left, totalWidth, config.backgroundOpacity)
+            }
+
+            drawComponent(fontRenderer, header.value, header.color, left, config.textShadow)
+            drawComponent(
+                fontRenderer,
+                footerText,
+                footer.color,
+                left + headerWidth,
+                config.textShadow
+            )
+        } finally {
+            // B22/B23: leave the GL state exactly as vanilla's Render.renderLivingLabel
+            // leaves it, on every path. Previously depth test and depth mask stayed
+            // disabled when "Text Shadow" was off, so every later entity drew through
+            // walls.
+            GlStateManager.enableTexture2D()
+            GlStateManager.enableDepth()
+            GlStateManager.depthMask(true)
+            GlStateManager.enableLighting()
+            GlStateManager.disableBlend()
+            GlStateManager.color(1.0f, 1.0f, 1.0f, 1.0f)
+            GlStateManager.popMatrix()
         }
     }
 
-    fun clearRenderDebugState() {
-        nextRenderDebugLogAt.clear()
+    /**
+     * B23: the background quad is untextured, exactly like vanilla. Drawing it with
+     * texture2D enabled sampled whatever texture happened to be bound.
+     */
+    private fun drawBackground(left: Int, width: Int, alpha: Float) {
+        val right = left + width
+        GlStateManager.disableTexture2D()
+        val tessellator = Tessellator.getInstance()
+        val worldRenderer = tessellator.worldRenderer
+        worldRenderer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_COLOR)
+        worldRenderer.pos((left - 1).toDouble(), -1.0, 0.0).color(0.0f, 0.0f, 0.0f, alpha).endVertex()
+        worldRenderer.pos((left - 1).toDouble(), 8.0, 0.0).color(0.0f, 0.0f, 0.0f, alpha).endVertex()
+        worldRenderer.pos((right + 1).toDouble(), 8.0, 0.0).color(0.0f, 0.0f, 0.0f, alpha).endVertex()
+        worldRenderer.pos((right + 1).toDouble(), -1.0, 0.0).color(0.0f, 0.0f, 0.0f, alpha).endVertex()
+        tessellator.draw()
+        GlStateManager.enableTexture2D()
     }
 
-    private val EntityPlayer.isSelf: Boolean
-        get() = UPlayer.getUUID() == this.uniqueID
-
- private fun renderName(tag: LevelheadTag, entityIn: EntityPlayer, x: Double, y: Double, z: Double) {
- val fontrenderer = getFontRenderer()
- val textScale = TEXT_SCALE
- val matrixStack = UMatrixStack()
- val mc = getMinecraft()
- val xMultiplier = if (
- mc.gameSettings?.let { it.thirdPersonView == 2 } == true
- ) {
- -1
- } else {
- 1
- }
-
- val yOffset = entityIn.height + 0.5f
- matrixStack.translate(x.toFloat() + 0.0f, y.toFloat() + yOffset, z.toFloat())
- val renderManager = mc.renderManager
- matrixStack.rotate(-renderManager.playerViewY, 0.0f, 1.0f, 0.0f)
- matrixStack.rotate(renderManager.playerViewX * xMultiplier, 1.0f, 0.0f, 0.0f)
- matrixStack.scale(-textScale, -textScale, textScale)
-  matrixStack.runWithGlobalState {
-    UGraphics.disableLighting()
-    UGraphics.depthMask(false)
-    UGraphics.disableDepth()
-    UGraphics.enableBlend()
-    UGraphics.tryBlendFuncSeparate(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO)
-    try {
-      val stringWidth = tag.getTotalWidth(fontrenderer) shr 1
-      if (displayManager.config.showBackground) {
-        val bgAlpha = displayManager.config.backgroundOpacity
-        val uGraphics = UGraphics.getFromTessellator().beginWithDefaultShader(UGraphics.DrawMode.QUADS, DefaultVertexFormats.POSITION_COLOR)
-        uGraphics.pos(matrixStack, (-stringWidth - 2).toDouble(), -1.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
-        uGraphics.pos(matrixStack, (-stringWidth - 2).toDouble(), 8.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
-        uGraphics.pos(matrixStack, (stringWidth + 2).toDouble(), 8.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
-        uGraphics.pos(matrixStack, (stringWidth + 2).toDouble(), -1.0, 0.01).color(0.0f, 0.0f, 0.0f, bgAlpha).endVertex()
-        uGraphics.drawDirect()
-      }
-      renderString(matrixStack, fontrenderer, tag, displayManager.config.textShadow, stringWidth)
-    } finally {
-      UGraphics.disableBlend()
-      UGraphics.enableDepth()
-      UGraphics.depthMask(true)
-      UGraphics.enableLighting()
-    }
-  }
- }
-
-    private fun renderString(matrixStack: UMatrixStack, renderer: FontRenderer, tag: LevelheadTag, shadow: Boolean, stringWidthHalf: Int) {
-        val x = -stringWidthHalf
-
-        val headerComp = tag.header
-        val footerComp = tag.footer
-        val headerWidth = headerComp.getWidth(renderer)
-
-        // Pass 1: See-through (no depth)
-        UGraphics.disableDepth()
-        UGraphics.depthMask(false)
-        renderComponent(renderer, headerComp, x, shadow, true)
-        renderComponent(renderer, footerComp, x + headerWidth, shadow, true)
-
-        // Pass 2: Opaque (with depth)
-        UGraphics.enableDepth()
-        UGraphics.depthMask(true)
-        UGraphics.directColor3f(1.0f, 1.0f, 1.0f)
-        matrixStack.push()
- matrixStack.translate(0f, 0f, -0.01f)
- matrixStack.applyToGlobalState()
-        renderComponent(renderer, headerComp, x, shadow, false)
-        renderComponent(renderer, footerComp, x + headerWidth, shadow, false)
-        matrixStack.pop()
- matrixStack.applyToGlobalState()
-    }
-
-    private fun renderComponent(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int, shadow: Boolean, seeThrough: Boolean) {
-        if (shadow) {
-            val cleanText = net.minecraft.util.StringUtils.stripControlCodes(component.value)
-            val shadowColor = if (seeThrough) SEE_THROUGH_SHADOW_COLOR else OPAQUE_SHADOW_COLOR
-            renderer.drawString(cleanText, x + 1, 1, shadowColor)
-        }
-
-        val textAlpha = if (seeThrough) SEE_THROUGH_TEXT_ALPHA else OPAQUE_TEXT_ALPHA
-        val textColor = component.color.withAlpha(textAlpha).rgb
-        renderer.drawString(component.value, x, 0, textColor)
+    /**
+     * Vanilla draws a label twice: a faint pass that shows through geometry and then
+     * the opaque pass. `textShadow` used to switch the faint pass on and off (and was
+     * therefore misnamed); it now means a real drop shadow, and both passes always run
+     * so depth state is unconditionally restored afterwards (B22).
+     *
+     * Inline `§` colour codes in [text] (for example the prestige-coloured BedWars star
+     * tag) are honoured by [FontRenderer.drawString]. The caller measures the same
+     * string with `getStringWidth`, which counts them as zero width, so the centring
+     * here and the background quad stay aligned with what is actually drawn.
+     */
+    private fun drawComponent(
+        fontRenderer: FontRenderer,
+        text: String,
+        color: Color,
+        x: Int,
+        textShadow: Boolean
+    ) {
+        if (text.isEmpty()) return
+        fontRenderer.drawString(text, x.toFloat(), 0.0f, SEE_THROUGH_TEXT_COLOR, false)
+        fontRenderer.drawString(text, x.toFloat(), 0.0f, color.rgb, textShadow)
     }
 }

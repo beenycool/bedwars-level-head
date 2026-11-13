@@ -1,29 +1,18 @@
-import { sql } from 'kysely';
 import express from 'express';
 import compression from 'compression';
 import cors from 'cors';
+import helmet from 'helmet';
+import pinoHttp from 'pino-http';
+import type { ServerResponse } from 'node:http';
 import playerRouter from './routes/player';
 import playerPublicRouter from './routes/playerPublic';
-import apikeyPublicRouter from './routes/apikeyPublic';
-import { HttpError } from './util/httpError';
-import { TRUST_PROXY_CIDRS, CRON_API_KEYS } from './config';
-import { pool as cachePool } from './services/cache';
-import { observeRequest, registry } from './services/metrics';
-import { checkHypixelReachability, getCircuitBreakerState } from './services/hypixel';
-import { getRateLimitFallbackState } from './services/redis';
-import { enforceMonitoringAuth, isAuthorizedMonitoring } from './middleware/monitoringAuth';
 import adminRouter from './routes/admin';
-import apikeyRouter from './routes/apikey';
-import statsRouter from './routes/stats';
-import configRouter from './routes/config';
-import cronRouter from './routes/cron';
-import helmet from 'helmet';
-import crypto from 'crypto';
-import type { ServerResponse } from 'http';
-import { enforceAdminRateLimit } from './middleware/rateLimit';
+import { HttpError } from './util/httpError';
+import { ADMIN_API_KEYS, TRUST_PROXY_CIDRS, TRUST_SINGLE_PROXY_HOP } from './config';
+import { checkDatabaseHealth } from './services/cache';
+import { checkHypixelReachability, getCircuitBreakerState } from './services/hypixel';
 import { sanitizeUrlForLogs, isIPInCIDR } from './util/requestUtils';
 import { requestId } from './middleware/requestId';
-import pinoHttp from 'pino-http';
 import { logger } from './util/logger';
 
 export function createApp(): express.Express {
@@ -31,58 +20,22 @@ export function createApp(): express.Express {
 
   app.use(requestId);
 
-  // 🛡️ Sentinel: Enforce strict CORS policy.
-  // CORS is a browser-enforced relaxation mechanism that allows servers to opt-in to cross-origin access.
-  // It does not prevent CSRF — use anti-CSRF tokens, SameSite cookies, or Origin/Referer validation for that.
-  // Since this is primarily an API service called by Minecraft clients or server-side bots
-  // (which don't send Origin headers), we only allow requests with no Origin header or
-  // requests originating from the same origin.
+  // Browser CORS is not needed by the mod (no Origin header), so only same-origin
+  // and header-less requests are allowed.
   app.use(cors((req, callback) => {
     const origin = req.headers.origin;
     const serverOrigin = `${req.protocol}://${req.get('host')}`;
-
-    // Allow requests with no origin (like mobile apps, curl, or Minecraft client)
-    // and requests from the server's own origin
     if (!origin || origin === serverOrigin) {
       callback(null, { origin: true });
       return;
     }
-
-    // Reject all other cross-origin requests
     callback(new Error('Not allowed by CORS'));
   }));
 
-  app.use((_req, res, next) => {
-    res.locals.nonce = crypto.randomUUID();
-    next();
-  });
-
   app.use(helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'", "https://cdn.jsdelivr.net", (_req, res) => `'nonce-${(res as express.Response).locals.nonce}'`, "'strict-dynamic'"],
-        styleSrc: ["'self'", (_req, res) => `'nonce-${(res as express.Response).locals.nonce}'`],
-        imgSrc: ["'self'", "data:"],
-        connectSrc: ["'self'", "https://cdn.jsdelivr.net/npm/chart.js/"],
-        objectSrc: ["'none'"],
-        baseUri: ["'none'"],
-        formAction: ["'self'"],
-        frameAncestors: ["'none'"],
-        upgradeInsecureRequests: [],
-      },
-    },
-    hsts: {
-      maxAge: 31536000,
-      includeSubDomains: true,
-      preload: true,
-    },
-    referrerPolicy: {
-      policy: 'strict-origin-when-cross-origin',
-    },
-    frameguard: {
-      action: 'deny',
-    },
+    frameguard: { action: 'deny' },
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+    hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
   }));
 
   app.use((_req, res, next) => {
@@ -93,134 +46,55 @@ export function createApp(): express.Express {
   app.use(pinoHttp({
     logger,
     genReqId: (req) => req.id,
-    customLogLevel: (req, res, err) => {
-      const isCronPing =
-        req.method === 'POST' && (req.url ?? '').startsWith('/api/cron/ping');
-      if (isCronPing && !err && res.statusCode < 400) return 'silent';
+    serializers: {
+      req: (req) => ({ id: req.id, method: req.method, url: sanitizeUrlForLogs(req.url) }),
+      res: (res: ServerResponse) => ({ statusCode: res.statusCode }),
+    },
+    customLogLevel: (_req, res, err) => {
       if (res.statusCode >= 500 || err) return 'error';
       if (res.statusCode >= 400) return 'warn';
       return 'info';
     },
-    serializers: {
-      req: (req) => ({
-        id: req.id,
-        method: req.method,
-        url: sanitizeUrlForLogs(req.url),
-      }),
-      res: (res: ServerResponse) => {
-        const contentLength =
-          typeof res.getHeader === 'function' ? res.getHeader('content-length') : undefined;
-        return {
-          statusCode: res.statusCode,
-          ...(contentLength != null && contentLength !== ''
-            ? { contentLength: String(contentLength) }
-            : {}),
-        };
-      },
-    },
-    customSuccessMessage: (req, res, responseTime) => {
-      return `[request] ${req.method} ${sanitizeUrlForLogs(req.url)} -> ${res.statusCode} (${responseTime.toFixed(2)} ms)`;
-    },
-    customErrorMessage: (req, res, err) => {
-      return `[request] ${req.method} ${sanitizeUrlForLogs(req.url)} -> ${res.statusCode} (${err.message})`;
-    },
   }));
 
-  app.set('trust proxy', (ip: string) => {
-    return TRUST_PROXY_CIDRS.some((cidr) => isIPInCIDR(ip, cidr));
-  });
+  if (TRUST_PROXY_CIDRS.length > 0) {
+    app.set('trust proxy', (ip: string) => TRUST_PROXY_CIDRS.some((cidr) => isIPInCIDR(ip, cidr)));
+  } else {
+    // On Render/Cloudflare there is exactly one proxy hop in front of the process.
+    // Without this every client would share the proxy's IP and one rate-limit bucket.
+    app.set('trust proxy', TRUST_SINGLE_PROXY_HOP ? 1 : false);
+  }
 
   app.use(compression());
   app.use(express.json({ limit: '16kb' }));
 
-  app.use((req, res, next) => {
-    const start = process.hrtime.bigint();
-    res.on('finish', () => {
-      const end = process.hrtime.bigint();
-      const durationSeconds = Number(end - start) / 1_000_000_000;
-      const routeLabel =
-        typeof res.locals.metricsRoute === 'string'
-          ? res.locals.metricsRoute
-          : req.baseUrl
-            ? `${req.baseUrl}${req.route?.path ?? ''}`
-            : req.route?.path ?? req.path;
-      observeRequest(req.method, routeLabel, res.statusCode, durationSeconds);
-    });
-    next();
-  });
-
   app.use('/api/public/player', playerPublicRouter);
-  app.use('/api/public/apikey', apikeyPublicRouter);
   app.use('/api/player', playerRouter);
-  app.use('/api/admin', adminRouter);
-  app.use('/api/admin/apikey', apikeyRouter);
-  app.use('/api/config', configRouter);
-  if (CRON_API_KEYS.length > 0) {
-    app.use('/api/cron', cronRouter);
-  }
-  app.use('/stats', statsRouter);
 
-  app.get('/healthz', enforceAdminRateLimit, async (req, res) => {
-    // lgtm[js/missing-rate-limiting]
-    res.locals.metricsRoute = '/healthz';
+  if (ADMIN_API_KEYS.length > 0) {
+    app.use('/api/admin', adminRouter);
+  }
+
+  /** Liveness probe: no auth, no rate limiter, always reachable. */
+  app.get('/healthz', async (_req, res) => {
     const [dbHealthy, hypixelHealthy] = await Promise.all([
-      sql`SELECT 1`.execute(cachePool)
-        .then(() => true)
-        .catch((error) => {
-          logger.error('Database health check failed', error);
-          return false;
-        }),
+      checkDatabaseHealth(),
       checkHypixelReachability(),
     ]);
-
     const circuitBreaker = getCircuitBreakerState();
-    const fallbackState = getRateLimitFallbackState();
     const healthy = dbHealthy;
-    let status: 'ok' | 'degraded' | 'unhealthy' = healthy
-      ? (hypixelHealthy ? 'ok' : 'degraded')
-      : 'unhealthy';
+    const status: 'ok' | 'degraded' | 'unhealthy' = !healthy
+      ? 'unhealthy'
+      : hypixelHealthy && circuitBreaker.state !== 'open'
+        ? 'ok'
+        : 'degraded';
 
-    if (status === 'ok') {
-      if (circuitBreaker.state === 'open') {
-        status = 'degraded';
-      }
-      if (fallbackState.isInFallbackMode && fallbackState.requireRedis) {
-        status = 'degraded';
-      }
-    }
-
-    const response: Record<string, unknown> = {
+    res.status(healthy ? 200 : 503).json({
       status,
       timestamp: new Date().toISOString(),
-    };
-
-    if (await isAuthorizedMonitoring(req)) {
-      response.circuitBreaker = {
-        state: circuitBreaker.state,
-        failureCount: circuitBreaker.failureCount,
-        ...(circuitBreaker.lastFailureAt ? { lastFailureAt: new Date(circuitBreaker.lastFailureAt).toISOString() } : {}),
-        ...(circuitBreaker.nextRetryAt ? { nextRetryAt: new Date(circuitBreaker.nextRetryAt).toISOString() } : {}),
-      };
-      response.rateLimit = {
-        requireRedis: fallbackState.requireRedis,
-        fallbackMode: fallbackState.fallbackMode,
-        isInFallbackMode: fallbackState.isInFallbackMode,
-        ...(fallbackState.activatedAt ? { activatedAt: fallbackState.activatedAt } : {}),
-      };
-      response.checks = {
-        database: dbHealthy,
-        hypixel: hypixelHealthy,
-      };
-    }
-
-    res.status(healthy ? 200 : 503).json(response);
-  });
-
-  app.get('/metrics', enforceAdminRateLimit, enforceMonitoringAuth, async (_req, res) => {
-    // lgtm[js/missing-rate-limiting]
-    res.locals.metricsRoute = '/metrics';
-    res.set('Content-Type', registry.contentType);
-    res.send(await registry.metrics());
+      checks: { database: dbHealthy, hypixel: hypixelHealthy },
+      circuitBreaker: { state: circuitBreaker.state },
+    });
   });
 
   app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -234,13 +108,12 @@ export function createApp(): express.Express {
       }
       const responseBody: Record<string, unknown> = { success: false, cause: err.causeCode, message: err.message };
       if (err.status === 429 && err.headers?.['Retry-After']) {
-        const retryAfterSeconds = parseInt(err.headers['Retry-After'], 10);
-        if (!isNaN(retryAfterSeconds)) {
+        const retryAfterSeconds = Number.parseInt(err.headers['Retry-After'], 10);
+        if (!Number.isNaN(retryAfterSeconds)) {
           responseBody.retryAfter = retryAfterSeconds;
           responseBody.retryAt = new Date(Date.now() + retryAfterSeconds * 1000).toISOString();
         }
       }
-
       res.status(err.status).json(responseBody);
       return;
     }

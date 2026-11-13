@@ -1,32 +1,20 @@
 package club.sk1er.mods.levelhead
 
 import cc.polyfrost.oneconfig.utils.commands.CommandManager
-import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
 import club.sk1er.mods.levelhead.commands.LevelheadCommand
-import club.sk1er.mods.levelhead.commands.WhoisCommand
 import club.sk1er.mods.levelhead.config.LevelheadConfig
-import club.sk1er.mods.levelhead.core.DnsMode
-import club.sk1er.mods.levelhead.core.DebugLogging
-import club.sk1er.mods.levelhead.core.DebugLogging.formatAsHex
-import club.sk1er.mods.levelhead.core.DebugLogging.maskForLogs
-import club.sk1er.mods.levelhead.core.DebugLogging.truncateForLogs
 import club.sk1er.mods.levelhead.core.DisplayManager
 import club.sk1er.mods.levelhead.core.GameMode
 import club.sk1er.mods.levelhead.core.GameStats
 import club.sk1er.mods.levelhead.core.ModeManager
-import club.sk1er.mods.levelhead.core.PerformanceMetrics
 import club.sk1er.mods.levelhead.core.RateLimiter
 import club.sk1er.mods.levelhead.core.RateLimiterMetrics
 import club.sk1er.mods.levelhead.core.RequestCoordinator
-import club.sk1er.mods.levelhead.core.StatsFormatter
-import club.sk1er.mods.levelhead.core.StatsRepository
-import club.sk1er.mods.levelhead.display.LevelheadDisplay
-import club.sk1er.mods.levelhead.duels.DuelsModeDetector
+import club.sk1er.mods.levelhead.core.StatsStore
 import club.sk1er.mods.levelhead.render.AboveHeadRender
-import club.sk1er.mods.levelhead.render.TabRender
-import club.sk1er.mods.levelhead.skywars.SkyWarsModeDetector
 import com.google.gson.Gson
 import com.google.gson.JsonParser
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -46,14 +34,10 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import net.minecraftforge.fml.common.gameevent.TickEvent
 import net.minecraftforge.fml.common.network.FMLNetworkEvent
 import okhttp3.ConnectionPool
-import okhttp3.Dns
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.apache.logging.log4j.LogManager
 import org.apache.logging.log4j.Logger
-import java.io.File
-import java.net.Inet4Address
-import java.net.UnknownHostException
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.time.Duration
@@ -62,12 +46,11 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
-import club.sk1er.mods.levelhead.core.BedwarsModeDetector
+import club.sk1er.mods.levelhead.core.ClientAccess
 
 @Mod(
     modid = Levelhead.MODID,
     name = "BedWars Levelhead",
-    version = Levelhead.VERSION,
 )
 class LevelheadMod {
     @Mod.EventHandler
@@ -84,24 +67,7 @@ class LevelheadMod {
 object Levelhead {
     val logger: Logger = LogManager.getLogger()
     
-    private val configurableDns = Dns { hostname ->
-        val addresses = Dns.SYSTEM.lookup(hostname)
-        when (LevelheadConfig.dnsMode) {
-            DnsMode.IPV4_ONLY -> {
-                val ipv4 = addresses.filterIsInstance<Inet4Address>()
-                if (ipv4.isEmpty()) throw UnknownHostException("No IPv4 addresses for $hostname")
-                ipv4
-            }
-            DnsMode.IPV4_FIRST -> {
-                val (ipv4, other) = addresses.partition { it is Inet4Address }
-                ipv4 + other
-            }
-            DnsMode.SYSTEM_DEFAULT -> addresses
-        }
-    }
-
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-        .dns(configurableDns)
         .connectionPool(ConnectionPool(10, 5, TimeUnit.MINUTES))
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
@@ -111,33 +77,60 @@ object Levelhead {
     val gson = Gson()
     val jsonParser = JsonParser()
 
-    private val configFile by lazy { File(File(minecraft.mcDataDir, "config"), "levelhead.json") }
-    val displayManager: DisplayManager by lazy { DisplayManager(configFile) }
+    val displayManager: DisplayManager by lazy { DisplayManager() }
+
+    /**
+     * Failures in a coroutine must be visible. Without a handler an uncaught
+     * exception disappeared entirely, which is how a successful fetch could turn
+     * into a silent "?".
+     */
+    private val coroutineExceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        logger.error("Uncaught exception in Levelhead worker coroutine", throwable)
+    }
+
     private val modJob: Job = SupervisorJob()
-    val scope: CoroutineScope = CoroutineScope(modJob + Dispatchers.IO)
+    val scope: CoroutineScope = CoroutineScope(modJob + Dispatchers.IO + coroutineExceptionHandler)
     private val worldScopeLock = Any()
     @Volatile
     private var worldJob: Job = SupervisorJob(modJob)
     @Volatile
-    private var worldScope: CoroutineScope = CoroutineScope(worldJob + Dispatchers.IO)
-    val rateLimiter: RateLimiter = RateLimiter(150, Duration.ofMinutes(5), onBlocked = ::onRateLimiterBlocked, onReset = ::resetRateLimiterNotification)
-    val statsRepository: StatsRepository = StatsRepository(maxSizeProvider = { displayManager.config.purgeSize })
+    private var worldScope: CoroutineScope = CoroutineScope(worldJob + Dispatchers.IO + coroutineExceptionHandler)
+    val rateLimiter: RateLimiter = RateLimiter(600, Duration.ofMinutes(1), onBlocked = ::onRateLimiterBlocked, onReset = ::resetRateLimiterNotification)
+    val statsStore: StatsStore = StatsStore(
+        maxSizeProvider = { displayManager.config.purgeSize },
+        ttlProvider = { LevelheadConfig.starCacheTtl }
+    )
     val requestCoordinator: RequestCoordinator = RequestCoordinator(
         worldScopeProvider = { worldScope },
-        repository = statsRepository,
+        store = statsStore,
         rateLimiter = rateLimiter,
         isOnHypixel = ::isOnHypixel,
-        onTagUpdate = ::updateDisplayCache,
         logger = logger
     )
 
     private val rateLimiterNotified = AtomicBoolean(false)
     private val serverCooldownNotifiedUntil = AtomicLong(0L)
     private val updateCheckScheduled = AtomicBoolean(false)
+    private val firstWorldJoined = AtomicBoolean(false)
     private val lastServerCooldownNotificationAt = AtomicLong(0L)
 
     const val MODID = "bedwars_levelhead"
-    const val VERSION = "8.3.0"
+
+    /**
+     * Read from the packaged `mcmod.info`, whose version is expanded from
+     * `gradle.properties`'s BUILD_ID at build time. That makes BUILD_ID the single
+     * version source instead of a third hard-coded string.
+     */
+    val VERSION: String by lazy {
+        runCatching {
+            val stream = Levelhead::class.java.getResourceAsStream("/mcmod.info") ?: return@runCatching null
+            stream.use { input ->
+                val text = input.reader(StandardCharsets.UTF_8).readText()
+                val json = JsonParser.parseString(text)
+                json.asJsonArray.firstOrNull()?.asJsonObject?.get("version")?.asString
+            }
+        }.getOrNull()?.takeIf { it.isNotBlank() && !it.contains("\${") } ?: "local"
+    }
     private const val MODRINTH_PROJECT_SLUG = "bedwars-level-head"
     private const val MODRINTH_MOD_PAGE = "https://modrinth.com/mod/$MODRINTH_PROJECT_SLUG"
     private const val MODRINTH_API_BASE = "https://api.modrinth.com/v2"
@@ -147,21 +140,47 @@ object Levelhead {
     private val minecraft: Minecraft
         get() = Minecraft.getMinecraft()
 
-    fun isOnHypixel(): Boolean {
-        if (LevelheadConfig.forceEnabled) return true
-        if (minecraft.isSingleplayer) {
-            return false
-        }
-        val serverIp = minecraft.currentServerData?.serverIP ?: return false
-        val normalized = serverIp.lowercase(Locale.ROOT)
-return normalized.contains("hypixel")
-}
+    fun isOnHypixel(): Boolean = ClientAccess.hypixelServerCheck()
 
     fun sendChat(message: String) {
         val formatted = "${ChatColor.AQUA}[Levelhead] ${ChatColor.RESET}$message"
         minecraft.addScheduledTask {
             minecraft.thePlayer?.addChatMessage(ChatComponentText(formatted))
         }
+    }
+
+    /**
+     * Run [block] on the Minecraft client thread. Client state (world, scoreboard,
+     * entity list) must only be touched there.
+     */
+    fun runOnMain(block: () -> Unit) {
+        val client = minecraft
+        if (client.isCallingFromMinecraftThread) {
+            block()
+        } else {
+            client.addScheduledTask { block() }
+        }
+    }
+
+    /** Launch per-world work that is cancelled on the next world change. */
+    fun launchWorld(block: suspend CoroutineScope.() -> Unit): Job = worldScope.launch(block = block)
+
+    /**
+     * Run [block] on the client thread and suspend the caller until it returns.
+     * Used by IO workers that need a client-thread read (scoreboard / server state).
+     */
+    suspend fun <T> onMainResult(block: () -> T): T {
+        val client = minecraft
+        if (client.isCallingFromMinecraftThread) return block()
+        val deferred = kotlinx.coroutines.CompletableDeferred<T>()
+        client.addScheduledTask {
+            try {
+                deferred.complete(block())
+            } catch (throwable: Throwable) {
+                deferred.completeExceptionally(throwable)
+            }
+        }
+        return deferred.await()
     }
 
     private fun scheduleUpdateCheck() {
@@ -193,7 +212,10 @@ return normalized.contains("hypixel")
                         type == null || type == "release"
                     } ?: versions.firstOrNull() ?: return@use
                     val latestVersion = latest.get("version_number")?.asString ?: return@use
-                    if (latestVersion == VERSION) {
+                    // Modrinth's version_number and the packaged version use
+                    // different naming (e.g. "v8.3.0" vs "8.3.0"), so compare the
+                    // numeric segments instead of requiring an exact string.
+                    if (!isRemoteVersionNewer(latestVersion, VERSION)) {
                         return@use
                     }
                     val downloadUrl = "$MODRINTH_MOD_PAGE/versions"
@@ -207,6 +229,28 @@ return normalized.contains("hypixel")
         }
     }
 
+    /**
+     * True only when [remote] is a strictly newer release than [local]. Missing or
+     * non-numeric segments are ignored, so "v8.3.0", "8.3.0" and "8.3.0+forge"
+     * compare equal and do not nag forever.
+     */
+    internal fun isRemoteVersionNewer(remote: String, local: String): Boolean {
+        val remoteParts = versionSegments(remote)
+        val localParts = versionSegments(local)
+        if (remoteParts.isEmpty() || localParts.isEmpty()) return false
+        for (index in 0 until maxOf(remoteParts.size, localParts.size)) {
+            val remotePart = remoteParts.getOrNull(index) ?: 0
+            val localPart = localParts.getOrNull(index) ?: 0
+            if (remotePart != localPart) return remotePart > localPart
+        }
+        return false
+    }
+
+    private fun versionSegments(version: String): List<Int> =
+        Regex("\\d+").findAll(version.removePrefix("v").removePrefix("V"))
+            .mapNotNull { it.value.toIntOrNull() }
+            .toList()
+
     private fun buildModrinthVersionUrl(): String {
         val encodedVersions = "[\"$TARGET_MC_VERSION\"]".encodeForUrl()
         val encodedLoaders = "[\"$TARGET_LOADER\"]".encodeForUrl()
@@ -216,41 +260,30 @@ return normalized.contains("hypixel")
     private fun String.encodeForUrl(): String =
         URLEncoder.encode(this, StandardCharsets.UTF_8.name()).replace("+", "%20")
 
-    private fun showWelcomeMessageIfNeeded() {
-        if (LevelheadConfig.welcomeMessageShown) {
-            return
-        }
-        LevelheadConfig.markWelcomeMessageShown()
-        sendChat("${ChatColor.GREEN}Thanks for installing Levelhead!")
-        sendChat(
-            "${ChatColor.YELLOW}The mod is in alpha, so bugs may occur. ${ChatColor.GOLD}Report issues on GitHub or message ${ChatColor.AQUA}beenyiscool${ChatColor.GOLD} on Discord to request new features."
-        )
-    }
-
     fun preInit(@Suppress("UNUSED_PARAMETER") event: FMLPreInitializationEvent) {
         LevelheadConfig
     }
 
     fun postInit(@Suppress("UNUSED_PARAMETER") event: FMLPostInitializationEvent) {
         MinecraftForge.EVENT_BUS.register(AboveHeadRender)
-        MinecraftForge.EVENT_BUS.register(BedwarsModeDetector)
-        MinecraftForge.EVENT_BUS.register(DuelsModeDetector)
-        MinecraftForge.EVENT_BUS.register(SkyWarsModeDetector)
+        MinecraftForge.EVENT_BUS.register(ModeManager.tracker)
         MinecraftForge.EVENT_BUS.register(this)
         CommandManager.INSTANCE.registerCommand(LevelheadCommand())
-        CommandManager.INSTANCE.registerCommand(WhoisCommand())
-        scheduleUpdateCheck()
-        showWelcomeMessageIfNeeded()
+        // The update check needs a player and a world; doing it here
+        // (thePlayer == null) dropped the chat and still set the "checked"
+        // flag. It runs on the first world join instead.
     }
 
     @SubscribeEvent
     fun joinServer(@Suppress("UNUSED_PARAMETER") event: FMLNetworkEvent.ClientConnectedToServerEvent) {
         club.sk1er.mods.levelhead.core.StatsFetcher.resetWarnings()
-        resetWorldScope()
-        rateLimiter.resetState()
-        requestCoordinator.reset()
-        displayManager.clearCachesWithoutRefetch()
-        AboveHeadRender.clearRenderDebugState()
+        // Fires on the netty IO thread. Cancel the previous connection's work on the
+        // client thread. The stats store survives connections; its TTL decides when
+        // anything is refetched.
+        runOnMain {
+            resetWorldScope()
+            requestCoordinator.reset()
+        }
     }
 
     @SubscribeEvent
@@ -258,9 +291,14 @@ return normalized.contains("hypixel")
         val entity = event.entity
         if (entity is EntityPlayerSP) {
             resetWorldScope()
-            rateLimiter.resetState()
-            clearCachedStats()
-            ModeManager.onWorldJoin()
+            // Do not reset the rate limiter here: a lobby hop must not refill the
+            // token budget or forget a server Retry-After. TTL on the store
+            // (not a world join) decides when stats are refetched.
+            requestCoordinator.reset()
+            if (firstWorldJoined.compareAndSet(false, true)) {
+                scheduleUpdateCheck()
+            }
+            // joinWorld resets the mode tracker (new world epoch) and samples it.
             displayManager.joinWorld(resetDetector = true)
         } else if (entity is EntityPlayer) {
             displayManager.playerJoin(entity)
@@ -270,39 +308,32 @@ return normalized.contains("hypixel")
     @SubscribeEvent
     fun onClientTick(event: TickEvent.ClientTickEvent) {
         if (event.phase != TickEvent.Phase.END) return
-        PerformanceMetrics.onFrameBoundary()
-        LevelheadConfig.syncUiAndRuntimeConfig()
         displayManager.tick()
     }
 
-    fun fetchBatch(requests: List<LevelheadRequest>): Job {
-        return requestCoordinator.fetchBatch(requests)
-    }
-
-    fun getCachedStats(uuid: UUID): GameStats? {
-        val gameMode = ModeManager.getActiveGameMode() ?: GameMode.BEDWARS
-        return getCachedStats(uuid, gameMode)
-    }
-
     fun getCachedStats(uuid: UUID, gameMode: GameMode): GameStats? {
-        return statsRepository.get(uuid, gameMode)
+        return statsStore.get(uuid, gameMode)
     }
 
     fun clearCachedStats() {
-        statsRepository.clear()
-        statsRepository.resetMetrics()
+        statsStore.clear()
+        statsStore.resetMetrics()
         requestCoordinator.reset()
-        TabRender.clearTextCache()
+        club.sk1er.mods.levelhead.core.FetchBackoff.reset()
     }
 
     internal fun onRateLimiterBlocked(metrics: RateLimiterMetrics) {
-        if (metrics.serverCooldown != null && metrics.remaining > 0) {
+        val cooldown = metrics.serverCooldown
+        if (cooldown != null && !cooldown.isZero && !cooldown.isNegative) {
+            // A server Retry-After is the common "throttled" case; never return
+            // early for it. Tell the user the truth: requests are paused.
+            onServerRetryAfter(cooldown)
             return
         }
         if (rateLimiterNotified.compareAndSet(false, true)) {
             val resetText = formatCooldownDuration(metrics.resetIn)
             sendChat(
-                "${ChatColor.YELLOW}Stats cooling down. ${ChatColor.GOLD}${metrics.remaining} requests remaining${ChatColor.YELLOW}. Reset in $resetText."
+                "${ChatColor.YELLOW}Stats rate limit reached. ${ChatColor.GOLD}${metrics.remaining} requests remaining${ChatColor.YELLOW}. Window resets in $resetText."
             )
         }
     }
@@ -328,17 +359,12 @@ return normalized.contains("hypixel")
                 lastServerCooldownNotificationAt.set(now)
                 val formatted = formatCooldownDuration(duration)
                 sendChat(
-                    "${ChatColor.YELLOW}Proxy asked us to pause stat requests for ${ChatColor.GOLD}$formatted${ChatColor.YELLOW}."
+                    "${ChatColor.YELLOW}The stats server asked us to pause requests for ${ChatColor.GOLD}$formatted${ChatColor.YELLOW}."
                 )
                 return
             }
         }
     }
-    internal fun resetServerCooldownNotification() {
-        serverCooldownNotifiedUntil.set(0L)
-        lastServerCooldownNotificationAt.set(0L)
-    }
-
     private fun resetWorldScope() {
         synchronized(worldScopeLock) {
             worldJob.cancel()
@@ -354,11 +380,10 @@ return normalized.contains("hypixel")
 
     fun statusSnapshot(): StatusSnapshot {
         val rateMetrics = rateLimiter.metricsSnapshot()
-        val statsCacheSnapshot = statsRepository.metricsSnapshot()
+        val statsCacheSnapshot = statsStore.metricsSnapshot()
         return StatusSnapshot(
-            proxyEnabled = LevelheadConfig.proxyEnabled,
-            proxyConfigured = LevelheadConfig.proxyEnabled && LevelheadConfig.proxyBaseUrl.isNotBlank(),
-            cacheSize = statsRepository.size(),
+            backendConfigured = LevelheadConfig.proxyBaseUrl.isNotBlank(),
+            cacheSize = statsStore.size(),
             lastAttemptAgeMillis = requestCoordinator.lastAttemptAgeMillis,
             lastSuccessAgeMillis = requestCoordinator.lastSuccessAgeMillis,
             rateLimitRemaining = rateMetrics.remaining,
@@ -370,22 +395,6 @@ return normalized.contains("hypixel")
         )
     }
 
-    private fun updateDisplayCache(display: LevelheadDisplay, uuid: UUID, stats: GameStats?, gameMode: GameMode) {
-        if (!display.config.enabled) return
-        val activeMode = ModeManager.getActiveGameMode()
-        logger.debug("updateDisplayCache: uuid={}, statsType={}, resolvedGameMode={}, displayConfigType={}, displayConfigGameMode={}, activeMode={}", 
-            uuid, stats?.let { it::class.simpleName }, gameMode, display.config.gameMode.typeId, display.config.gameMode, activeMode)
-        val tag = StatsFormatter.formatTag(uuid, stats, display.config, gameMode)
-        val cacheKey = DisplayCacheKey(uuid, gameMode)
-        if (logger.isDebugEnabled) {
-            logger.debug("updateDisplayCache: writing tag='{}' to display.cache[{}]", tag.getString(), cacheKey)
-        }
-        DebugLogging.logRequestDebug {
-            "[LevelheadDebug][tag] uuid=${uuid.maskForLogs()}, gameMode=$gameMode, tag=${tag.getString().truncateForLogs(200)}, header=${tag.header.value.truncateForLogs(50)} (${tag.header.color.formatAsHex()}), footer=${tag.footer.value.truncateForLogs(50)} (${tag.footer.color.formatAsHex()})"
-        }
-        display.cache[cacheKey] = tag
-    }
-
     private fun formatCooldownDuration(duration: Duration): String {
         val totalSeconds = duration.seconds.coerceAtLeast(0)
         val minutes = totalSeconds / 60
@@ -395,7 +404,6 @@ return normalized.contains("hypixel")
 
     data class LevelheadRequest(
         val uuid: String,
-        val displays: Set<LevelheadDisplay>,
         val type: String,
         val reason: RequestReason = RequestReason.UNKNOWN
     )
@@ -408,11 +416,8 @@ return normalized.contains("hypixel")
         UNKNOWN             // Fallback for backward compatibility
     }
 
-    data class DisplayCacheKey(val uuid: UUID, val gameMode: GameMode)
-
     data class StatusSnapshot(
-        val proxyEnabled: Boolean,
-        val proxyConfigured: Boolean,
+        val backendConfigured: Boolean,
         val cacheSize: Int,
         val lastAttemptAgeMillis: Long?,
         val lastSuccessAgeMillis: Long?,

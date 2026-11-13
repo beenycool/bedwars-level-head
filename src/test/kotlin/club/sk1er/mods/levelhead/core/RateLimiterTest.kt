@@ -1,187 +1,136 @@
 package club.sk1er.mods.levelhead.core
 
-import org.junit.jupiter.api.Assertions.*
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotNull
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertDoesNotThrow
 import java.time.Duration
 
+/**
+ * The limiter is the gate every outbound request passes through. These tests pin
+ * the accounting (tokens, batches), the reset path, and the server-cooldown rules.
+ * Where several inputs exercise the same rule they are a table row, and the
+ * assertion message names the case.
+ */
 class RateLimiterTest {
 
-    @Test
-    fun `consume decrements remaining tokens`() {
-        val blockedCalls = mutableListOf<RateLimiterMetrics>()
-        val resetCalls = mutableListOf<Unit>()
+    private val blockedCalls = mutableListOf<RateLimiterMetrics>()
+    private val resetCalls = mutableListOf<Unit>()
 
-        val limiter = RateLimiter(
-            limit = 5,
-            window = Duration.ofMinutes(1),
-            onBlocked = { blockedCalls.add(it) },
-            onReset = { resetCalls.add(Unit) }
+    private fun limiter(limit: Int, window: Duration = Duration.ofMinutes(1)) = RateLimiter(
+        limit = limit,
+        window = window,
+        onBlocked = { blockedCalls.add(it) },
+        onReset = { resetCalls.add(Unit) },
+    )
+
+    @Test
+    fun `consume spends a token and reports the remaining budget`() {
+        val cases = listOf(
+            // limit, window, tokens to consume
+            Triple(5, Duration.ofMinutes(1), 3),
+            Triple(10, Duration.ofMinutes(5), 7),
+            Triple(100, Duration.ofMinutes(1), 50),
         )
 
-        // Consume 3 tokens
-        limiter.consume()
-        limiter.consume()
-        limiter.consume()
+        cases.forEach { (limit, window, consumed) ->
+            blockedCalls.clear()
+            val limiter = limiter(limit, window)
+            repeat(consumed) { limiter.consume() }
 
-        // Verify remaining is 2 (5 - 3 = 2)
-        val metrics = limiter.metricsSnapshot()
-        assertEquals(2, metrics.remaining)
-        assertEquals(0, blockedCalls.size)
+            val metrics = limiter.metricsSnapshot()
+            val name = "limit=$limit, window=$window, consumed=$consumed"
+            assertEquals(limit - consumed, metrics.remaining, "case: $name / remaining")
+            assertEquals(0, blockedCalls.size, "case: $name / must not block")
+            assertTrue(metrics.resetIn.toMillis() > 0, "case: $name / resetIn")
+            assertNull(metrics.serverCooldown, "case: $name / no cooldown")
+        }
     }
 
     @Test
-    fun `consume triggers blocked callback when no tokens available`() {
-        val blockedCalls = mutableListOf<RateLimiterMetrics>()
-        val resetCalls = mutableListOf<Unit>()
-
-        val limiter = RateLimiter(
-            limit = 2,
-            window = Duration.ofMinutes(1),
-            onBlocked = { blockedCalls.add(it) },
-            onReset = { resetCalls.add(Unit) }
+    fun `consume is blocked once the budget is exhausted`() {
+        val cases = listOf(
+            Triple(2, 3, "budget of 2, third request"),
+            Triple(0, 1, "zero budget"),
         )
 
-        // Consume all tokens
-        limiter.consume()
-        limiter.consume()
+        cases.forEach { (limit, attempts, name) ->
+            blockedCalls.clear()
+            val limiter = limiter(limit)
+            repeat(attempts) { limiter.consume() }
 
-        // Next consume should be blocked
-        limiter.consume()
-
-        assertEquals(1, blockedCalls.size)
-        assertEquals(0, blockedCalls[0].remaining)
+            assertEquals(1, blockedCalls.size, "case: $name / blocked callbacks")
+            assertEquals(0, blockedCalls.last().remaining, "case: $name / blocked at zero")
+        }
     }
 
     @Test
-    fun `reset restores remaining tokens to limit`() {
-        val blockedCalls = mutableListOf<RateLimiterMetrics>()
-        val resetCalls = mutableListOf<Unit>()
-
-        val limiter = RateLimiter(
-            limit = 5,
-            window = Duration.ofMinutes(1),
-            onBlocked = { blockedCalls.add(it) },
-            onReset = { resetCalls.add(Unit) }
-        )
-
-        // Consume some tokens
+    fun `reset restores the token budget and notifies once`() {
+        val limiter = limiter(5)
         limiter.consume()
         limiter.consume()
+        assertEquals(3, limiter.metricsSnapshot().remaining, "case: before reset")
 
-        // Verify remaining is reduced
-        assertEquals(3, limiter.metricsSnapshot().remaining)
-
-        // Reset
         limiter.resetState()
 
-        // Verify remaining is restored to limit
-        assertEquals(5, limiter.metricsSnapshot().remaining)
-        assertEquals(1, resetCalls.size)
+        assertEquals(5, limiter.metricsSnapshot().remaining, "case: after reset")
+        assertEquals(1, resetCalls.size, "case: onReset callbacks")
     }
 
     @Test
-    fun `server cooldown blocks consume calls`() {
-        val blockedCalls = mutableListOf<RateLimiterMetrics>()
-        val resetCalls = mutableListOf<Unit>()
+    fun `a server cooldown blocks consume, and silence only suppresses the callback`() {
+        // Non-silent: the cooldown is announced and every request is refused.
+        val loud = limiter(5)
+        loud.registerServerCooldown(Duration.ofMinutes(1), silent = false)
+        loud.consume()
+        assertTrue(blockedCalls.isNotEmpty(), "case: non-silent cooldown must notify")
+        assertNotNull(blockedCalls[0].serverCooldown, "case: non-silent cooldown metrics")
 
-        val limiter = RateLimiter(
-            limit = 5,
-            window = Duration.ofMinutes(1),
-            onBlocked = { blockedCalls.add(it) },
-            onReset = { resetCalls.add(Unit) }
-        )
-
-        // Register a server cooldown for 1 minute
-        limiter.registerServerCooldown(Duration.ofMinutes(1), silent = false)
-
-        // Try to consume - should be blocked due to cooldown
-        limiter.consume()
-
-        // Should have been blocked
-        assertTrue(blockedCalls.isNotEmpty())
-        assertNotNull(blockedCalls[0].serverCooldown)
+        // Silent: still refused, but nothing is reported to the UI.
+        blockedCalls.clear()
+        val silent = limiter(5)
+        silent.registerServerCooldown(Duration.ofMinutes(1), silent = true)
+        silent.consume()
+        assertEquals(0, blockedCalls.size, "case: silent cooldown must not notify")
     }
 
     @Test
-    fun `server cooldown with silent flag does not trigger blocked callback`() {
-        val blockedCalls = mutableListOf<RateLimiterMetrics>()
-        val resetCalls = mutableListOf<Unit>()
+    fun `tryAcquire denies requests during a server cooldown without spending tokens`() {
+        val limiter = limiter(5)
 
-        val limiter = RateLimiter(
-            limit = 5,
-            window = Duration.ofMinutes(1),
-            onBlocked = { blockedCalls.add(it) },
-            onReset = { resetCalls.add(Unit) }
+        limiter.registerServerCooldown(Duration.ofSeconds(60), silent = true)
+
+        // The limiter must actually gate the request: a Retry-After that only
+        // fires a callback and lets the send proceed is the bug.
+        assertTrue(limiter.isCoolingDown(), "case: cooldown is active")
+        repeat(5) {
+            assertFalse(limiter.tryAcquire(), "case: cooldown denial #$it")
+        }
+        assertEquals(
+            5,
+            limiter.metricsSnapshot().remaining,
+            "case: a denied request must not spend a token",
         )
 
-        // Register a server cooldown silently
-        limiter.registerServerCooldown(Duration.ofMinutes(1), silent = true)
-
-        // Try to consume - should be blocked due to cooldown but callback should NOT be invoked
-        limiter.consume()
-
-        // With silent=true, the blocked callback should NOT be called
-        assertEquals(0, blockedCalls.size)
+        // World joins no longer call resetState(); the cooldown must survive one.
+        assertTrue(limiter.isCoolingDown(), "case: cooldown survives a lobby hop")
+        assertFalse(limiter.tryAcquire(), "case: still denied after a lobby hop")
     }
 
     @Test
-    fun `metricsSnapshot returns correct values`() {
-        val blockedCalls = mutableListOf<RateLimiterMetrics>()
-        val resetCalls = mutableListOf<Unit>()
+    fun `tryAcquire charges one token per request and per batch identifier`() {
+        val single = limiter(2)
+        assertTrue(single.tryAcquire(), "case: single request 1")
+        assertTrue(single.tryAcquire(), "case: single request 2")
+        assertFalse(single.tryAcquire(), "case: budget exhausted")
 
-        val limiter = RateLimiter(
-            limit = 10,
-            window = Duration.ofMinutes(5),
-            onBlocked = { blockedCalls.add(it) },
-            onReset = { resetCalls.add(Unit) }
-        )
-
-        // Consume 7 tokens
-        repeat(7) { limiter.consume() }
-
-        val metrics = limiter.metricsSnapshot()
-
-        assertEquals(3, metrics.remaining) // 10 - 7 = 3
-        assertTrue(metrics.resetIn.toMillis() > 0)
-        assertNull(metrics.serverCooldown)
-    }
-
-    @Test
-    fun `sequential consumes decrement tokens correctly`() {
-        val blockedCalls = mutableListOf<RateLimiterMetrics>()
-        val resetCalls = mutableListOf<Unit>()
-
-        val limiter = RateLimiter(
-            limit = 100,
-            window = Duration.ofMinutes(1),
-            onBlocked = { blockedCalls.add(it) },
-            onReset = { resetCalls.add(Unit) }
-        )
-
-        // Consume tokens sequentially
-        repeat(50) { limiter.consume() }
-
-        assertEquals(0, blockedCalls.size)
-        assertEquals(50, limiter.metricsSnapshot().remaining)
-    }
-
-    @Test
-    fun `consume with zero limit immediately blocks`() {
-        val blockedCalls = mutableListOf<RateLimiterMetrics>()
-        val resetCalls = mutableListOf<Unit>()
-
-        val limiter = RateLimiter(
-            limit = 0,
-            window = Duration.ofMinutes(1),
-            onBlocked = { blockedCalls.add(it) },
-            onReset = { resetCalls.add(Unit) }
-        )
-
-        // Try to consume - should be blocked immediately
-        limiter.consume()
-
-        assertEquals(1, blockedCalls.size)
-        assertEquals(0, blockedCalls[0].remaining)
+        val batch = limiter(10)
+        assertTrue(batch.tryAcquire(4), "case: batch of 4 within budget")
+        assertEquals(6, batch.metricsSnapshot().remaining, "case: batch of 4 costs 4")
+        assertTrue(batch.tryAcquire(6), "case: batch of 6 exactly empties the budget")
+        assertEquals(0, batch.metricsSnapshot().remaining, "case: exact batch leaves zero")
+        assertFalse(batch.tryAcquire(1), "case: one more identifier must be denied")
     }
 }

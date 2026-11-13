@@ -2,20 +2,33 @@ package club.sk1er.mods.levelhead.render
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
-import club.sk1er.mods.levelhead.core.BedwarsStar
-import club.sk1er.mods.levelhead.core.GameMode
-import club.sk1er.mods.levelhead.core.GameStats
+import club.sk1er.mods.levelhead.core.DebugLogging
+import club.sk1er.mods.levelhead.core.DebugLogging.maskForLogs
+import club.sk1er.mods.levelhead.core.DebugLogging.truncateForLogs
 import club.sk1er.mods.levelhead.core.ModeManager
-import club.sk1er.mods.levelhead.duels.DuelsStats
-import club.sk1er.mods.levelhead.skywars.SkyWarsStats
+import club.sk1er.mods.levelhead.core.TagFormatter
+import club.sk1er.mods.levelhead.display.LevelheadTag
 import net.minecraft.client.Minecraft
 import net.minecraft.client.network.NetworkPlayerInfo
 import net.minecraft.scoreboard.ScoreObjective
 import net.minecraft.util.EnumChatFormatting
-import java.util.Locale
+import java.awt.Color
 import java.util.UUID
-import java.util.WeakHashMap
 
+/**
+ * Tab list rendering.
+ *
+ * Semantics:
+ * - Tags are derived from [club.sk1er.mods.levelhead.core.StatsStore] through the
+ *   same memoised [TagFormatter] call the nametag uses. There is no separate tab
+ *   tag cache and therefore no second format to drift (B29).
+ * - [club.sk1er.mods.levelhead.display.TabDisplay.config] supplies the tab header
+ *   settings and a non-blank `footerString` ("Tab Footer Format"), which overrides
+ *   the global per-mode footer template for tab tags only.
+ * - Component colours come from the stat formatter: the BedWars prestige / SkyWars
+ *   level colour, or the Duels division colour when the footer shows a division.
+ * - A player with no stats renders nothing; that is the only "unknown" state.
+ */
 object TabRender {
 
     private data class PreparedEntry(val text: String, val width: Int)
@@ -27,21 +40,25 @@ object TabRender {
 
     private var frameState: FrameState? = null
 
-    private val textCache = object : LinkedHashMap<Pair<UUID, GameMode>, Pair<GameStats, String>>(128, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<UUID, GameMode>, Pair<GameStats, String>>): Boolean {
-            return size > 500
-        }
-    }
-
     /**
-     * Called at the start of renderPlayerlist to prepare per-frame tab data.
-     * Pre-resolves all player tab strings once, avoiding duplicate work per player.
+     * Cache of padding runs keyed by space count. [getMeasuredName] runs for every row
+     * of the tab list on every frame, so rebuilding an identical run of spaces for each
+     * player is pure allocation (B31). Bounded, and cleared when it fills up.
      */
+    private val paddingCache = HashMap<Int, String>()
+    private const val PADDING_CACHE_LIMIT = 256
+
     @JvmStatic
     fun beginFrame(objective: ScoreObjective?) {
-        if (!LevelheadConfig.showTabStats ||
-            !Levelhead.isOnHypixel()
-        ) {
+        if (!Levelhead.displayManager.config.enabled) {
+            frameState = null
+            return
+        }
+        if (!LevelheadConfig.showTabStats) {
+            frameState = null
+            return
+        }
+        if (!Levelhead.isOnHypixel()) {
             frameState = null
             return
         }
@@ -60,15 +77,29 @@ object TabRender {
             return
         }
 
+        val tabDisplay = Levelhead.displayManager.tab
+        val localPlayerUuid = mc.thePlayer?.uniqueID
+
         val map = HashMap<UUID, PreparedEntry>()
         for (info in netHandler.playerInfoMap) {
             val uuid = info.gameProfile.id ?: continue
             if (uuid.version() == 2) continue
 
-            val stats = Levelhead.getCachedStats(uuid, mode) ?: continue
-            if (stats.nicked) continue
+            // Skip self if tab showSelf is disabled
+            if (uuid == localPlayerUuid && !tabDisplay.config.showSelf) continue
 
-            val text = getOrBuildTabString(uuid, stats, mode)
+            // The same formatter call as the nametag, so text and width are
+            // identical between the two renderers (B29).
+            val stats = Levelhead.getCachedStats(uuid, mode) ?: continue
+            val tag = TagFormatter.formatTag(
+                uuid,
+                stats,
+                tabDisplay.config,
+                mode,
+                preferDisplayFooter = true,
+                statsVersion = Levelhead.statsStore.version(uuid, mode)
+            )
+            val text = colorizeTag(tag)
             if (text.isBlank()) continue
 
             map[uuid] = PreparedEntry(
@@ -77,47 +108,42 @@ object TabRender {
             )
         }
 
+        DebugLogging.logTabDebug { "[LevelheadDebug][tab] beginFrame prepared=${map.size} mode=$mode" }
         frameState = FrameState(objective, map)
     }
 
-    /**
-     * Called at the end of renderPlayerlist to clear per-frame state.
-     */
     @JvmStatic
     fun endFrame() {
         frameState = null
     }
 
-    /**
-     * Returns extra width needed for the given player's tab stats.
-     * Used by the mixin to widen the tab list column.
-     */
-    @JvmStatic
-    fun getLevelheadWidth(info: NetworkPlayerInfo): Int {
-        val uuid = info.gameProfile.id ?: return 0
-        return frameState?.entries?.get(uuid)?.width ?: 0
-    }
-
-    /**
-     * Pads the measured player name string with spaces to accommodate tab stats width.
-     * Called from the mixin's getPlayerName redirect.
-     */
     @JvmStatic
     fun getMeasuredName(original: String, info: NetworkPlayerInfo): String {
         val uuid = info.gameProfile.id ?: return original
-        val extraWidth = frameState?.entries?.get(uuid)?.width ?: return original
-        if (extraWidth <= 0) return original
+        val entry = frameState?.entries?.get(uuid) ?: return original
+        if (entry.width <= 0) return original
 
         val spaceWidth = Minecraft.getMinecraft().fontRendererObj.getCharWidth(' ')
         if (spaceWidth <= 0) return original
 
-        val spaces = (extraWidth + spaceWidth - 1) / spaceWidth
-        return original + " ".repeat(spaces)
+        val extraSpaces = (entry.width + spaceWidth - 1) / spaceWidth
+        if (extraSpaces <= 0) return original
+        val padded = original + spaces(extraSpaces)
+
+        DebugLogging.logTabDebug { "[LevelheadDebug][tab] getMeasuredName uuid=${uuid.maskForLogs()} extraWidth=${entry.width} spaces=$extraSpaces" }
+        return padded
     }
 
-    /**
-     * Draws the prepared tab string next to the player's ping icon.
-     */
+    private fun spaces(count: Int): String {
+        paddingCache[count]?.let { return it }
+        val value = " ".repeat(count)
+        if (paddingCache.size >= PADDING_CACHE_LIMIT) {
+            paddingCache.clear()
+        }
+        paddingCache[count] = value
+        return value
+    }
+
     @JvmStatic
     fun drawPrepared(offset: Int, x: Int, y: Int, info: NetworkPlayerInfo) {
         val uuid = info.gameProfile.id ?: return
@@ -138,63 +164,60 @@ object TabRender {
             }
         }
 
+        DebugLogging.logTabDebug { "[LevelheadDebug][tab] drawPrepared uuid=${uuid.maskForLogs()} text='${entry.text.truncateForLogs(40)}' drawX=$drawX y=$y" }
         font.drawStringWithShadow(entry.text, drawX.toFloat(), y.toFloat(), 0xFFFFFF)
     }
 
     /**
-     * Clears the text formatting cache. Should be called when display config changes.
+     * Colour a cached tag with its own component colours. A leading colour code is
+     * prepended per component; a component that already carries inline `§` codes
+     * keeps them (inline codes win over the prepended prefix).
      */
-    fun clearTextCache() {
-        textCache.clear()
+    private fun colorizeTag(tag: LevelheadTag): String {
+        return colorToChatFormatting(tag.header.color).toString() + tag.header.value +
+            colorToChatFormatting(tag.footer.color).toString() + tag.footer.value
     }
 
-    private fun getOrBuildTabString(uuid: UUID, stats: GameStats, mode: GameMode): String {
-        val key = uuid to mode
-        val cached = textCache[key]
-        if (cached != null && cached.first == stats) {
-            return cached.second
-        }
-        val newText = formatTabString(stats)
-        textCache[key] = stats to newText
-        return newText
-    }
+    /**
+     * Vanilla's 16 chat colours, built once: this is called twice per player per
+     * frame, so the table is not rebuilt per call (B31).
+     */
+    private val CHAT_COLORS: Array<Pair<EnumChatFormatting, Color>> = arrayOf(
+        EnumChatFormatting.BLACK to Color(0, 0, 0),
+        EnumChatFormatting.DARK_BLUE to Color(0, 0, 170),
+        EnumChatFormatting.DARK_GREEN to Color(0, 170, 0),
+        EnumChatFormatting.DARK_AQUA to Color(0, 170, 170),
+        EnumChatFormatting.DARK_RED to Color(170, 0, 0),
+        EnumChatFormatting.DARK_PURPLE to Color(170, 0, 170),
+        EnumChatFormatting.GOLD to Color(255, 170, 0),
+        EnumChatFormatting.GRAY to Color(170, 170, 170),
+        EnumChatFormatting.DARK_GRAY to Color(85, 85, 85),
+        EnumChatFormatting.BLUE to Color(85, 85, 255),
+        EnumChatFormatting.GREEN to Color(85, 255, 85),
+        EnumChatFormatting.AQUA to Color(85, 255, 255),
+        EnumChatFormatting.RED to Color(255, 85, 85),
+        EnumChatFormatting.LIGHT_PURPLE to Color(255, 85, 255),
+        EnumChatFormatting.YELLOW to Color(255, 255, 85),
+        EnumChatFormatting.WHITE to Color(255, 255, 255)
+    )
 
-    private fun formatTabString(stats: GameStats): String {
-        return when (stats) {
-            is GameStats.Bedwars -> {
-                val starTag = stats.star?.let { BedwarsStar.formatStarTag(it) }
-                val fkdrPart = if (stats.fkdr != null) {
-                    val color = ratioColor(stats.fkdr)
-                    "${color}${String.format(Locale.ROOT, "%.2f", stats.fkdr)}"
-                } else {
-                    "§7?"
-                }
-                if (starTag != null) "$starTag §7: $fkdrPart" else fkdrPart
-            }
-            is GameStats.Duels -> {
-                val wins = stats.wins ?: return ""
-                val divisionTag = DuelsStats.formatDivisionTag(wins)
-                val wlr = DuelsStats.calculateWLR(wins, stats.losses) ?: wins.toDouble()
-                val wlrColor = ratioColor(wlr)
-                "$divisionTag §7: ${wlrColor}${String.format(Locale.ROOT, "%.2f", wlr)}"
-            }
-            is GameStats.SkyWars -> {
-                if (stats.level == null) return ""
-                val levelTag = SkyWarsStats.formatLevelTag(stats.levelInt)
-                val kdr = SkyWarsStats.calculateKDR(stats.kills, stats.deaths) ?: (stats.kills ?: 0).toDouble()
-                val kdrColor = ratioColor(kdr)
-                "$levelTag §7: ${kdrColor}${String.format(Locale.ROOT, "%.2f", kdr)}"
+    /**
+     * Map an AWT Color to the closest Minecraft chat formatting color code.
+     * Uses Euclidean distance in RGB space for best match.
+     */
+    private fun colorToChatFormatting(color: Color): EnumChatFormatting {
+        var best = EnumChatFormatting.WHITE
+        var bestDist = Int.MAX_VALUE
+        for ((fmt, c) in CHAT_COLORS) {
+            val dr = color.red - c.red
+            val dg = color.green - c.green
+            val db = color.blue - c.blue
+            val dist = dr * dr + dg * dg + db * db
+            if (dist < bestDist) {
+                bestDist = dist
+                best = fmt
             }
         }
-    }
-
-    private fun ratioColor(value: Double): String {
-        return when {
-            value >= 10.0 -> "§6"
-            value >= 6.0 -> "§e"
-            value >= 3.0 -> "§a"
-            value >= 1.0 -> "§f"
-            else -> "§7"
-        }
+        return best
     }
 }

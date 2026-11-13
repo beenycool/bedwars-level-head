@@ -2,8 +2,12 @@ services:
   - type: web
     name: bedwars-level-head
     runtime: image
-    plan: free
+    # Paid plan on purpose: free instances sleep after idle and the mod's HTTP
+    # timeout (15s) is shorter than a cold start. This replaces the deleted
+    # /api/cron/ping pinger; do not add a second keep-alive mechanism.
+    plan: starter
     region: ohio
+    healthCheckPath: /healthz
     image:
       url: ghcr.io/beenycool/bedwars-level-head:latest
     envVars:
@@ -11,4 +15,16 @@ services:
         value: production
       - key: PORT
         value: 10000
+      # Set these in the Render dashboard (sync: false keeps them out of git).
+      - key: HYPIXEL_API_KEY
+        sync: false
+      # Optional: without a database the service runs from its in-process cache.
+      - key: CACHE_DB_URL
+        sync: false
+      # Optional: enables POST /api/admin/cache/purge.
+      - key: ADMIN_API_KEYS
+        sync: false
+      # Optional: override proxy trust. Unset = trust one proxy hop (Render).
+      - key: TRUST_PROXY_CIDRS
+        sync: false
     autoDeploy: false

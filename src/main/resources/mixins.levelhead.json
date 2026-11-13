@@ -1,5 +1,6 @@
 {
   "compatibilityLevel": "JAVA_8",
+  "minVersion": "0.8",
   "package": "club.sk1er.mods.levelhead.mixin",
   "refmap": "mixins.levelhead.refmap.json",
   "mixins": [],

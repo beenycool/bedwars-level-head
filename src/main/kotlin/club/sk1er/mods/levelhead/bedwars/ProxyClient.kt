@@ -5,7 +5,6 @@ import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.executeWithRetries
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.handleRetryAfterHint
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.parseRetryAfterMillis
 import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.sanitizeForLogs
-import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.toHttpDateString
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.await
 import club.sk1er.mods.levelhead.core.DebugLogging
@@ -26,10 +25,6 @@ import java.util.Locale
 import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
-import javax.crypto.Mac
-import javax.crypto.spec.SecretKeySpec
-import java.nio.charset.StandardCharsets
-import kotlin.text.RegexOption
 
 object ProxyClient {
     private val invalidProxyTokenWarned = AtomicBoolean(false)
@@ -46,22 +41,11 @@ object ProxyClient {
     }
 
     fun isAvailable(): Boolean {
-        if (!LevelheadConfig.proxyEnabled) return false
-
-        if (!LevelheadConfig.communityDatabase) {
-            proxyMisconfiguredWarned.set(false)
-            return false
-        }
-
-        val baseConfigured = LevelheadConfig.proxyBaseUrl.isNotBlank()
-        if (!baseConfigured) {
-            // Suppress warnings when user has API key set and using shared backend
-            if (!LevelheadConfig.shouldSuppressBackendWarnings()) {
-                if (proxyMisconfiguredWarned.compareAndSet(false, true)) {
-                    Levelhead.sendChat(
-                        "${ChatColor.RED}Community Database enabled but missing proxy URL. ${ChatColor.YELLOW}Set the proxy base URL in Levelhead settings."
-                    )
-                }
+        if (!isConfigured()) {
+            if (proxyMisconfiguredWarned.compareAndSet(false, true)) {
+                Levelhead.sendChat(
+                    "${ChatColor.RED}Stats backend is not configured. ${ChatColor.YELLOW}Set the backend URL in Levelhead settings."
+                )
             }
             return false
         }
@@ -70,18 +54,20 @@ object ProxyClient {
         return true
     }
 
-    fun canContribute(): Boolean {
-        return LevelheadConfig.communityDatabase && LevelheadConfig.apiKey.isNotBlank() && LevelheadConfig.proxyBaseUrl.isNotBlank()
+    /**
+     * Cheap configuration check (no warnings) shared with [club.sk1er.mods.levelhead.core.BaseStatsFetcher].
+     */
+    fun isConfigured(): Boolean {
+        return LevelheadConfig.proxyBaseUrl.isNotBlank()
     }
 
     suspend fun fetchPlayer(identifierInput: String, lastFetchedAt: Long?, etag: String? = null): FetchResult {
-        val baseUrl = LevelheadConfig.resolveDbUrl()
+        val baseUrl = LevelheadConfig.proxyBaseUrl
         val identifier = sanitizeProxyIdentifier(identifierInput)
-        val isPublic = LevelheadConfig.proxyAuthToken.isBlank()
         val url = HttpUrl.parse(baseUrl)
             ?.newBuilder()
             ?.addPathSegment("api")
-            ?.apply { if (isPublic) addPathSegment("public") }
+            ?.addPathSegment("public")
             ?.addPathSegment("player")
             ?.addPathSegment(identifier)
             ?.build()
@@ -99,17 +85,6 @@ object ProxyClient {
             .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
             .header("Accept", "application/json")
             .header("X-Levelhead-Install", LevelheadConfig.installId)
-            .apply {
-                LevelheadConfig.proxyAuthToken.takeIf { it.isNotBlank() }?.let { token ->
-                    header("Authorization", "Bearer $token")
-                }
-                // Prefer ETag over If-Modified-Since when available
-                etag?.takeIf { it.isNotBlank() }?.let { tag ->
-                    header("If-None-Match", tag)
-                } ?: lastFetchedAt?.let { since ->
-                    header("If-Modified-Since", since.toHttpDateString())
-                }
-            }
             .get()
             .build()
 
@@ -119,19 +94,6 @@ object ProxyClient {
 
         return try {
             executeWithRetries(request, "proxy player").use { response ->
-                if (response.code() == 304) {
-                    networkIssueWarned.set(false)
-                    invalidProxyTokenWarned.set(false)
-                    val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
-                    handleRetryAfterHint("proxy", retryAfterMillis, silent = true)
-                    DebugLogging.logRequestDebug {
-                        val etagVal = response.header("ETag")
-                        val cacheVal = response.header("X-Cache") ?: "<absent>"
-                        "[LevelheadDebug][network] proxy 304 Not Modified etag=$etagVal cache=$cacheVal"
-                    }
-                    return FetchResult.NotModified
-                }
-
                 val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
                 val cacheHeader = response.header("X-Cache")
                 val isCacheHit = cacheHeader?.equals("HIT", ignoreCase = true) == true ||
@@ -201,11 +163,6 @@ object ProxyClient {
 
     suspend fun fetchBatch(uuids: List<UUID>): Map<UUID, FetchResult> {
         if (uuids.isEmpty()) return emptyMap()
-        
-        // In offline mode, return empty results
-        if (LevelheadConfig.backendMode == club.sk1er.mods.levelhead.core.BackendMode.OFFLINE) {
-            return uuids.associateWith { FetchResult.PermanentError("OFFLINE_MODE") }
-        }
 
         // We assume ensureConfigured() or similar was checked by caller or we check here.
         // Since isAvailable handles warnings, we should use it.
@@ -221,11 +178,10 @@ object ProxyClient {
             add("uuids", uuidArray)
         }
 
-        val isPublic = LevelheadConfig.proxyAuthToken.isBlank()
-        val url = HttpUrl.parse(LevelheadConfig.resolveDbUrl())
+        val url = HttpUrl.parse(LevelheadConfig.proxyBaseUrl)
             ?.newBuilder()
             ?.addPathSegment("api")
-            ?.apply { if (isPublic) addPathSegment("public") }
+            ?.addPathSegment("public")
             ?.addPathSegment("player")
             ?.addPathSegment("batch")
             ?.build()
@@ -244,11 +200,6 @@ object ProxyClient {
             .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
             .header("Accept", "application/json")
             .header("X-Levelhead-Install", LevelheadConfig.installId)
-            .apply {
-                LevelheadConfig.proxyAuthToken.takeIf { it.isNotBlank() }?.let { token ->
-                    header("Authorization", "Bearer $token")
-                }
-            }
             .build()
 
         DebugLogging.logRequestDebug {
@@ -347,65 +298,6 @@ object ProxyClient {
         }
     }
 
-    suspend fun submitPlayer(uuid: UUID, data: JsonObject) {
-        if (!canContribute()) return
-        val normalizedUuid = uuid.toString().replace("-", "").lowercase(Locale.ROOT)
-        val baseUrl = LevelheadConfig.resolveDbUrl()
-        val url = HttpUrl.parse(baseUrl)
-            ?.newBuilder()
-            ?.addPathSegment("api")
-            ?.addPathSegment("player")
-            ?.addPathSegment("submit")
-            ?.build()
-
-        if (url == null) {
-            Levelhead.logger.warn("Failed to build submit URL from base '{}'", baseUrl.sanitizeForLogs())
-            return
-        }
-
-        val payload = JsonObject().apply {
-            addProperty("uuid", normalizedUuid)
-            add("data", data)
-            maybeSignSubmission(normalizedUuid, data)?.let { signature ->
-                addProperty("signature", signature)
-            }
-        }
-
-        val request = Request.Builder()
-            .url(url)
-            .post(RequestBody.create(MediaType.parse("application/json"), payload.toString()))
-            .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
-            .header("Accept", "application/json")
-            .header("X-Levelhead-Install", LevelheadConfig.installId)
-            .apply {
-                LevelheadConfig.proxyAuthToken.takeIf { it.isNotBlank() }?.let { token ->
-                    header("Authorization", "Bearer $token")
-                }
-            }
-            .build()
-
-        try {
-            Levelhead.okHttpClient.newCall(request).await().use { response ->
-                if (response.isSuccessful) {
-                    Levelhead.logger.info("Contributed player data for {} to community database", uuid)
-                } else {
-                    val responseBodyLen = response.body()?.string()?.length ?: 0
-                    Levelhead.logger.warn(
-                        "Failed to contribute player data: {} (bodyLen={})",
-                        response.code(),
-                        responseBodyLen
-                    )
-                }
-            }
-        } catch (ex: IOException) {
-            Levelhead.logger.warn("Network error contributing player data: {}", ex.message?.sanitizeForLogs())
-        } catch (ex: kotlin.coroutines.cancellation.CancellationException) {
-            throw ex
-        } catch (ex: Exception) {
-            Levelhead.logger.error("Error contributing player data", ex)
-        }
-    }
-
     fun resetWarnings() {
         invalidProxyTokenWarned.set(false)
         networkIssueWarned.set(false)
@@ -414,10 +306,10 @@ object ProxyClient {
 
     private fun notifyInvalidProxyToken(status: Int, body: String) {
         if (invalidProxyTokenWarned.compareAndSet(false, true)) {
-            Levelhead.sendChat("${ChatColor.RED}Proxy authentication failed. ${ChatColor.YELLOW}Update your proxy token in Levelhead settings.")
+            Levelhead.sendChat("${ChatColor.RED}The stats backend rejected the request. ${ChatColor.YELLOW}Check the backend URL in Levelhead settings.")
         }
         Levelhead.logger.warn(
-            "Proxy authentication failed with status {} (bodyLen={})",
+            "Proxy request was rejected with status {} (bodyLen={})",
             status,
             body.length
         )
@@ -429,9 +321,9 @@ object ProxyClient {
             Levelhead.scope.launch(Dispatchers.IO) {
                 val isHealthy = checkBackendHealth()
                 if (isHealthy) {
-                    Levelhead.sendChat("${ChatColor.RED}Proxy stats request failed (Backend Online). ${ChatColor.YELLOW}Retrying in 60s.")
+                    Levelhead.sendChat("${ChatColor.RED}Proxy stats request failed (Backend Online). ${ChatColor.YELLOW}Will retry automatically.")
                 } else {
-                    Levelhead.sendChat("${ChatColor.RED}Proxy stats offline. ${ChatColor.YELLOW}Retrying in 60s.")
+                    Levelhead.sendChat("${ChatColor.RED}Proxy stats offline. ${ChatColor.YELLOW}Will retry automatically.")
                 }
             }
         }
@@ -439,7 +331,7 @@ object ProxyClient {
     }
 
     private suspend fun checkBackendHealth(): Boolean {
-        val baseUrl = LevelheadConfig.resolveDbUrl()
+        val baseUrl = LevelheadConfig.proxyBaseUrl
         val healthUrl = HttpUrl.parse(baseUrl)
             ?.newBuilder()
             ?.addPathSegment("healthz")
@@ -471,68 +363,10 @@ object ProxyClient {
             return trimmed
         }
         val collapsed = trimmed.replace("-", "")
-        return if (collapsed.matches(Regex("^[0-9a-f]{32}$", RegexOption.IGNORE_CASE))) {
+        return if (collapsed.matches(DebugLogging.TRIMMED_UUID_REGEX)) {
             collapsed.lowercase(Locale.ROOT)
         } else {
             trimmed
         }
-    }
-
-    private fun maybeSignSubmission(uuid: String, data: JsonObject): String? {
-        val secret = LevelheadConfig.communitySubmitSecret.trim()
-        if (secret.isEmpty()) {
-            return null
-        }
-        return try {
-            val canonical = canonicalize(data)
-            hmacSha256Hex(secret, "$uuid:$canonical")
-        } catch (ex: Exception) {
-            Levelhead.logger.warn("Failed to sign submission payload", ex)
-            null
-        }
-    }
-
-    private fun hmacSha256Hex(secret: String, message: String): String {
-        val mac = Mac.getInstance("HmacSHA256")
-        mac.init(SecretKeySpec(secret.toByteArray(StandardCharsets.UTF_8), "HmacSHA256"))
-        val bytes = mac.doFinal(message.toByteArray(StandardCharsets.UTF_8))
-        val hexChars = CharArray(bytes.size * 2)
-        val hexArray = "0123456789abcdef".toCharArray()
-        for (i in bytes.indices) {
-            val v = bytes[i].toInt() and 0xFF
-            hexChars[i * 2] = hexArray[v ushr 4]
-            hexChars[i * 2 + 1] = hexArray[v and 0x0F]
-        }
-        return String(hexChars)
-    }
-
-    private fun canonicalize(element: com.google.gson.JsonElement?): String {
-        if (element == null || element.isJsonNull) {
-            return "null"
-        }
-
-        if (element.isJsonArray) {
-            val array = element.asJsonArray
-            return buildString {
-                append('[')
-                array.map { canonicalize(it) }.joinTo(this, separator = ",")
-                append(']')
-            }
-        }
-
-        if (element.isJsonObject) {
-            val obj = element.asJsonObject
-            val entries = obj.entrySet().sortedBy { it.key }
-            return buildString {
-                append('{')
-                entries.joinTo(this, separator = ",") { entry ->
-                    val keyJson = JsonPrimitive(entry.key).toString()
-                    "$keyJson:${canonicalize(entry.value)}"
-                }
-                append('}')
-            }
-        }
-
-        return element.toString()
     }
 }

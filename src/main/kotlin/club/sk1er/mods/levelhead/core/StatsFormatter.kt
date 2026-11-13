@@ -19,45 +19,48 @@ object StatsFormatter {
     
     /**
      * Build a LevelheadTag from GameStats and DisplayConfig.
+     *
+     * @param preferDisplayFooter when true, a non-blank [DisplayConfig.footerString]
+     *   takes precedence over the global per-mode footer template (tab list).
      */
     fun formatTag(
         uuid: UUID,
         stats: GameStats?,
         config: DisplayConfig,
-        gameMode: GameMode
+        gameMode: GameMode,
+        preferDisplayFooter: Boolean = false
     ): LevelheadTag {
-        val footerTemplate = LevelheadConfig.footerTemplateFor(gameMode, config)
+        val footerTemplate = LevelheadConfig.footerTemplateFor(gameMode, config, preferDisplayFooter)
         
-        val (footerValue, footerColor, chroma) = if (stats?.nicked == true) {
-            Triple("NICKED", Color.GRAY, false)
+        val (footerValue, footerColor) = if (stats?.nicked == true) {
+            Pair("NICKED", Color.GRAY)
         } else {
             when (stats) {
                 is GameStats.Bedwars -> formatBedwarsStats(stats, footerTemplate, config)
                 is GameStats.Duels -> formatDuelsStats(stats, footerTemplate, config)
                 is GameStats.SkyWars -> formatSkyWarsStats(stats, footerTemplate, config)
-                null -> Triple("?", config.footerColor, false)
+                // "Not fetched" is absence, not the text "?". Callers normally skip
+                // null entirely; this keeps a defensive caller from rendering a
+                // failure as if it were an answer.
+                null -> Pair("", config.footerColor)
             }
         }
         
-        // Check if data is stale (> 1 hour old)
-        val age = System.currentTimeMillis() - (stats?.fetchedAt ?: 0L)
+        // Staleness is derived from the fetch timestamp so a tag can be re-coloured
+        // (or expired) later without recomputing the rest of the tag.
+        val fetchedAt = stats?.fetchedAt ?: System.currentTimeMillis()
+        val age = System.currentTimeMillis() - fetchedAt
         val isStale = age > 3600 * 1000
         
         val finalColor = if (isStale && stats != null) Color.GRAY else footerColor
-        val finalChroma = if (isStale) false else chroma
         
-        return LevelheadTag.build(uuid) {
-            header {
-                value = "${config.headerString}: "
-                color = config.headerColor
-                this.chroma = false
-            }
-            footer {
-                value = footerValue
-                color = finalColor
-                this.chroma = finalChroma
-            }
-        }
+        val tag = LevelheadTag(uuid)
+        tag.fetchedAt = fetchedAt
+        tag.header.value = "${config.headerString}: "
+        tag.header.color = config.headerColor
+        tag.footer.value = footerValue
+        tag.footer.color = finalColor
+        return tag
     }
     
     /**
@@ -67,22 +70,22 @@ object StatsFormatter {
         stats: GameStats.Bedwars,
         template: String,
         config: DisplayConfig
-    ): Triple<String, Color, Boolean> {
+    ): Pair<String, Color> {
         val starValue = stats.star
-        val starString = starValue?.let { "$it✪" } ?: "?"
+        // Use the same prestige-aware tag as the tab fallback so the nametag, tab
+        // and formatter never disagree on the icon or colours (B26/B29).
+        val starString = starValue?.let { BedwarsStar.formatStarTag(it) } ?: "?"
         val fkdrString = stats.fkdr?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "?"
-        val winstreakString = stats.winstreak?.toString() ?: "?"
         
         var footerValue = template
         footerValue = footerValue.replace("%star%", starString, ignoreCase = true)
         footerValue = footerValue.replace("%fkdr%", fkdrString, ignoreCase = true)
-        footerValue = footerValue.replace("%ws%", winstreakString, ignoreCase = true)
         footerValue = sanitizeUnresolvedTokens(footerValue)
         
         val style = starValue?.let { BedwarsStar.styleForStar(it) }
-            ?: BedwarsStar.PrestigeStyle(config.footerColor, false, "")
+            ?: BedwarsStar.PrestigeStyle(config.footerColor, "")
         
-        return Triple(footerValue, style.color, style.chroma)
+        return Pair(footerValue, style.color)
     }
     
     /**
@@ -92,14 +95,13 @@ object StatsFormatter {
         stats: GameStats.Duels,
         template: String,
         config: DisplayConfig
-    ): Triple<String, Color, Boolean> {
+    ): Pair<String, Color> {
         val winsString = stats.wins?.toString() ?: "?"
         val lossesString = stats.losses?.toString() ?: "?"
         val wlrString = DuelsStats.calculateWLR(stats.wins, stats.losses)
             ?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "?"
         val kdrString = DuelsStats.calculateKDR(stats.kills, stats.deaths)
             ?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "?"
-        val winstreakString = stats.winstreak?.toString() ?: "?"
         val divisionInfo = stats.wins?.let { DuelsStats.getOverallDivisionInfo(it) }
         val divisionTitle = divisionInfo?.displayName ?: "?"
         val styledDivisionTitle = when {
@@ -115,7 +117,6 @@ object StatsFormatter {
         footerValue = footerValue.replace("%losses%", lossesString, ignoreCase = true)
         footerValue = footerValue.replace("%wlr%", wlrString, ignoreCase = true)
         footerValue = footerValue.replace("%kdr%", kdrString, ignoreCase = true)
-        footerValue = footerValue.replace("%ws%", winstreakString, ignoreCase = true)
         footerValue = footerValue.replace("%division%", styledDivisionTitle, ignoreCase = true)
         footerValue = footerValue.replace("%divlevel%", divisionLevel, ignoreCase = true)
         footerValue = footerValue.replace("%divsymbol%", divisionSymbol, ignoreCase = true)
@@ -130,7 +131,7 @@ object StatsFormatter {
             else -> false
         }
         val color = if (usesDivisionColor) (divisionInfo?.color ?: config.footerColor) else config.footerColor
-        return Triple(footerValue, color, false)
+        return Pair(footerValue, color)
     }
     
     /**
@@ -141,8 +142,8 @@ object StatsFormatter {
         stats: GameStats.SkyWars,
         template: String,
         config: DisplayConfig
-    ): Triple<String, Color, Boolean> {
-        val levelValue = stats.levelInt
+    ): Pair<String, Color> {
+        val levelValue: Int? = stats.level?.toInt()
         val starString = levelValue?.let { "$it${SkyWarsStats.getDefaultEmblem(it)}" } ?: "?"
         val winsString = stats.wins?.toString() ?: "?"
         val lossesString = stats.losses?.toString() ?: "?"
@@ -163,7 +164,7 @@ object StatsFormatter {
         val style = levelValue?.let { SkyWarsStats.getPrestigeStyle(it) }
         val color = style?.color ?: config.footerColor
 
-        return Triple(footerValue, color, false)
+        return Pair(footerValue, color)
     }
 
     private fun sanitizeUnresolvedTokens(value: String): String {

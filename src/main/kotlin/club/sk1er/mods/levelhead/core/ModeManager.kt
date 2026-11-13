@@ -1,118 +1,57 @@
 package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.Levelhead
-import club.sk1er.mods.levelhead.duels.DuelsModeDetector
-import club.sk1er.mods.levelhead.skywars.SkyWarsModeDetector
+import org.apache.logging.log4j.LogManager
 
 /**
- * Unified manager for detecting which game mode is currently active.
- * Routes to the appropriate mode detector based on the current game state.
+ * Public facade over [ModeTracker].
+ *
+ * Kept because the `render` and `commands` packages address it. Every method here is now
+ * a plain read or an explicit action; nothing detects the mode as a side effect of
+ * being read. The actual sampling happens once per 10 ticks in [tracker].
  */
 object ModeManager {
-    private var lastLoggedMode: ActiveMode = ActiveMode.NONE
-    private var lastLoggedAt: Long = 0L
-    
-    /**
-     * Active game mode context.
-     */
     enum class ActiveMode {
         BEDWARS,
         DUELS,
         SKYWARS,
-        NONE;
-        
-        val isActive: Boolean
-            get() = this != NONE
+        NONE
     }
-    
-    /**
-     * Detect the currently active game mode.
-     * Checks all mode detectors to determine which game is being played.
-     */
-    fun detectActiveMode(): ActiveMode {
-        val bwScoreboard = BedwarsModeDetector.isInBedwarsScoreboard()
-        val duelsScoreboard = DuelsModeDetector.isInDuelsScoreboard()
-        val swScoreboard = SkyWarsModeDetector.isInSkyWarsScoreboard()
-        
-        val bedwarsMatch = BedwarsModeDetector.isInBedwarsMatch()
-        val duelsMatch = DuelsModeDetector.isInDuelsMatch()
-        val skywarsMatch = SkyWarsModeDetector.isInSkyWarsMatch()
-        
-        val bedwars = bedwarsMatch || BedwarsModeDetector.isInBedwars()
-        val duels = duelsMatch || DuelsModeDetector.isInDuels()
-        val skywars = skywarsMatch || SkyWarsModeDetector.isInSkyWars()
-        
-        val detected = when {
-            // Step 1: Scoreboard matches take absolute priority.
-            bwScoreboard -> ActiveMode.BEDWARS
-            duelsScoreboard -> ActiveMode.DUELS
-            swScoreboard -> ActiveMode.SKYWARS
-            // Step 2: Match contexts (e.g. chat/cached) take priority over lobby detection.
-            bedwarsMatch -> ActiveMode.BEDWARS
-            duelsMatch -> ActiveMode.DUELS
-            skywarsMatch -> ActiveMode.SKYWARS
-            // Step 3: Fall back to lobby/general detection.
-            bedwars -> ActiveMode.BEDWARS
-            duels -> ActiveMode.DUELS
-            skywars -> ActiveMode.SKYWARS
-            else -> ActiveMode.NONE
-        }
-        
-        val now = System.currentTimeMillis()
-        if (detected != lastLoggedMode || now - lastLoggedAt > 5_000L) {
-            Levelhead.logger.debug(
-                "detectActiveMode: bedwarsMatch={} duelsMatch={} skywarsMatch={} bedwars={} duels={} skywars={} -> {}",
-                bedwarsMatch, duelsMatch, skywarsMatch, bedwars, duels, skywars, detected
-            )
-            lastLoggedMode = detected
-            lastLoggedAt = now
-        }
 
-        return detected
+    val tracker: ModeTracker = ModeTracker(
+        onRequestAllDisplays = { visible -> Levelhead.displayManager.requestAllDisplays(visible) },
+        onClearDisplays = { Levelhead.displayManager.clearCachesWithoutRefetch(clearStats = false) },
+        logger = LogManager.getLogger("LevelheadMode")
+    )
+
+    /** Increments once per world join; used to discard queued work from an old world. */
+    val worldEpoch: Long
+        get() = tracker.worldEpoch
+
+    /** The current mode as of the last sample. Pure read. */
+    fun detectActiveMode(): ActiveMode = when (tracker.mode) {
+        GameMode.BEDWARS -> ActiveMode.BEDWARS
+        GameMode.DUELS -> ActiveMode.DUELS
+        GameMode.SKYWARS -> ActiveMode.SKYWARS
+        null -> ActiveMode.NONE
     }
-    
-    /**
-     * Check if we're currently in any game mode that should display stats.
-     */
+
+    /** Check if the current context is one whose stats should be fetched. */
     fun shouldRequestData(): Boolean {
-        return when (detectActiveMode()) {
-            ActiveMode.BEDWARS -> BedwarsModeDetector.shouldRequestData()
-            ActiveMode.DUELS -> DuelsModeDetector.shouldRequestData()
-            ActiveMode.SKYWARS -> SkyWarsModeDetector.shouldRequestData()
-            ActiveMode.NONE -> false
-        }
+        if (!Levelhead.isOnHypixel()) return false
+        return detectActiveMode() != ActiveMode.NONE
     }
-    
-    /**
-     * Check if we should render tags for the current game mode.
-     */
-    fun shouldRenderTags(): Boolean {
-        return when (detectActiveMode()) {
-            ActiveMode.BEDWARS -> BedwarsModeDetector.shouldRenderTags()
-            ActiveMode.DUELS -> DuelsModeDetector.shouldRenderTags()
-            ActiveMode.SKYWARS -> SkyWarsModeDetector.shouldRenderTags()
-            ActiveMode.NONE -> false
-        }
-    }
-    
-    /**
-     * Reset all mode detectors on world join.
-     */
+
+    /** Reset all mode state on world join. */
     fun onWorldJoin() {
-        BedwarsModeDetector.onWorldJoin()
-        DuelsModeDetector.onWorldJoin()
-        SkyWarsModeDetector.onWorldJoin()
+        tracker.onWorldJoin()
     }
-    
-    /**
-     * Get the GameMode enum for the currently active mode.
-     */
-    fun getActiveGameMode(): GameMode? {
-        return when (detectActiveMode()) {
-            ActiveMode.BEDWARS -> GameMode.BEDWARS
-            ActiveMode.DUELS -> GameMode.DUELS
-            ActiveMode.SKYWARS -> GameMode.SKYWARS
-            ActiveMode.NONE -> null
-        }
+
+    /** Force a fresh, main-thread sample (used by the delayed world-join fallback). */
+    fun invalidate() {
+        tracker.refreshNow()
     }
+
+    /** The current [GameMode], or null when no supported game is proven. Pure read. */
+    fun getActiveGameMode(): GameMode? = tracker.mode
 }
