@@ -8,7 +8,6 @@ import cc.polyfrost.oneconfig.config.Config
 import cc.polyfrost.oneconfig.config.annotations.Button
 import cc.polyfrost.oneconfig.config.annotations.Color
 import cc.polyfrost.oneconfig.config.annotations.Dropdown
-import cc.polyfrost.oneconfig.config.annotations.Header
 import cc.polyfrost.oneconfig.config.annotations.Info
 import cc.polyfrost.oneconfig.config.annotations.Slider
 import cc.polyfrost.oneconfig.config.annotations.Switch
@@ -17,9 +16,7 @@ import cc.polyfrost.oneconfig.config.core.OneColor
 import cc.polyfrost.oneconfig.config.data.InfoType
 import cc.polyfrost.oneconfig.config.data.Mod
 import cc.polyfrost.oneconfig.config.data.ModType
-import net.minecraft.client.Minecraft
 import java.awt.Desktop
-import java.io.File
 import java.net.URI
 import java.time.Duration
 import java.util.Locale
@@ -32,27 +29,37 @@ private const val _DEFAULT_STAR_CACHE_TTL_MINUTES = 45
 private const val GITHUB_REPO_URL = "https://github.com/beenycool/bedwars-level-head"
 private const val UPSTREAM_LEVELHEAD_URL = "https://github.com/Sk1erLLC/Levelhead"
 private const val MODRINTH_URL = "https://modrinth.com/mod/bedwars-level-head"
-private const val WIKI_URL = "https://github.com/beenycool/bedwars-level-head/wiki"
 private const val CHANGELOG_URL = "https://github.com/beenycool/bedwars-level-head/releases"
 
 /**
  * The only settings store. OneConfig persists these fields and every runtime
  * component reads them directly (through the small [MasterConfig] / [DisplayConfig]
  * views), so there is no second file to drift out of sync.
+ *
+ * The screen is deliberately small: five categories, one control per real choice.
+ * Anything derivable (the per-mode header, the tab footer) is derived at runtime
+ * instead of being stored a second time.
  */
 object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedwars-levelhead.json") {
 
     // ===============================
-    // Category: Quick Setup
+    // General
     // ===============================
-    @Header(text = "Quick Setup", category = "Quick Setup")
-    @Transient
-    var quickSetupHeader: String = ""
+    @Switch(
+        name = "Enable Levelhead",
+        description = "Enable or disable the levelhead display entirely.",
+        category = "General"
+    )
+    var levelheadEnabled: Boolean = true
+        set(value) {
+            field = value
+            save()
+        }
 
     @Switch(
         name = "Show Tab Stats",
         description = "Display stats next to player names in the Tab list.",
-        category = "Quick Setup"
+        category = "General"
     )
     var showTabStats: Boolean = true
         set(value) {
@@ -62,11 +69,22 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         }
 
     @Switch(
-        name = "Enable Levelhead",
-        description = "Enable or disable the levelhead display entirely.",
-        category = "Quick Setup"
+        name = "Show Self",
+        description = "Display your own levelhead above your head and in the Tab list.",
+        category = "General"
     )
-    var levelheadEnabled: Boolean = true
+    var showSelf: Boolean = true
+        set(value) {
+            field = value
+            save()
+        }
+
+    @Switch(
+        name = "Show Header",
+        description = "Show the label (for example \"BedWars Star\") before the stat. Off shows the stat alone.",
+        category = "General"
+    )
+    var showHeader: Boolean = true
         set(value) {
             field = value
             save()
@@ -76,7 +94,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         name = "Show Status",
         text = "Check Status",
         description = "Display current backend status, cache health, and rate limits in chat.",
-        category = "Quick Setup"
+        category = "General"
     )
     fun showStatusButton() {
         val snapshot = Levelhead.statusSnapshot()
@@ -101,12 +119,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     }
 
     // ===============================
-    // Category: Display
+    // Display
     // ===============================
-    @Header(text = "Display Position", category = "Display")
-    @Transient
-    var displayPositionHeader: String = ""
-
     @Dropdown(
         name = "Display Position",
         description = "Choose whether to display the levelhead above or below the player's nametag.",
@@ -118,68 +132,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             field = value.coerceIn(0, MasterConfig.DisplayPosition.entries.lastIndex)
             save()
         }
-
-    @Switch(
-        name = "Show Self",
-        description = "Display your own levelhead above your head.",
-        category = "Display"
-    )
-    var showSelf: Boolean = true
-        set(value) {
-            field = value
-            save()
-        }
-
-    @Header(text = "Header Text (per game mode)", category = "Display")
-    @Transient
-    var headerTextHeader: String = ""
-
-    @Text(
-        name = "BedWars Header",
-        placeholder = "BedWars Star",
-        description = "The text shown before the BedWars stat.",
-        category = "Display"
-    )
-    var bedwarsHeaderText: String = GameMode.BEDWARS.defaultHeader
-        set(value) {
-            field = value
-            save()
-        }
-
-    @Text(
-        name = "Duels Header",
-        placeholder = "Duels Division",
-        description = "The text shown before the Duels stat.",
-        category = "Display"
-    )
-    var duelsHeaderText: String = GameMode.DUELS.defaultHeader
-        set(value) {
-            field = value
-            save()
-        }
-
-    @Text(
-        name = "SkyWars Header",
-        placeholder = "SkyWars Star",
-        description = "The text shown before the SkyWars stat.",
-        category = "Display"
-    )
-    var skywarsHeaderText: String = GameMode.SKYWARS.defaultHeader
-        set(value) {
-            field = value
-            save()
-        }
-
-    @Color(name = "Header Color", description = "Color for the header text.", category = "Display")
-    var headerColor: OneColor = OneColor(85, 255, 255)
-        set(value) {
-            field = value
-            save()
-        }
-
-    @Header(text = "Footer (Stat) Text", category = "Display")
-    @Transient
-    var footerTextHeader: String = ""
 
     @Dropdown(
         name = "BedWars Footer",
@@ -253,57 +205,9 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             save()
         }
 
-    @Color(name = "Footer Color", description = "Color for the footer text.", category = "Display")
-    var footerColor: OneColor = OneColor(255, 255, 85)
-        set(value) {
-            field = value
-            save()
-        }
-
     // ===============================
-    // Tab List Display
+    // Appearance
     // ===============================
-    @Header(text = "Tab List Display", category = "Display")
-    @Transient
-    var tabListDisplayHeader: String = ""
-
-    @Switch(
-        name = "Tab Show Self",
-        description = "Display your own stats in the tab list.",
-        category = "Display"
-    )
-    var tabShowSelf: Boolean = true
-        set(value) {
-            field = value
-            save()
-        }
-
-    @Color(name = "Tab Footer Color", description = "Color for stats text in the tab list.", category = "Display")
-    var tabFooterColor: OneColor = OneColor(255, 255, 85)
-        set(value) {
-            field = value
-            save()
-        }
-
-    @Text(
-        name = "Tab Footer Format",
-        placeholder = "%star% : %fkdr%",
-        description = "Custom format for tab list stats. Tokens: %star%, %fkdr%, %wins%, %losses%, %wlr%, %kdr%.",
-        category = "Display"
-    )
-    var tabFooterFormat: String = ""
-        set(value) {
-            field = value
-            save()
-        }
-
-    // ===============================
-    // Category: Appearance
-    // ===============================
-    @Header(text = "Font & Position", category = "Appearance")
-    @Transient
-    var appearanceHeader: String = ""
-
     @Slider(
         name = "Vertical Offset",
         description = "Fine-tune the vertical position. Negative values move it closer to the nametag.",
@@ -352,25 +256,31 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             save()
         }
 
-    // ===============================
-    // Category: Performance
-    // ===============================
-    @Header(text = "Performance Tuning", category = "Performance")
-    @Transient
-    var performanceHeader: String = ""
+    @Color(name = "Header colour", description = "Colour of the label shown before the stat.", category = "Appearance")
+    var headerColor: OneColor = OneColor(85, 255, 255)
+        set(value) {
+            field = value
+            save()
+        }
 
-    @Info(
-        text = "Lower values improve accuracy but may reduce FPS.",
-        type = InfoType.INFO,
-        category = "Performance"
+    @Color(
+        name = "Fallback tag colour",
+        description = "Only used when a stat has no colour of its own (for example FKDR or Win/Loss).",
+        category = "Appearance"
     )
-    @Transient
-    var performanceInfo: String = ""
+    var footerColor: OneColor = OneColor(255, 255, 85)
+        set(value) {
+            field = value
+            save()
+        }
 
+    // ===============================
+    // Advanced
+    // ===============================
     @Slider(
         name = "Render Distance",
         description = "Maximum distance (in blocks) to render levelheads. Lower = better performance.",
-        category = "Performance",
+        category = "Advanced",
         min = 16f,
         max = 128f,
         step = 8
@@ -382,23 +292,9 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         }
 
     @Slider(
-        name = "Cache Size Limit",
-        description = "Maximum number of cached player stats before automatic cleanup.",
-        category = "Performance",
-        min = 100f,
-        max = 2000f,
-        step = 100
-    )
-    var cacheSizeLimit: Int = 500
-        set(value) {
-            field = value
-            save()
-        }
-
-    @Slider(
         name = "Star Cache TTL (minutes)",
         description = "How long to cache stars before refresh.",
-        category = "Performance",
+        category = "Advanced",
         min = 5f,
         max = 180f,
         step = 1
@@ -408,103 +304,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             field = value.coerceIn(_MIN_STAR_CACHE_TTL_MINUTES, _MAX_STAR_CACHE_TTL_MINUTES)
             save()
             BedwarsFetcher.resetWarnings()
-        }
-
-    // ===============================
-    // Category: Actions
-    // ===============================
-    @Header(text = "Quick Actions", category = "Actions")
-    @Transient
-    var actionsHeader: String = ""
-
-    @Button(
-        name = "Purge Cache",
-        text = "Clear All Caches",
-        description = "Clear all cached player stats. Fresh data will be fetched on next encounter.",
-        category = "Actions"
-    )
-    fun purgeCacheButton() {
-        Levelhead.displayManager.clearCache()
-        Levelhead.sendChat("§aCache cleared! Fresh data will be fetched.")
-    }
-
-    @Button(
-        name = "Reload Stats",
-        text = "Refresh All",
-        description = "Invalidate cached displays and re-fetch fresh data for all visible players.",
-        category = "Actions"
-    )
-    fun reloadStatsButton() {
-        Levelhead.displayManager.clearCache()
-        Levelhead.sendChat("§aStats reloaded! Re-fetching fresh data.")
-    }
-
-    @Button(
-        name = "Reset All Settings",
-        text = "Reset to Defaults",
-        description = "Restore all settings to their default values. This cannot be undone!",
-        category = "Actions"
-    )
-    fun resetToDefaultsButton() {
-        resetToDefaults()
-        Levelhead.sendChat("§aAll settings reset to defaults.")
-    }
-
-    @Button(
-        name = "Open Config Folder",
-        text = "Open Folder",
-        description = "Open the folder containing configuration files.",
-        category = "Actions"
-    )
-    fun openConfigFolderButton() {
-        try {
-            val configDir = File(Minecraft.getMinecraft().mcDataDir, "config")
-            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
-                Desktop.getDesktop().open(configDir)
-            } else {
-                Levelhead.sendChat("§eConfig folder: §b${configDir.absolutePath}")
-            }
-        } catch (e: Exception) {
-            Levelhead.logger.warn("Failed to open config folder", e)
-            Levelhead.sendChat("§cFailed to open config folder.")
-        }
-    }
-
-    // ===============================
-    // Category: Advanced
-    // ===============================
-    @Header(text = "Advanced Settings", category = "Advanced")
-    @Transient
-    var advancedHeader: String = ""
-
-    @Info(
-        text = "Advanced options. Incorrect values can cause issues.",
-        type = InfoType.WARNING,
-        category = "Advanced"
-    )
-    @Transient
-    var advancedWarning: String = ""
-
-    @Switch(
-        name = "Show Advanced Options",
-        description = "Enable to show additional advanced configuration options.",
-        category = "Advanced"
-    )
-    var showAdvancedOptions: Boolean = false
-        set(value) {
-            field = value
-            save()
-        }
-
-    @Switch(
-        name = "Debug Logging",
-        description = "Log HTTP requests and responses to latest.log for troubleshooting.",
-        category = "Advanced"
-    )
-    var debugRequests: Boolean = false
-        set(value) {
-            field = value
-            save()
         }
 
     @Info(
@@ -529,6 +328,17 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         }
 
     @Switch(
+        name = "Debug Logging",
+        description = "Log HTTP requests and responses to latest.log for troubleshooting.",
+        category = "Advanced"
+    )
+    var debugRequests: Boolean = false
+        set(value) {
+            field = value
+            save()
+        }
+
+    @Switch(
         name = "Force On All Servers",
         description = "Enable Levelhead on all servers, not just Hypixel. Useful when using proxy services that change your server IP.",
         category = "Advanced"
@@ -539,13 +349,31 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             save()
         }
 
-    // ===============================
-    // Category: About
-    // ===============================
-    @Header(text = "About BedWars Levelhead", category = "About")
-    @Transient
-    var aboutMainHeader: String = ""
+    @Button(
+        name = "Reload Stats",
+        text = "Refresh All",
+        description = "Invalidate cached displays and re-fetch fresh data for all visible players.",
+        category = "Advanced"
+    )
+    fun reloadStatsButton() {
+        Levelhead.displayManager.clearCache()
+        Levelhead.sendChat("§aStats reloaded! Re-fetching fresh data.")
+    }
 
+    @Button(
+        name = "Reset All Settings",
+        text = "Reset to Defaults",
+        description = "Restore all settings to their default values. This cannot be undone!",
+        category = "Advanced"
+    )
+    fun resetToDefaultsButton() {
+        resetToDefaults()
+        Levelhead.sendChat("§aAll settings reset to defaults.")
+    }
+
+    // ===============================
+    // About
+    // ===============================
     @Info(
         text = "BedWars Levelhead shows player stats above their heads on Hypixel.",
         type = InfoType.INFO,
@@ -578,10 +406,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Transient
     var aboutLicense: String = ""
 
-    @Header(text = "Links", category = "About")
-    @Transient
-    var linksHeader: String = ""
-
     @Button(
         name = "Modrinth",
         text = "Download Here",
@@ -613,14 +437,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         category = "About"
     )
     fun openChangelog() = openUrl(CHANGELOG_URL)
-
-    @Button(
-        name = "Documentation",
-        text = "How to Use",
-        description = "Open setup docs and usage guide.",
-        category = "About"
-    )
-    fun openWiki() = openUrl(WIKI_URL)
 
     // ===============================
     // Internal state
@@ -671,14 +487,11 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         get() = SkyWarsStatMode.entries.getOrNull(skywarsStatDisplayIndex) ?: SkyWarsStatMode.STAR
 
     /**
-     * The header is a per-mode concept: changing the BedWars footer must never
-     * rewrite the Duels or SkyWars header (B36).
+     * The header is a per-mode concept that needs no stored copy: it is the game
+     * mode's own label, or nothing while [showHeader] is off. Keeping the signature
+     * means [DisplayConfig.headerString] and the formatter stay unchanged.
      */
-    fun headerTextFor(gameMode: GameMode): String = when (gameMode) {
-        GameMode.BEDWARS -> bedwarsHeaderText.ifBlank { GameMode.BEDWARS.defaultHeader }
-        GameMode.DUELS -> duelsHeaderText.ifBlank { GameMode.DUELS.defaultHeader }
-        GameMode.SKYWARS -> skywarsHeaderText.ifBlank { GameMode.SKYWARS.defaultHeader }
-    }
+    fun headerTextFor(gameMode: GameMode): String = if (showHeader) gameMode.defaultHeader else ""
 
     private fun <T> resolveTemplateFor(
         modeIndex: Int,
@@ -697,42 +510,34 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     }
 
     /**
-     * Resolve the footer template for a game mode.
-     *
-     * @param preferDisplayFooter when true, a non-blank
-     *   [DisplayConfig.footerString] on the display itself wins over the global
-     *   per-mode template. Used by the tab list, which owns "Tab Footer Format".
+     * Resolve the footer template for a game mode. The nametag and the tab list use
+     * this same template, so both always render identical text (B29).
      */
-    fun footerTemplateFor(gameMode: GameMode, config: DisplayConfig, preferDisplayFooter: Boolean = false): String {
-        if (preferDisplayFooter) {
-            config.footerString?.takeIf { it.isNotBlank() }?.let { return it }
-        }
-        return when (gameMode) {
-            GameMode.BEDWARS -> resolveTemplateFor(
-                bedwarsStatDisplayIndex,
-                BedwarsStatMode.entries,
-                BedwarsStatMode.STAR,
-                bedwarsCustomFooterFormat,
-                BedwarsStatMode.CUSTOM,
-                "%star%"
-            )
-            GameMode.DUELS -> resolveTemplateFor(
-                duelsStatDisplayIndex,
-                DuelsStatMode.entries,
-                DuelsStatMode.DIVISION_TITLE,
-                duelsCustomFooterFormat,
-                DuelsStatMode.CUSTOM,
-                "%division%"
-            )
-            GameMode.SKYWARS -> resolveTemplateFor(
-                skywarsStatDisplayIndex,
-                SkyWarsStatMode.entries,
-                SkyWarsStatMode.STAR,
-                skywarsCustomFooterFormat,
-                SkyWarsStatMode.CUSTOM,
-                "%star%"
-            )
-        }
+    fun footerTemplateFor(gameMode: GameMode): String = when (gameMode) {
+        GameMode.BEDWARS -> resolveTemplateFor(
+            bedwarsStatDisplayIndex,
+            BedwarsStatMode.entries,
+            BedwarsStatMode.STAR,
+            bedwarsCustomFooterFormat,
+            BedwarsStatMode.CUSTOM,
+            "%star%"
+        )
+        GameMode.DUELS -> resolveTemplateFor(
+            duelsStatDisplayIndex,
+            DuelsStatMode.entries,
+            DuelsStatMode.DIVISION_TITLE,
+            duelsCustomFooterFormat,
+            DuelsStatMode.CUSTOM,
+            "%division%"
+        )
+        GameMode.SKYWARS -> resolveTemplateFor(
+            skywarsStatDisplayIndex,
+            SkyWarsStatMode.entries,
+            SkyWarsStatMode.STAR,
+            skywarsCustomFooterFormat,
+            SkyWarsStatMode.CUSTOM,
+            "%star%"
+        )
     }
 
     /**
@@ -761,9 +566,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     }
 
     private fun setupConditionalVisibility() {
-        hideIf("proxyBaseUrl") { !showAdvancedOptions }
-        hideIf("backendUrlInfo") { !showAdvancedOptions }
-        hideIf("forceEnabled") { !showAdvancedOptions }
+        hideIf("backgroundOpacity") { !showBackground }
+        hideIf("headerColor") { !showHeader }
 
         hideIf("bedwarsCustomFooterFormat") { bedwarsStatMode != BedwarsStatMode.CUSTOM }
         hideIf("duelsCustomFooterFormat") { duelsStatMode != DuelsStatMode.CUSTOM }
@@ -778,22 +582,18 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     }
 
     private fun resetToDefaults() {
-        bedwarsHeaderText = GameMode.BEDWARS.defaultHeader
-        duelsHeaderText = GameMode.DUELS.defaultHeader
-        skywarsHeaderText = GameMode.SKYWARS.defaultHeader
         headerColor = OneColor(85, 255, 255)
         footerColor = OneColor(255, 255, 85)
-        tabFooterColor = OneColor(255, 255, 85)
         levelheadEnabled = true
         showTabStats = true
-        displayPositionIndex = 0
         showSelf = true
+        showHeader = true
+        displayPositionIndex = 0
         verticalOffset = 0.0f
         showBackground = true
         backgroundOpacity = 0.25f
         textShadow = true
         renderDistance = 64
-        cacheSizeLimit = 500
         starCacheTtlMinutes = _DEFAULT_STAR_CACHE_TTL_MINUTES
         bedwarsStatDisplayIndex = BedwarsStatMode.STAR.ordinal
         duelsStatDisplayIndex = DuelsStatMode.DIVISION_TITLE.ordinal
@@ -801,9 +601,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         bedwarsCustomFooterFormat = "%star%"
         duelsCustomFooterFormat = "%division%"
         skywarsCustomFooterFormat = "%star%"
-        tabFooterFormat = ""
-        tabShowSelf = true
-        showAdvancedOptions = false
         debugRequests = false
         proxyBaseUrl = DEFAULT_PROXY_URL
         forceEnabled = false

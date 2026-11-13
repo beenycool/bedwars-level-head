@@ -97,7 +97,6 @@ object Levelhead {
     private var worldScope: CoroutineScope = CoroutineScope(worldJob + Dispatchers.IO + coroutineExceptionHandler)
     val rateLimiter: RateLimiter = RateLimiter(600, Duration.ofMinutes(1), onBlocked = ::onRateLimiterBlocked, onReset = ::resetRateLimiterNotification)
     val statsStore: StatsStore = StatsStore(
-        maxSizeProvider = { displayManager.config.purgeSize },
         ttlProvider = { LevelheadConfig.starCacheTtl }
     )
     val requestCoordinator: RequestCoordinator = RequestCoordinator(

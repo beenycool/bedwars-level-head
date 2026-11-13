@@ -22,9 +22,9 @@ import java.util.UUID
  * - Tags are derived from [club.sk1er.mods.levelhead.core.StatsStore] through the
  *   same memoised [TagFormatter] call the nametag uses. There is no separate tab
  *   tag cache and therefore no second format to drift (B29).
- * - [club.sk1er.mods.levelhead.display.TabDisplay.config] supplies the tab header
- *   settings and a non-blank `footerString` ("Tab Footer Format"), which overrides
- *   the global per-mode footer template for tab tags only.
+ * - [club.sk1er.mods.levelhead.display.TabDisplay.config] supplies the shared header
+ *   and footer settings; the tab list uses exactly the same per-mode template as
+ *   the nametag, so cached and fallback rows cannot disagree.
  * - Component colours come from the stat formatter: the BedWars prestige / SkyWars
  *   level colour, or the Duels division colour when the footer shows a division.
  * - A player with no stats renders nothing; that is the only "unknown" state.
@@ -85,7 +85,7 @@ object TabRender {
             val uuid = info.gameProfile.id ?: continue
             if (uuid.version() == 2) continue
 
-            // Skip self if tab showSelf is disabled
+            // Skip self if the shared "Show Self" switch is off
             if (uuid == localPlayerUuid && !tabDisplay.config.showSelf) continue
 
             // The same formatter call as the nametag, so text and width are
@@ -96,7 +96,6 @@ object TabRender {
                 stats,
                 tabDisplay.config,
                 mode,
-                preferDisplayFooter = true,
                 statsVersion = Levelhead.statsStore.version(uuid, mode)
             )
             val text = colorizeTag(tag)

@@ -55,12 +55,6 @@ class MasterConfig {
             LevelheadConfig.renderDistance = value
         }
 
-    var purgeSize: Int
-        get() = LevelheadConfig.cacheSizeLimit
-        set(value) {
-            LevelheadConfig.cacheSizeLimit = value
-        }
-
     enum class DisplayPosition {
         ABOVE,
         BELOW

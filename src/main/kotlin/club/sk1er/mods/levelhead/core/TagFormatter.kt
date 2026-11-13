@@ -25,7 +25,6 @@ object TagFormatter {
         val statsVersion: Long,
         val configVersion: Long,
         val gameMode: GameMode,
-        val preferDisplayFooter: Boolean,
         val config: DisplayConfig
     )
 
@@ -46,14 +45,13 @@ object TagFormatter {
         stats: GameStats,
         config: DisplayConfig,
         gameMode: GameMode,
-        preferDisplayFooter: Boolean = false,
         statsVersion: Long = stats.fetchedAt,
         configVersion: Long = settingsVersion.get()
     ): LevelheadTag {
-        val key = Key(uuid, statsVersion, configVersion, gameMode, preferDisplayFooter, config)
+        val key = Key(uuid, statsVersion, configVersion, gameMode, config)
         memo[key]?.let { return it }
 
-        val tag = StatsFormatter.formatTag(uuid, stats, config, gameMode, preferDisplayFooter)
+        val tag = StatsFormatter.formatTag(uuid, stats, config, gameMode)
         if (memo.size >= MAX_ENTRIES) {
             memo.clear()
         }

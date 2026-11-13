@@ -11,6 +11,9 @@ import java.awt.Color
  * so a change in the GUI is visible immediately and survives a restart without a
  * second config file. Only [gameMode] is runtime state: it follows the detected
  * game and is intentionally not persisted.
+ *
+ * The nametag and the tab list intentionally share the same header, footer
+ * template, fallback colour and self-visibility; only the on/off switch differs.
  */
 class DisplayConfig(private val role: DisplayRole = DisplayRole.ABOVE_HEAD) {
 
@@ -28,16 +31,11 @@ class DisplayConfig(private val role: DisplayRole = DisplayRole.ABOVE_HEAD) {
             }
         }
 
+    /** One switch for both renderers: a user never sees themselves twice by mistake. */
     var showSelf: Boolean
-        get() = when (role) {
-            DisplayRole.ABOVE_HEAD -> LevelheadConfig.showSelf
-            DisplayRole.TAB -> LevelheadConfig.tabShowSelf
-        }
+        get() = LevelheadConfig.showSelf
         set(value) {
-            when (role) {
-                DisplayRole.ABOVE_HEAD -> LevelheadConfig.showSelf = value
-                DisplayRole.TAB -> LevelheadConfig.tabShowSelf = value
-            }
+            LevelheadConfig.showSelf = value
         }
 
     /** The header follows the detected game mode (B36). */
@@ -50,31 +48,11 @@ class DisplayConfig(private val role: DisplayRole = DisplayRole.ABOVE_HEAD) {
             LevelheadConfig.headerColor = OneColor(value)
         }
 
+    /** The stat's own colour wins where it has one; this is only the fallback. */
     var footerColor: Color
-        get() = when (role) {
-            DisplayRole.TAB -> LevelheadConfig.tabFooterColor.toJavaColor()
-            else -> LevelheadConfig.footerColor.toJavaColor()
-        }
+        get() = LevelheadConfig.footerColor.toJavaColor()
         set(value) {
-            when (role) {
-                DisplayRole.TAB -> LevelheadConfig.tabFooterColor = OneColor(value)
-                else -> LevelheadConfig.footerColor = OneColor(value)
-            }
-        }
-
-    /**
-     * Only the tab list can override the per-mode footer; as an above-head display
-     * this is null and the per-mode template is used.
-     */
-    var footerString: String?
-        get() = when (role) {
-            DisplayRole.TAB -> LevelheadConfig.tabFooterFormat.ifBlank { null }
-            else -> null
-        }
-        set(value) {
-            if (role == DisplayRole.TAB) {
-                LevelheadConfig.tabFooterFormat = value.orEmpty()
-            }
+            LevelheadConfig.footerColor = OneColor(value)
         }
 }
 

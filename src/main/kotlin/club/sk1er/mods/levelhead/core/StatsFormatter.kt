@@ -20,17 +20,16 @@ object StatsFormatter {
     /**
      * Build a LevelheadTag from GameStats and DisplayConfig.
      *
-     * @param preferDisplayFooter when true, a non-blank [DisplayConfig.footerString]
-     *   takes precedence over the global per-mode footer template (tab list).
+     * The nametag and the tab list both read the same per-mode footer template, so
+     * there is no role-specific override here to drift from the displayed text.
      */
     fun formatTag(
         uuid: UUID,
         stats: GameStats?,
         config: DisplayConfig,
-        gameMode: GameMode,
-        preferDisplayFooter: Boolean = false
+        gameMode: GameMode
     ): LevelheadTag {
-        val footerTemplate = LevelheadConfig.footerTemplateFor(gameMode, config, preferDisplayFooter)
+        val footerTemplate = LevelheadConfig.footerTemplateFor(gameMode)
         
         val (footerValue, footerColor) = if (stats?.nicked == true) {
             Pair("NICKED", Color.GRAY)
@@ -56,7 +55,7 @@ object StatsFormatter {
         
         val tag = LevelheadTag(uuid)
         tag.fetchedAt = fetchedAt
-        tag.header.value = "${config.headerString}: "
+        tag.header.value = config.headerString.takeIf { it.isNotBlank() }?.let { "$it: " } ?: ""
         tag.header.color = config.headerColor
         tag.footer.value = footerValue
         tag.footer.color = finalColor
