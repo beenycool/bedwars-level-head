@@ -74,6 +74,11 @@ export function rangeLabel(range: StatsRange): string {
   return RANGE_LABELS[range];
 }
 
+/** Compact label for the tab strip; `rangeLabel` carries the long form. */
+export function rangeShortLabel(range: StatsRange): string {
+  return range === 'all' ? 'all' : range;
+}
+
 /** Inclusive lower bound for a range, or `null` for all time. */
 export function rangeSince(range: StatsRange, now: number = Date.now()): Date | null {
   if (range === 'all') {

@@ -10,6 +10,7 @@ import {
 } from '../util/html';
 import {
   rangeLabel,
+  rangeShortLabel,
   STATS_RANGES,
   type StatsQuery,
   type StatsRange,
@@ -41,10 +42,10 @@ export function statsHref(query: StatsQuery, overrides: Partial<StatsQuery> = {}
 function rangeTabs(query: StatsQuery): string {
   const tabs = STATS_RANGES.map((range: StatsRange) => {
     const current = range === query.range ? ' aria-current="page"' : '';
-    return `<a href="${statsHref(query, { range, page: 1 })}"${current}>${rangeLabel(range)}</a>`;
+    return `<a href="${statsHref(query, { range, page: 1 })}"${current} title="${escapeHtml(rangeLabel(range))}">${rangeShortLabel(range)}</a>`;
   }).join('');
 
-  return `<div class="tabs" role="tablist">${tabs}</div>`;
+  return `<nav class="tabs" aria-label="Time range">${tabs}</nav>`;
 }
 
 function renderTiles(data: StatsPageData, query: StatsQuery): string {
@@ -54,37 +55,43 @@ function renderTiles(data: StatsPageData, query: StatsQuery): string {
       label: 'Lookups',
       value: formatNumber(summary.lookups),
       sub: rangeLabel(query.range).toLowerCase(),
+      lead: true,
     },
     {
-      label: 'Players seen',
+      label: 'Players',
       value: formatNumber(summary.playersInRange),
-      sub: `${formatNumber(summary.trackedPlayers)} tracked all time`,
+      sub: `${formatNumber(summary.trackedPlayers)} all time`,
+      lead: false,
     },
     {
-      label: 'Cache hit rate',
+      label: 'Cache hit',
       value: formatPercent(summary.cacheHits, summary.lookups),
       sub: `${formatNumber(summary.cacheHits)} served from cache`,
+      lead: false,
     },
     {
-      label: 'Error rate',
+      label: 'Errors',
       value: formatPercent(summary.errors, summary.lookups),
       sub: `${formatNumber(summary.errors)} failed lookups`,
+      lead: false,
     },
     {
-      label: 'Avg latency',
+      label: 'Latency',
       value: formatLatency(summary.averageLatencyMs),
       sub: 'per player',
+      lead: false,
     },
     {
-      label: 'Cached profiles',
+      label: 'Profiles',
       value: formatNumber(summary.cacheEntries),
       sub: 'SQL rows ready to serve',
+      lead: false,
     },
   ];
 
   return `<section class="tiles">${tiles
     .map(
-      (tile) => `<div class="tile">
+      (tile) => `<div class="tile${tile.lead ? ' tile--lead' : ''}">
       <div class="label">${escapeHtml(tile.label)}</div>
       <div class="value">${escapeHtml(tile.value)}</div>
       <div class="sub">${escapeHtml(tile.sub)}</div>
@@ -103,6 +110,7 @@ function chartLabel(point: ChartPoint, range: StatsRange): string {
 function renderChart(points: ChartPoint[], query: StatsQuery): string {
   const total = points.reduce((sum, point) => sum + point.lookups, 0);
   const peak = Math.max(1, ...points.map((point) => point.lookups));
+  const maxLookups = points.reduce((max, point) => Math.max(max, point.lookups), 0);
 
   const bars = points
     .map((point) => {
@@ -120,25 +128,26 @@ function renderChart(points: ChartPoint[], query: StatsQuery): string {
     : '';
 
   const bucketWord = query.range === '24h' ? 'Hourly' : 'Daily';
+  const chartDescription = `${bucketWord} lookup volume: ${formatNumber(total)} lookups in ${rangeLabel(query.range).toLowerCase()}, peak ${formatNumber(maxLookups)} per ${query.range === '24h' ? 'hour' : 'day'}.`;
 
   return `<section class="panel">
     <div class="panel-head">
       <h2>Lookup volume</h2>
       <span class="hint">${bucketWord} buckets, ${escapeHtml(rangeLabel(query.range).toLowerCase())}</span>
     </div>
-    <div class="chart">${bars}</div>
+    <div class="chart" role="img" aria-label="${escapeHtml(chartDescription)}">${bars}</div>
     ${axis}
   </section>`;
 }
 
-function statusBadge(status: number): string {
+function statusMarker(status: number): string {
   const variant = status >= 500 ? 'bad' : status >= 400 ? 'warn' : status >= 300 ? 'idle' : 'ok';
-  return `<span class="badge ${variant}">${escapeHtml(status)}</span>`;
+  return `<span class="status status--${variant}"><span class="status__mark" aria-hidden="true"></span>${escapeHtml(status)}</span>`;
 }
 
 function renderRow(player: TrackedPlayerTable): string {
   const name = player.username ?? 'Unknown player';
-  const nicked = player.nicked ? ' <span class="badge nicked">nicked</span>' : '';
+  const nicked = player.nicked ? ' <span class="player__flag">nicked</span>' : '';
   const stars = player.stars === null ? '—' : formatNumber(player.stars);
 
   return `<tr>
@@ -148,10 +157,10 @@ function renderRow(player: TrackedPlayerTable): string {
     </td>
     <td class="num">${escapeHtml(stars)}</td>
     <td class="num">${formatNumber(player.lookups)}</td>
-    <td class="num">${formatPercent(player.cache_hits, player.lookups)}</td>
-    <td class="num">${escapeHtml(formatLatency(player.last_latency_ms))}</td>
-    <td>${statusBadge(player.last_status)}</td>
-    <td class="muted">${escapeHtml(formatRelativeTime(player.last_looked_up_at))}</td>
+    <td class="num col-cache">${formatPercent(player.cache_hits, player.lookups)}</td>
+    <td class="num col-latency">${escapeHtml(formatLatency(player.last_latency_ms))}</td>
+    <td class="col-status">${statusMarker(player.last_status)}</td>
+    <td class="muted col-seen">${escapeHtml(formatRelativeTime(player.last_looked_up_at))}</td>
   </tr>`;
 }
 
@@ -181,32 +190,37 @@ function renderTable(query: StatsQuery, data: StatsPageData): string {
   }).toString()}`;
 
   const body = rows
-    ? `<table>
+    ? `<div class="table-wrap"><table>
         <thead>
           <tr>
-            <th>Player</th>
-            <th class="num">Stars</th>
-            <th class="num">Lookups</th>
-            <th class="num">Cache</th>
-            <th class="num">Latency</th>
-            <th>Status</th>
-            <th>Last seen</th>
+            <th scope="col">Player</th>
+            <th scope="col" class="num">Stars</th>
+            <th scope="col" class="num">Lookups</th>
+            <th scope="col" class="num col-cache">Cache</th>
+            <th scope="col" class="num col-latency">Latency</th>
+            <th scope="col" class="col-status">Status</th>
+            <th scope="col" class="col-seen">Seen</th>
           </tr>
         </thead>
         <tbody>${rows}</tbody>
-      </table>`
+      </table></div>`
     : `<div class="empty">
         <strong>No tracked players match this view</strong>
         Lookups appear here as soon as the mod asks the proxy for a player.
       </div>`;
 
+  const previous =
+    data.page <= 1
+      ? `<span class="pager__link is-disabled" aria-disabled="true">← Previous</span>`
+      : `<a class="pager__link" href="${statsHref(query, { page: data.page - 1 })}">← Previous</a>`;
+  const next =
+    data.page >= totalPages
+      ? `<span class="pager__link is-disabled" aria-disabled="true">Next →</span>`
+      : `<a class="pager__link" href="${statsHref(query, { page: data.page + 1 })}">Next →</a>`;
+
   const pager = `<div class="pager">
     <span>${formatNumber(data.matchingPlayers)} player${data.matchingPlayers === 1 ? '' : 's'} · page ${formatNumber(data.page)} of ${formatNumber(totalPages)}</span>
-    <span>
-      <a class="${data.page <= 1 ? 'disabled' : ''}" href="${statsHref(query, { page: Math.max(1, data.page - 1) })}">← Previous</a>
-      &nbsp;·&nbsp;
-      <a class="${data.page >= totalPages ? 'disabled' : ''}" href="${statsHref(query, { page: data.page + 1 })}">Next →</a>
-    </span>
+    <span>${previous} <span aria-hidden="true">·</span> ${next}</span>
   </div>`;
 
   return `<section class="panel">
@@ -214,7 +228,7 @@ function renderTable(query: StatsQuery, data: StatsPageData): string {
       <h2>Tracked players</h2>
       <a class="export" href="${escapeHtml(exportHref)}">Export CSV</a>
     </div>
-    <div style="margin-top:14px">${body}</div>
+    ${body}
     ${pager}
   </section>`;
 }
@@ -222,12 +236,12 @@ function renderTable(query: StatsQuery, data: StatsPageData): string {
 export function renderStatsPage({ query, data, retentionDays }: StatsPageProps): string {
   return renderLayout({
     title: 'Tracking · BedWars Levelhead',
-    subtitle: `${escapeHtml(rangeLabel(query.range))} · ${formatNumber(data.summary.trackedPlayers)} players seen since tracking began`,
+    subtitle: `${escapeHtml(rangeLabel(query.range))} · ${formatNumber(data.summary.trackedPlayers)} players tracked`,
     body: `${renderControls(query)}
 ${renderTiles(data, query)}
 ${renderChart(data.chart, query)}
 ${renderTable(query, data)}
-<p class="muted" style="margin-top:14px;font-size:12px">Lookup events are pruned after ${formatNumber(retentionDays)} days. Player counters are kept.</p>`,
+<p class="note">Lookup events are pruned after ${formatNumber(retentionDays)} days. Player counters are kept.</p>`,
   });
 }
 

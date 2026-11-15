@@ -1,6 +1,7 @@
 import {
   chartGranularity,
   parseStatsQuery,
+  rangeShortLabel,
   rangeSince,
   STATS_MAX_SEARCH_LENGTH,
 } from '../../src/util/statsQuery';
@@ -67,5 +68,14 @@ describe('chartGranularity', () => {
     expect(chartGranularity('24h')).toBe('hour');
     expect(chartGranularity('7d')).toBe('day');
     expect(chartGranularity('all')).toBe('day');
+  });
+});
+
+describe('rangeShortLabel', () => {
+  it('keeps the tab strip compact and single-line', () => {
+    expect(rangeShortLabel('24h')).toBe('24h');
+    expect(rangeShortLabel('7d')).toBe('7d');
+    expect(rangeShortLabel('30d')).toBe('30d');
+    expect(rangeShortLabel('all')).toBe('all');
   });
 });

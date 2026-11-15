@@ -106,7 +106,7 @@ describe('renderStatsPage', () => {
 
   it('renders no pagination links that escape the page bounds', () => {
     const html = renderStatsPage({ query, data: data(), retentionDays: 90 });
-    expect(html).toContain('class="disabled" href="/stats"');
+    expect(html).toContain('class="pager__link is-disabled" aria-disabled="true"');
   });
 });
 
