@@ -115,7 +115,12 @@ async function persistLookups(observations: LookupObservation[], route: LookupRo
   const rows = buildTrackedPlayerRows(observations);
   const summary = summarizeObservations(observations);
 
-  await buildTrackedPlayersUpsert(rows, lookedUpAt).execute(db);
+  // A request made entirely of failed lookups has no player rows to upsert, and an
+  // empty `VALUES` list is invalid SQL. The event row still has to be written so the
+  // error counters move.
+  if (rows.length > 0) {
+    await buildTrackedPlayersUpsert(rows, lookedUpAt).execute(db);
+  }
 
   await db
     .insertInto('lookup_events')

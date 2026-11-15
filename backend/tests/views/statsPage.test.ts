@@ -42,6 +42,7 @@ function data(overrides: Partial<StatsPageData> = {}): StatsPageData {
       playersInRange: 42,
       trackedPlayers: 900,
       cacheEntries: 850,
+      databaseSize: '8.9 MB',
     },
     chart,
     players: [player()],
@@ -65,15 +66,18 @@ describe('statsHref', () => {
 });
 
 describe('renderStatsPage', () => {
-  it('renders summary tiles, chart and the player row', () => {
+  it('renders the analytics cards, both charts and the player row', () => {
     const html = renderStatsPage({ query, data: data(), retentionDays: 90 });
 
+    expect(html).toContain('Levelhead Analytics');
     expect(html).toContain('75.0%'); // cache hit rate
     expect(html).toContain('1,000'); // lookups
     expect(html).toContain('Notch');
     expect(html).toContain('530fa96a…5573');
     expect(html).toContain('90 days');
-    expect((html.match(/class="bar"/g) ?? []).length).toBe(24);
+    expect(html).toContain('Requests Over Time');
+    expect(html).toContain('Status Breakdown');
+    expect(html).toContain('class="donut"');
   });
 
   it('escapes player-controlled values', () => {
@@ -95,7 +99,7 @@ describe('renderStatsPage', () => {
       retentionDays: 90,
     });
 
-    expect(html).toContain('No tracked players match this view');
+    expect(html).toContain('No lookups recorded yet');
     expect(html).not.toContain('<tbody></tbody>');
   });
 
@@ -106,7 +110,7 @@ describe('renderStatsPage', () => {
 
   it('renders no pagination links that escape the page bounds', () => {
     const html = renderStatsPage({ query, data: data(), retentionDays: 90 });
-    expect(html).toContain('class="disabled" href="/stats"');
+    expect(html).toContain('aria-disabled="true"');
   });
 });
 

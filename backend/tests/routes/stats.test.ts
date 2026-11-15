@@ -46,6 +46,7 @@ const pageData: StatsPageData = {
     playersInRange: 12,
     trackedPlayers: 34,
     cacheEntries: 30,
+    databaseSize: '8.9 MB',
   },
   chart: Array.from({ length: 24 }, (_, index) => ({
     bucket: new Date(Date.UTC(2026, 10, 15, index)),
@@ -112,7 +113,8 @@ describe('GET /stats', () => {
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toContain('text/html');
     expect(response.headers['cache-control']).toBe('no-store');
-    expect(response.body).toContain('Tracked players');
+    expect(response.body).toContain('Levelhead Analytics');
+    expect(response.body).toContain('Recent Player Lookups');
     expect(response.body).toContain('Notch');
     expect(loadStatsPage).toHaveBeenCalledWith({
       range: '24h',

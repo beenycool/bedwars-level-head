@@ -18,6 +18,7 @@ export interface StatsSummary {
   playersInRange: number;
   trackedPlayers: number;
   cacheEntries: number;
+  databaseSize: string;
 }
 
 export interface ChartPoint {
@@ -113,6 +114,9 @@ async function loadSummary(since: Date | null): Promise<StatsSummary> {
   `.execute(db);
 
   const cacheRow = await sql<CountRow>`SELECT COUNT(*) AS count FROM player_stats_cache`.execute(db);
+  const sizeRow = await sql<{ size: string }>`
+    SELECT pg_size_pretty(pg_database_size(current_database())) AS size
+  `.execute(db);
 
   const eventRow = aggregate.rows[0];
   const totalRow = totals.rows[0];
@@ -127,6 +131,7 @@ async function loadSummary(since: Date | null): Promise<StatsSummary> {
     playersInRange: toNumber(totalRow?.in_range),
     trackedPlayers: toNumber(totalRow?.total),
     cacheEntries: toNumber(cacheRow.rows[0]?.count),
+    databaseSize: sizeRow.rows[0]?.size ?? '—',
   };
 }
 
