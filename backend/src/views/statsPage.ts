@@ -134,7 +134,7 @@ function renderFilters(query: StatsQuery, data: StatsPageData): string {
         <a class="reset-btn" href="/stats">Reset</a>
       </div>
     </form>
-    <p class="meta filter-summary">${windowText} · ${formatNumber(data.summary.total)} lookups · ${plural(data.summary.players, 'player', 'players')}</p>
+    <p class="meta filter-summary">${windowText} · ${plural(data.summary.total, 'lookup', 'lookups')} · ${plural(data.summary.players, 'player', 'players')}</p>
   </div>`;
 }
 
@@ -177,7 +177,7 @@ function renderStats(query: StatsQuery, data: StatsPageData): string {
     <div class="card stat-card">
       <p class="stat-label">Latency (${escapeHtml(query.metric)})</p>
       <p class="stat-value">${escapeHtml(formatLatency(latency))}</p>
-      <p class="stat-sub">From ${formatNumber(summary.total)} samples</p>
+      <p class="stat-sub">From ${plural(summary.total, 'sample', 'samples')}</p>
       ${renderMetricForm(query)}
     </div>
   </div>`;
@@ -500,7 +500,7 @@ function renderTable(query: StatsQuery, data: StatsPageData): string {
       : `<a class="preset-btn" href="${statsHref(query, { page: data.page + 1 })}">Next →</a>`;
 
   return `<h2>Recent Player Lookups</h2>
-  <p class="meta">${formatNumber(data.matching)} lookups · page ${formatNumber(data.page)} of ${formatNumber(totalPages)}</p>
+  <p class="meta">${plural(data.matching, 'lookup', 'lookups')} · page ${formatNumber(data.page)} of ${formatNumber(totalPages)}</p>
   <div class="controls">
     <form class="search-box" method="get" action="/stats">
       ${hiddenQuery(query, ['search', 'page'])}
