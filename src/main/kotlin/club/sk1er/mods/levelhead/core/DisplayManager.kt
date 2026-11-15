@@ -1,153 +1,86 @@
 package club.sk1er.mods.levelhead.core
+
 import java.util.Collections
 import java.util.LinkedHashMap
+import java.util.UUID
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
-import club.sk1er.mods.levelhead.Levelhead.gson
 import club.sk1er.mods.levelhead.config.DisplayConfig
+import club.sk1er.mods.levelhead.config.DisplayRole
 import club.sk1er.mods.levelhead.config.MasterConfig
-import club.sk1er.mods.levelhead.config.migration.ConfigMigrator
 import club.sk1er.mods.levelhead.display.AboveHeadDisplay
-import com.google.gson.JsonArray
-import com.google.gson.JsonParser
-import com.google.gson.JsonObject
+import club.sk1er.mods.levelhead.display.TabDisplay
 import net.minecraft.client.Minecraft
 import net.minecraft.entity.player.EntityPlayer
-import org.apache.commons.io.FileUtils
-import java.awt.Color
-import java.util.*
-import java.io.File
-import java.io.IOException
-import java.nio.charset.StandardCharsets
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
-class DisplayManager(val file: File) {
+/**
+ * Request queue and display lifecycle.
+ *
+ * The display tag caches are gone: renderers derive a tag from [StatsStore] through
+ * [TagFormatter]. What remains here is "who should we ask about, and when", plus
+ * the two display objects the renderer needs.
+ */
+class DisplayManager {
     companion object {
-        private const val LAST_SEEN_UPDATE_INTERVAL_MS = 5000L
-        private const val CACHE_CHECK_INTERVAL_MS = 10000L
         private const val TAB_FETCH_INTERVAL_MS = 2000L
-
-        internal fun managedHeaderMode(header: String?): GameMode? = ConfigMigrator.managedHeaderMode(header)
-        internal fun normalizedManagedHeader(header: String?, targetMode: GameMode): String? = ConfigMigrator.normalizedManagedHeader(header, targetMode)
+        private const val MISSING_RETRY_INTERVAL_MS = 2000L
     }
 
+    /**
+     * A view over the OneConfig settings; there is no second persisted store.
+     * See [MasterConfig] and [DisplayConfig].
+     */
     var config = MasterConfig()
+
+    /** There is exactly one above-head display; nothing can create a second one. */
     val aboveHead: MutableList<AboveHeadDisplay> = ArrayList()
-    private var wasInGame: Boolean = false
-    private var lastCacheCheckAt: Long = 0L
-    private var lastSeenUpdateAt: Long = 0L
+    lateinit var tab: TabDisplay
+        private set
     private var lastTabFetchAt: Long = 0L
-    private val reusableUuidSet = HashSet<UUID>()
+    private var lastMissingRefreshAt: Long = 0L
 
     init {
-        readConfig()
+        aboveHead.add(AboveHeadDisplay(DisplayConfig(DisplayRole.ABOVE_HEAD)))
+        tab = TabDisplay(DisplayConfig(DisplayRole.TAB))
     }
 
-    fun readConfig() {
-        try {
-            var shouldSaveCopyNow = false
-            if (!file.exists()) {
-                file.createNewFile()
-                shouldSaveCopyNow = true
-            }
-            val rawSource = runCatching {
-                JsonParser.parseString(FileUtils.readFileToString(file, StandardCharsets.UTF_8)).asJsonObject
-            }.getOrElse { JsonObject() }
-
-            val source = ConfigMigrator.migrate(rawSource)
-            val migrated = source != rawSource
-
-            if (source.has("master")) {
-                config = gson.fromJson(source["master"].asJsonObject, MasterConfig::class.java)
-            }
-
-            if (source.has("head")) {
-                for (head in source["head"].asJsonArray) {
-                    aboveHead.add(AboveHeadDisplay(gson.fromJson(head.asJsonObject, DisplayConfig::class.java)))
-                }
-            }
-
-            if (aboveHead.isEmpty()) {
-                aboveHead.add(AboveHeadDisplay(DisplayConfig()))
-                shouldSaveCopyNow = true
-            }
-
-            adjustIndices()
-
-            if (shouldSaveCopyNow || migrated) {
-                saveConfig()
-            }
-        } catch (e: IOException) {
-            Levelhead.logger.error("Failed to initialize display manager.", e)
-        }
-    }
-
-    fun saveConfig() {
-        val headSnapshot = synchronized(aboveHead) {
-            aboveHead.map { gson.toJsonTree(it.config) }
-        }
-        val masterSnapshot = gson.toJsonTree(config)
-
-        Levelhead.scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val jsonObject = JsonObject()
-            jsonObject.add("master", masterSnapshot)
-
-            val head = JsonArray()
-            headSnapshot.forEach { displayConfig ->
-                head.add(displayConfig)
-            }
-
-            jsonObject.add("head", head)
-
-            try {
-                FileUtils.writeStringToFile(file, jsonObject.toString(), StandardCharsets.UTF_8)
-            } catch (e: IOException) {
-                Levelhead.logger.error("Failed to write to config.", e)
-            }
-        }
-    }
-
-    fun adjustIndices() {
-        for (i in aboveHead.indices) {
-            aboveHead[i].bottomValue = i == 0
-            aboveHead[i].index = i
-        }
-    }
-
-
-    @OptIn(ExperimentalStdlibApi::class)
     fun joinWorld(resetDetector: Boolean = false) {
         if (resetDetector) {
             ModeManager.onWorldJoin()
         }
-        
-        val inGame = ModeManager.shouldRequestData()
-        if (!inGame) {
-            if (wasInGame) {
-                clearCachesWithoutRefetch()
-            }
-            wasInGame = false
+        // A fresh world starts a new sample; the first scoreboard packet may not
+        // have arrived yet, so the delayed fallback below re-samples once it has.
+        ModeManager.invalidate()
+
+        if (ModeManager.shouldRequestData()) {
+            requestAllDisplays()
             return
         }
-        
-        wasInGame = true
-        // requestAllDisplays() will automatically sync the game mode
-        requestAllDisplays()
+
+        // Scoreboard packets haven't arrived yet (~1.5s). Re-check in the per-world
+        // scope and do every client read on the main thread.
+        Levelhead.launchWorld {
+            delay(1500)
+            Levelhead.runOnMain {
+                if (Minecraft.getMinecraft().theWorld == null) return@runOnMain
+                ModeManager.invalidate()
+                if (!ModeManager.shouldRequestData()) return@runOnMain
+                requestAllDisplays()
+            }
+        }
     }
 
-    @OptIn(ExperimentalStdlibApi::class)
     fun playerJoin(player: EntityPlayer) {
         if (!config.enabled) return
         if (player.isNPC) return
         if (!ModeManager.shouldRequestData()) return
         syncGameMode()
         val activeMode = ModeManager.getActiveGameMode() ?: return
-        val displays = aboveHead.filter { it.config.enabled }
-        displays.filter { !it.cache.containsKey(Levelhead.DisplayCacheKey(player.uniqueID, activeMode)) }
-            .forEach { display ->
-                enqueueRequest(player.uniqueID.trimmed, display, display.config.gameMode.typeId, Levelhead.RequestReason.PLAYER_JOIN)
-            }
+        if (!FetchBackoff.canAttempt(player.uniqueID)) return
+        if (!Levelhead.statsStore.needsFetch(player.uniqueID, activeMode)) return
+        enqueueRequest(player.uniqueID.trimmed, activeMode.typeId, Levelhead.RequestReason.PLAYER_JOIN)
     }
 
     private data class RequestKey(val uuid: String, val type: String)
@@ -159,42 +92,33 @@ class DisplayManager(val file: File) {
         }
     )
 
-    private fun enqueueRequest(uuid: String, display: club.sk1er.mods.levelhead.display.LevelheadDisplay, type: String, reason: Levelhead.RequestReason) {
+    private fun enqueueRequest(uuid: String, type: String, reason: Levelhead.RequestReason) {
         val key = RequestKey(uuid, type)
         synchronized(pendingRequests) {
             val existing = pendingRequests[key]
-            if (existing != null) {
-                pendingRequests[key] = existing.copy(
-                    displays = existing.displays + display,
+            pendingRequests[key] = if (existing != null) {
+                existing.copy(
                     reason = if (existing.reason == reason) existing.reason else Levelhead.RequestReason.UNKNOWN
                 )
             } else {
-                pendingRequests[key] = Levelhead.LevelheadRequest(uuid, setOf(display), type, reason)
+                Levelhead.LevelheadRequest(uuid, type, reason)
             }
         }
     }
 
-
     fun tick() {
         val now = System.currentTimeMillis()
 
-        // Periodically update lastSeen for all players in the world to keep their cache entries alive.
-        // This ensures that present but non-rendered players (e.g., behind the player) aren't purged.
-        if (now - lastSeenUpdateAt > LAST_SEEN_UPDATE_INTERVAL_MS) {
-            updateLastSeen()
-            lastSeenUpdateAt = now
-        }
-
-        // Periodically purge old or excessive cache entries.
-        if (now - lastCacheCheckAt > CACHE_CHECK_INTERVAL_MS) {
-            checkCacheSizes()
-            lastCacheCheckAt = now
-        }
-
-        // Periodically fetch stats for tab list players that aren't in the world entity list.
+        // Periodically fetch stats for tab list players that aren't in the world
+        // entity list, and refresh visible players whose stats have gone stale.
         if (LevelheadConfig.showTabStats && now - lastTabFetchAt > TAB_FETCH_INTERVAL_MS) {
             requestTabListPlayers()
             lastTabFetchAt = now
+        }
+
+        if (now - lastMissingRefreshAt > MISSING_RETRY_INTERVAL_MS) {
+            refreshMissingVisibleDisplays()
+            lastMissingRefreshAt = now
         }
 
         if (pendingRequests.isEmpty()) return
@@ -209,48 +133,18 @@ class DisplayManager(val file: File) {
             }
         }
         if (batch.isNotEmpty()) {
-            Levelhead.fetchBatch(batch)
+            Levelhead.requestCoordinator.fetchBatch(batch)
         }
     }
 
-    private fun updateLastSeen() {
-        val world = Minecraft.getMinecraft().theWorld ?: return
-        val now = System.currentTimeMillis()
-        val activeMode = ModeManager.getActiveGameMode() ?: return
-
-        // Scan world players and refresh their lastSeen timestamp in the display caches.
-        // Using a reusable set avoids the GC factory problem of allocating a new set every check.
-        reusableUuidSet.clear()
-        world.playerEntities.forEach { reusableUuidSet.add(it.uniqueID) }
-
-        aboveHead.forEach { display ->
-            if (!display.config.enabled) return@forEach
-            display.cache.forEach { (key, tag) ->
-                if (key.gameMode == activeMode && key.uuid in reusableUuidSet) {
-                    tag.lastSeen = now
-                }
-            }
-        }
-    }
-
-    fun checkCacheSizes() {
-        aboveHead.filter { it.config.enabled }.forEach { display ->
-            display.checkCacheSize()
-        }
-    }
+    /**
+     * Clear the store and cancel in-flight work. Kept under its old name because
+     * the config/command paths call it; display caches no longer exist, so this is
+     * either "clear stats too" or a no-op.
+     */
     fun clearCachesWithoutRefetch(clearStats: Boolean = true) {
-        val activeMode = ModeManager.getActiveGameMode()
-        if (Levelhead.logger.isDebugEnabled) {
-            Levelhead.logger.debug("clearCachesWithoutRefetch: clearStats={} activeMode={} cacheSizesBefore={}",
-                clearStats, activeMode, aboveHead.map { it.cache.size })
-        }
-        
-        aboveHead.forEach { it.cache.clear() }
         if (clearStats) {
             Levelhead.clearCachedStats()
-        }
-        if (Levelhead.logger.isDebugEnabled) {
-            Levelhead.logger.debug("clearCachesWithoutRefetch: COMPLETED cacheSizesAfter={}", aboveHead.map { it.cache.size })
         }
     }
 
@@ -262,97 +156,55 @@ class DisplayManager(val file: File) {
     }
 
     /**
-     * Refresh visible player tags without requiring mode detection to be active.
-     * Used for config-only changes (for example, footer format switches) so updates
-     * apply immediately in the current world/session.
+     * Re-request visible players whose stats are missing or stale. Runs on the
+     * client tick (main thread), so reading the entity list is safe; the actual
+     * HTTP work stays on the IO scope. [FetchBackoff] enforces the retry delay.
      */
-    @OptIn(ExperimentalStdlibApi::class)
-    fun refreshVisibleDisplays() {
+    private fun refreshMissingVisibleDisplays() {
         if (!config.enabled) return
-
-        val displays = aboveHead.filter { it.config.enabled }
-        if (displays.isEmpty()) return
-
-        Minecraft.getMinecraft().theWorld?.playerEntities?.forEach { playerInfo ->
-            displays.forEach { display ->
-                enqueueRequest(playerInfo.uniqueID.trimmed, display, display.config.gameMode.typeId, Levelhead.RequestReason.REFRESH_VISIBLE_DISPLAYS)
-            }
+        if (!ModeManager.shouldRequestData()) return
+        val activeMode = ModeManager.getActiveGameMode() ?: return
+        if (buildActiveDisplayList().isEmpty()) return
+        val players = Minecraft.getMinecraft().theWorld?.playerEntities ?: return
+        val now = System.currentTimeMillis()
+        for (player in players) {
+            if (player.isNPC) continue
+            if (!FetchBackoff.canAttempt(player.uniqueID, now)) continue
+            if (!Levelhead.statsStore.needsFetch(player.uniqueID, activeMode, now)) continue
+            enqueueRequest(
+                player.uniqueID.trimmed,
+                activeMode.typeId,
+                Levelhead.RequestReason.REFRESH_VISIBLE_DISPLAYS
+            )
         }
     }
 
     /**
-     * Request stats for players visible in the tab list but not yet cached.
+     * Request stats for players visible in the tab list but not yet fresh.
      * Tab list players may not be world entities, so requestAllDisplays() misses them.
      */
-    @OptIn(ExperimentalStdlibApi::class)
     private fun requestTabListPlayers() {
         if (!LevelheadConfig.showTabStats) return
         if (!ModeManager.shouldRequestData()) return
         val activeMode = ModeManager.getActiveGameMode() ?: return
 
         val netHandler = Minecraft.getMinecraft().thePlayer?.sendQueue ?: return
+        val now = System.currentTimeMillis()
         for (info in netHandler.playerInfoMap) {
             val uuid = info.gameProfile.id ?: continue
             if (uuid.version() == 2) continue
-            if (Levelhead.getCachedStats(uuid, activeMode) != null) continue
-
-            synchronized(pendingRequests) {
-                val key = RequestKey(uuid.trimmed, activeMode.typeId)
-                if (!pendingRequests.containsKey(key)) {
-                    pendingRequests[key] = Levelhead.LevelheadRequest(
-                        uuid = uuid.trimmed,
-                        displays = emptySet(),
-                        type = activeMode.typeId,
-                        reason = Levelhead.RequestReason.TAB_LIST
-                    )
-                }
-            }
+            if (!FetchBackoff.canAttempt(uuid, now)) continue
+            if (!Levelhead.statsStore.needsFetch(uuid, activeMode, now)) continue
+            enqueueRequest(uuid.trimmed, activeMode.typeId, Levelhead.RequestReason.TAB_LIST)
         }
     }
 
     fun primaryDisplay(): AboveHeadDisplay? = aboveHead.firstOrNull()
 
-    fun updatePrimaryDisplay(mutator: (DisplayConfig) -> Boolean): Boolean {
-        val display = primaryDisplay() ?: return false
-        val changed = mutator(display.config)
-        if (!changed) {
-            return false
-        }
-        saveConfig()
-        LevelheadConfig.requestSync()
-        return true
-    }
-
-    fun applyPrimaryDisplayConfigToCache() {
-        val display = primaryDisplay() ?: return
-        val headerValue = "${display.config.headerString}: "
-        display.cache.values.forEach { tag ->
-            tag.header.value = headerValue
-            tag.header.color = display.config.headerColor
-        }
-    }
-
-    fun setEnabled(enabled: Boolean): Boolean {
-        if (config.enabled == enabled) {
-            return false
-        }
-
-        config.enabled = enabled
-        saveConfig()
-
-        if (!enabled) {
-            clearCachesWithoutRefetch()
-        } else if (ModeManager.shouldRequestData()) {
-            requestAllDisplays()
-        }
-
-        return true
-    }
-
     /**
-     * Automatically sync the display config's game mode with the currently detected game mode.
+     * Sync the displays' game mode with the currently detected game mode.
+     * Headers are computed from the mode, so there is no header text to copy (B36).
      */
-    @OptIn(ExperimentalStdlibApi::class)
     fun syncGameMode() {
         val detectedMode = ModeManager.getActiveGameMode() ?: run {
             Levelhead.logger.debug("syncGameMode: no active game mode, skipping")
@@ -362,69 +214,40 @@ class DisplayManager(val file: File) {
         Levelhead.logger.debug("syncGameMode: detectedMode={} currentConfigGameMode={}",
             detectedMode, primaryDisplay()?.config?.gameMode)
 
-        updatePrimaryDisplay { config ->
-            if (config.gameMode != detectedMode) {
-                val previousMode = config.gameMode
-                val previousHeader = config.headerString
-
-                config.gameMode = detectedMode
-
-                // If they were using the default header for the previous mode,
-                // automatically switch to the default header for the new mode.
-                if (previousHeader.equals(previousMode.defaultHeader, ignoreCase = true)) {
-                    config.headerString = detectedMode.defaultHeader
-                }
-
-                Levelhead.logger.debug("syncGameMode: CHANGED gameMode={}->{} header={}->{}",
-                    previousMode, detectedMode, previousHeader, config.headerString)
-                true
-            } else {
-                false
-            }
-        }
+        primaryDisplay()?.config?.gameMode = detectedMode
+        tab.config.gameMode = detectedMode
     }
 
-    @OptIn(ExperimentalStdlibApi::class)
+    /**
+     * Build a list of all enabled displays (above-head and tab).
+     */
+    private fun buildActiveDisplayList(): List<club.sk1er.mods.levelhead.display.LevelheadDisplay> {
+        val list = mutableListOf<club.sk1er.mods.levelhead.display.LevelheadDisplay>()
+        aboveHead.filter { it.config.enabled }.forEach { list.add(it) }
+        if (tab.config.enabled && LevelheadConfig.showTabStats) list.add(tab)
+        return list
+    }
+
+    /** Snapshot the visible players on the calling (main) thread and request them. */
     fun requestAllDisplays() {
+        val world = Minecraft.getMinecraft().theWorld ?: return
+        requestAllDisplays(world.playerEntities.map { it.uniqueID })
+    }
+
+    /** Request a set of UUIDs that was snapshotted on the main thread. */
+    fun requestAllDisplays(uuids: Collection<UUID>) {
         if (!config.enabled) return
         if (!ModeManager.shouldRequestData()) return
-        
+
         // Sync game mode before requesting displays
         syncGameMode()
-        
-        val displays = aboveHead.filter { it.config.enabled }
-        if (displays.isEmpty()) return
-        Minecraft.getMinecraft().theWorld?.playerEntities?.forEach { playerInfo ->
-            displays.forEach { display ->
-                enqueueRequest(playerInfo.uniqueID.trimmed, display, display.config.gameMode.typeId, Levelhead.RequestReason.REQUEST_ALL_DISPLAYS)
-            }
-        }
-    }
 
-    fun resetToDefaults() {
-        config = MasterConfig()
-        // Ensure defaults match LevelheadConfig defaults
-        config.renderDistance = 64
-        config.purgeSize = 500
-        config.backgroundOpacity = 0.25f
-        config.showBackground = true
-        config.renderThrottleMs = 0L
-        config.frameSkip = 1
-        config.textShadow = true
-        config.displayPosition = MasterConfig.DisplayPosition.ABOVE
-        aboveHead.clear()
-        val defaultDisplay = AboveHeadDisplay(DisplayConfig())
-        // Ensure DisplayConfig defaults match LevelheadConfig defaults
-        defaultDisplay.config.showSelf = true
-        defaultDisplay.config.headerString = GameMode.BEDWARS.defaultHeader
-        defaultDisplay.config.headerColor = Color(85, 255, 255)
-        defaultDisplay.config.footerString = "%star%"
-        aboveHead.add(defaultDisplay)
-        adjustIndices()
-        saveConfig()
-        clearCachesWithoutRefetch()
-        if (config.enabled && ModeManager.shouldRequestData()) {
-            requestAllDisplays()
+        if (buildActiveDisplayList().isEmpty()) return
+        val activeMode = ModeManager.getActiveGameMode() ?: return
+        val now = System.currentTimeMillis()
+        for (uuid in uuids) {
+            if (!FetchBackoff.canAttempt(uuid, now)) continue
+            enqueueRequest(uuid.trimmed, activeMode.typeId, Levelhead.RequestReason.REQUEST_ALL_DISPLAYS)
         }
     }
 }

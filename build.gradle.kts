@@ -5,7 +5,6 @@ import org.gradle.jvm.tasks.Jar
 
 plugins {
     kotlin("jvm")
-    id("cc.polyfrost.multi-version")
     id("cc.polyfrost.defaults.repo")
     id("cc.polyfrost.defaults.java")
     id("cc.polyfrost.defaults.loom")
@@ -14,8 +13,20 @@ plugins {
 
 val modGroup: String by project
 val modBaseName: String by project
+
+// The mod targets exactly one Minecraft version (1.8.9 / legacy Forge), so the
+// platform is read from a plain property instead of a multi-version lookup.
+val mcVersionStr = (findProperty("minecraft.version") as? String) ?: "1.8.9"
+
 group = modGroup
-base.archivesName.set("$modBaseName-${platform.mcVersionStr}")
+version = (findProperty("BUILD_ID") as? String)?.takeIf { it.isNotBlank() } ?: "local"
+base.archivesName.set("$modBaseName-$mcVersionStr")
+
+java {
+    toolchain {
+        languageVersion.set(JavaLanguageVersion.of(8))
+    }
+}
 
 loom {
     mixin {
@@ -38,8 +49,6 @@ repositories {
     maven("https://repo.polyfrost.org/releases")
     maven("https://repo.polyfrost.cc/releases")
     maven("https://repo.spongepowered.org/repository/maven-public/")
-    // Essential repository for gg.essential artifacts (UGraphics, UMatrixStack, etc.)
-    maven("https://repo.essential.gg/repository/maven-public")
 }
 
 val embed by configurations.creating
@@ -52,31 +61,22 @@ configurations.configureEach {
 }
 
 dependencies {
-    val oneconfig = "cc.polyfrost:oneconfig-$platform:0.2.2-alpha223"
+    val oneconfig = "cc.polyfrost:oneconfig-$mcVersionStr-forge:0.2.2-alpha223"
     val oneconfigWrapperLaunchwrapper = "cc.polyfrost:oneconfig-wrapper-launchwrapper:1.0.0-beta17"
-    val universalcraft = "cc.polyfrost:universalcraft-$platform:246"
-    val essentialForge = "gg.essential:essential-1.8.9-forge:1.3.10.2"
-    val essentialLoader = "gg.essential:loader-launchwrapper:1.1.3"
 
     modCompileOnly(oneconfig)
 
-    modCompileOnly(universalcraft)
-    modImplementation(universalcraft)
+    // Legacy (1.8.9) Forge: ship the LaunchWrapper OneConfig wrapper.
+    embed(oneconfigWrapperLaunchwrapper)
 
-    if (platform.isLegacyForge) {
-        embed(oneconfigWrapperLaunchwrapper)
-    }
-
-    // Essential is used for rendering (UGraphics/UMatrixStack) and is embedded via the loader
-    compileOnly(essentialForge)
-    embed(essentialLoader)
-
+    // The jar must run on Forge alone: no Essential / UniversalCraft / Elementa /
+    // MixinExtras at runtime. Rendering uses plain GlStateManager/Tessellator/
+    // FontRenderer and the tab mixin uses plain @Inject (B27, B28).
     embed(kotlin("stdlib"))
     embed("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     embed("com.squareup.okhttp3:okhttp:3.14.9")
     embed("com.google.code.gson:gson:2.10.1")
     compileOnly("org.spongepowered:mixin:0.8.5")
-    embed("com.github.ben-manes.caffeine:caffeine:2.9.3")
 
     // Test dependencies - pure JVM
     testImplementation(platform("org.junit:junit-bom:5.10.0"))
@@ -121,7 +121,6 @@ tasks.named<ShadowJar>("shadowJar") {
     relocate("okhttp3", "club.sk1er.mods.levelhead.shadow.okhttp3")
     relocate("okio", "club.sk1er.mods.levelhead.shadow.okio")
     relocate("com.google.gson", "club.sk1er.mods.levelhead.shadow.gson")
-    relocate("com.github.benmanes.caffeine", "club.sk1er.mods.levelhead.shadow.caffeine")
     manifest.attributes(manifestAttributes)
 }
 
@@ -134,4 +133,16 @@ tasks.named<RemapJarTask>("remapJar") {
 // Configure JUnit5 for tests
 tasks.test {
     useJUnitPlatform()
+}
+
+// Expand version placeholders in mcmod.info (no-op for other resources).
+tasks.processResources {
+    filesMatching("mcmod.info") {
+        expand(
+            mapOf(
+                "version" to project.version,
+                "mcVersionStr" to mcVersionStr
+            )
+        )
+    }
 }

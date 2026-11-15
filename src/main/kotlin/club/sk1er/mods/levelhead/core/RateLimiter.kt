@@ -18,6 +18,12 @@ private data class RateState(val remaining: Int, val lastResetAt: Long)
 /**
  * Handles rate limiting for API requests to Hypixel and the proxy.
  * Tracks local token consumption and respects server-side cooldown hints.
+ *
+ * [tryAcquire] is the only way a caller may learn whether it is allowed to send a
+ * request. It returns `false` while a server cooldown is active or once the local
+ * token budget for the window is exhausted; callers must skip the request in that
+ * case. This is what makes the limiter and Retry-After handling real instead of
+ * decorative.
  */
 class RateLimiter(
     private val limit: Int,
@@ -31,39 +37,52 @@ class RateLimiter(
     private val silentCooldown = AtomicLong(0L)
 
     /**
-     * Consumes a single token from the rate limiter.
-     * If no tokens are available or a server cooldown is active, notifies via callback.
+     * Attempts to consume [tokens] from the budget.
+     *
+     * @return true when the caller may send the request; false when it must not.
+     * A batch costs one token per identifier, matching the backend contract.
      */
-    fun consume() {
+    fun tryAcquire(tokens: Int = 1): Boolean {
+        val cost = tokens.coerceAtLeast(1)
         val now = System.currentTimeMillis()
 
-        // Handle server cooldown
+        // Handle server cooldown: a Retry-After must actually pause requests.
         val cooldown = serverCooldownUntil.get()
         if (now < cooldown) {
-            ensureReset(now)
-            // Only trigger callback if cooldown is not silent
-            if (silentCooldown.get() <= 0) {
+            if (silentCooldown.get() <= now) {
                 onBlocked(metricsSnapshot())
             }
-            return
+            return false
         }
 
         while (true) {
             val current = ensureReset(now)
-            if (current.remaining <= 0) {
+            if (current.remaining < cost) {
                 onBlocked(metricsSnapshot())
-                return
+                return false
             }
 
-            val newState = current.copy(remaining = current.remaining - 1)
+            val newState = current.copy(remaining = current.remaining - cost)
             if (state.compareAndSet(current, newState)) {
-                return
+                return true
             }
         }
     }
 
     /**
+     * Backwards-compatible name for [tryAcquire]. The return value is a real
+     * decision: callers that send on `false` are the bug this method exists to
+     * prevent.
+     */
+    fun consume(): Boolean = tryAcquire()
+
+    /** True while a server-requested cooldown is active. */
+    fun isCoolingDown(now: Long = System.currentTimeMillis()): Boolean = now < serverCooldownUntil.get()
+
+    /**
      * Resets the rate limiter state, including tokens and cooldowns.
+     * Deliberately not called on world joins: lobby hops must not refill the token
+     * budget or forget a 60 s Retry-After.
      */
     fun resetState() {
         state.set(RateState(limit, System.currentTimeMillis()))
@@ -109,9 +128,11 @@ class RateLimiter(
     fun registerServerCooldown(duration: Duration, silent: Boolean = false) {
         val now = System.currentTimeMillis()
         val until = now + duration.toMillis()
-        serverCooldownUntil.set(until)
+        // Never shorten an active cooldown: a shorter Retry-After from a different
+        // endpoint must not reopen the gate early.
+        serverCooldownUntil.accumulateAndGet(until) { current, candidate -> maxOf(current, candidate) }
         if (silent) {
-            silentCooldown.set(until)
+            silentCooldown.accumulateAndGet(until) { current, candidate -> maxOf(current, candidate) }
         } else {
             silentCooldown.set(0L)
             ensureReset(now)

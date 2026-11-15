@@ -1,130 +1,65 @@
 package club.sk1er.mods.levelhead.config
 
 import club.sk1er.mods.levelhead.Levelhead
-import club.sk1er.mods.levelhead.core.DnsMode
 import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
-import club.sk1er.mods.levelhead.core.BackendMode
 import club.sk1er.mods.levelhead.core.GameMode
+import club.sk1er.mods.levelhead.core.TagFormatter
 import cc.polyfrost.oneconfig.config.Config
 import cc.polyfrost.oneconfig.config.annotations.Button
+import cc.polyfrost.oneconfig.config.annotations.Color
 import cc.polyfrost.oneconfig.config.annotations.Dropdown
-import cc.polyfrost.oneconfig.config.annotations.Header
 import cc.polyfrost.oneconfig.config.annotations.Info
 import cc.polyfrost.oneconfig.config.annotations.Slider
 import cc.polyfrost.oneconfig.config.annotations.Switch
-import cc.polyfrost.oneconfig.config.annotations.Color
 import cc.polyfrost.oneconfig.config.annotations.Text
 import cc.polyfrost.oneconfig.config.core.OneColor
 import cc.polyfrost.oneconfig.config.data.InfoType
 import cc.polyfrost.oneconfig.config.data.Mod
 import cc.polyfrost.oneconfig.config.data.ModType
-import com.google.gson.JsonObject
-import com.google.gson.JsonParser
-import net.minecraft.client.Minecraft
-import org.apache.commons.io.FileUtils
 import java.awt.Desktop
-import java.awt.datatransfer.StringSelection
-import java.io.File
 import java.net.URI
-import java.nio.charset.StandardCharsets
 import java.time.Duration
 import java.util.Locale
 import java.util.UUID
 
 private const val DEFAULT_PROXY_URL = "https://bedwars-level-head.onrender.com/"
-private const val OFFSET_EPSILON = 0.0001
 private const val _MIN_STAR_CACHE_TTL_MINUTES = 5
 private const val _MAX_STAR_CACHE_TTL_MINUTES = 180
 private const val _DEFAULT_STAR_CACHE_TTL_MINUTES = 45
-private const val _MIN_STAR_CACHE_TTL_MINUTES_SLIDER = 5f
-private const val _MAX_STAR_CACHE_TTL_MINUTES_SLIDER = 180f
-private const val BACKEND_MODE_INDEX_MAX = 3
-private val BACKEND_MODE_DIRECT_API = BackendMode.DIRECT_API.ordinal
 private const val GITHUB_REPO_URL = "https://github.com/beenycool/bedwars-level-head"
 private const val UPSTREAM_LEVELHEAD_URL = "https://github.com/Sk1erLLC/Levelhead"
 private const val MODRINTH_URL = "https://modrinth.com/mod/bedwars-level-head"
-private const val WIKI_URL = "https://github.com/beenycool/bedwars-level-head/wiki"
 private const val CHANGELOG_URL = "https://github.com/beenycool/bedwars-level-head/releases"
-private const val ABOUT_VERSION_TEXT = "Version: " + Levelhead.VERSION
 
+/**
+ * The only settings store. OneConfig persists these fields and every runtime
+ * component reads them directly (through the small [MasterConfig] / [DisplayConfig]
+ * views), so there is no second file to drift out of sync.
+ *
+ * The screen is deliberately small: five categories, one control per real choice.
+ * Anything derivable (the per-mode header, the tab footer) is derived at runtime
+ * instead of being stored a second time.
+ */
 object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedwars-levelhead.json") {
-@Transient
-var suppressRefresh: Boolean = false
-
-private fun maybeRefreshDisplay() {
-  if (suppressRefresh) return
-  Levelhead.displayManager.updatePrimaryDisplay { true }
-  Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
-  Levelhead.displayManager.refreshVisibleDisplays()
-  save()
-}
-
-// Expose constants as @JvmStatic functions - functions are not serialized by Gson
-    @JvmStatic
-    fun getMinStarCacheTtlMinutes() = _MIN_STAR_CACHE_TTL_MINUTES
-    
-    @JvmStatic
-    fun getMaxStarCacheTtlMinutes() = _MAX_STAR_CACHE_TTL_MINUTES
-    
-    @JvmStatic
-    fun getDefaultStarCacheTtlMinutes() = _DEFAULT_STAR_CACHE_TTL_MINUTES
-    
-    // Provide property-like access for Kotlin (computed properties compile to methods, not fields)
-    val MIN_STAR_CACHE_TTL_MINUTES: Int get() = _MIN_STAR_CACHE_TTL_MINUTES
-    val MAX_STAR_CACHE_TTL_MINUTES: Int get() = _MAX_STAR_CACHE_TTL_MINUTES
-    val DEFAULT_STAR_CACHE_TTL_MINUTES: Int get() = _DEFAULT_STAR_CACHE_TTL_MINUTES
 
     // ===============================
-    // Category: Quick Setup (Most users only need these)
+    // General
     // ===============================
-    @Header(text = "Quick Setup", category = "Quick Setup")
-    @Transient
-    var quickSetupHeader: String = ""
-
-    @Info(
-        text = "Choose how stats are fetched. Fallback is recommended.",
-        type = InfoType.INFO,
-        category = "Quick Setup"
+    @Switch(
+        name = "Enable Levelhead",
+        description = "Enable or disable the levelhead display entirely.",
+        category = "General"
     )
-    @Transient
-    var backendModeInfo: String = ""
-
-    @Dropdown(
-        name = "Backend Mode",
-        description = "Community API is fastest. Own API Key is most accurate. Fallback tries both.",
-        category = "Quick Setup",
-        options = ["Community API", "Own API Key", "Fallback (Recommended)", "Offline Mode"]
-    )
-    var backendModeIndex: Int = 2 // Default to Fallback
+    var levelheadEnabled: Boolean = true
         set(value) {
-            val clamped = value.coerceIn(0, BACKEND_MODE_INDEX_MAX)
-            field = clamped
+            field = value
             save()
-            BedwarsFetcher.resetWarnings()
         }
-
-    @Info(
-        text = "Own API Key mode requires a key from developer.hypixel.net",
-        type = InfoType.WARNING,
-        category = "Quick Setup"
-    )
-    @Transient
-    var apiKeyWarning: String = ""
-
-
-    @Text(
-        name = "Hypixel API Key", 
-        placeholder = "Paste your API key here (get one from developer.hypixel.net)", 
-        secure = true,
-        description = "Required for Own API Key mode and community submissions.",
-        category = "Quick Setup"
-    )
-    var apiKey: String = ""
 
     @Switch(
         name = "Show Tab Stats",
-        description = "Display FKDR next to player names in the Tab list.",
-        category = "Quick Setup"
+        description = "Display stats next to player names in the Tab list.",
+        category = "General"
     )
     var showTabStats: Boolean = true
         set(value) {
@@ -134,21 +69,24 @@ private fun maybeRefreshDisplay() {
         }
 
     @Switch(
-        name = "Enable Levelhead",
-        description = "Enable or disable the levelhead display entirely.",
-        category = "Quick Setup"
+        name = "Show Self",
+        description = "Display your own levelhead above your head and in the Tab list.",
+        category = "General"
     )
-    var levelheadEnabled: Boolean = true
+    var showSelf: Boolean = true
         set(value) {
-            if (field == value) {
-                return
-            }
             field = value
-            if (syncingFromRuntime) {
-                save()
-                return
-            }
-            applyEnabledToRuntime(value)
+            save()
+        }
+
+    @Switch(
+        name = "Show Header",
+        description = "Show the label (for example \"BedWars Star\") before the stat. Off shows the stat alone.",
+        category = "General"
+    )
+    var showHeader: Boolean = true
+        set(value) {
+            field = value
             save()
         }
 
@@ -156,14 +94,13 @@ private fun maybeRefreshDisplay() {
         name = "Show Status",
         text = "Check Status",
         description = "Display current backend status, cache health, and rate limits in chat.",
-        category = "Quick Setup"
+        category = "General"
     )
     fun showStatusButton() {
         val snapshot = Levelhead.statusSnapshot()
-        val backendMode = backendMode.displayName
 
         Levelhead.sendChat("§b§lBedWars Levelhead Status")
-        Levelhead.sendChat(" §7- §bBackend Mode: §e$backendMode")
+        Levelhead.sendChat(" §7- §bBackend: §e${proxyBaseUrl.ifBlank { DEFAULT_PROXY_URL }}")
         Levelhead.sendChat(" §7- §bCache Size: §e${snapshot.cacheSize} players")
 
         val rateLimitResetSeconds = snapshot.rateLimitResetMillis / 1000
@@ -182,12 +119,8 @@ private fun maybeRefreshDisplay() {
     }
 
     // ===============================
-    // Category: Display (Visual customization)
+    // Display
     // ===============================
-    @Header(text = "Display Position", category = "Display")
-    @Transient
-    var displayPositionHeader: String = ""
-
     @Dropdown(
         name = "Display Position",
         description = "Choose whether to display the levelhead above or below the player's nametag.",
@@ -196,150 +129,31 @@ private fun maybeRefreshDisplay() {
     )
     var displayPositionIndex: Int = 0
         set(value) {
-            val entries = MasterConfig.DisplayPosition.entries
-            val clamped = if (entries.isNotEmpty()) {
-                value.coerceIn(0, entries.lastIndex)
-            } else {
-                0
-            }
-            if (field == clamped) {
-                return
-            }
-            field = clamped
-            if (syncingFromRuntime) {
-                save()
-                return
-            }
-            val displayPosition = entries.getOrNull(clamped) ?: MasterConfig.DisplayPosition.ABOVE
-            applyDisplayPositionToRuntime(displayPosition)
-        }
-
-    @Switch(
-        name = "Show Self",
-        description = "Display your own levelhead above your head.",
-        category = "Display"
-    )
-    var showSelf: Boolean = true
-        set(value) {
-            if (field == value) {
-                return
-            }
-            field = value
-            if (syncingFromRuntime) {
-                save()
-                return
-            }
-            applyShowSelfToRuntime(value)
+            field = value.coerceIn(0, MasterConfig.DisplayPosition.entries.lastIndex)
             save()
         }
-
-    @Switch(
-        name = "Show In Inventory",
-        description = "Render your levelhead while your inventory screen is open.",
-        category = "Display"
-    )
-    var showInInventory: Boolean = true
-
-    @Header(text = "Header Text", category = "Display")
-    @Transient
-    var headerTextHeader: String = ""
-
-    @Text(
-        name = "Header Text",
-        placeholder = "e.g., BedWars Level",
-        description = "The text shown before the player's level/star. Default: 'BedWars Level'",
-        category = "Display"
-    )
-    var headerText: String = GameMode.BEDWARS.defaultHeader
-        set(value) {
-            field = value
-            Levelhead.displayManager.updatePrimaryDisplay { config ->
-                config.headerString = value
-                true
-            }
-            Levelhead.displayManager.applyPrimaryDisplayConfigToCache()
-            Levelhead.displayManager.refreshVisibleDisplays()
-            save()
-        }
-
-    @Color(name = "Header Color", description = "Color for the header text.", category = "Display")
-var headerColor: OneColor = OneColor(85, 255, 255)
-  set(value) {
-    field = value
-    Levelhead.displayManager.updatePrimaryDisplay { config ->
-      config.headerColor = value.toJavaColor()
-      true
-    }
-    maybeRefreshDisplay()
-  }
-
-    @Header(text = "Footer (Star) Text", category = "Display")
-    @Transient
-    var footerTextHeader: String = ""
-
-    @Text(
-        name = "Footer Format",
-        placeholder = "%star%",
-        description = "Legacy global footer format. Sets all mode templates to custom.",
-        category = "Display"
-    )
-    var footerFormat: String = "%star%"
-        set(value) {
-            field = value
-            val template = value.ifBlank { "%star%" }
-            bedwarsStatDisplayIndex = BedwarsStatMode.CUSTOM.ordinal
-            duelsStatDisplayIndex = DuelsStatMode.CUSTOM.ordinal
-            skywarsStatDisplayIndex = SkyWarsStatMode.CUSTOM.ordinal
-            bedwarsCustomFooterFormat = template
-            duelsCustomFooterFormat = template
-            skywarsCustomFooterFormat = template
-            Levelhead.displayManager.updatePrimaryDisplay { config ->
-                config.footerString = template
-                true
-            }
-            refreshDisplayStats(clearStats = false)
-            save()
-        }
-
-    @Header(text = "Mode Stat Display", category = "Display")
-    @Transient
-    var modeStatHeader: String = ""
 
     @Dropdown(
         name = "BedWars Footer",
         description = "Choose what BedWars shows in the footer.",
         category = "Display",
-        options = ["Star", "FKDR", "Winstreak", "Custom"]
+        options = ["Star", "FKDR", "Custom"]
     )
     var bedwarsStatDisplayIndex: Int = BedwarsStatMode.STAR.ordinal
         set(value) {
-            val oldMode = BedwarsStatMode.entries[field]
-            val newMode = BedwarsStatMode.entries[value.coerceIn(0, BedwarsStatMode.entries.lastIndex)]
             field = value.coerceIn(0, BedwarsStatMode.entries.lastIndex)
-
-            // Update header text if it's using the default for the old mode
-            if (newMode != BedwarsStatMode.CUSTOM) {
-                val oldDefaultHeader = getBedwarsHeaderForMode(oldMode)
-                val newDefaultHeader = getBedwarsHeaderForMode(newMode)
-                if (headerText.equals(oldDefaultHeader, ignoreCase = true)) {
-                    headerText = newDefaultHeader
-                }
-            }
-
-            refreshDisplayStats(clearStats = true)
             save()
         }
 
     @Text(
         name = "BedWars Custom Format",
         placeholder = "%star%",
-        description = "Used when BedWars Footer is set to Custom. Tokens: %star%, %fkdr%, %ws%.",
+        description = "Used when BedWars Footer is set to Custom. Tokens: %star%, %fkdr%.",
         category = "Display"
     )
     var bedwarsCustomFooterFormat: String = "%star%"
         set(value) {
             field = value.ifBlank { "%star%" }
-            refreshDisplayStats(clearStats = false)
             save()
         }
 
@@ -347,25 +161,23 @@ var headerColor: OneColor = OneColor(85, 255, 255)
         name = "Duels Footer",
         description = "Choose what Duels shows in the footer.",
         category = "Display",
-        options = ["Division Title", "Wins", "WLR", "KDR", "Winstreak", "Division Symbol", "Custom"]
+        options = ["Division Title", "Wins", "WLR", "Custom"]
     )
     var duelsStatDisplayIndex: Int = DuelsStatMode.DIVISION_TITLE.ordinal
         set(value) {
             field = value.coerceIn(0, DuelsStatMode.entries.lastIndex)
-            refreshDisplayStats(clearStats = true)
             save()
         }
 
     @Text(
         name = "Duels Custom Format",
         placeholder = "%division%",
-        description = "Used when Duels Footer is set to Custom. Tokens: %division%, %divsymbol%, %divlevel%, %wins%, %losses%, %wlr%, %kdr%, %ws%.",
+        description = "Used when Duels Footer is set to Custom. Tokens: %division%, %divlevel%, %wins%, %losses%, %wlr%.",
         category = "Display"
     )
     var duelsCustomFooterFormat: String = "%division%"
         set(value) {
             field = value.ifBlank { "%division%" }
-            refreshDisplayStats(clearStats = false)
             save()
         }
 
@@ -373,46 +185,29 @@ var headerColor: OneColor = OneColor(85, 255, 255)
         name = "SkyWars Footer",
         description = "Choose what SkyWars shows in the footer.",
         category = "Display",
-        options = ["Star", "Wins", "WLR", "KDR", "Custom"]
+        options = ["Star", "Wins", "WLR", "Custom"]
     )
     var skywarsStatDisplayIndex: Int = SkyWarsStatMode.STAR.ordinal
         set(value) {
             field = value.coerceIn(0, SkyWarsStatMode.entries.lastIndex)
-            refreshDisplayStats(clearStats = true)
             save()
         }
 
     @Text(
         name = "SkyWars Custom Format",
         placeholder = "%star%",
-        description = "Used when SkyWars Footer is set to Custom. Tokens: %star%, %level%, %wins%, %losses%, %wlr%, %kdr%.",
+        description = "Used when SkyWars Footer is set to Custom. Tokens: %star%, %level%, %wins%, %losses%, %wlr%.",
         category = "Display"
     )
     var skywarsCustomFooterFormat: String = "%star%"
         set(value) {
             field = value.ifBlank { "%star%" }
-            refreshDisplayStats(clearStats = false)
             save()
         }
 
-    @Color(name = "Footer Color", description = "Color for the footer text.", category = "Display")
-var footerColor: OneColor = OneColor(255, 255, 85)
-  set(value) {
-    field = value
-    Levelhead.displayManager.updatePrimaryDisplay { config ->
-      config.footerColor = value.toJavaColor()
-      true
-    }
-    maybeRefreshDisplay()
-  }
-
     // ===============================
-    // Category: Appearance (Fine-tuning visual settings)
+    // Appearance
     // ===============================
-    @Header(text = "Font & Position", category = "Appearance")
-    @Transient
-    var appearanceHeader: String = ""
-
     @Slider(
         name = "Vertical Offset",
         description = "Fine-tune the vertical position. Negative values move it closer to the nametag.",
@@ -422,15 +217,8 @@ var footerColor: OneColor = OneColor(255, 255, 85)
     )
     var verticalOffset: Float = 0.0f
         set(value) {
-            if (kotlin.math.abs(field - value) < OFFSET_EPSILON) {
-                return
-            }
             field = value
-            if (syncingFromRuntime) {
-                save()
-                return
-            }
-            applyOffsetToRuntime(value.toDouble())
+            save()
         }
 
     @Switch(
@@ -441,8 +229,6 @@ var footerColor: OneColor = OneColor(255, 255, 85)
     var showBackground: Boolean = true
         set(value) {
             field = value
-            Levelhead.displayManager.config.showBackground = value
-            Levelhead.displayManager.saveConfig()
             save()
         }
 
@@ -451,14 +237,11 @@ var footerColor: OneColor = OneColor(255, 255, 85)
         description = "Transparency of the background. 0% = fully transparent, 100% = fully opaque.",
         category = "Appearance",
         min = 0.0f,
-        max = 1.0f,
-        step = 1
+        max = 1.0f
     )
     var backgroundOpacity: Float = 0.25f
         set(value) {
             field = value
-            Levelhead.displayManager.config.backgroundOpacity = value
-            Levelhead.displayManager.saveConfig()
             save()
         }
 
@@ -470,33 +253,34 @@ var footerColor: OneColor = OneColor(255, 255, 85)
     var textShadow: Boolean = true
         set(value) {
             field = value
-            Levelhead.displayManager.config.textShadow = value
-            Levelhead.displayManager.saveConfig()
-            if (debugConfigSync) {
-                Levelhead.logger.info("[LevelheadConfigSync] UI->RT textShadow={}", value)
-            }
+            save()
+        }
+
+    @Color(name = "Header colour", description = "Colour of the label shown before the stat.", category = "Appearance")
+    var headerColor: OneColor = OneColor(85, 255, 255)
+        set(value) {
+            field = value
+            save()
+        }
+
+    @Color(
+        name = "Fallback tag colour",
+        description = "Only used when a stat has no colour of its own (for example FKDR or Win/Loss).",
+        category = "Appearance"
+    )
+    var footerColor: OneColor = OneColor(255, 255, 85)
+        set(value) {
+            field = value
             save()
         }
 
     // ===============================
-    // Category: Performance (Optimization)
+    // Advanced
     // ===============================
-    @Header(text = "Performance Tuning", category = "Performance")
-    @Transient
-    var performanceHeader: String = ""
-
-    @Info(
-        text = "Lower values improve accuracy but may reduce FPS.",
-        type = InfoType.INFO,
-        category = "Performance"
-    )
-    @Transient
-    var performanceInfo: String = ""
-
     @Slider(
         name = "Render Distance",
         description = "Maximum distance (in blocks) to render levelheads. Lower = better performance.",
-        category = "Performance",
+        category = "Advanced",
         min = 16f,
         max = 128f,
         step = 8
@@ -504,65 +288,15 @@ var footerColor: OneColor = OneColor(255, 255, 85)
     var renderDistance: Int = 64
         set(value) {
             field = value
-            Levelhead.displayManager.config.renderDistance = value
-            Levelhead.displayManager.saveConfig()
-            save()
-        }
-
-    @Slider(
-        name = "Frame Skip",
-        description = "Render every N frames. 1 = every frame (smooth), 2+ = skip frames (better FPS).",
-        category = "Performance",
-        min = 1f,
-        max = 5f,
-        step = 1
-    )
-    var frameSkip: Int = 1
-        set(value) {
-            field = value
-            Levelhead.displayManager.config.frameSkip = value
-            Levelhead.displayManager.saveConfig()
-            save()
-        }
-
-    @Slider(
-        name = "Render Throttle (ms)",
-        description = "Minimum milliseconds between render updates. 0 = no throttling.",
-        category = "Performance",
-        min = 0f,
-        max = 100f,
-        step = 5
-    )
-    var renderThrottleMs: Int = 0
-        set(value) {
-            field = value
-            Levelhead.displayManager.config.renderThrottleMs = value.toLong()
-            Levelhead.displayManager.saveConfig()
-            save()
-        }
-
-    @Slider(
-        name = "Cache Size Limit",
-        description = "Maximum number of cached player stats before automatic cleanup.",
-        category = "Performance",
-        min = 100f,
-        max = 2000f,
-        step = 100
-    )
-    var cacheSizeLimit: Int = 500
-        set(value) {
-            field = value
-            Levelhead.displayManager.config.purgeSize = value
-            Levelhead.displayManager.saveConfig()
             save()
         }
 
     @Slider(
         name = "Star Cache TTL (minutes)",
         description = "How long to cache stars before refresh.",
-        category = "Performance",
-        min = _MIN_STAR_CACHE_TTL_MINUTES_SLIDER,
-        max = _MAX_STAR_CACHE_TTL_MINUTES_SLIDER,
+        category = "Advanced",
+        min = 5f,
+        max = 180f,
         step = 1
     )
     var starCacheTtlMinutes: Int = _DEFAULT_STAR_CACHE_TTL_MINUTES
@@ -572,238 +306,18 @@ var footerColor: OneColor = OneColor(255, 255, 85)
             BedwarsFetcher.resetWarnings()
         }
 
-    // ===============================
-    // Category: Profiles (Presets)
-    // ===============================
-    @Header(text = "Configuration Profiles", category = "Profiles")
-    @Transient
-    var profilesHeader: String = ""
-
     @Info(
-        text = "Apply presets or export/import your setup.",
+        text = "The backend URL is only needed for a self-hosted instance.",
         type = InfoType.INFO,
-        category = "Profiles"
+        category = "Advanced"
     )
     @Transient
-    var profilesInfo: String = ""
-
-    @Dropdown(
-        name = "Preset",
-        description = "Choose a preset configuration. Click 'Apply Preset' to load it.",
-        category = "Profiles",
-        options = ["Default", "Compact"]
-    )
-    var presetIndex: Int = 0
-
-    @Button(
-        name = "Apply Preset",
-        text = "Load Preset",
-        description = "Apply selected preset (overwrites current settings).",
-        category = "Profiles"
-    )
-    fun applyPresetButton() {
-        val preset = when (presetIndex) {
-            0 -> ConfigProfiles.Preset.DEFAULT
-            1 -> ConfigProfiles.Preset.COMPACT
-            else -> ConfigProfiles.Preset.DEFAULT
-        }
-        val profile = ConfigProfiles.getPreset(preset)
-        ConfigProfiles.applyProfile(profile)
-        Levelhead.sendChat("§aApplied preset: §b${preset.displayName}")
-    }
-
-    @Button(
-        name = "Export Profile",
-        text = "Copy to Clipboard",
-        description = "Export your current configuration as JSON to the clipboard.",
-        category = "Profiles"
-    )
-    fun exportProfileButton() {
-        val profile = ConfigProfiles.exportProfile()
-        try {
-            val clipboard = java.awt.Toolkit.getDefaultToolkit().systemClipboard
-            clipboard?.setContents(StringSelection(profile), null)
-            Levelhead.sendChat("§aProfile exported to clipboard!")
-        } catch (e: Exception) {
-            Levelhead.logger.warn("Failed to copy profile to clipboard", e)
-            Levelhead.sendChat("§cFailed to copy to clipboard. Use '/levelhead export' command instead.")
-        }
-    }
+    var backendUrlInfo: String = ""
 
     @Text(
-        name = "Import Profile JSON",
-        placeholder = "Paste exported JSON here...",
-        description = "Paste a previously exported profile JSON here, then click 'Import Profile'.",
-        category = "Profiles"
-    )
-    var importProfileJson: String = ""
-
-    @Button(
-        name = "Import Profile",
-        text = "Load from JSON",
-        description = "Import the configuration from the JSON text above.",
-        category = "Profiles"
-    )
-    fun importProfileButton() {
-        if (importProfileJson.isBlank()) {
-            Levelhead.sendChat("§cNo profile JSON provided. Paste JSON in the text field above first.")
-            return
-        }
-        val profile = ConfigProfiles.importProfile(importProfileJson)
-        if (profile != null) {
-            ConfigProfiles.applyProfile(profile)
-            Levelhead.sendChat("§aProfile imported successfully!")
-            importProfileJson = ""
-            save()
-        } else {
-            Levelhead.sendChat("§cFailed to import profile. Invalid JSON format.")
-        }
-    }
-
-    // ===============================
-    // Category: Quick Actions
-    // ===============================
-    @Header(text = "Quick Actions", category = "Actions")
-    @Transient
-    var actionsHeader: String = ""
-
-    @Button(
-        name = "Purge Cache",
-        text = "Clear All Caches",
-        description = "Clear all cached player stats. Fresh data will be fetched on next encounter.",
-        category = "Actions"
-    )
-    fun purgeCacheButton() {
-        Levelhead.displayManager.clearCache()
-        Levelhead.sendChat("§aCache cleared! Fresh data will be fetched.")
-    }
-
-    @Button(
-        name = "Reload Stats",
-        text = "Refresh All",
-        description = "Invalidate cached displays and re-fetch fresh data for all visible players.",
-        category = "Actions"
-    )
-    fun reloadStatsButton() {
-        Levelhead.displayManager.clearCache()
-        Levelhead.sendChat("§aStats reloaded! Re-fetching fresh data.")
-    }
-
-    @Button(
-        name = "Reset All Settings",
-        text = "Reset to Defaults",
-        description = "Restore all settings to their default values. This cannot be undone!",
-        category = "Actions"
-    )
-    fun resetToDefaultsButton() {
-        resetToDefaults()
-        Levelhead.sendChat("§aAll settings reset to defaults.")
-    }
-
-    @Button(
-        name = "Open Config Folder",
-        text = "Open Folder",
-        description = "Open the folder containing configuration files.",
-        category = "Actions"
-    )
-    fun openConfigFolderButton() {
-        try {
-            val configDir = File(Minecraft.getMinecraft().mcDataDir, "config")
-            if (Desktop.isDesktopSupported() && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) {
-                Desktop.getDesktop().open(configDir)
-            } else {
-                Levelhead.sendChat("§eConfig folder: §b${configDir.absolutePath}")
-            }
-        } catch (e: Exception) {
-            Levelhead.logger.warn("Failed to open config folder", e)
-            Levelhead.sendChat("§cFailed to open config folder.")
-        }
-    }
-
-    // ===============================
-    // Category: Advanced (Hidden by default unless showAdvanced is enabled)
-    // ===============================
-    @Header(text = "Advanced Settings", category = "Advanced")
-    @Transient
-    var advancedHeader: String = ""
-
-    @Info(
-        text = "Advanced options. Incorrect values can cause issues.",
-        type = InfoType.WARNING,
-        category = "Advanced"
-    )
-    @Transient
-    var advancedWarning: String = ""
-
-    @Switch(
-        name = "Show Advanced Options",
-        description = "Enable to show additional advanced configuration options.",
-        category = "Advanced"
-    )
-    var showAdvancedOptions: Boolean = false
-        set(value) {
-            field = value
-            save()
-            // This will trigger conditional visibility refresh
-        }
-
-    @Switch(
-        name = "Debug Config Sync",
-        description = "Log OneConfig/runtime sync decisions to latest.log for troubleshooting UI toggles.",
-        category = "Advanced"
-    )
-    var debugConfigSync: Boolean = false
-        set(value) {
-            field = value
-            save()
-        }
-
-    @Switch(
-        name = "Debug Requests",
-        description = "Log HTTP requests and responses to latest.log for troubleshooting API calls.",
-        category = "Advanced"
-    )
-    var debugRequests: Boolean = false
-        set(value) {
-            field = value
-            save()
-        }
-
-    @Switch(
-        name = "Debug Render Sampling",
-        description = "Log header/footer text above nametags to latest.log for troubleshooting. Use /levelhead debugrender [on|off] to toggle in-game.",
-        category = "Advanced"
-    )
-    var debugRenderSampling: Boolean = false
-        set(value) {
-            field = value
-            save()
-        }
-
-    @Switch(
-        name = "Use Proxy",
-        description = "Route requests through the Levelhead backend. Required for Community API mode.",
-        category = "Advanced"
-    )
-    var proxyEnabled: Boolean = true
-        set(value) {
-            field = value
-            save()
-            BedwarsFetcher.resetWarnings()
-        }
-
-    @Info(
-        text = "Proxy URL is required when proxy is enabled.",
-        type = InfoType.WARNING,
-        category = "Advanced"
-    )
-    @Transient
-    var proxyUrlWarning: String = ""
-
-    @Text(
-        name = "Proxy Base URL",
+        name = "Backend URL",
         placeholder = DEFAULT_PROXY_URL,
-        description = "The backend base URL for proxy requests.",
+        description = "The backend base URL used for stat requests.",
         category = "Advanced"
     )
     var proxyBaseUrl: String = DEFAULT_PROXY_URL
@@ -813,15 +327,14 @@ var footerColor: OneColor = OneColor(255, 255, 85)
             BedwarsFetcher.resetWarnings()
         }
 
-    @Dropdown(
-        name = "DNS Resolution Mode",
-        description = "Choose how to resolve domain names. IPv4 First is recommended for most users.",
-        category = "Advanced",
-        options = ["IPv4 Only", "IPv4 First", "System Default"]
+    @Switch(
+        name = "Debug Logging",
+        description = "Log HTTP requests and responses to latest.log for troubleshooting.",
+        category = "Advanced"
     )
-    var dnsModeIndex: Int = 1 // Default to IPv4 First
+    var debugRequests: Boolean = false
         set(value) {
-            field = value.coerceIn(0, DnsMode.entries.size - 1)
+            field = value
             save()
         }
 
@@ -836,89 +349,38 @@ var footerColor: OneColor = OneColor(255, 255, 85)
             save()
         }
 
-@Info(
-    text = "Proxy Auth Token is recommended when using a private backend.",
-    type = InfoType.INFO,
-    category = "Advanced"
-)
-@Transient
-var proxyAuthInfo: String = ""
-
-    @Text(
-        name = "Proxy Auth Token",
-        secure = true,
-        description = "Authentication token for the proxy backend.",
+    @Button(
+        name = "Reload Stats",
+        text = "Refresh All",
+        description = "Invalidate cached displays and re-fetch fresh data for all visible players.",
         category = "Advanced"
     )
-    var proxyAuthToken: String = ""
-        set(value) {
-            field = value.trim()
-            save()
-            BedwarsFetcher.resetWarnings()
-        }
+    fun reloadStatsButton() {
+        Levelhead.displayManager.clearCache()
+        Levelhead.sendChat("§aStats reloaded! Re-fetching fresh data.")
+    }
 
-    @Switch(
-        name = "Community Database",
-        description = "Use shared community cache. API keys can also submit new data.",
+    @Button(
+        name = "Reset All Settings",
+        text = "Reset to Defaults",
+        description = "Restore all settings to their default values. This cannot be undone!",
         category = "Advanced"
     )
-    var communityDatabase: Boolean = true
-        set(value) {
-            if (value && apiKey.isBlank() && (backendMode == BackendMode.FALLBACK || backendMode == BackendMode.DIRECT_API)) {
-                Levelhead.sendChat("§eYou need a Hypixel API key to contribute to the community database. §7You can still fetch cached data.")
-            }
-            field = value
-            save()
-            BedwarsFetcher.resetWarnings()
-        }
-
-    @Text(
-        name = "Submission Secret",
-        secure = true,
-        description = "HMAC secret for signing community submissions. Must match the backend.",
-        category = "Advanced"
-    )
-    var communitySubmitSecret: String = ""
-        set(value) {
-            field = value.trim()
-            save()
-        }
-
-    @Text(
-        name = "Custom Database URL",
-        placeholder = "Leave blank to use default",
-        description = "Override database URL (API key or self-hosted setups).",
-        category = "Advanced"
-    )
-    var customDatabaseUrl: String = ""
-        set(value) {
-            field = value.trim()
-            save()
-            BedwarsFetcher.resetWarnings()
-        }
+    fun resetToDefaultsButton() {
+        resetToDefaults()
+        Levelhead.sendChat("§aAll settings reset to defaults.")
+    }
 
     // ===============================
-    // Category: About
+    // About
     // ===============================
-    @Header(text = "About BedWars Levelhead", category = "About")
-    @Transient
-    var aboutMainHeader: String = ""
-
     @Info(
-        text = "BedWars Levelhead shows BedWars stars above players' heads on Hypixel.",
+        text = "BedWars Levelhead shows player stats above their heads on Hypixel.",
         type = InfoType.INFO,
         category = "About"
     )
     @Transient
     var aboutDescription: String = ""
-
-    @Info(
-        text = ABOUT_VERSION_TEXT,
-        type = InfoType.INFO,
-        category = "About"
-    )
-    @Transient
-    var aboutVersion: String = ""
 
     @Info(
         text = "Built on the original Levelhead by Sk1er LLC.",
@@ -943,10 +405,6 @@ var proxyAuthInfo: String = ""
     )
     @Transient
     var aboutLicense: String = ""
-
-    @Header(text = "Links", category = "About")
-    @Transient
-    var linksHeader: String = ""
 
     @Button(
         name = "Modrinth",
@@ -980,55 +438,15 @@ var proxyAuthInfo: String = ""
     )
     fun openChangelog() = openUrl(CHANGELOG_URL)
 
-    @Button(
-        name = "Documentation",
-        text = "How to Use",
-        description = "Open setup docs and usage guide.",
-        category = "About"
-    )
-    fun openWiki() = openUrl(WIKI_URL)
-
     // ===============================
-    // Internal State
+    // Internal state
     // ===============================
-    var welcomeMessageShown: Boolean = false
     var installId: String = ""
 
     val starCacheTtl: Duration
-        get() = Duration.ofMinutes(starCacheTtlMinutes.coerceIn(_MIN_STAR_CACHE_TTL_MINUTES, _MAX_STAR_CACHE_TTL_MINUTES).toLong())
-
-    /**
-     * Get the current BackendMode based on the dropdown selection.
-     */
-    val dnsMode: DnsMode
-        get() = DnsMode.fromIndex(dnsModeIndex)
-
-    val backendMode: BackendMode
-        get() = BackendMode.fromIndex(backendModeIndex)
-
-    @Transient
-    private var syncingFromRuntime: Boolean = false
-
-    @Transient
-    private var lastSyncSnapshot: ConfigSyncSnapshot? = null
-
-    @Transient
-    private var configSyncTickCounter: Int = 0
-
-    @Transient
-    @Volatile
-    private var syncRequested: Boolean = false
-
-    data class ConfigSyncSnapshot(
-        val uiEnabled: Boolean,
-        val rtEnabled: Boolean,
-        val uiShowSelf: Boolean,
-        val rtShowSelf: Boolean,
-        val uiDisplayPosition: MasterConfig.DisplayPosition,
-        val rtDisplayPosition: MasterConfig.DisplayPosition,
-        val uiOffset: Double,
-        val rtOffset: Double
-    )
+        get() = Duration.ofMinutes(
+            starCacheTtlMinutes.coerceIn(_MIN_STAR_CACHE_TTL_MINUTES, _MAX_STAR_CACHE_TTL_MINUTES).toLong()
+        )
 
     private interface StatMode {
         val template: String
@@ -1037,26 +455,26 @@ var proxyAuthInfo: String = ""
     enum class BedwarsStatMode(override val template: String) : StatMode {
         STAR("%star%"),
         FKDR("%fkdr%"),
-        WINSTREAK("%ws%"),
-        CUSTOM("")
+        CUSTOM("");
     }
 
+    /**
+     * The last entry is kept for [club.sk1er.mods.levelhead.core.StatsFormatter]'s
+     * division-color decision but is not reachable from the footer dropdown.
+     */
     enum class DuelsStatMode(override val template: String) : StatMode {
         DIVISION_TITLE("%division%"),
         WINS("%wins%"),
         WLR("%wlr%"),
-        KDR("%kdr%"),
-        WINSTREAK("%ws%"),
-        DIVISION_SYMBOL("%divsymbol%"),
-        CUSTOM("")
+        CUSTOM(""),
+        DIVISION_SYMBOL("%divsymbol%");
     }
 
     enum class SkyWarsStatMode(override val template: String) : StatMode {
         STAR("%star%"),
         WINS("%wins%"),
         WLR("%wlr%"),
-        KDR("%kdr%"),
-        CUSTOM("")
+        CUSTOM("");
     }
 
     private val bedwarsStatMode: BedwarsStatMode
@@ -1068,14 +486,12 @@ var proxyAuthInfo: String = ""
     private val skywarsStatMode: SkyWarsStatMode
         get() = SkyWarsStatMode.entries.getOrNull(skywarsStatDisplayIndex) ?: SkyWarsStatMode.STAR
 
-    private fun getBedwarsHeaderForMode(mode: BedwarsStatMode): String {
-        return when (mode) {
-            BedwarsStatMode.STAR -> "BedWars Star"
-            BedwarsStatMode.FKDR -> "BedWars FKDR"
-            BedwarsStatMode.WINSTREAK -> "BedWars Winstreak"
-            BedwarsStatMode.CUSTOM -> headerText
-        }
-    }
+    /**
+     * The header is a per-mode concept that needs no stored copy: it is the game
+     * mode's own label, or nothing while [showHeader] is off. Keeping the signature
+     * means [DisplayConfig.headerString] and the formatter stay unchanged.
+     */
+    fun headerTextFor(gameMode: GameMode): String = if (showHeader) gameMode.defaultHeader else ""
 
     private fun <T> resolveTemplateFor(
         modeIndex: Int,
@@ -1093,408 +509,69 @@ var proxyAuthInfo: String = ""
         }
     }
 
-    fun footerTemplateFor(gameMode: GameMode, config: DisplayConfig): String {
-        val template = when (gameMode) {
-            GameMode.BEDWARS -> resolveTemplateFor(
-                bedwarsStatDisplayIndex,
-                BedwarsStatMode.entries,
-                BedwarsStatMode.STAR,
-                bedwarsCustomFooterFormat,
-                BedwarsStatMode.CUSTOM,
-                "%star%"
-            )
-            GameMode.DUELS -> resolveTemplateFor(
-                duelsStatDisplayIndex,
-                DuelsStatMode.entries,
-                DuelsStatMode.DIVISION_TITLE,
-                duelsCustomFooterFormat,
-                DuelsStatMode.CUSTOM,
-                "%division%"
-            )
-            GameMode.SKYWARS -> resolveTemplateFor(
-                skywarsStatDisplayIndex,
-                SkyWarsStatMode.entries,
-                SkyWarsStatMode.STAR,
-                skywarsCustomFooterFormat,
-                SkyWarsStatMode.CUSTOM,
-                "%star%"
-            )
-        }
-        return template.ifBlank {
-            config.footerString?.takeIf { it.isNotBlank() } ?: gameMode.statFormat
-        }
+    /**
+     * Resolve the footer template for a game mode. The nametag and the tab list use
+     * this same template, so both always render identical text (B29).
+     */
+    fun footerTemplateFor(gameMode: GameMode): String = when (gameMode) {
+        GameMode.BEDWARS -> resolveTemplateFor(
+            bedwarsStatDisplayIndex,
+            BedwarsStatMode.entries,
+            BedwarsStatMode.STAR,
+            bedwarsCustomFooterFormat,
+            BedwarsStatMode.CUSTOM,
+            "%star%"
+        )
+        GameMode.DUELS -> resolveTemplateFor(
+            duelsStatDisplayIndex,
+            DuelsStatMode.entries,
+            DuelsStatMode.DIVISION_TITLE,
+            duelsCustomFooterFormat,
+            DuelsStatMode.CUSTOM,
+            "%division%"
+        )
+        GameMode.SKYWARS -> resolveTemplateFor(
+            skywarsStatDisplayIndex,
+            SkyWarsStatMode.entries,
+            SkyWarsStatMode.STAR,
+            skywarsCustomFooterFormat,
+            SkyWarsStatMode.CUSTOM,
+            "%star%"
+        )
     }
+
+    /**
+     * Set once OneConfig has finished loading so the save override cannot touch
+     * the display manager during construction.
+     */
+    @Transient
+    private var runtimeReady: Boolean = false
 
     init {
         initialize()
-        migrateLegacyConfig()
         ensureInstallId()
         setupConditionalVisibility()
-        syncUiStateFromRuntime(initialSync = true)
+        runtimeReady = true
     }
 
-    fun syncUiAndRuntimeConfig() {
-        val mc = Minecraft.getMinecraft()
-        val isGuiOpen = mc.currentScreen != null
-
-        configSyncTickCounter++
-        val interval = if (isGuiOpen || syncRequested) 5 else 100
-
-        if (configSyncTickCounter % interval != 0 && !syncRequested) {
-            return
-        }
-
-        syncRequested = false
-
-        val primaryDisplay = Levelhead.displayManager.primaryDisplay() ?: return
-        val runtimeEnabled = Levelhead.displayManager.config.enabled
-        val runtimeShowSelf = primaryDisplay.config.showSelf
-        val runtimeDisplayPosition = Levelhead.displayManager.config.displayPosition
-        val runtimeOffset = Levelhead.displayManager.config.offset
-
-        val entries = MasterConfig.DisplayPosition.entries
-        val uiDisplayPosition = entries.getOrNull(displayPositionIndex) ?: MasterConfig.DisplayPosition.ABOVE
-        val uiOffset = verticalOffset.toDouble()
-
-        val snapshot = lastSyncSnapshot
-
-        syncSingleSetting(
-            name = "enabled",
-            uiValue = levelheadEnabled,
-            runtimeValue = runtimeEnabled,
-            snapshotUi = snapshot?.uiEnabled,
-            snapshotRuntime = snapshot?.rtEnabled,
-            applyUiToRuntime = { value -> applyEnabledToRuntime(value) },
-            applyRuntimeToUi = { value ->
-                syncingFromRuntime = true
-                try {
-                    levelheadEnabled = value
-                } finally {
-                    syncingFromRuntime = false
-                }
-            }
-        )
-
-        syncSingleSetting(
-            name = "showSelf",
-            uiValue = showSelf,
-            runtimeValue = runtimeShowSelf,
-            snapshotUi = snapshot?.uiShowSelf,
-            snapshotRuntime = snapshot?.rtShowSelf,
-            applyUiToRuntime = { value -> applyShowSelfToRuntime(value) },
-            applyRuntimeToUi = { value ->
-                syncingFromRuntime = true
-                try {
-                    showSelf = value
-                } finally {
-                    syncingFromRuntime = false
-                }
-            }
-        )
-
-        syncSingleSetting(
-            name = "displayPosition",
-            uiValue = uiDisplayPosition,
-            runtimeValue = runtimeDisplayPosition,
-            snapshotUi = snapshot?.uiDisplayPosition,
-            snapshotRuntime = snapshot?.rtDisplayPosition,
-            applyUiToRuntime = { value -> applyDisplayPositionToRuntime(value) },
-            applyRuntimeToUi = { value ->
-                val idx = entries.indexOf(value).takeIf { it >= 0 } ?: 0
-                syncingFromRuntime = true
-                try {
-                    displayPositionIndex = idx
-                } finally {
-                    syncingFromRuntime = false
-                }
-            }
-        )
-
-        syncSingleSetting(
-            name = "offset",
-            uiValue = uiOffset,
-            runtimeValue = runtimeOffset,
-            snapshotUi = snapshot?.uiOffset,
-            snapshotRuntime = snapshot?.rtOffset,
-            equals = { left, right -> kotlin.math.abs(left - right) < OFFSET_EPSILON },
-            applyUiToRuntime = { value -> applyOffsetToRuntime(value) },
-            applyRuntimeToUi = { value ->
-                syncingFromRuntime = true
-                try {
-                    verticalOffset = value.toFloat()
-                } finally {
-                    syncingFromRuntime = false
-                }
-            }
-        )
-
-        val finalDisplayPosition = entries.getOrNull(displayPositionIndex) ?: MasterConfig.DisplayPosition.ABOVE
-        val finalPrimaryDisplay = Levelhead.displayManager.primaryDisplay() ?: return
-        lastSyncSnapshot = ConfigSyncSnapshot(
-            uiEnabled = levelheadEnabled,
-            rtEnabled = Levelhead.displayManager.config.enabled,
-            uiShowSelf = showSelf,
-            rtShowSelf = finalPrimaryDisplay.config.showSelf,
-            uiDisplayPosition = finalDisplayPosition,
-            rtDisplayPosition = Levelhead.displayManager.config.displayPosition,
-            uiOffset = verticalOffset.toDouble(),
-            rtOffset = Levelhead.displayManager.config.offset
-        )
-    }
-
-    private fun syncUiStateFromRuntime(initialSync: Boolean) {
-        val primaryDisplay = Levelhead.displayManager.primaryDisplay() ?: return
-        val entries = MasterConfig.DisplayPosition.entries
-        val runtimeDisplayPosition = Levelhead.displayManager.config.displayPosition
-        val displayIndex = entries.indexOf(runtimeDisplayPosition).takeIf { it >= 0 } ?: 0
-
-        syncingFromRuntime = true
-        try {
-            levelheadEnabled = Levelhead.displayManager.config.enabled
-            showSelf = primaryDisplay.config.showSelf
-            displayPositionIndex = displayIndex
-            verticalOffset = Levelhead.displayManager.config.offset.toFloat()
-        } finally {
-            syncingFromRuntime = false
-        }
-
-        lastSyncSnapshot = ConfigSyncSnapshot(
-            uiEnabled = levelheadEnabled,
-            rtEnabled = Levelhead.displayManager.config.enabled,
-            uiShowSelf = showSelf,
-            rtShowSelf = primaryDisplay.config.showSelf,
-            uiDisplayPosition = entries.getOrNull(displayPositionIndex) ?: MasterConfig.DisplayPosition.ABOVE,
-            rtDisplayPosition = runtimeDisplayPosition,
-            uiOffset = verticalOffset.toDouble(),
-            rtOffset = Levelhead.displayManager.config.offset
-        )
-
-        if (debugConfigSync) {
-            val source = if (initialSync) "initial" else "runtime"
-            Levelhead.logger.info(
-                "[LevelheadConfigSync] RT->UI {} sync enabled={}, showSelf={}, displayPosition={}, offset={}",
-                source,
-                levelheadEnabled,
-                showSelf,
-                runtimeDisplayPosition,
-                String.format(Locale.ROOT, "%.2f", Levelhead.displayManager.config.offset)
-            )
-        }
-    }
-
-    private fun applyEnabledToRuntime(value: Boolean) {
-        if (Levelhead.displayManager.config.enabled != value) {
-            Levelhead.displayManager.setEnabled(value)
-        }
-        if (debugConfigSync) {
-            Levelhead.logger.info("[LevelheadConfigSync] UI->RT enabled={}", value)
-        }
-    }
-
-    private fun applyShowSelfToRuntime(value: Boolean) {
-        Levelhead.displayManager.updatePrimaryDisplay { config ->
-            if (config.showSelf == value) {
-                return@updatePrimaryDisplay false
-            }
-            config.showSelf = value
-            true
-        }
-        if (debugConfigSync) {
-            Levelhead.logger.info("[LevelheadConfigSync] UI->RT showSelf={}", value)
-        }
-    }
-
-    private fun applyDisplayPositionToRuntime(value: MasterConfig.DisplayPosition) {
-        if (Levelhead.displayManager.config.displayPosition != value) {
-            Levelhead.displayManager.config.displayPosition = value
-            Levelhead.displayManager.saveConfig()
-        }
-        if (debugConfigSync) {
-            Levelhead.logger.info("[LevelheadConfigSync] UI->RT displayPosition={}", value)
-        }
-    }
-
-    private fun applyOffsetToRuntime(value: Double) {
-        if (kotlin.math.abs(Levelhead.displayManager.config.offset - value) >= OFFSET_EPSILON) {
-            Levelhead.displayManager.config.offset = value
-            Levelhead.displayManager.saveConfig()
-        }
-        if (debugConfigSync) {
-            Levelhead.logger.info("[LevelheadConfigSync] UI->RT offset={}", String.format(Locale.ROOT, "%.2f", value))
-        }
-    }
-
-    private fun <T> syncSingleSetting(
-        name: String,
-        uiValue: T,
-        runtimeValue: T,
-        snapshotUi: T?,
-        snapshotRuntime: T?,
-        equals: (T, T) -> Boolean = { left, right -> left == right },
-        applyUiToRuntime: (T) -> Unit,
-        applyRuntimeToUi: (T) -> Unit
-    ) {
-        if (equals(uiValue, runtimeValue)) {
-            return
-        }
-
-        val uiChanged = snapshotUi?.let { !equals(uiValue, it) } ?: false
-        val runtimeChanged = snapshotRuntime?.let { !equals(runtimeValue, it) } ?: false
-
-        val direction = when {
-            uiChanged && !runtimeChanged -> "UI->RT"
-            runtimeChanged && !uiChanged -> "RT->UI"
-            uiChanged && runtimeChanged -> "UI->RT (conflict)"
-            else -> "UI->RT (bootstrap)"
-        }
-
-        if (direction.startsWith("RT->UI")) {
-            applyRuntimeToUi(runtimeValue)
-        } else {
-            applyUiToRuntime(uiValue)
-        }
-
-        if (debugConfigSync) {
-            Levelhead.logger.info("[LevelheadConfigSync] {} {} ui={} runtime={}", direction, name, uiValue, runtimeValue)
-        }
+    /**
+     * OneConfig writes GUI edits into the fields reflectively and then calls
+     * [save]. Clearing the formatted-tag caches here makes a footer/header/colour
+     * change visible on the next refresh tick, without a second settings store.
+     */
+    override fun save() {
+        super.save()
+        if (!runtimeReady) return
+        TagFormatter.invalidate()
     }
 
     private fun setupConditionalVisibility() {
-        // Hide community database toggle when using shared backend - it's always enabled
-        hideIf("communityDatabase") { isUsingSharedBackend() }
-        
-        // Hide advanced options unless showAdvancedOptions is enabled
-        hideIf("proxyBaseUrl") { !showAdvancedOptions }
-        hideIf("proxyAuthToken") { !showAdvancedOptions }
-        hideIf("communitySubmitSecret") { !showAdvancedOptions }
-hideIf("customDatabaseUrl") { !showAdvancedOptions }
-    hideIf("proxyUrlWarning") { !showAdvancedOptions || !proxyEnabled || proxyBaseUrl.isNotBlank() }
-    hideIf("proxyAuthInfo") { !showAdvancedOptions }
-    hideIf("dnsModeIndex") { !showAdvancedOptions }
-    hideIf("forceEnabled") { !showAdvancedOptions }
+        hideIf("backgroundOpacity") { !showBackground }
+        hideIf("headerColor") { !showHeader }
 
-    hideIf("bedwarsCustomFooterFormat") {
-            bedwarsStatMode != BedwarsStatMode.CUSTOM
-        }
-        hideIf("duelsCustomFooterFormat") {
-            duelsStatMode != DuelsStatMode.CUSTOM
-        }
-        hideIf("skywarsCustomFooterFormat") {
-            skywarsStatMode != SkyWarsStatMode.CUSTOM
-        }
-        
-        // Show API key warning only when in "Own API Key" mode and key is blank
-        hideIf("apiKeyWarning") { 
-            backendModeIndex != BACKEND_MODE_DIRECT_API || apiKey.isNotBlank() 
-        }
-    }
-
-    /**
-     * Returns true if the user is using the default shared backend (bedwars-level-head.onrender.com).
-     * When using the shared backend, community database is compulsory.
-     */
-    fun isUsingSharedBackend(): Boolean {
-        val trimmed = proxyBaseUrl.trim()
-        val defaultTrimmed = DEFAULT_PROXY_URL.trim()
-        return trimmed.isEmpty() || trimmed == defaultTrimmed || trimmed.removeSuffix("/") == defaultTrimmed.removeSuffix("/")
-    }
-
-    /**
-     * Returns true if backend warnings should be suppressed.
-     * Suppress warnings when user has an API key but hasn't set a custom backend/database.
-     */
-    fun shouldSuppressBackendWarnings(): Boolean {
-        return apiKey.isNotBlank() && isUsingSharedBackend() && customDatabaseUrl.isBlank()
-    }
-
-    /**
-     * Resolves the database URL to use for community database requests.
-     * Uses custom URL if set and user has API key or is self-hosting, otherwise falls back to proxy base URL.
-     */
-    fun resolveDbUrl(): String {
-        val customUrl = customDatabaseUrl.trim()
-        if (customUrl.isNotBlank()) {
-            val hasApiKey = apiKey.isNotBlank()
-            val isSelfHosting = !isUsingSharedBackend()
-            if (hasApiKey || isSelfHosting) {
-                return customUrl
-            }
-        }
-        return proxyBaseUrl.trim().ifBlank { DEFAULT_PROXY_URL }
-    }
-
-    private fun migrateLegacyConfig() {
-        try {
-            val configFile = File(File(Minecraft.getMinecraft().mcDataDir, "config"), "bedwars-levelhead.json")
-            if (!configFile.exists()) return
-
-            val jsonContent = FileUtils.readFileToString(configFile, StandardCharsets.UTF_8)
-            val json = JsonParser.parseString(jsonContent)
-            if (!json.isJsonObject) return
-
-            val jsonObj = json.asJsonObject
-            var migrated = false
-
-        // Migrate "enabled" -> "bedwarsEnabled"
-        if (jsonObj.has("enabled") && !jsonObj.has("bedwarsEnabled")) {
-            val enabledValue = jsonObj.get("enabled")
-            jsonObj.add("bedwarsEnabled", enabledValue)
-            jsonObj.remove("enabled")
-            migrated = true
-        }
-
-      // Migrate headerColorHex string -> headerColor OneColor
-      if (jsonObj.has("headerColorHex") && !jsonObj.has("headerColor")) {
-        try {
-          val hexStr = jsonObj.get("headerColorHex").asString
-          val c = java.awt.Color.decode(hexStr)
-          val colorObj = com.google.gson.JsonObject()
-          colorObj.addProperty("r", c.red.toFloat() / 255f)
-          colorObj.addProperty("g", c.green.toFloat() / 255f)
-          colorObj.addProperty("b", c.blue.toFloat() / 255f)
-          colorObj.addProperty("a", 1.0f)
-          colorObj.addProperty("chroma", 0)
-          colorObj.addProperty("chromaSpeed", 0.0f)
-          colorObj.addProperty("rainbow", false)
-          jsonObj.add("headerColor", colorObj)
-                jsonObj.remove("headerColorHex")
-                migrated = true
-            } catch (_: Exception) {
-                jsonObj.remove("headerColorHex")
-                migrated = true
-            }
-        }
-
-      // Migrate footerColorHex string -> footerColor OneColor
-      if (jsonObj.has("footerColorHex") && !jsonObj.has("footerColor")) {
-        try {
-          val hexStr = jsonObj.get("footerColorHex").asString
-          val c = java.awt.Color.decode(hexStr)
-          val colorObj = com.google.gson.JsonObject()
-          colorObj.addProperty("r", c.red.toFloat() / 255f)
-          colorObj.addProperty("g", c.green.toFloat() / 255f)
-          colorObj.addProperty("b", c.blue.toFloat() / 255f)
-          colorObj.addProperty("a", 1.0f)
-          colorObj.addProperty("chroma", 0)
-          colorObj.addProperty("chromaSpeed", 0.0f)
-          colorObj.addProperty("rainbow", false)
-          jsonObj.add("footerColor", colorObj)
-                jsonObj.remove("footerColorHex")
-                migrated = true
-            } catch (_: Exception) {
-                jsonObj.remove("footerColorHex")
-                migrated = true
-            }
-        }
-
-        if (migrated) {
-                FileUtils.writeStringToFile(configFile, jsonObj.toString(), StandardCharsets.UTF_8)
-                // Reload the config after migration
-                initialize()
-            }
-        } catch (e: Exception) {
-            Levelhead.logger.warn("Failed to migrate legacy config", e)
-        }
+        hideIf("bedwarsCustomFooterFormat") { bedwarsStatMode != BedwarsStatMode.CUSTOM }
+        hideIf("duelsCustomFooterFormat") { duelsStatMode != DuelsStatMode.CUSTOM }
+        hideIf("skywarsCustomFooterFormat") { skywarsStatMode != SkyWarsStatMode.CUSTOM }
     }
 
     private fun ensureInstallId() {
@@ -1504,107 +581,32 @@ hideIf("customDatabaseUrl") { !showAdvancedOptions }
         }
     }
 
-    fun requestSync() {
-        syncRequested = true
-    }
-
-    fun markWelcomeMessageShown() {
-        if (!welcomeMessageShown) {
-            welcomeMessageShown = true
-            save()
-        }
-    }
-
-    fun updateApiKey(newKey: String) {
-        apiKey = newKey.trim()
+    private fun resetToDefaults() {
+        headerColor = OneColor(85, 255, 255)
+        footerColor = OneColor(255, 255, 85)
+        levelheadEnabled = true
+        showTabStats = true
+        showSelf = true
+        showHeader = true
+        displayPositionIndex = 0
+        verticalOffset = 0.0f
+        showBackground = true
+        backgroundOpacity = 0.25f
+        textShadow = true
+        renderDistance = 64
+        starCacheTtlMinutes = _DEFAULT_STAR_CACHE_TTL_MINUTES
+        bedwarsStatDisplayIndex = BedwarsStatMode.STAR.ordinal
+        duelsStatDisplayIndex = DuelsStatMode.DIVISION_TITLE.ordinal
+        skywarsStatDisplayIndex = SkyWarsStatMode.STAR.ordinal
+        bedwarsCustomFooterFormat = "%star%"
+        duelsCustomFooterFormat = "%division%"
+        skywarsCustomFooterFormat = "%star%"
+        debugRequests = false
+        proxyBaseUrl = DEFAULT_PROXY_URL
+        forceEnabled = false
         save()
         BedwarsFetcher.resetWarnings()
-    }
-
-    fun clearApiKey() {
-        if (apiKey.isNotBlank()) {
-            apiKey = ""
-            save()
-            BedwarsFetcher.resetWarnings()
-        }
-    }
-
-    fun updateProxyEnabled(enabled: Boolean) {
-        proxyEnabled = enabled
-        save()
-        BedwarsFetcher.resetWarnings()
-    }
-
-    fun updateProxyBaseUrl(url: String) {
-        proxyBaseUrl = url.trim()
-        save()
-        BedwarsFetcher.resetWarnings()
-    }
-
-    fun updateProxyAuthToken(token: String) {
-        proxyAuthToken = token.trim()
-        save()
-        BedwarsFetcher.resetWarnings()
-    }
-
-private fun resetToDefaults() {
-  suppressRefresh = true
-  try {
-    apiKey = ""
-    backendModeIndex = 2
-    communityDatabase = true
-    showTabStats = true
-    proxyEnabled = true
-    proxyBaseUrl = DEFAULT_PROXY_URL
-    dnsModeIndex = 1
-    proxyAuthToken = ""
-    communitySubmitSecret = ""
-    customDatabaseUrl = ""
-    starCacheTtlMinutes = DEFAULT_STAR_CACHE_TTL_MINUTES
-    levelheadEnabled = true
-    displayPositionIndex = 0
-    showSelf = true
-    showInInventory = true
-    verticalOffset = 0.0f
-    showBackground = true
-    backgroundOpacity = 0.25f
-    textShadow = true
-    renderDistance = 64
-    frameSkip = 1
-    renderThrottleMs = 0
-    cacheSizeLimit = 500
-    headerText = GameMode.BEDWARS.defaultHeader
-    headerColor = OneColor(85, 255, 255)
-    footerFormat = "%star%"
-    bedwarsStatDisplayIndex = BedwarsStatMode.STAR.ordinal
-    duelsStatDisplayIndex = DuelsStatMode.DIVISION_TITLE.ordinal
-    skywarsStatDisplayIndex = SkyWarsStatMode.STAR.ordinal
-    bedwarsCustomFooterFormat = "%star%"
-    duelsCustomFooterFormat = "%division%"
-    skywarsCustomFooterFormat = "%star%"
-    footerColor = OneColor(255, 255, 85)
-    showAdvancedOptions = false
-    debugConfigSync = false
-    debugRequests = false
-    debugRenderSampling = false
-  } finally {
-    suppressRefresh = false
-  }
-  save()
-  BedwarsFetcher.resetWarnings()
-  Levelhead.displayManager.resetToDefaults()
-}
-
-    fun updateStarCacheTtlMinutes(minutes: Int) {
-        val clamped = minutes.coerceIn(MIN_STAR_CACHE_TTL_MINUTES, MAX_STAR_CACHE_TTL_MINUTES)
-        starCacheTtlMinutes = clamped
-        save()
-        BedwarsFetcher.resetWarnings()
-    }
-
-    private fun refreshDisplayStats(clearStats: Boolean) {
-        Levelhead.displayManager.clearCachesWithoutRefetch(clearStats = clearStats)
-        Levelhead.displayManager.refreshVisibleDisplays()
+        Levelhead.displayManager.clearCache()
     }
 
     private fun openUrl(url: String) {

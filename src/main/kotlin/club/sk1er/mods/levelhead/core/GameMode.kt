@@ -8,29 +8,25 @@ enum class GameMode(
     val typeId: String,
     val displayName: String,
     val defaultHeader: String,
-    val statFormat: String,
-    val description: String
+    val statFormat: String
 ) {
     BEDWARS(
         typeId = "BEDWARS_STAR",
         displayName = "BedWars",
         defaultHeader = "BedWars Star",
-        statFormat = "%star%",
-        description = "Display BedWars star level above players"
+        statFormat = "%star%"
     ),
     DUELS(
         typeId = "DUELS_WINS",
         displayName = "Duels",
         defaultHeader = "Duels Division",
-        statFormat = "%division%",
-        description = "Display Duels division above players"
+        statFormat = "%division%"
     ),
     SKYWARS(
         typeId = "SKYWARS_STAR",
         displayName = "SkyWars",
         defaultHeader = "SkyWars Star",
-        statFormat = "%star%",
-        description = "Display SkyWars star level above players"
+        statFormat = "%star%"
     );
 
     companion object {
@@ -51,18 +47,5 @@ enum class GameMode(
             logger?.debug("resolveGameMode: typeId={} -> {}", typeId, resolved)
             return resolved
         }
-
-        /**
-         * Get a GameMode from its display name.
-         * Returns null if no matching game mode is found.
-         */
-        fun fromDisplayName(name: String): GameMode? {
-            return entries.find { it.displayName.equals(name, ignoreCase = true) }
-        }
-
-        /**
-         * Get all available game modes as a list of display names.
-         */
-        fun displayNames(): List<String> = entries.map { it.displayName }
     }
 }

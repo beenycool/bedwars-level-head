@@ -1,7 +1,6 @@
 package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.Levelhead
-import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.sanitizeForLogs
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import java.awt.Color
 import java.util.Locale
@@ -20,10 +19,9 @@ object DebugLogging {
     fun isRequestDebugEnabled(): Boolean = LevelheadConfig.debugRequests
 
     /**
-     * Check if render sampling debug logging is enabled.
-     * Use this before building any debug log strings.
+     * Render diagnostics use the single debug flag as well.
      */
-    fun isRenderDebugEnabled(): Boolean = LevelheadConfig.debugRenderSampling
+    fun isRenderDebugEnabled(): Boolean = LevelheadConfig.debugRequests
 
     /**
      * Format a Color as a hex string (#RRGGBB).
@@ -73,8 +71,9 @@ object DebugLogging {
         return "****-$lastFour"
     }
 
-    private val UUID_REGEX = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
-    private val TRIMMED_UUID_REGEX = Regex("^[0-9a-fA-F]{32}$")
+    /** Canonical UUID patterns shared with PlayerIdentifiers and ProxyClient. */
+    internal val UUID_REGEX = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+    internal val TRIMMED_UUID_REGEX = Regex("^[0-9a-fA-F]{32}$")
 
     /**
      * Mask a string as UUID for privacy-safe logging.
@@ -101,21 +100,24 @@ object DebugLogging {
     }
 
     /**
-     * Conditionally log a render debug message.
+     * Conditionally log a tab debug message.
+     * Reuses the render debug toggle.
      * Only builds the message string if debug is enabled.
      * The message should already include the [LevelheadDebug] prefix.
      */
-    fun logRenderDebug(message: () -> String) {
+    fun logTabDebug(message: () -> String) {
         if (isRenderDebugEnabled()) {
             Levelhead.logger.info(message())
         }
     }
 
     /**
-     * Format and sanitize a URL or body for logging.
-     * Redacts secrets and truncates to a reasonable length.
+     * Java-friendly overload for tab debug logging.
      */
-    fun String.sanitizeAndTruncateForLogs(maxLength: Int = 200): String {
-        return sanitizeForLogs().truncateForLogs(maxLength)
+    @JvmStatic
+    fun logTabDebug(message: String) {
+        if (isRenderDebugEnabled()) {
+            Levelhead.logger.info(message)
+        }
     }
 }

@@ -1,9 +1,5 @@
 
 // Mock dependencies before importing the module under test
-jest.mock('../../src/services/hypixelTracker', () => ({
-  recordHypixelApiCall: jest.fn(),
-}));
-
 jest.mock('../../src/services/cache', () => ({
   pool: {
     query: jest.fn(),

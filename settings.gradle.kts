@@ -11,23 +11,25 @@ pluginManagement {
     plugins {
         val toolkitVersion = "0.1.25"
         id("org.jetbrains.kotlin.jvm") version "1.9.10"
-        id("cc.polyfrost.multi-version.root") version toolkitVersion
-        id("cc.polyfrost.multi-version") version toolkitVersion
         id("cc.polyfrost.defaults.repo") version toolkitVersion
         id("cc.polyfrost.defaults.java") version toolkitVersion
         id("cc.polyfrost.defaults.loom") version toolkitVersion
     }
-}
-
-rootProject.buildFileName = "root.gradle.kts"
-
-listOf(
-    "1.8.9"
-).forEach { version ->
-    include(":$version")
-    project(":$version").apply {
-        projectDir = file("versions/$version")
-        buildFileName = "../../build.gradle.kts"
+    resolutionStrategy {
+        eachPlugin {
+            // The Polyfrost plugins are shipped inside the toolkit jar rather than
+            // as individual plugin markers, so point the ids at the module.
+            if (requested.id.id.startsWith("cc.polyfrost.")) {
+                useModule("cc.polyfrost:polyfrost-gradle-toolkit:0.1.25")
+            }
+            // Shadow 7.x is the version the Polyfrost toolkit is built against;
+            // resolve it from its implementation artifact (no marker is published
+            // under the new id for that version).
+            if (requested.id.id == "com.github.johnrengelman.shadow") {
+                useModule("gradle.plugin.com.github.jengelman.gradle.plugins:shadow:7.0.0")
+            }
+        }
     }
-
 }
+
+rootProject.name = "bedwars-level-head"

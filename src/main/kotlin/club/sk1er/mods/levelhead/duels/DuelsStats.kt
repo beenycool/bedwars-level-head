@@ -30,51 +30,24 @@ object DuelsStats {
     )
 
     /**
-     * Division thresholds for Duels based on overall wins.
-     * Each division has a minimum wins requirement and a display name.
-     * Legend+ divisions (2000+ wins) are displayed in bold.
+     * Overall division thresholds for Duels based on total wins, using 25Karma's
+     * "overall" requirements (the per-mode base requirements multiplied by 2).
+     * Legend+ divisions are displayed in bold.
      */
-    data class Division(
-        val minWins: Int,
-        val name: String,
-        val color: Color,
-        val colorCode: String,
-        val bold: Boolean = false
-    )
-
-    private val divisions = listOf(
+    private val overallDivisions = listOf(
         DivisionRequirement(0, 0, 5, "None", "none", Color(170, 170, 170), "7", false),
-        DivisionRequirement(50, 10, 5, "Rookie", "rookie", Color(170, 170, 170), "7", false),
-        DivisionRequirement(100, 30, 5, "Iron", "iron", Color(255, 255, 255), "f", false),
-        DivisionRequirement(250, 50, 5, "Gold", "gold", Color(255, 170, 0), "6", false),
-        DivisionRequirement(500, 100, 5, "Diamond", "diamond", Color(0, 170, 170), "3", false),
-        DivisionRequirement(1000, 200, 5, "Master", "master", Color(0, 170, 0), "2", false),
-        DivisionRequirement(2000, 600, 5, "Legend", "legend", Color(170, 0, 0), "4", true),
-        DivisionRequirement(5000, 1000, 5, "Grandmaster", "grandmaster", Color(255, 255, 85), "e", true),
-        DivisionRequirement(10000, 3000, 5, "Godlike", "godlike", Color(170, 0, 170), "5", true),
-        DivisionRequirement(25000, 5000, 5, "CELESTIAL", "celestial", Color(85, 255, 255), "b", true),
-        DivisionRequirement(50000, 10000, 5, "DIVINE", "divine", Color(255, 85, 255), "d", true),
-        DivisionRequirement(100000, 10000, 50, "ASCENDED", "ascended", Color(255, 85, 85), "c", true)
+        DivisionRequirement(100, 20, 5, "Rookie", "rookie", Color(170, 170, 170), "7", false),
+        DivisionRequirement(200, 60, 5, "Iron", "iron", Color(255, 255, 255), "f", false),
+        DivisionRequirement(500, 100, 5, "Gold", "gold", Color(255, 170, 0), "6", false),
+        DivisionRequirement(1000, 200, 5, "Diamond", "diamond", Color(0, 170, 170), "3", false),
+        DivisionRequirement(2000, 400, 5, "Master", "master", Color(0, 170, 0), "2", false),
+        DivisionRequirement(4000, 1200, 5, "Legend", "legend", Color(170, 0, 0), "4", true),
+        DivisionRequirement(10000, 2000, 5, "Grandmaster", "grandmaster", Color(255, 255, 85), "e", true),
+        DivisionRequirement(20000, 6000, 5, "Godlike", "godlike", Color(170, 0, 170), "5", true),
+        DivisionRequirement(50000, 10000, 5, "CELESTIAL", "celestial", Color(85, 255, 255), "b", true),
+        DivisionRequirement(100000, 20000, 5, "DIVINE", "divine", Color(255, 85, 255), "d", true),
+        DivisionRequirement(200000, 20000, 50, "ASCENDED", "ascended", Color(255, 85, 85), "c", true)
     )
-
-    private val overallDivisions = divisions.map {
-        it.copy(req = it.req * 2, step = it.step * 2)
-    }
-
-    /**
-     * Calculate the division for a given number of wins.
-     */
-    fun getDivision(wins: Int): Division {
-        val overall = getOverallDivisionInfo(wins)
-        val divisionReq = divisions.find { it.id == overall.id }?.req ?: 0
-        return Division(
-            minWins = divisionReq * 2,
-            name = overall.displayName,
-            color = overall.color,
-            colorCode = overall.colorCode,
-            bold = overall.bold
-        )
-    }
 
     /**
      * Overall division display from total wins using 25Karma's "overall" requirements.
@@ -174,42 +147,10 @@ object DuelsStats {
     }
 
     /**
-     * Parse current winstreak from a player JSON response.
-     */
-    fun parseWinstreak(json: JsonObject): Int? {
-        val duels = findDuelsStats(json) ?: return null
-        return (duels.get("current_winstreak") ?: duels.get("winstreak"))?.takeIf { !it.isJsonNull }
-            ?.let { runCatching { it.asInt }.getOrNull() }
-    }
-
-    /**
-     * Parse best winstreak from a player JSON response.
-     */
-    fun parseBestWinstreak(json: JsonObject): Int? {
-        val duels = findDuelsStats(json) ?: return null
-        return duels.get("best_overall_winstreak")?.takeIf { !it.isJsonNull }
-            ?.let { runCatching { it.asInt }.getOrNull() }
-    }
-
-    /**
      * Find the Duels stats object from various JSON structures.
      */
     private fun findDuelsStats(json: JsonObject): JsonObject? {
         return club.sk1er.mods.levelhead.core.StatsPayloadParser.findStatsObject(json, club.sk1er.mods.levelhead.core.GameMode.DUELS)
-    }
-
-    /**
-     * Style configuration for a division display.
-     */
-    data class DivisionStyle(val color: Color, val colorCode: String, val bold: Boolean, val symbol: String)
-
-    /**
-     * Get the display style for a given division based on wins.
-     */
-    fun styleForDivision(wins: Int): DivisionStyle {
-        val division = getOverallDivisionInfo(wins)
-        val symbol = symbolForDivisionId(division.id)
-        return DivisionStyle(division.color, division.colorCode, division.bold, symbol)
     }
 
     fun symbolForDivisionId(id: String): String {
@@ -226,18 +167,6 @@ object DuelsStats {
             "iron" -> "•"
             else -> "·"
         }
-    }
-
-    /**
-     * Format a Duels division for display.
-     * Returns format: [Division Symbol] for non-bold or §l[Division Symbol] for bold divisions.
-     * Example: §4§l[Legend ✫] for Legend division
-     */
-    fun formatDivisionTag(wins: Int): String {
-        val division = getOverallDivisionInfo(wins)
-        val symbol = symbolForDivisionId(division.id)
-        val boldFormat = if (division.bold) "§l" else ""
-        return "§${division.colorCode}$boldFormat[${division.displayName} $symbol]"
     }
 
     private fun romanize(value: Int): String {
@@ -266,27 +195,5 @@ object DuelsStats {
             }
         }
         return out.toString()
-    }
-}
-
-/**
- * Cached Duels stats for a player.
- */
-data class CachedDuelsStats(
-    val wins: Int?,
-    val losses: Int?,
-    val kills: Int?,
-    val deaths: Int?,
-    val winstreak: Int?,
-    val bestWinstreak: Int?,
-    val fetchedAt: Long,
-    val etag: String? = null
-) {
-    val wlr: Double? get() = DuelsStats.calculateWLR(wins, losses)
-    val kdr: Double? get() = DuelsStats.calculateKDR(kills, deaths)
-    val division: DuelsStats.Division? get() = wins?.let { DuelsStats.getDivision(it) }
-
-    fun isExpired(ttlMillis: Long, now: Long = System.currentTimeMillis()): Boolean {
-        return now - fetchedAt >= ttlMillis
     }
 }

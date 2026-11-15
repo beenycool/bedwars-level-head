@@ -1,112 +1,64 @@
-import { sql } from 'kysely';
 import { createApp } from './app';
-import {
-  SERVER_HOST,
-  SERVER_PORT,
-  CLOUD_FLARE_TUNNEL,
-  CACHE_DB_POOL_MAX,
-  CACHE_DB_POOL_MIN,
-} from './config';
-import { pool as cachePool } from './services/cache';
+import { SERVER_HOST, SERVER_PORT } from './config';
 import { logger } from './util/logger';
-import { getRedisClient } from './services/redis';
-import {
-  startBackgroundServices,
-  startPostListenServices,
-  stopAllServices,
-  flushBeforeClose,
-  safeCloseCache,
-} from './scheduler';
+import { startBackgroundServices, stopBackgroundServices, safeCloseCache } from './scheduler';
 import { initAllowedKeyHashes as initAdminKeyHashes } from './middleware/adminAuth';
-import { initAllowedKeyHashes as initCronKeyHashes } from './middleware/cronAuth';
 
 async function main(): Promise<void> {
-  await Promise.all([initAdminKeyHashes(), initCronKeyHashes()]);
+  await initAdminKeyHashes();
 
   const app = createApp();
-
-  // Initialize background services (metrics, history flush, leader election)
   startBackgroundServices();
 
   const server = await new Promise<ReturnType<typeof app.listen>>((resolve, reject) => {
     const onError = (err: Error) => reject(err);
     const listeningServer = app.listen(SERVER_PORT, SERVER_HOST, () => {
       listeningServer.off('error', onError);
-
-      const location = CLOUD_FLARE_TUNNEL || `http://${SERVER_HOST}:${SERVER_PORT}`;
-      logger.info(`Levelhead proxy listening at ${location}`);
-      logger.info(`Cache DB pool configured with min=${CACHE_DB_POOL_MIN} max=${CACHE_DB_POOL_MAX}.`);
-
-      // Start services that should only run after we start listening
-      startPostListenServices();
-
-      void Promise.all([
-        getRedisClient()?.ping().catch(() => {}),
-        sql`SELECT 1`.execute(cachePool).catch(() => {}),
-      ]).then(() => logger.info('[startup] connections warmed'));
-
+      logger.info(`Levelhead proxy listening on ${SERVER_HOST}:${SERVER_PORT}`);
       resolve(listeningServer);
     });
-
     listeningServer.once('error', onError);
   });
 
   let shuttingDown = false;
 
   async function shutdown(signal: NodeJS.Signals): Promise<void> {
-  if (shuttingDown) {
-    return;
-  }
+    if (shuttingDown) {
+      return;
+    }
+    shuttingDown = true;
+    logger.info(`Received ${signal}. Shutting down gracefully...`);
 
-  shuttingDown = true;
-  logger.info(`Received ${signal}. Shutting down gracefully...`);
-  
-  // Stop background services and leader election
-  await stopAllServices().catch((error) => {
-    logger.error('Error stopping services during shutdown', error);
-  });
+    await stopBackgroundServices();
 
-  const forcedShutdown = setTimeout(() => {
-    logger.error('Forcing shutdown.');
-    void safeCloseCache();
-    process.exit(1);
-  }, 15000);
-  forcedShutdown.unref();
+    const forcedShutdown = setTimeout(() => {
+      logger.error('Forcing shutdown.');
+      void safeCloseCache();
+      process.exit(1);
+    }, 10_000);
+    forcedShutdown.unref();
 
-  try {
-    await new Promise<void>((resolve) => {
-      server.close((err?: Error) => {
-        if (err) {
-          logger.error({ err }, 'Error closing HTTP server');
-          process.exitCode = 1;
-        }
-
-        resolve();
+    try {
+      await new Promise<void>((resolve) => {
+        server.close((err?: Error) => {
+          if (err) {
+            logger.error({ err }, 'Error closing HTTP server');
+            process.exitCode = 1;
+          }
+          resolve();
+        });
       });
-    });
-    // Final flushes before closing DB connections
-    await flushBeforeClose();
-  } finally {
-    safeCloseCache().finally(() => {
+    } finally {
+      await safeCloseCache();
       clearTimeout(forcedShutdown);
-
-      const exitCode = typeof process.exitCode === 'number' ? process.exitCode : 0;
-      process.exit(exitCode);
-    });
+      process.exit(typeof process.exitCode === 'number' ? process.exitCode : 0);
+    }
   }
-}
 
-const shutdownSignals = ['SIGINT', 'SIGTERM'] as const;
-
-shutdownSignals.forEach((signal) => {
-  process.on(signal, () => {
-    void shutdown(signal);
-  });
-});
-
-  // Best-effort cleanup when the event loop drains naturally.
-  process.once('beforeExit', () => {
-    void safeCloseCache();
+  (['SIGINT', 'SIGTERM'] as const).forEach((signal) => {
+    process.on(signal, () => {
+      void shutdown(signal);
+    });
   });
 }
 

@@ -6,7 +6,6 @@ import club.sk1er.mods.levelhead.core.GameMode
 import club.sk1er.mods.levelhead.core.GameStats
 import club.sk1er.mods.levelhead.core.StatsPayloadParser
 import com.google.gson.JsonObject
-import java.util.UUID
 
 object BedwarsFetcher : BaseStatsFetcher() {
     override val gameMode = GameMode.BEDWARS
@@ -23,12 +22,9 @@ object BedwarsFetcher : BaseStatsFetcher() {
         val experience = BedwarsStar.extractExperience(payload)
         val star = experience?.let { BedwarsStar.calculateStar(it) }
         val fkdr = parseBedwarsFkdr(payload)
-        val winstreak = parseBedwarsWinstreak(payload)
         return GameStats.Bedwars(
             star = star,
-            experience = experience,
             fkdr = fkdr,
-            winstreak = winstreak,
             nicked = nicked,
             fetchedAt = System.currentTimeMillis(),
             etag = etag
@@ -53,13 +49,6 @@ object BedwarsFetcher : BaseStatsFetcher() {
             return null
         }
         return if (finalDeaths <= 0) finalKills else finalKills / finalDeaths
-    }
-
-    fun parseBedwarsWinstreak(json: JsonObject): Int? {
-        val bedwars = findBedwarsStats(json) ?: return null
-        val element = bedwars.get("winstreak") ?: return null
-        if (element.isJsonNull) return null
-        return kotlin.runCatching { element.asInt }.getOrNull()
     }
 
     private fun parseExperienceFromBedwars(bedwars: JsonObject): Long? {

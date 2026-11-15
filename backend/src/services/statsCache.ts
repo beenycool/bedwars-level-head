@@ -1,308 +1,86 @@
-import {
-  IGN_L2_TTL_MS,
-  PLAYER_L1_INFO_REFRESH_MS,
-  PLAYER_L1_SAFETY_FACTOR,
-  PLAYER_L1_TARGET_UTILIZATION,
-  PLAYER_L1_TTL_FALLBACK_MS,
-  PLAYER_L1_TTL_MAX_MS,
-  PLAYER_L1_TTL_MIN_MS,
-  PLAYER_L2_TTL_MS,
-  REDIS_CACHE_MAX_BYTES,
-  SWR_ENABLED,
-  SWR_STALE_TTL_MS,
-} from '../config';
-import { CacheEntry, CacheMetadata, CacheSource, ensureInitialized, markDbAccess, shouldReadFromDb } from './cache';
-import { DatabaseType } from './database/db';
+import { PLAYER_CACHE_DB_TTL_MS } from '../config';
+import { CacheEntry, CacheMetadata, ensureInitialized, isDatabaseReady } from './cache';
 import { isNonArrayObject } from '../util/typeChecks';
-import { recordCacheHit, recordCacheMiss, recordCacheTierHit, recordCacheTierMiss, recordCacheSourceHit, recordCacheRefresh } from './metrics';
-import { fetchHypixelPlayer, HypixelFetchOptions, MinimalPlayerStats, extractMinimalStats } from './hypixel';
-import { getRedisClient, isRedisAvailable } from './redis';
+import { MinimalPlayerStats } from './hypixel';
 import { logger } from '../util/logger';
-import { db, dbType } from './database/db';
-import { sql } from 'kysely';
+import { db } from './database/db';
 
-// Single-flight pattern: dedupe concurrent upstream fetches for the same UUID
-// Prevents cache stampede (thundering herd) when multiple requests hit a cache miss
-const fetchingLocks: Map<string, Promise<FetchResult>> = new Map();
-const backgroundRefreshLocks: Map<string, Promise<void>> = new Map();
-
-const PLAYER_KEY_PREFIX = 'player:';
-const IGN_MAPPING_PREFIX = 'ignmap:';
-const REDIS_PURGE_SCAN_COUNT = 1000;
-const REDIS_PURGE_BATCH_SIZE = 500;
-
-/**
- * Fetch result with stats and metadata for cache storage
- */
-interface FetchResult {
-  stats: MinimalPlayerStats;
-  etag: string | null;
-  lastModified: number | null;
-}
-
-/**
- * Fetch player stats from Hypixel with single-flight deduplication.
- * Prevents cache stampede by ensuring only one upstream request is in flight
- * for a given UUID at any time. All concurrent callers wait for the same promise.
- */
-export async function fetchWithDedupe(
-  uuid: string,
-  options?: HypixelFetchOptions,
-): Promise<FetchResult> {
-  const normalizedUuid = uuid.toLowerCase();
-
-  // Check if already fetching for this UUID
-  const existing = fetchingLocks.get(normalizedUuid);
-  if (existing) {
-    // Return the existing promise - all waiters get the same result
-    return await existing;
-  }
-
-  // Create new fetch promise that includes the full result with metadata
-  const fetchPromise: Promise<FetchResult> = (async (): Promise<FetchResult> => {
-    const result = await fetchHypixelPlayer(normalizedUuid, options);
-
-    if (result.notModified) {
-      // Should not happen when called from cache miss, but handle gracefully
-      throw new Error('Unexpected 304 from Hypixel during cache miss');
-    }
-
-    if (!result.payload) {
-      throw new Error('Empty payload from Hypixel');
-    }
-
-    return {
-      stats: extractMinimalStats(result.payload),
-      etag: result.etag,
-      lastModified: result.lastModified,
-    };
-  })();
-
-  // Store the promise so concurrent callers can wait for it
-  fetchingLocks.set(normalizedUuid, fetchPromise);
-
-  try {
-    return await fetchPromise;
-  } finally {
-    // Clean up lock regardless of success or failure
-    fetchingLocks.delete(normalizedUuid);
-  }
-}
-
-// Interfaces adjusted to match DB schema types more closely for internal usage if needed
-interface RedisIgnMapping {
-  uuid: string | null;
-  nicked: boolean;
-  expiresAt: number;
-}
-
-interface MemorySample {
-  usedBytes: number;
-  maxBytes: number;
-  evictedKeys: number;
-  sampledAt: number;
-}
-
-export interface IgnMappingEntry {
-  uuid: string | null;
-  nicked: boolean;
-  expiresAt: number;
-}
-
-interface CacheEntryWithCachedAt<T> extends CacheEntry<T> {
-  cachedAt: number | null;
-}
-
-// Stale-While-Revalidate (SWR) cache result with staleness information
-export interface SWRCacheEntry<T> extends CacheEntry<T> {
-  isStale: boolean;
-  staleAgeMs: number;
-}
-
-export interface PlayerCachePayload {
-  payload: string | Record<string, unknown>;
-  expires_at: number;
-  cached_at: number;
-  etag: string | null;
-  last_modified: number | null;
+export interface CachedPlayerStats extends CacheEntry<MinimalPlayerStats> {
+  cachedAt: number;
   source: string | null;
 }
 
-function isPlayerCachePayload(value: unknown): value is PlayerCachePayload {
-  if (!isNonArrayObject(value)) return false;
-  const v = value;
-  return (
-    (typeof v.payload === 'string' || (typeof v.payload === 'object' && v.payload !== null)) &&
-    typeof v.expires_at === 'number' &&
-    typeof v.cached_at === 'number' &&
-    (v.etag === null || typeof v.etag === 'string') &&
-    (v.last_modified === null || typeof v.last_modified === 'number') &&
-    (v.source === null || typeof v.source === 'string')
-  );
-}
-
-let lastMemorySample: MemorySample | null = null;
-let cachedAdaptiveTtlMs = PLAYER_L1_TTL_FALLBACK_MS;
+const PLAYER_KEY_PREFIX = 'player:';
 
 export function buildPlayerCacheKey(uuid: string): string {
-  return `${PLAYER_KEY_PREFIX}${uuid}`;
+  return `${PLAYER_KEY_PREFIX}${uuid.toLowerCase()}`;
 }
 
-export function buildIgnMappingKey(ign: string): string {
-  return `${IGN_MAPPING_PREFIX}${ign}`;
-}
-
-function parseRedisMemoryInfo(info: string, sampledAt: number): MemorySample | null {
-  const usedMatch = info.match(/used_memory:(\d+)/);
-  if (!usedMatch) {
-    return null;
-  }
-
-  const maxMatch = info.match(/maxmemory:(\d+)/);
-  const evictedMatch = info.match(/evicted_keys:(\d+)/);
-
-  const usedBytes = Number.parseInt(usedMatch[1], 10);
-  const rawMaxBytes = maxMatch ? Number.parseInt(maxMatch[1], 10) : 0;
-  const maxBytes = rawMaxBytes > 0 ? rawMaxBytes : REDIS_CACHE_MAX_BYTES;
-  const evictedKeys = evictedMatch ? Number.parseInt(evictedMatch[1], 10) : 0;
-
-  if (!Number.isFinite(usedBytes)) {
-    return null;
-  }
-
-  return {
-    usedBytes,
-    maxBytes,
-    evictedKeys,
-    sampledAt,
-  };
-}
-
-function clampTtl(value: number): number {
-  if (!Number.isFinite(value) || value <= 0) {
-    return PLAYER_L1_TTL_FALLBACK_MS;
-  }
-  const floored = Math.floor(value);
-  return Math.min(Math.max(floored, PLAYER_L1_TTL_MIN_MS), PLAYER_L1_TTL_MAX_MS);
-}
-
-function getAdaptiveL1TtlMs(): number {
-  return cachedAdaptiveTtlMs;
-}
-
-async function refreshAdaptiveTtl(): Promise<void> {
-  const now = Date.now();
-
-  const client = getRedisClient();
-  if (!client || client.status !== 'ready') {
-    cachedAdaptiveTtlMs = PLAYER_L1_TTL_FALLBACK_MS;
-    return;
-  }
-
-  let info: string;
-  try {
-    info = await client.info('memory');
-  } catch (error) {
-    logger.warn({ err: error }, `[statsCache] redis memory info failed`);
-    cachedAdaptiveTtlMs = PLAYER_L1_TTL_FALLBACK_MS;
-    return;
-  }
-
-  const sample = parseRedisMemoryInfo(info, now);
-  if (!sample) {
-    cachedAdaptiveTtlMs = PLAYER_L1_TTL_FALLBACK_MS;
-    return;
-  }
-
-  let ttlMs = PLAYER_L1_TTL_FALLBACK_MS;
-  if (sample.maxBytes > 0) {
-    const targetBytes = sample.maxBytes * PLAYER_L1_TARGET_UTILIZATION;
-    const headroom = targetBytes - sample.usedBytes;
-    if (headroom <= 0) {
-      ttlMs = PLAYER_L1_TTL_MIN_MS;
-    } else if (lastMemorySample) {
-      const elapsedSeconds = (now - lastMemorySample.sampledAt) / 1000;
-      const deltaBytes = sample.usedBytes - lastMemorySample.usedBytes;
-      if (elapsedSeconds > 0 && deltaBytes > 0) {
-        const growthPerSecond = deltaBytes / elapsedSeconds;
-        const timeToTargetMs = (headroom / growthPerSecond) * 1000;
-        ttlMs = timeToTargetMs * PLAYER_L1_SAFETY_FACTOR;
-      }
-    }
-  }
-
-  ttlMs = clampTtl(ttlMs);
-  if (lastMemorySample && sample.evictedKeys > lastMemorySample.evictedKeys) {
-    ttlMs = Math.max(PLAYER_L1_TTL_MIN_MS, Math.floor(ttlMs * 0.5));
-  }
-
-  lastMemorySample = sample;
-  cachedAdaptiveTtlMs = ttlMs;
-}
-
-let adaptiveTtlInterval: ReturnType<typeof setInterval> | null = null;
-
-export function startAdaptiveTtlRefresh(): void {
-  if (adaptiveTtlInterval) {
-    return;
-  }
-  void refreshAdaptiveTtl().catch((e) =>
-    logger.warn({ err: e }, '[statsCache] initial adaptive TTL refresh failed'),
-  );
-  adaptiveTtlInterval = setInterval(() => {
-    void refreshAdaptiveTtl().catch((e) =>
-      logger.warn({ err: e }, '[statsCache] adaptive TTL refresh failed'),
-    );
-  }, PLAYER_L1_INFO_REFRESH_MS);
-}
-
-export function stopAdaptiveTtlRefresh(): void {
-  if (adaptiveTtlInterval) {
-    clearInterval(adaptiveTtlInterval);
-    adaptiveTtlInterval = null;
-  }
-}
-
-// Helper to map DB row to internal cache structure
-function mapRow<T>(row: PlayerCachePayload): CacheEntryWithCachedAt<T> | null {
-
-  const expiresAt = Number(row.expires_at);
-  const cachedAt = Number(row.cached_at);
-  const lastModified = row.last_modified ? Number(row.last_modified) : null;
-
-  let parsedPayload: unknown = row.payload;
-  if (typeof row.payload === 'string') {
+function mapRow(row: { payload: unknown; expires_at: unknown; cached_at: unknown; etag: string | null; last_modified: unknown; source: string | null }): CachedPlayerStats | null {
+  let payload: unknown = row.payload;
+  if (typeof payload === 'string') {
     try {
-      parsedPayload = JSON.parse(row.payload);
+      payload = JSON.parse(payload);
     } catch {
       return null;
     }
-  } else if (row.payload && typeof row.payload === 'object') {
-     parsedPayload = row.payload;
+  }
+  if (!isNonArrayObject(payload)) {
+    return null;
   }
 
-  const source = row.source as CacheSource | null;
-  const validSource =
-    source === 'hypixel' || source === 'community_verified' || source === 'community_unverified' ? source : null;
+  const expiresAt = Number(row.expires_at);
+  if (!Number.isFinite(expiresAt)) {
+    return null;
+  }
 
   return {
-    value: parsedPayload as T,
+    value: payload as unknown as MinimalPlayerStats,
     expiresAt,
-    cachedAt,
+    cachedAt: Number(row.cached_at) || expiresAt - PLAYER_CACHE_DB_TTL_MS,
     etag: row.etag,
-    lastModified,
-    source: validSource,
+    lastModified: row.last_modified === null ? null : Number(row.last_modified),
+    source: row.source,
   };
 }
 
-async function getManyPlayerStatsFromDb(
-  keys: string[],
-  includeExpired: boolean,
-): Promise<Map<string, CacheEntryWithCachedAt<MinimalPlayerStats>>> {
+/** Reads one fresh row from PostgreSQL. Returns null on miss, expiry or DB failure. */
+export async function getPlayerStats(key: string): Promise<CachedPlayerStats | null> {
   await ensureInitialized();
+  if (!isDatabaseReady()) {
+    return null;
+  }
 
-  const result = new Map<string, CacheEntryWithCachedAt<MinimalPlayerStats>>();
+  try {
+    const row = await db
+      .selectFrom('player_stats_cache')
+      .selectAll()
+      .where('cache_key', '=', key)
+      .executeTakeFirst();
+
+    if (!row) {
+      return null;
+    }
+    const entry = mapRow(row);
+    if (!entry || entry.expiresAt <= Date.now()) {
+      return null;
+    }
+    return entry;
+  } catch (error) {
+    logger.error({ err: error }, '[statsCache] failed to read player stats');
+    return null;
+  }
+}
+
+/** Batch read used to warm a whole lobby in one round-trip. */
+export async function getManyPlayerStats(keys: string[]): Promise<Map<string, CachedPlayerStats>> {
+  const result = new Map<string, CachedPlayerStats>();
   if (keys.length === 0) {
+    return result;
+  }
+
+  await ensureInitialized();
+  if (!isDatabaseReady()) {
     return result;
   }
 
@@ -313,804 +91,59 @@ async function getManyPlayerStatsFromDb(
       .where('cache_key', 'in', keys)
       .execute();
 
-    markDbAccess();
-
+    const now = Date.now();
     for (const row of rows) {
-      const cacheKey = row.cache_key;
-      const entry = mapRow<MinimalPlayerStats>(row);
-
-      if (!entry) {
-        continue;
+      const entry = mapRow(row);
+      if (entry && entry.expiresAt > now) {
+        result.set(row.cache_key, entry);
       }
-
-      const now = Date.now();
-      if (Number.isNaN(entry.expiresAt) || entry.expiresAt <= now) {
-        if (includeExpired) {
-          result.set(cacheKey, entry);
-        }
-        continue;
-      }
-
-      result.set(cacheKey, entry);
     }
   } catch (error) {
-    logger.error({ err: error }, '[statsCache] failed to batch read L2 cache');
+    logger.error({ err: error }, '[statsCache] failed to batch read player stats');
   }
 
   return result;
 }
 
-async function getPlayerStatsFromDb(
-  key: string,
-  includeExpired: boolean,
-): Promise<CacheEntryWithCachedAt<MinimalPlayerStats> | null> {
-  await ensureInitialized();
-
-  try {
-    const row = await db
-      .selectFrom('player_stats_cache')
-      .selectAll()
-      .where('cache_key', '=', key)
-      .executeTakeFirst();
-
-    markDbAccess();
-
-    if (!row) {
-      return null;
-    }
-
-    const entry = mapRow<MinimalPlayerStats>(row);
-    if (!entry) {
-      return null;
-    }
-
-    const now = Date.now();
-    if (Number.isNaN(entry.expiresAt) || entry.expiresAt <= now) {
-      return includeExpired ? entry : null;
-    }
-
-    return entry;
-  } catch (error) {
-    logger.error({ err: error }, '[statsCache] failed to read L2 cache');
-    return null;
-  }
-}
-
-async function setPlayerStatsInDb(
+export async function setPlayerStats(
   key: string,
   stats: MinimalPlayerStats,
-  ttlMs: number,
-  metadata: CacheMetadata,
+  metadata: CacheMetadata = {},
 ): Promise<void> {
   await ensureInitialized();
+  if (!isDatabaseReady()) {
+    return;
+  }
 
   const cachedAt = Date.now();
-  const expiresAt = cachedAt + ttlMs;
+  const expiresAt = cachedAt + PLAYER_CACHE_DB_TTL_MS;
   const payload = JSON.stringify(stats);
   const etag = metadata.etag ?? null;
   const lastModified = metadata.lastModified ?? null;
-  const source = metadata.source ?? null;
 
   try {
-    if (dbType === DatabaseType.POSTGRESQL) {
-      // Postgres: ON CONFLICT DO UPDATE
-      await db.insertInto('player_stats_cache')
-        .values({
-          cache_key: key,
-          payload,
-          expires_at: expiresAt,
-          cached_at: cachedAt,
-          etag,
-          last_modified: lastModified,
-          source
-        })
-        .onConflict((oc) => oc
-          .column('cache_key')
-          .doUpdateSet({
-            payload,
-            expires_at: expiresAt,
-            cached_at: cachedAt,
-            etag,
-            last_modified: lastModified,
-            source
-          })
-        )
-        .execute();
-    } else {
-      // MSSQL: MERGE (Raw SQL)
-      await sql`
-        MERGE player_stats_cache AS target
-        USING (SELECT ${key} AS cache_key, ${payload} AS payload, ${expiresAt} AS expires_at, ${cachedAt} AS cached_at, ${etag} AS etag, ${lastModified} AS last_modified, ${source} AS source) AS src
-        ON (target.cache_key = src.cache_key)
-        WHEN MATCHED THEN
-          UPDATE SET payload = src.payload,
-                     expires_at = src.expires_at,
-                     cached_at = src.cached_at,
-                     etag = src.etag,
-                     last_modified = src.last_modified,
-                     source = src.source
-        WHEN NOT MATCHED THEN
-          INSERT (cache_key, payload, expires_at, cached_at, etag, last_modified, source)
-          VALUES (src.cache_key, src.payload, src.expires_at, src.cached_at, src.etag, src.last_modified, src.source);
-      `.execute(db);
-    }
-    markDbAccess();
+    await db.insertInto('player_stats_cache')
+      .values({
+        cache_key: key,
+        payload,
+        expires_at: expiresAt,
+        cached_at: cachedAt,
+        etag,
+        last_modified: lastModified,
+        source: 'hypixel',
+      })
+      .onConflict((oc) => oc.column('cache_key').doUpdateSet({
+        payload,
+        expires_at: expiresAt,
+        cached_at: cachedAt,
+        etag,
+        last_modified: lastModified,
+        source: 'hypixel',
+      }))
+      .execute();
   } catch (error) {
-    logger.error({ err: error }, '[statsCache] failed to write L2 cache');
+    logger.error({ err: error }, '[statsCache] failed to write player stats');
   }
-}
-
-async function getIgnMappingFromDb(ign: string, includeExpired: boolean): Promise<IgnMappingEntry | null> {
-  await ensureInitialized();
-
-  try {
-    const row = await db
-      .selectFrom('ign_uuid_cache')
-      .select(['uuid', 'nicked', 'expires_at'])
-      .where('ign', '=', ign)
-      .executeTakeFirst();
-
-    markDbAccess();
-
-    if (!row) {
-      return null;
-    }
-
-    const expiresAt = Number(row.expires_at);
-    const now = Date.now();
-
-    if (expiresAt <= now) {
-      return includeExpired
-        ? { uuid: row.uuid, nicked: !!row.nicked, expiresAt }
-        : null;
-    }
-
-    return { uuid: row.uuid, nicked: !!row.nicked, expiresAt };
-  } catch (error) {
-    logger.error({ err: error }, '[statsCache] failed to read ign mapping');
-    return null;
-  }
-}
-
-async function setIgnMappingInDb(ign: string, uuid: string | null, nicked: boolean, ttlMs: number): Promise<void> {
-  await ensureInitialized();
-
-  const expiresAt = Date.now() + ttlMs;
-  try {
-    if (dbType === DatabaseType.POSTGRESQL) {
-        await db.insertInto('ign_uuid_cache')
-            .values({
-                ign,
-                uuid,
-                nicked,
-                expires_at: expiresAt
-            })
-            .onConflict((oc) => oc
-                .column('ign')
-                .doUpdateSet({
-                    uuid,
-                    nicked,
-                    expires_at: expiresAt
-                    // updated_at is handled by DB triggers/default usually,
-                    // or we can set it if we add it to the schema explicitly
-                })
-            )
-            .execute();
-    } else {
-        // MSSQL MERGE
-        // Note: boolean in TS -> BIT in MSSQL is handled by driver usually, but to be safe for raw SQL:
-        const nickedBit = nicked ? 1 : 0;
-        await sql`
-        MERGE ign_uuid_cache AS target
-        USING (SELECT ${ign} AS ign, ${uuid} AS uuid, ${nickedBit} AS nicked, ${expiresAt} AS expires_at) AS src
-        ON (target.ign = src.ign)
-        WHEN MATCHED THEN
-            UPDATE SET uuid = src.uuid,
-                    nicked = src.nicked,
-                    expires_at = src.expires_at,
-                    updated_at = SYSUTCDATETIME()
-        WHEN NOT MATCHED THEN
-            INSERT (ign, uuid, nicked, expires_at)
-            VALUES (src.ign, src.uuid, src.nicked, src.expires_at);
-        `.execute(db);
-    }
-    markDbAccess();
-  } catch (error) {
-    logger.error({ err: error }, '[statsCache] failed to write ign mapping');
-  }
-}
-
-async function getIgnMappingFromRedis(ign: string, includeExpired: boolean): Promise<IgnMappingEntry | null> {
-  const client = getRedisClient();
-  if (!client || client.status !== 'ready') {
-    return null;
-  }
-
-  try {
-    const redisKey = `cache:${buildIgnMappingKey(ign)}`;
-    const data = await client.get(redisKey);
-    if (!data) {
-      return null;
-    }
-
-    let parsed: RedisIgnMapping;
-    try {
-      parsed = JSON.parse(data) as RedisIgnMapping;
-    } catch {
-      await client.del(redisKey);
-      return null;
-    }
-
-    const now = Date.now();
-    const expiresAt = Number.isFinite(parsed.expiresAt) ? parsed.expiresAt : 0;
-    if (expiresAt <= now) {
-      await client.del(redisKey);
-      return includeExpired ? { uuid: parsed.uuid, nicked: parsed.nicked, expiresAt } : null;
-    }
-
-    return { uuid: parsed.uuid, nicked: parsed.nicked, expiresAt };
-  } catch (error) {
-    logger.error({ err: error }, '[statsCache] getIgnMapping failed');
-    return null;
-  }
-}
-
-async function setIgnMappingInRedis(ign: string, mapping: IgnMappingEntry, ttlMs: number): Promise<void> {
-  const client = getRedisClient();
-  if (!client || client.status !== 'ready') {
-    return;
-  }
-
-  try {
-    const expiresAt = Date.now() + ttlMs;
-    const redisKey = `cache:${buildIgnMappingKey(ign)}`;
-    const data = JSON.stringify({
-      uuid: mapping.uuid,
-      nicked: mapping.nicked,
-      expiresAt,
-    });
-    await client.setex(redisKey, Math.ceil(ttlMs / 1000), data);
-  } catch (error) {
-    logger.error({ err: error }, '[statsCache] setIgnMapping failed');
-  }
-}
-
-export async function getPlayerStatsFromCache(
-  key: string,
-  includeExpired: boolean = false,
-): Promise<CacheEntry<MinimalPlayerStats> | null> {
-  let l1Attempted = false;
-  let l1Hit = false;
-  if (isRedisAvailable()) {
-    l1Attempted = true;
-    try {
-      const client = getRedisClient();
-      if (client && client.status === 'ready') {
-        const redisKey = `cache:${key}`;
-        const data = await client.get(redisKey);
-        if (data) {
-          let row: PlayerCachePayload | undefined;
-          try {
-            const parsed: unknown = JSON.parse(data);
-            if (isPlayerCachePayload(parsed)) {
-              row = parsed;
-            } else {
-              await client.del(redisKey);
-            }
-          } catch {
-            await client.del(redisKey);
-          }
-          if (row) {
-            // Re-use mapRow logic but adapted for Redis JSON structure (snake_case from setPlayerStatsL1)
-             const entry = mapRow<MinimalPlayerStats>(row);
-            if (entry) {
-              const now = Date.now();
-              if (entry.expiresAt > now) {
-                recordCacheHit();
-                recordCacheTierHit('l1');
-                recordCacheSourceHit('redis');
-                l1Hit = true;
-                return entry;
-              }
-              await client.del(redisKey);
-            }
-          }
-        }
-      }
-    } catch (error) {
-      logger.error({ err: error }, '[statsCache] L1 read failed');
-    }
-  }
-
-  if (l1Attempted && !l1Hit) {
-    recordCacheTierMiss('l1', 'absent');
-    recordCacheMiss('absent');
-  }
-
-  if (!shouldReadFromDb()) {
-    recordCacheTierMiss('l2', 'db_cold');
-    recordCacheMiss('db_cold');
-    return null;
-  }
-
-  const l2Entry = await getPlayerStatsFromDb(key, includeExpired);
-  if (l2Entry) {
-    recordCacheHit();
-    recordCacheTierHit('l2');
-    recordCacheSourceHit('sql');
-    const now = Date.now();
-    if (l2Entry.expiresAt > now) {
-      void setPlayerStatsL1(key, l2Entry.value, {
-        etag: l2Entry.etag ?? undefined,
-        lastModified: l2Entry.lastModified ?? undefined,
-        source: l2Entry.source ?? undefined,
-      }).catch((e) => logger.warn({ err: e }, '[statsCache] L1 backfill failed'));
-    }
-    return l2Entry;
-  }
-
-  recordCacheTierMiss('l2', 'absent');
-  recordCacheMiss('absent');
-  return null;
-}
-
-/**
- * Get player stats from cache with Stale-While-Revalidate (SWR) support.
- * 
- * Returns stale data immediately if it's within the SWR window, while triggering
- * a background refresh. This improves response times for cache misses by serving
- * slightly outdated data rather than waiting for a fresh fetch.
- * 
- * @param key - The cache key
- * @param uuid - The player UUID (for background refresh)
- * @returns SWRCacheEntry with staleness information, or null if no usable data
- */
-export async function getPlayerStatsFromCacheWithSWR(
-  key: string,
-  uuid: string,
-): Promise<SWRCacheEntry<MinimalPlayerStats> | null> {
-  if (!SWR_ENABLED) {
-    const entry = await getPlayerStatsFromCache(key, false);
-    if (!entry) return null;
-    return {
-      ...entry,
-      isStale: false,
-      staleAgeMs: 0,
-    };
-  }
-
-  // Try L1 (Redis) first
-  let l1MissReason = 'absent';
-  if (isRedisAvailable()) {
-    try {
-      const client = getRedisClient();
-      if (client && client.status === 'ready') {
-        const redisKey = `cache:${key}`;
-        const data = await client.get(redisKey);
-        if (data) {
-          let row: PlayerCachePayload | undefined;
-          try {
-            const parsed: unknown = JSON.parse(data);
-            if (isPlayerCachePayload(parsed)) {
-              row = parsed;
-            } else {
-              await client.del(redisKey);
-            }
-          } catch {
-            await client.del(redisKey);
-          }
-          if (row) {
-            const entry = mapRow<MinimalPlayerStats>(row);
-            if (entry) {
-              const now = Date.now();
-              const isFresh = entry.expiresAt > now;
-              const cachedAt = entry.cachedAt ?? (entry.expiresAt - getAdaptiveL1TtlMs());
-              const ageMs = now - cachedAt;
-
-              if (isFresh) {
-                recordCacheHit();
-                recordCacheTierHit('l1');
-                recordCacheSourceHit('redis');
-                return {
-                  ...entry,
-                  isStale: false,
-                  staleAgeMs: 0,
-                };
-              }
-
-              // Check if within SWR window
-              const isWithinSWRWindow = now <= entry.expiresAt + SWR_STALE_TTL_MS;
-              if (isWithinSWRWindow) {
-                recordCacheHit();
-                recordCacheTierHit('l1');
-                recordCacheSourceHit('redis');
-                
-                // Trigger background refresh
-                triggerBackgroundRefresh(key, uuid, entry);
-                
-                return {
-                  ...entry,
-                  isStale: true,
-                  staleAgeMs: ageMs,
-                };
-              }
-
-              // Too old, delete from Redis
-              await client.del(redisKey);
-              l1MissReason = 'expired';
-            }
-          }
-        }
-      }
-    } catch (error) {
-      logger.error({ err: error }, '[statsCache] L1 SWR read failed');
-    }
-  }
-
-  recordCacheTierMiss('l1', l1MissReason);
-
-  // Try L2 (Database) with SWR
-  if (shouldReadFromDb()) {
-    const l2Entry = await getPlayerStatsFromDb(key, true);
-    if (l2Entry) {
-      const now = Date.now();
-      const normalTtl = PLAYER_L2_TTL_MS;
-      const cachedAt = l2Entry.cachedAt ?? l2Entry.expiresAt - normalTtl;
-      const ageMs = now - cachedAt;
-      const isFresh = l2Entry.expiresAt > now;
-      const isWithinSWRWindow = now <= l2Entry.expiresAt + SWR_STALE_TTL_MS;
-
-      if (isFresh) {
-        recordCacheHit();
-        recordCacheTierHit('l2');
-        recordCacheSourceHit('sql');
-        
-        // Backfill L1 cache
-        void setPlayerStatsL1(key, l2Entry.value, {
-          etag: l2Entry.etag ?? undefined,
-          lastModified: l2Entry.lastModified ?? undefined,
-          source: l2Entry.source ?? undefined,
-        }).catch((e) => logger.warn({ err: e }, '[statsCache] L1 backfill failed'));
-        
-        return {
-          ...l2Entry,
-          isStale: false,
-          staleAgeMs: 0,
-        };
-      }
-
-      if (isWithinSWRWindow) {
-        recordCacheHit();
-        recordCacheTierHit('l2');
-        recordCacheSourceHit('sql');
-        
-        // Trigger background refresh
-        triggerBackgroundRefresh(key, uuid, l2Entry);
-        
-        return {
-          ...l2Entry,
-          isStale: true,
-          staleAgeMs: ageMs,
-        };
-      }
-
-      recordCacheMiss('expired');
-      return null;
-    }
-  } else {
-    recordCacheTierMiss('l2', 'db_cold');
-  }
-
-  recordCacheMiss('absent');
-  return null;
-}
-
-/**
- * Trigger a background refresh of player stats from Hypixel.
- * This function doesn't wait for the refresh to complete.
- */
-function triggerBackgroundRefresh(
-  key: string,
-  uuid: string,
-  entry: CacheEntry<MinimalPlayerStats>,
-): void {
-  // Use single-flight pattern to prevent duplicate fetches
-  if (backgroundRefreshLocks.has(key)) {
-    return;
-  }
-
-  const fetchPromise = (async () => {
-    try {
-      const options: HypixelFetchOptions = {
-        etag: entry.etag ?? undefined,
-        lastModified: entry.lastModified ?? undefined,
-      };
-
-      const result = await fetchHypixelPlayer(uuid, options);
-
-      if (result.notModified) {
-        // Data hasn't changed, update L1 cache TTL
-        await setPlayerStatsL1(key, entry.value, {
-          etag: entry.etag ?? undefined,
-          lastModified: entry.lastModified ?? undefined,
-          source: entry.source ?? undefined,
-        });
-        recordCacheRefresh('success');
-        return;
-      }
-
-      if (result.payload) {
-        const stats = extractMinimalStats(result.payload);
-        await setPlayerStatsBoth(key, stats, {
-          etag: result.etag ?? undefined,
-          lastModified: result.lastModified ?? undefined,
-          source: 'hypixel',
-        });
-        recordCacheRefresh('success');
-      }
-    } catch (error) {
-      logger.warn({ err: error }, `[statsCache] background refresh failed for ${uuid}`);
-      recordCacheRefresh('fail');
-    } finally {
-      backgroundRefreshLocks.delete(key);
-    }
-  })();
-
-  backgroundRefreshLocks.set(key, fetchPromise);
-  
-  // Don't await - let it run in background
-  void fetchPromise.catch(() => {
-    // Error already logged in the try/catch above
-  });
-}
-
-/**
- * Fetch multiple player stats from L1 cache (Redis) with SWR support.
- * Optimized using MGET to reduce network round-trips.
- */
-export async function getManyPlayerStatsFromCacheWithSWR(
-  identifiers: { key: string; uuid: string }[]
-): Promise<Map<string, SWRCacheEntry<MinimalPlayerStats>>> {
-  const result = new Map<string, SWRCacheEntry<MinimalPlayerStats>>();
-
-  if (identifiers.length === 0) {
-    return result;
-  }
-
-  if (!isRedisAvailable()) {
-    return result;
-  }
-
-  const client = getRedisClient();
-  if (!client || client.status !== 'ready') {
-    return result;
-  }
-
-  const redisKeys = identifiers.map((i) => `cache:${i.key}`);
-
-  try {
-    const values = await client.mget(...redisKeys);
-
-    for (let i = 0; i < values.length; i++) {
-      const val = values[i];
-      if (!val) continue;
-
-      const identifier = identifiers[i];
-      let row: PlayerCachePayload | undefined;
-      try {
-        const parsed: unknown = JSON.parse(val);
-        if (isPlayerCachePayload(parsed)) {
-          row = parsed;
-        }
-      } catch {
-        continue;
-      }
-
-      if (!row) continue;
-
-      const entry = mapRow<MinimalPlayerStats>(row);
-      if (!entry) continue;
-
-      const now = Date.now();
-      const isFresh = entry.expiresAt > now;
-      const cachedAt = entry.cachedAt ?? (entry.expiresAt - getAdaptiveL1TtlMs());
-      const ageMs = now - cachedAt;
-
-      if (isFresh) {
-        recordCacheHit();
-        recordCacheTierHit('l1');
-        recordCacheSourceHit('redis');
-        result.set(identifier.key, {
-          ...entry,
-          isStale: false,
-          staleAgeMs: 0,
-        });
-        continue;
-      }
-
-      if (SWR_ENABLED) {
-        const isWithinSWRWindow = now <= entry.expiresAt + SWR_STALE_TTL_MS;
-        if (isWithinSWRWindow) {
-          recordCacheHit();
-          recordCacheTierHit('l1');
-          recordCacheSourceHit('redis');
-
-          triggerBackgroundRefresh(identifier.key, identifier.uuid, entry);
-
-          result.set(identifier.key, {
-            ...entry,
-            isStale: true,
-            staleAgeMs: ageMs,
-          });
-          continue;
-        }
-      }
-
-      // Expired and not SWR-eligible, ignore.
-    }
-  } catch (error) {
-    logger.error({ err: error }, '[statsCache] L1 batch read failed');
-  }
-
-  // ⚡ Bolt: Replace chained .filter().map() with a single loop and build a lookup map
-  // to avoid O(N^2) behavior from missing.find() inside the L2 results loop
-  const missingKeys: string[] = [];
-  const missingLookup = new Map<string, string>(); // key -> uuid
-
-  for (let i = 0; i < identifiers.length; i++) {
-    const id = identifiers[i];
-    if (!result.has(id.key)) {
-      missingKeys.push(id.key);
-      missingLookup.set(id.key, id.uuid);
-    }
-  }
-
-  if (missingKeys.length > 0 && shouldReadFromDb()) {
-    const l2Results = await getManyPlayerStatsFromDb(missingKeys, true);
-
-    for (const [key, entry] of l2Results) {
-      const uuid = missingLookup.get(key);
-      if (!uuid) continue;
-
-      const now = Date.now();
-      const normalTtl = PLAYER_L2_TTL_MS;
-      const cachedAt = entry.cachedAt ?? entry.expiresAt - normalTtl;
-      const ageMs = now - cachedAt;
-      const isFresh = entry.expiresAt > now;
-      const isWithinSWRWindow = now <= entry.expiresAt + SWR_STALE_TTL_MS;
-
-      if (isFresh) {
-        recordCacheHit();
-        recordCacheTierHit('l2');
-        recordCacheSourceHit('sql');
-
-        void setPlayerStatsL1(key, entry.value, {
-          etag: entry.etag ?? undefined,
-          lastModified: entry.lastModified ?? undefined,
-          source: entry.source ?? undefined,
-        }).catch((e) => logger.warn({ err: e }, '[statsCache] L1 backfill failed'));
-
-        result.set(key, {
-          ...entry,
-          isStale: false,
-          staleAgeMs: 0,
-        });
-        continue;
-      }
-
-      if (SWR_ENABLED && isWithinSWRWindow) {
-        recordCacheHit();
-        recordCacheTierHit('l2');
-        recordCacheSourceHit('sql');
-
-        triggerBackgroundRefresh(key, uuid, entry);
-
-        result.set(key, {
-          ...entry,
-          isStale: true,
-          staleAgeMs: ageMs,
-        });
-        continue;
-      }
-
-      recordCacheMiss('expired');
-    }
-
-    const stillMissing = missingKeys.filter((key) => !result.has(key));
-    for (const _ of stillMissing) {
-      recordCacheTierMiss('l2', 'absent');
-      recordCacheMiss('absent');
-    }
-  } else if (missingKeys.length > 0) {
-    for (const _ of missingKeys) {
-      recordCacheTierMiss('l2', 'db_cold');
-      recordCacheMiss('db_cold');
-    }
-  }
-
-  return result;
-}
-
-export async function setPlayerStatsL1(
-  key: string,
-  stats: MinimalPlayerStats,
-  metadata: CacheMetadata = {},
-): Promise<void> {
-  const client = getRedisClient();
-  if (!client || client.status !== 'ready') {
-    return;
-  }
-
-  try {
-    const ttlMs = getAdaptiveL1TtlMs();
-    const cachedAt = Date.now();
-    const expiresAt = cachedAt + ttlMs;
-    // Bolt: Optimized to avoid double serialization. 'stats' is embedded as an object.
-    const data = JSON.stringify({
-      payload: stats,
-      expires_at: expiresAt,
-      cached_at: cachedAt,
-      etag: metadata.etag ?? null,
-      last_modified: metadata.lastModified ?? null,
-      source: metadata.source ?? null,
-    });
-
-    const redisKey = `cache:${key}`;
-    await client.setex(redisKey, Math.ceil(ttlMs / 1000), data);
-  } catch (error) {
-    logger.error({ err: error }, '[statsCache] setPlayerStatsL1 failed');
-  }
-}
-
-export async function setPlayerStatsBoth(
-  key: string,
-  stats: MinimalPlayerStats,
-  metadata: CacheMetadata = {},
-): Promise<void> {
-  await Promise.all([
-    setPlayerStatsInDb(key, stats, PLAYER_L2_TTL_MS, metadata),
-    setPlayerStatsL1(key, stats, metadata),
-  ]);
-}
-
-export async function getIgnMapping(
-  ign: string,
-  includeExpired: boolean = false,
-): Promise<IgnMappingEntry | null> {
-  const l1Entry = await getIgnMappingFromRedis(ign, includeExpired);
-  if (l1Entry) {
-    recordCacheHit();
-    return l1Entry;
-  }
-
-  if (!shouldReadFromDb()) {
-    recordCacheMiss('db_cold');
-    return null;
-  }
-
-  const l2Entry = await getIgnMappingFromDb(ign, includeExpired);
-  if (l2Entry) {
-    recordCacheHit();
-    const now = Date.now();
-    if (l2Entry.expiresAt > now) {
-      const ttlMs = getAdaptiveL1TtlMs();
-      void setIgnMappingInRedis(ign, l2Entry, ttlMs).catch((e) =>
-        logger.warn({ err: e }, '[statsCache] IGN L1 backfill failed'),
-      );
-    }
-    return l2Entry;
-  }
-
-  recordCacheMiss('absent');
-  return null;
-}
-
-export async function setIgnMapping(ign: string, uuid: string | null, nicked: boolean): Promise<void> {
-  const ttlMs = getAdaptiveL1TtlMs();
-  await Promise.all([
-    setIgnMappingInRedis(ign, { uuid, nicked, expiresAt: Date.now() + ttlMs }, ttlMs),
-    setIgnMappingInDb(ign, uuid, nicked, IGN_L2_TTL_MS),
-  ]);
 }
 
 export async function deletePlayerStatsEntries(keys: string[]): Promise<number> {
@@ -1118,101 +151,33 @@ export async function deletePlayerStatsEntries(keys: string[]): Promise<number> 
     return 0;
   }
 
-  if (isRedisAvailable()) {
-    const client = getRedisClient();
-    if (client && client.status === 'ready') {
-      try {
-        const redisKeys = keys.map((key) => `cache:${key}`);
-        await client.del(...redisKeys);
-      } catch (error) {
-        logger.error({ err: error }, '[statsCache] delete L1 stats failed');
-      }
-    }
-  }
-
   await ensureInitialized();
+  if (!isDatabaseReady()) {
+    return 0;
+  }
 
   try {
     const result = await db.deleteFrom('player_stats_cache')
-        .where('cache_key', 'in', keys)
-        .execute();
-
-    markDbAccess();
+      .where('cache_key', 'in', keys)
+      .execute();
     return Number(result[0]?.numDeletedRows ?? 0);
   } catch (error) {
-    logger.error({ err: error }, '[statsCache] delete L2 stats failed');
-    return 0;
-  }
-}
-
-export async function deleteIgnMappings(igns: string[]): Promise<number> {
-  if (igns.length === 0) {
-    return 0;
-  }
-
-  if (isRedisAvailable()) {
-    const client = getRedisClient();
-    if (client && client.status === 'ready') {
-      try {
-        const redisKeys = igns.map((ign) => `cache:${buildIgnMappingKey(ign)}`);
-        await client.del(...redisKeys);
-      } catch (error) {
-        logger.error({ err: error }, '[statsCache] delete L1 ign mappings failed');
-      }
-    }
-  }
-
-  await ensureInitialized();
-
-  try {
-    const result = await db.deleteFrom('ign_uuid_cache')
-        .where('ign', 'in', igns)
-        .execute();
-    markDbAccess();
-    return Number(result[0]?.numDeletedRows ?? 0);
-  } catch (error) {
-    logger.error({ err: error }, '[statsCache] delete L2 ign mappings failed');
+    logger.error({ err: error }, '[statsCache] failed to delete player stats');
     return 0;
   }
 }
 
 export async function clearAllPlayerStatsCaches(): Promise<number> {
-  let deleted = 0;
-
-  if (isRedisAvailable()) {
-    const client = getRedisClient();
-    if (client && client.status === 'ready') {
-      try {
-        let cursor = '0';
-        do {
-          const [newCursor, keys] = await client.scan(cursor, 'MATCH', 'cache:*', 'COUNT', REDIS_PURGE_SCAN_COUNT);
-          cursor = newCursor;
-          if (keys.length > 0) {
-            for (let i = 0; i < keys.length; i += REDIS_PURGE_BATCH_SIZE) {
-              const chunk = keys.slice(i, i + REDIS_PURGE_BATCH_SIZE);
-              try {
-                deleted += await client.unlink(...chunk);
-              } catch {
-                deleted += await client.del(...chunk);
-              }
-            }
-          }
-        } while (cursor !== '0');
-      } catch (error) {
-        logger.error({ err: error }, '[statsCache] clear L1 caches failed');
-      }
-    }
+  await ensureInitialized();
+  if (!isDatabaseReady()) {
+    return 0;
   }
 
-  await ensureInitialized();
-
   try {
-    const statsResult = await db.deleteFrom('player_stats_cache').execute();
-    const ignResult = await db.deleteFrom('ign_uuid_cache').execute();
-    markDbAccess();
-    return deleted + Number(statsResult[0]?.numDeletedRows ?? 0) + Number(ignResult[0]?.numDeletedRows ?? 0);
+    const result = await db.deleteFrom('player_stats_cache').execute();
+    return Number(result[0]?.numDeletedRows ?? 0);
   } catch (error) {
-    logger.error({ err: error }, '[statsCache] clear L2 caches failed');
-    return deleted;
+    logger.error({ err: error }, '[statsCache] failed to clear player stats');
+    return 0;
   }
 }

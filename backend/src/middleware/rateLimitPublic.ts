@@ -1,26 +1,20 @@
 import type { Request } from 'express';
-import { PUBLIC_RATE_LIMIT_MAX, PUBLIC_RATE_LIMIT_WINDOW_MS } from '../config';
-import { createRateLimitMiddleware, getClientIpAddress, resolveBatchCost } from './rateLimit';
+import { createRateLimitMiddleware, getClientIpAddress, publicRateLimiter, resolveBatchCost } from './rateLimit';
 
+/** All public surfaces share one per-IP bucket. */
 function getBucketKey(req: Request): string {
-  const ip = getClientIpAddress(req);
-  return `public:${ip}`;
+  return `public:${getClientIpAddress(req)}`;
 }
 
 export const enforcePublicRateLimit = createRateLimitMiddleware({
-  windowMs: PUBLIC_RATE_LIMIT_WINDOW_MS,
-  max: PUBLIC_RATE_LIMIT_MAX,
+  limiter: publicRateLimiter,
   getBucketKey,
-  getClientIp: getClientIpAddress, // Pass raw IP for global stats tracking
-  metricLabel: 'public',
+  label: 'public',
 });
 
-// Cost-based rate limiter for public batch endpoints
 export const enforcePublicBatchRateLimit = createRateLimitMiddleware({
-  windowMs: PUBLIC_RATE_LIMIT_WINDOW_MS,
-  max: PUBLIC_RATE_LIMIT_MAX,
+  limiter: publicRateLimiter,
   getBucketKey,
-  getClientIp: getClientIpAddress,
   getCost: resolveBatchCost,
-  metricLabel: 'public_batch',
+  label: 'public_batch',
 });

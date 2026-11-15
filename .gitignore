@@ -26,12 +26,14 @@ build
 # other
 node_modules/
 run
+dist
+*.log
 .DS_Store
 Thumbs.db
 .vscode
+.cursor
 .sisyphus/evidence/
 
 # environment configuration
 .env
 backend/.env
-backend/package-lock.json

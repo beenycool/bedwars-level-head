@@ -1,37 +1,52 @@
 import { LRUCache } from 'lru-cache';
 import { HttpError } from '../util/httpError';
-import { IDENTIFIER_MAX_LENGTH } from '../util/validationConstants';
-import { CacheEntry, CacheMetadata } from './cache';
-import { fetchHypixelPlayer, HypixelFetchOptions, extractMinimalStats, MinimalPlayerStats } from './hypixel';
-import { lookupProfileByUsername } from './mojang';
-import { recordCacheMiss, recordCacheRefresh, recordCacheSourceHit } from './metrics';
+import { IDENTIFIER_MAX_LENGTH, isUuid, normalizeIdentifier } from '../util/validationConstants';
+import { fetchHypixelPlayer, extractMinimalStats, MinimalPlayerStats } from './hypixel';
 import { logger } from '../util/logger';
 import {
   buildPlayerCacheKey,
-  fetchWithDedupe,
-  getIgnMapping,
-  getPlayerStatsFromCache,
-  getPlayerStatsFromCacheWithSWR,
-  getManyPlayerStatsFromCacheWithSWR,
-  SWRCacheEntry,
-  setIgnMapping,
-  setPlayerStatsBoth,
-  setPlayerStatsL1,
+  CachedPlayerStats,
+  getManyPlayerStats,
+  getPlayerStats,
+  setPlayerStats,
 } from './statsCache';
 
-const uuidRegex = /^[0-9a-f]{32}$/i;
-const ignRegex = /^[a-zA-Z0-9_]{1,16}$/;
+/** Short-lived in-process cache in front of the SQL cache. */
+const MEMORY_TTL_MS = 10 * 60 * 1000;
 
 const memoizedResults = new LRUCache<string, ResolvedPlayer>({
   max: 5000,
-  ttl: 5 * 60 * 1000, // 5 minutes
+  ttl: MEMORY_TTL_MS,
 });
 
 const inFlightRequests = new Map<string, Promise<ResolvedPlayer>>();
 
+/**
+ * UUIDs that a recent batch warmup already looked up in SQL and did not find.
+ * Saves one duplicate SELECT per cache miss in a 100-player lobby.
+ */
+const warmedMisses = new Set<string>();
+
 export function clearInMemoryPlayerCache(): void {
   memoizedResults.clear();
   inFlightRequests.clear();
+  warmedMisses.clear();
+}
+
+export interface ResolvedPlayer {
+  payload: MinimalPlayerStats;
+  etag: string | null;
+  lastModified: number | null;
+  source: 'cache' | 'network';
+  revalidated: boolean;
+  uuid: string | null;
+  username: string | null;
+  lookupType: 'uuid' | 'ign';
+  lookupValue: string;
+  nicked: boolean;
+  /** Present on responses served from a stale cache entry (legacy route hints). */
+  isStale?: boolean;
+  staleAgeMs?: number;
 }
 
 function buildNickedStats(): MinimalPlayerStats {
@@ -52,35 +67,6 @@ function buildNickedStats(): MinimalPlayerStats {
   };
 }
 
-function memoKey(prefix: string, value: string): string {
-  return `${prefix}:${value}`;
-}
-
-function getMemoized(prefix: string, value: string): ResolvedPlayer | null {
-  const key = memoKey(prefix, value);
-  return memoizedResults.get(key) ?? null;
-}
-
-function setMemoized(prefix: string, value: string, resolved: ResolvedPlayer): void {
-  const key = memoKey(prefix, value);
-  memoizedResults.set(key, resolved);
-}
-
-function logBackgroundRefreshFailure(message: string, error: unknown): void {
-  logger.warn({ error }, message);
-}
-
-function scheduleBackgroundRefresh(task: () => Promise<void>, errorMessage: string): void {
-  void task()
-    .then(() => {
-      recordCacheRefresh('success');
-    })
-    .catch((error) => {
-      logBackgroundRefreshFailure(errorMessage, error);
-      recordCacheRefresh('fail');
-    });
-}
-
 function normalizeDisplayName(value: string | null | undefined): string | null {
   if (!value) {
     return null;
@@ -89,443 +75,130 @@ function normalizeDisplayName(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+/**
+ * Hypixel returns no displayname for nicked players (or the literal `(nicked)`).
+ * Both cases are flagged so the mod can render its "(nicked)" tag deliberately
+ * instead of treating zeroed counters as real stats.
+ */
 function normalizeUuidLookupStats(stats: MinimalPlayerStats): { payload: MinimalPlayerStats; nicked: boolean } {
   const displayname = normalizeDisplayName(stats.displayname);
   if (!displayname || displayname === '(nicked)') {
-    return {
-      payload: buildNickedStats(),
-      nicked: true,
-    };
+    return { payload: buildNickedStats(), nicked: true };
   }
-
   if (displayname !== stats.displayname) {
-    return {
-      payload: {
-        ...stats,
-        displayname,
-      },
-      nicked: false,
-    };
+    return { payload: { ...stats, displayname }, nicked: false };
   }
-
   return { payload: stats, nicked: false };
 }
 
-function buildResolvedFromUuidStats(
-  stats: MinimalPlayerStats,
-  meta: { etag: string | null; lastModified: number | null },
-  source: 'cache' | 'network',
-  revalidated: boolean,
-  normalizedUuid: string,
-): ResolvedPlayer {
-  const normalized = normalizeUuidLookupStats(stats);
-  return buildResolvedFromStats(
-    normalized.payload,
-    meta,
-    source,
-    revalidated,
-    'uuid',
-    normalizedUuid,
-    normalizedUuid,
-    undefined,
-    normalized.nicked,
-  );
-}
-
-function summarizeCacheEntry(entry: CacheEntry<MinimalPlayerStats>): CacheMetadata {
-  return { etag: entry.etag ?? undefined, lastModified: entry.lastModified ?? undefined };
-}
-
-function buildResolvedFromStats(
-  stats: MinimalPlayerStats,
-  meta: { etag: string | null; lastModified: number | null },
-  source: 'cache' | 'network',
-  revalidated: boolean,
-  lookupType: 'uuid' | 'ign',
-  lookupValue: string,
-  uuid: string | null,
-  usernameFallback?: string | null,
-  nicked: boolean = false,
-): ResolvedPlayer {
+function fromCacheEntry(uuid: string, entry: CachedPlayerStats): ResolvedPlayer {
+  const { payload, nicked } = normalizeUuidLookupStats(entry.value);
   return {
-    payload: stats,
-    etag: meta.etag,
-    lastModified: meta.lastModified,
-    source,
-    revalidated,
+    payload,
+    etag: entry.etag,
+    lastModified: entry.lastModified,
+    source: 'cache',
+    revalidated: false,
     uuid,
-    username: normalizeDisplayName(stats.displayname) ?? usernameFallback ?? null,
-    lookupType,
-    lookupValue,
+    username: normalizeDisplayName(payload.displayname),
+    lookupType: 'uuid',
+    lookupValue: uuid,
     nicked,
   };
 }
 
-function mergeConditionalOptions(
-  conditional: HypixelFetchOptions | undefined,
-  cacheMetadata: CacheMetadata,
-): HypixelFetchOptions {
+async function loadFromUpstream(uuid: string): Promise<ResolvedPlayer> {
+  const response = await fetchHypixelPlayer(uuid);
+  const { payload, nicked } = normalizeUuidLookupStats(extractMinimalStats(response.payload));
+
+  void setPlayerStats(buildPlayerCacheKey(uuid), payload, {
+    etag: response.etag,
+    lastModified: response.lastModified,
+  }).catch((error) => logger.warn({ err: error }, '[player] cache write failed'));
+
   return {
-    etag: conditional?.etag ?? cacheMetadata.etag ?? undefined,
-    lastModified: conditional?.lastModified ?? cacheMetadata.lastModified ?? undefined,
-  };
-}
-
-export interface ResolvedPlayer {
-  payload: MinimalPlayerStats;
-  etag: string | null;
-  lastModified: number | null;
-  source: 'cache' | 'network';
-  revalidated: boolean;
-  uuid: string | null;
-  username: string | null;
-  lookupType: 'uuid' | 'ign';
-  lookupValue: string;
-  nicked: boolean;
-  isStale?: boolean;
-  staleAgeMs?: number;
-}
-
-async function refreshUuidCache(
-  cacheKey: string,
-  normalizedUuid: string,
-  cacheEntry: CacheEntry<MinimalPlayerStats> | null,
-  conditional?: HypixelFetchOptions,
-): Promise<ResolvedPlayer> {
-  const cacheMetadata: CacheMetadata = cacheEntry ? summarizeCacheEntry(cacheEntry) : {};
-  
-  // Use single-flight fetch when no cache entry exists to prevent upstream request storms
-  // If cache entry exists, use conditional fetch for revalidation
-  let response: { stats: MinimalPlayerStats; etag: string | null; lastModified: number | null };
-  let revalidated = Boolean(cacheEntry);
-  
-  if (!cacheEntry) {
-    // Cache miss - use single-flight pattern to dedupe concurrent requests
-    const fetchResult = await fetchWithDedupe(normalizedUuid, conditional);
-    response = fetchResult;
-    revalidated = false;
-  } else {
-    // Cache hit - use conditional fetch for revalidation
-    const requestOptions = mergeConditionalOptions(conditional, cacheMetadata);
-    const hypixelResponse = await fetchHypixelPlayer(normalizedUuid, requestOptions);
-
-    if (hypixelResponse.notModified) {
-      void setPlayerStatsL1(cacheKey, cacheEntry.value, {
-        etag: cacheMetadata.etag ?? undefined,
-        lastModified: cacheMetadata.lastModified ?? undefined,
-        source: cacheEntry.source ?? 'hypixel',
-      }).catch((e) => logger.warn({ err: e }, '[player] L1 revalidation write failed'));
-
-      const resolved = buildResolvedFromUuidStats(
-        cacheEntry.value,
-        { etag: cacheEntry.etag, lastModified: cacheEntry.lastModified },
-        'cache',
-        true,
-        normalizedUuid,
-      );
-
-      if (!resolved.nicked) {
-        const displayname = normalizeDisplayName(resolved.payload.displayname);
-        if (displayname) {
-          void setIgnMapping(displayname.toLowerCase(), normalizedUuid, false)
-            .catch((e) => logger.warn({ err: e }, '[player] ign mapping revalidation write failed'));
-        }
-      }
-
-      setMemoized('player', normalizedUuid, resolved);
-      return resolved;
-    }
-
-    if (!hypixelResponse.payload) {
-      recordCacheMiss('empty_payload');
-      throw new HttpError(502, 'HYPIXEL_EMPTY_PAYLOAD', 'Hypixel did not return any data.');
-    }
-
-    response = {
-      stats: extractMinimalStats(hypixelResponse.payload),
-      etag: hypixelResponse.etag,
-      lastModified: hypixelResponse.lastModified,
-    };
-  }
-
-  const { stats: upstreamStats, etag, lastModified } = response;
-  const { payload: stats, nicked } = normalizeUuidLookupStats(upstreamStats);
-
-  recordCacheSourceHit('upstream');
-
-  void setPlayerStatsBoth(cacheKey, stats, { etag, lastModified, source: 'hypixel' })
-    .catch((e) => logger.warn({ err: e }, '[player] cache write failed'));
-
-  const displayname = normalizeDisplayName(stats.displayname);
-  if (!nicked && displayname) {
-    void setIgnMapping(displayname.toLowerCase(), normalizedUuid, false)
-      .catch((e) => logger.warn({ err: e }, '[player] ign mapping write failed'));
-  }
-
-  const resolved = buildResolvedFromStats(
-    stats,
-    { etag, lastModified },
-    'network',
-    revalidated,
-    'uuid',
-    normalizedUuid,
-    normalizedUuid,
-    undefined,
+    payload,
+    etag: response.etag,
+    lastModified: response.lastModified,
+    source: 'network',
+    revalidated: false,
+    uuid,
+    username: normalizeDisplayName(payload.displayname),
+    lookupType: 'uuid',
+    lookupValue: uuid,
     nicked,
-  );
-  setMemoized('player', normalizedUuid, resolved);
-  return resolved;
-}
-
-async function refreshIgnMapping(normalizedIgn: string): Promise<void> {
-  const profile = await lookupProfileByUsername(normalizedIgn);
-  if (!profile) {
-    await setIgnMapping(normalizedIgn, null, true);
-    return;
-  }
-
-  const normalizedUuid = profile.id.replace(/-/g, '').toLowerCase();
-  await setIgnMapping(normalizedIgn, normalizedUuid, false);
-}
-
-async function fetchByUuid(uuid: string, conditional?: HypixelFetchOptions, skipMemoCheck = false): Promise<ResolvedPlayer> {
-  const normalizedUuid = uuid.toLowerCase();
-  const cacheKey = buildPlayerCacheKey(normalizedUuid);
-
-  if (!skipMemoCheck) {
-    const memoized = getMemoized('player', normalizedUuid);
-    if (memoized) {
-      return { ...memoized, source: 'cache' };
-    }
-  }
-
-  const cacheEntry = await getPlayerStatsFromCacheWithSWR(cacheKey, normalizedUuid);
-  if (cacheEntry) {
-    const resolved = buildResolvedFromUuidStats(
-      cacheEntry.value,
-      { etag: cacheEntry.etag, lastModified: cacheEntry.lastModified },
-      'cache',
-      false,
-      normalizedUuid,
-    );
-    
-    // Add SWR information
-    if (cacheEntry.isStale) {
-      resolved.isStale = true;
-      resolved.staleAgeMs = cacheEntry.staleAgeMs;
-    }
-    
-    setMemoized('player', normalizedUuid, resolved);
-    return resolved;
-  }
-
-  return refreshUuidCache(cacheKey, normalizedUuid, null, conditional);
-}
-
-async function fetchByIgn(ign: string, conditional?: HypixelFetchOptions): Promise<ResolvedPlayer> {
-  const normalizedIgn = ign.toLowerCase();
-
-  const mapping = await getIgnMapping(normalizedIgn, true);
-  const now = Date.now();
-  if (mapping) {
-    if (mapping.expiresAt <= now) {
-      scheduleBackgroundRefresh(
-        async () => {
-          await refreshIgnMapping(normalizedIgn);
-        },
-        `[player] background refresh for ign ${normalizedIgn} failed`,
-      );
-    }
-
-    if (mapping.nicked || !mapping.uuid) {
-      const nickedStats = buildNickedStats();
-      const resolved = buildResolvedFromStats(
-        nickedStats,
-        { etag: 'nicked', lastModified: Date.now() },
-        'cache',
-        false,
-        'ign',
-        normalizedIgn,
-        null,
-        normalizedIgn,
-        true,
-      );
-      setMemoized('ign', normalizedIgn, resolved);
-      return resolved;
-    }
-
-    const resolvedUuid = await fetchByUuid(mapping.uuid, conditional);
-    const resolved: ResolvedPlayer = {
-      ...resolvedUuid,
-      lookupType: 'ign',
-      lookupValue: normalizedIgn,
-      username: resolvedUuid.username ?? normalizedIgn,
-    };
-    setMemoized('ign', normalizedIgn, resolved);
-    return resolved;
-  }
-
-  const profile = await lookupProfileByUsername(normalizedIgn);
-  if (!profile) {
-    const nickedStats = buildNickedStats();
-    await setIgnMapping(normalizedIgn, null, true);
-    const resolved = buildResolvedFromStats(
-      nickedStats,
-      { etag: 'nicked', lastModified: Date.now() },
-      'network',
-      false,
-      'ign',
-      normalizedIgn,
-      null,
-      normalizedIgn,
-      true,
-    );
-    setMemoized('ign', normalizedIgn, resolved);
-    return resolved;
-  }
-
-  const normalizedUuid = profile.id.replace(/-/g, '').toLowerCase();
-
-  const [_, resolvedUuid] = await Promise.all([
-    setIgnMapping(normalizedIgn, normalizedUuid, false),
-    fetchByUuid(normalizedUuid, conditional),
-  ]);
-
-  const resolved: ResolvedPlayer = {
-    ...resolvedUuid,
-    lookupType: 'ign',
-    lookupValue: normalizedIgn,
-    username: resolvedUuid.username ?? profile.name ?? normalizedIgn,
   };
-  setMemoized('ign', normalizedIgn, resolved);
-  return resolved;
 }
 
-function normalizeConditionalHeaders(options?: PlayerResolutionOptions): HypixelFetchOptions | undefined {
-  if (!options) {
-    return undefined;
-  }
-
-  const normalized: HypixelFetchOptions = {};
-  if (options.etag) {
-    normalized.etag = options.etag;
-  }
-  if (typeof options.lastModified === 'number' && !Number.isNaN(options.lastModified)) {
-    normalized.lastModified = options.lastModified;
-  }
-  return normalized;
-}
-
-export interface PlayerResolutionOptions {
-  etag?: string;
-  lastModified?: number;
-}
-
-export async function warmupPlayerCache(identifiers: string[]): Promise<void> {
-  // Filter for valid UUIDs (no dashes)
-  // ⚡ Bolt: Replaced chained .filter().map().map() with a single for loop
-  // to avoid O(N) intermediate array allocations and reduce GC pressure during batch processing.
-  const keys: { key: string; uuid: string }[] = [];
-  for (let i = 0; i < identifiers.length; i++) {
-    const id = identifiers[i];
-    if (uuidRegex.test(id)) {
-      const uuid = id.toLowerCase();
-      keys.push({ key: buildPlayerCacheKey(uuid), uuid });
-    }
-  }
-
-  if (keys.length === 0) {
-    return;
-  }
-
-  try {
-    const results = await getManyPlayerStatsFromCacheWithSWR(keys);
-
-    for (const { key, uuid } of keys) {
-      const entry = results.get(key);
-      if (!entry) continue;
-
-      const resolved = buildResolvedFromUuidStats(entry.value, { etag: entry.etag, lastModified: entry.lastModified }, 'cache', false, uuid);
-
-      if (entry.isStale) {
-        resolved.isStale = true;
-        resolved.staleAgeMs = entry.staleAgeMs;
-      }
-
-      setMemoized('player', uuid, resolved);
-    }
-  } catch (error) {
-    logger.warn({ error }, '[player] warmupPlayerCache failed');
-  }
-}
-
-export async function resolvePlayer(
-  identifier: string,
-  options?: PlayerResolutionOptions,
-): Promise<ResolvedPlayer> {
+/**
+ * Resolves one player by undashed UUID. Lookups are deduped in-process (memoised
+ * results plus a single in-flight promise per UUID) and backed by the SQL cache.
+ */
+export async function resolvePlayer(identifier: string): Promise<ResolvedPlayer> {
   if (!identifier || typeof identifier !== 'string' || identifier.length > IDENTIFIER_MAX_LENGTH) {
     throw new HttpError(400, 'INVALID_IDENTIFIER', `Identifier must be ${IDENTIFIER_MAX_LENGTH} characters or less.`);
   }
 
-  // Fast normalization: combine length gate with structural dash check
-  
-  let key = identifier;
-  if (key.length === 36 && key[8] === '-' && key[13] === '-' && key[18] === '-' && key[23] === '-') {
-    key = key.slice(0, 8) + key.slice(9, 13) + key.slice(14, 18) + key.slice(19, 23) + key.slice(24);
+  const uuid = normalizeIdentifier(identifier);
+  if (!isUuid(uuid)) {
+    throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a 32-character UUID (no dashes).');
   }
-  key = key.toLowerCase();
 
-  // Bolt: Consolidate validation logic to avoid repeated regex execution
-  const isUuid = key.length === 32 && uuidRegex.test(key);
-  const isIgn = !isUuid && ignRegex.test(key);
-
-  // Fast-path: Check in-memory LRU cache synchronously before allocating Promises
-  // or tracking in-flight requests
-  const memoized = isUuid
-    ? getMemoized('player', key)
-    : isIgn
-      ? getMemoized('ign', key)
-      : null;
-
+  const memoized = memoizedResults.get(uuid);
   if (memoized) {
     return { ...memoized, source: 'cache' };
   }
 
-  const inFlightKey = isUuid ? `uuid:${key}` : isIgn ? `ign:${key}` : null;
-  if (inFlightKey) {
-    const pending = inFlightRequests.get(inFlightKey);
-    if (pending) {
-      const result = await pending;
-      return { ...result, source: 'cache' };
-    }
+  const pending = inFlightRequests.get(uuid);
+  if (pending) {
+    const result = await pending;
+    return { ...result, source: 'cache' };
   }
 
-  const conditional = normalizeConditionalHeaders(options);
-
-  const executor = async (): Promise<ResolvedPlayer> => {
-    if (isUuid) {
-      return fetchByUuid(key, conditional, true);
-    }
-
-    if (isIgn) {
-      // Bolt: Pass normalized key (lowercase) to avoid re-normalization
-      return fetchByIgn(key, conditional);
-    }
-
-    throw new HttpError(
-      400,
-      'INVALID_IDENTIFIER',
-      'Identifier must be a valid UUID (no dashes) or Minecraft username.',
-    );
-  };
-
-  if (!inFlightKey) {
-    return executor();
-  }
-
-  const promise = executor().finally(() => {
-    inFlightRequests.delete(inFlightKey);
+  const promise = (async (): Promise<ResolvedPlayer> => {
+    // A batch warmup that already missed in SQL does not need a second SELECT.
+    const warmedMiss = warmedMisses.delete(uuid);
+    const cached = warmedMiss ? null : await getPlayerStats(buildPlayerCacheKey(uuid));
+    const resolved = cached ? fromCacheEntry(uuid, cached) : await loadFromUpstream(uuid);
+    memoizedResults.set(uuid, resolved);
+    return resolved;
+  })().finally(() => {
+    inFlightRequests.delete(uuid);
   });
-  inFlightRequests.set(inFlightKey, promise);
+
+  inFlightRequests.set(uuid, promise);
   return promise;
+}
+
+/**
+ * Pre-fills the in-process cache for a batch from a single SQL round-trip.
+ * Identifiers that miss are resolved individually by the caller.
+ */
+export async function warmupPlayerCache(identifiers: string[]): Promise<void> {
+  if (warmedMisses.size > 10_000) {
+    warmedMisses.clear();
+  }
+  const keys: { key: string; uuid: string }[] = [];
+  for (const identifier of identifiers) {
+    const uuid = normalizeIdentifier(identifier);
+    if (isUuid(uuid)) {
+      keys.push({ key: buildPlayerCacheKey(uuid), uuid });
+    }
+  }
+  if (keys.length === 0) {
+    return;
+  }
+
+  const entries = await getManyPlayerStats(keys.map((entry) => entry.key));
+  for (const { key, uuid } of keys) {
+    if (memoizedResults.has(uuid)) {
+      continue;
+    }
+    const entry = entries.get(key);
+    if (entry) {
+      memoizedResults.set(uuid, fromCacheEntry(uuid, entry));
+    } else {
+      warmedMisses.add(uuid);
+    }
+  }
 }
