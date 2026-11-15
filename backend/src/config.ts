@@ -52,10 +52,14 @@ export const PUBLIC_RATE_LIMIT_WINDOW_MS = 60 * 1000;
  */
 export const LOOKUP_TRACKING_ENABLED = process.env.LOOKUP_TRACKING_ENABLED !== 'false';
 
-/** How long request-level rows survive before the hourly prune removes them. */
-export const LOOKUP_EVENT_RETENTION_DAYS = Math.max(
+/**
+ * How long per-lookup rows survive before the hourly prune removes them. The old
+ * page's per-lookup panels need real samples, but the log grows with traffic, so it
+ * is kept short on purpose.
+ */
+export const LOOKUP_LOG_RETENTION_DAYS = Math.max(
   1,
-  parseIntEnv('LOOKUP_EVENT_RETENTION_DAYS', 90),
+  parseIntEnv('LOOKUP_LOG_RETENTION_DAYS', parseIntEnv('LOOKUP_EVENT_RETENTION_DAYS', 30)),
 );
 
 /** SQL cache retention. The in-process LRU is much shorter (see services/player.ts). */

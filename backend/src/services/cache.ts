@@ -56,18 +56,24 @@ async function createTables(): Promise<void> {
   await sql`CREATE INDEX IF NOT EXISTS idx_tracked_players_username
       ON tracked_players (LOWER(username))`.execute(db);
 
-  await sql`CREATE TABLE IF NOT EXISTS lookup_events (
+  await sql`CREATE TABLE IF NOT EXISTS lookup_log (
       id BIGSERIAL PRIMARY KEY,
       looked_up_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      identifier TEXT NOT NULL,
+      username TEXT,
+      stars INTEGER,
+      nicked BOOLEAN NOT NULL DEFAULT FALSE,
+      source TEXT NOT NULL,
       route TEXT NOT NULL,
-      players INTEGER NOT NULL,
-      cache_hits INTEGER NOT NULL,
-      errors INTEGER NOT NULL,
-      latency_sum_ms BIGINT NOT NULL,
-      latency_max_ms INTEGER NOT NULL
+      status INTEGER NOT NULL,
+      latency_ms INTEGER NOT NULL
     )`.execute(db);
-  await sql`CREATE INDEX IF NOT EXISTS idx_lookup_events_looked_up_at
-      ON lookup_events (looked_up_at DESC)`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS idx_lookup_log_looked_up_at
+      ON lookup_log (looked_up_at DESC)`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS idx_lookup_log_identifier
+      ON lookup_log (identifier, looked_up_at DESC)`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS idx_lookup_log_username
+      ON lookup_log (LOWER(username))`.execute(db);
 }
 
 /**

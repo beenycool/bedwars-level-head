@@ -3,7 +3,7 @@ import http from 'http';
 import { AddressInfo } from 'net';
 
 jest.mock('../../src/config', () => ({
-  LOOKUP_EVENT_RETENTION_DAYS: 90,
+  LOOKUP_LOG_RETENTION_DAYS: 7,
 }));
 
 // Rate limiting has its own suite; here it only needs to let requests through.
@@ -15,47 +15,75 @@ jest.mock('../../src/middleware/rateLimit', () => ({
 
 jest.mock('../../src/services/lookupStats', () => ({
   loadStatsPage: jest.fn(),
-  loadTrackedPlayersForExport: jest.fn(),
+  loadLookupRowsForExport: jest.fn(),
 }));
 
 import statsRouter from '../../src/routes/stats';
-import { loadStatsPage, loadTrackedPlayersForExport } from '../../src/services/lookupStats';
+import { loadLookupRowsForExport, loadStatsPage } from '../../src/services/lookupStats';
 import type { StatsPageData } from '../../src/services/lookupStats';
-import type { TrackedPlayerTable } from '../../src/services/database/schema';
+import type { LookupLogTable } from '../../src/services/database/schema';
 
-const player: TrackedPlayerTable = {
+const lookup: LookupLogTable = {
+  id: '1',
+  looked_up_at: new Date('2026-11-15T10:00:00Z'),
   identifier: '530fa96a303d42199b5a329d493a5573',
   username: 'Notch',
   stars: 123,
   nicked: false,
-  lookups: 40,
-  cache_hits: 30,
-  last_source: 'cache',
-  last_status: 200,
-  last_latency_ms: 240,
-  first_seen_at: new Date('2026-11-01T00:00:00Z'),
-  last_looked_up_at: new Date('2026-11-15T10:00:00Z'),
+  source: 'cache',
+  route: 'public',
+  status: 200,
+  latency_ms: 240,
 };
 
 const pageData: StatsPageData = {
   summary: {
-    lookups: 100,
+    total: 100,
     cacheHits: 60,
+    success: 99,
     errors: 1,
-    averageLatencyMs: 120,
-    playersInRange: 12,
-    trackedPlayers: 34,
+    players: 12,
+    apiCallsLastHour: 40,
+    latency: { p50: 100, p95: 120, p99: 200, min: 10, max: 400, avg: 130 },
     cacheEntries: 30,
     databaseSize: '8.9 MB',
+    indexSize: '1.2 MB',
   },
-  chart: Array.from({ length: 24 }, (_, index) => ({
-    bucket: new Date(Date.UTC(2026, 10, 15, index)),
-    lookups: index,
-  })),
-  players: [player],
-  matchingPlayers: 12,
+  charts: {
+    series: [{ bucket: new Date('2026-11-15T10:00:00Z'), total: 100, cacheHits: 60, avgLatency: 130, p95Latency: 120 }],
+    statuses: [{ label: '200', count: 99 }],
+    stars: [{ label: '100-199', count: 1 }],
+    latencyHistogram: [{ label: '100-250', count: 1 }],
+    routes: [{ label: 'public', count: 100 }],
+    topPlayers: [{ identifier: lookup.identifier, username: 'Notch', count: 1 }],
+  },
+  rows: [lookup],
+  matching: 12,
   page: 1,
   pageSize: 50,
+  runtime: {
+    rssMb: 90,
+    heapMb: 40,
+    heapTotalMb: 70,
+    cpuPercent: 1,
+    bufferSize: 2,
+    samples: [],
+    rateLimitKeys: 1,
+    rateLimitBudget: 600,
+    rateLimitWindowMs: 60_000,
+  },
+};
+
+const defaultQuery = {
+  range: '24h',
+  from: null,
+  to: null,
+  limit: 50,
+  metric: 'p95',
+  sort: 'recent',
+  search: '',
+  page: 1,
+  refresh: 0,
 };
 
 function createTestApp(): Express {
@@ -105,7 +133,7 @@ describe('GET /stats', () => {
     jest.clearAllMocks();
   });
 
-  it('renders the tracking page for the default range', async () => {
+  it('renders the analytics page for the default filters', async () => {
     (loadStatsPage as jest.Mock).mockResolvedValue(pageData);
 
     const response = await makeRequest(app, '/stats');
@@ -116,25 +144,22 @@ describe('GET /stats', () => {
     expect(response.body).toContain('Levelhead Analytics');
     expect(response.body).toContain('Recent Player Lookups');
     expect(response.body).toContain('Notch');
-    expect(loadStatsPage).toHaveBeenCalledWith({
-      range: '24h',
-      sort: 'recent',
-      search: '',
-      page: 1,
-    });
+    expect(loadStatsPage).toHaveBeenCalledWith(defaultQuery);
   });
 
   it('passes parsed filters through to the query layer', async () => {
     (loadStatsPage as jest.Mock).mockResolvedValue(pageData);
 
-    const response = await makeRequest(app, '/stats?range=7d&sort=stars&q=Notch&page=2');
+    const response = await makeRequest(app, '/stats?range=7d&sort=stars&q=Notch&page=2&metric=p99');
 
     expect(response.status).toBe(200);
     expect(loadStatsPage).toHaveBeenCalledWith({
+      ...defaultQuery,
       range: '7d',
       sort: 'stars',
       search: 'Notch',
       page: 2,
+      metric: 'p99',
     });
   });
 
@@ -166,25 +191,25 @@ describe('GET /stats/export.csv', () => {
   });
 
   it('returns a CSV attachment with the same filters', async () => {
-    (loadTrackedPlayersForExport as jest.Mock).mockResolvedValue([player]);
+    (loadLookupRowsForExport as jest.Mock).mockResolvedValue([lookup]);
 
     const response = await makeRequest(app, '/stats/export.csv?range=7d&q=Notch');
 
     expect(response.status).toBe(200);
     expect(response.headers['content-type']).toContain('text/csv');
-    expect(response.headers['content-disposition']).toContain('attachment; filename="levelhead-tracking-');
+    expect(response.headers['content-disposition']).toContain('attachment; filename="levelhead-lookups-');
     expect(response.body.split('\n')).toHaveLength(2);
+    expect(response.body).toContain('"looked_up_at"');
     expect(response.body).toContain('"Notch"');
-    expect(loadTrackedPlayersForExport).toHaveBeenCalledWith({
+    expect(loadLookupRowsForExport).toHaveBeenCalledWith({
+      ...defaultQuery,
       range: '7d',
-      sort: 'recent',
       search: 'Notch',
-      page: 1,
     });
   });
 
   it('returns 503 when tracking storage is unavailable', async () => {
-    (loadTrackedPlayersForExport as jest.Mock).mockResolvedValue(null);
+    (loadLookupRowsForExport as jest.Mock).mockResolvedValue(null);
 
     const response = await makeRequest(app, '/stats/export.csv');
 

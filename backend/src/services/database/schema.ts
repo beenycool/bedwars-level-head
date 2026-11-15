@@ -1,5 +1,3 @@
-import { Generated } from 'kysely';
-
 /** One table: player stats rows keyed by `player:<uuid>`. */
 export interface PlayerStatsCacheTable {
   cache_key: string;
@@ -30,20 +28,22 @@ export interface TrackedPlayerTable {
   last_looked_up_at: Date;
 }
 
-/** One row per HTTP lookup request, carrying its aggregate counts (a batch is one row). */
-export interface LookupEventTable {
-  id: Generated<string>;
+/** One row per player lookup. Pruned on the retention window. */
+export interface LookupLogTable {
+  id: string;
   looked_up_at: Date;
+  identifier: string;
+  username: string | null;
+  stars: number | null;
+  nicked: boolean;
+  source: string;
   route: string;
-  players: number;
-  cache_hits: number;
-  errors: number;
-  latency_sum_ms: number;
-  latency_max_ms: number;
+  status: number;
+  latency_ms: number;
 }
 
 export interface Database {
   player_stats_cache: PlayerStatsCacheTable;
   tracked_players: TrackedPlayerTable;
-  lookup_events: LookupEventTable;
+  lookup_log: LookupLogTable;
 }

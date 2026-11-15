@@ -11,7 +11,7 @@ jest.mock('../../src/config', () => ({
   PLAYER_CACHE_DB_TTL_MS: 86400000,
   CACHE_DB_URL: '',
   LOOKUP_TRACKING_ENABLED: true,
-  LOOKUP_EVENT_RETENTION_DAYS: 90,
+  LOOKUP_LOG_RETENTION_DAYS: 7,
   HYPIXEL_API_KEY: 'test-key',
   HYPIXEL_API_BASE_URL: 'https://api.hypixel.net',
   HYPIXEL_TIMEOUT_MS: 5000,

@@ -2,7 +2,7 @@ import { sql } from 'kysely';
 
 /**
  * Opt-in integration suite: exercises the real PostgreSQL statements (multi-row
- * upsert, `excluded` counters, `COUNT(*) FILTER`, `date_trunc`) against a throwaway
+ * inserts, percentile aggregates, grouped charts, prune) against a throwaway
  * database. Skipped unless `TEST_DB_URL` is set, so `npm test` stays offline.
  *
  *   TEST_DB_URL=postgresql://postgres@127.0.0.1:55432/levelhead_test npx jest integration
@@ -25,6 +25,19 @@ const observation = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
+const query = (overrides: Record<string, unknown> = {}) => ({
+  range: '24h' as const,
+  from: null,
+  to: null,
+  limit: 50,
+  metric: 'p95' as const,
+  sort: 'recent' as const,
+  search: '',
+  page: 1,
+  refresh: 0,
+  ...overrides,
+});
+
 async function waitFor<T>(read: () => Promise<T>, done: (value: T) => boolean, timeoutMs = 5000): Promise<T> {
   const startedAt = Date.now();
   for (;;) {
@@ -39,10 +52,10 @@ async function waitFor<T>(read: () => Promise<T>, done: (value: T) => boolean, t
   }
 }
 
-describeIntegration('lookup tracking against PostgreSQL', () => {
+describeIntegration('lookup analytics against PostgreSQL', () => {
   let db: typeof import('../../src/services/database/db').db;
   let recordLookups: typeof import('../../src/services/lookupTracking').recordLookups;
-  let pruneLookupEvents: typeof import('../../src/services/lookupTracking').pruneLookupEvents;
+  let pruneLookupLogs: typeof import('../../src/services/lookupTracking').pruneLookupLogs;
   let loadStatsPage: typeof import('../../src/services/lookupStats').loadStatsPage;
 
   beforeAll(async () => {
@@ -53,21 +66,21 @@ describeIntegration('lookup tracking against PostgreSQL', () => {
 
     db = databaseModule.db;
     recordLookups = trackingModule.recordLookups;
-    pruneLookupEvents = trackingModule.pruneLookupEvents;
+    pruneLookupLogs = trackingModule.pruneLookupLogs;
     loadStatsPage = statsModule.loadStatsPage;
 
     await cacheModule.ensureInitialized();
   });
 
   beforeEach(async () => {
-    await sql`TRUNCATE tracked_players, lookup_events`.execute(db);
+    await sql`TRUNCATE lookup_log, tracked_players`.execute(db);
   });
 
   afterAll(async () => {
     await db.destroy();
   });
 
-  it('upserts per-player counters and one event row per request', async () => {
+  it('writes one log row per lookup and keeps player counters', async () => {
     recordLookups(
       [
         observation(),
@@ -85,7 +98,7 @@ describeIntegration('lookup tracking against PostgreSQL', () => {
     await waitFor(
       async () => {
         const row = await db
-          .selectFrom('tracked_players')
+          .selectFrom('lookup_log')
           .select((eb) => eb.fn.countAll<string>().as('count'))
           .executeTakeFirst();
         return Number(row?.count ?? 0);
@@ -93,7 +106,6 @@ describeIntegration('lookup tracking against PostgreSQL', () => {
       (count) => count === 2,
     );
 
-    // Second lookup of the same player: a cache hit with a faster response.
     recordLookups([observation({ source: 'cache', latencyMs: 15 })], 'public');
 
     const notch = await waitFor(
@@ -104,95 +116,129 @@ describeIntegration('lookup tracking against PostgreSQL', () => {
     expect(notch).toMatchObject({
       username: 'Notch',
       stars: 5,
-      nicked: false,
       cache_hits: 1,
       last_source: 'cache',
       last_status: 200,
       last_latency_ms: 15,
     });
 
-    const jeb = await db
-      .selectFrom('tracked_players')
-      .selectAll()
-      .where('identifier', '=', UUID_JEB)
-      .executeTakeFirst();
-
-    expect(jeb).toMatchObject({ stars: 100, cache_hits: 1, lookups: 1 });
-    expect(jeb?.first_seen_at).toBeInstanceOf(Date);
-
-    const events = await db.selectFrom('lookup_events').selectAll().orderBy('id').execute();
-    expect(events).toHaveLength(2);
-    expect(events[0]).toMatchObject({
-      route: 'batch',
-      players: 2,
-      cache_hits: 1,
-      errors: 0,
-      latency_sum_ms: '130',
-      latency_max_ms: 120,
-    });
-    expect(events[1]).toMatchObject({ route: 'public', players: 1, cache_hits: 1, latency_sum_ms: '15' });
+    const log = await db.selectFrom('lookup_log').selectAll().orderBy('id').execute();
+    expect(log).toHaveLength(3);
+    expect(log[0]).toMatchObject({ identifier: UUID_NOTCH, source: 'network', route: 'batch', status: 200, latency_ms: 120 });
+    expect(log[1]).toMatchObject({ identifier: UUID_JEB, stars: 100, source: 'cache', route: 'batch' });
+    expect(log[2]).toMatchObject({ identifier: UUID_NOTCH, source: 'cache', route: 'public', latency_ms: 15 });
   });
 
-  it('aggregates the page summary, chart and filters from those tables', async () => {
-    recordLookups([observation(), observation({ identifier: UUID_JEB, username: 'Jeb', bedwarsExperience: 487_000 })], 'batch');
-    recordLookups([observation({ source: 'cache', latencyMs: 15 })], 'public');
-
+  it('aggregates the summary, percentiles and every chart', async () => {
+    recordLookups(
+      [
+        observation(),
+        observation({ identifier: UUID_JEB, username: 'Jeb', bedwarsExperience: 487_000, source: 'cache', latencyMs: 10 }),
+      ],
+      'batch',
+    );
     await waitFor(
-      () => db.selectFrom('lookup_events').select((eb) => eb.fn.countAll<string>().as('count')).executeTakeFirst(),
+      () => db.selectFrom('lookup_log').select((eb) => eb.fn.countAll<string>().as('count')).executeTakeFirst(),
       (row) => Number(row?.count ?? 0) === 2,
     );
+    recordLookups([observation({ source: 'cache', latencyMs: 15 })], 'public');
+    await waitFor(
+      () => db.selectFrom('lookup_log').select((eb) => eb.fn.countAll<string>().as('count')).executeTakeFirst(),
+      (row) => Number(row?.count ?? 0) === 3,
+    );
 
-    const page = await loadStatsPage({ range: '24h', sort: 'recent', search: '', page: 1 });
+    const page = await loadStatsPage(query());
 
     expect(page).not.toBeNull();
     expect(page?.summary).toMatchObject({
-      lookups: 3,
-      cacheHits: 1,
+      total: 3,
+      cacheHits: 2,
+      success: 3,
       errors: 0,
-      playersInRange: 2,
-      trackedPlayers: 2,
+      players: 2,
     });
-    expect(page?.chart).toHaveLength(24);
-    expect(page?.chart.reduce((sum, point) => sum + point.lookups, 0)).toBe(3);
-    expect(page?.players).toHaveLength(2);
-    expect(page?.matchingPlayers).toBe(2);
+    expect(page?.summary.latency.avg).toBeCloseTo(145 / 3, 1);
+    expect(page?.summary.latency.p50).toBe(15);
+    expect(page?.summary.latency.max).toBe(120);
+    expect(page?.summary.databaseSize).toMatch(/kB|MB|GB/);
+    expect(page?.charts.series).toHaveLength(1);
+    expect(page?.charts.series[0].total).toBe(3);
+    expect(page?.charts.statuses).toEqual([{ label: '200', count: 3 }]);
+    expect(page?.charts.stars).toEqual(
+      expect.arrayContaining([
+        { label: '0-9', count: 2 },
+        { label: '100-199', count: 1 },
+      ]),
+    );
+    expect(page?.charts.routes).toEqual(
+      expect.arrayContaining([
+        { label: 'batch', count: 2 },
+        { label: 'public', count: 1 },
+      ]),
+    );
+    expect(page?.charts.topPlayers[0]).toMatchObject({ identifier: UUID_NOTCH, count: 2 });
+    expect(page?.charts.latencyHistogram).toEqual(
+      expect.arrayContaining([{ label: '100-250', count: 1 }]),
+    );
+    expect(page?.rows).toHaveLength(3);
+    expect(page?.matching).toBe(3);
 
-    const search = await loadStatsPage({ range: '24h', sort: 'stars', search: 'jeb', page: 1 });
-    expect(search?.players).toHaveLength(1);
-    expect(search?.players[0].username).toBe('Jeb');
+    const search = await loadStatsPage(query({ search: 'jeb' }));
+    expect(search?.rows).toHaveLength(1);
+    expect(search?.rows[0].username).toBe('Jeb');
+    expect(search?.matching).toBe(1);
 
-    const byStars = await loadStatsPage({ range: '24h', sort: 'stars', search: '', page: 1 });
-    expect(byStars?.players[0].stars).toBe(100);
+    const slowest = await loadStatsPage(query({ sort: 'slowest' }));
+    expect(slowest?.rows[0].latency_ms).toBe(120);
   });
 
-  it('counts failed lookups as errors without creating a player row', async () => {
+  it('logs failures and counts them as errors without creating a player row', async () => {
     recordLookups([observation({ username: null, bedwarsExperience: null, status: 404, latencyMs: 30 })], 'legacy');
 
     const page = await waitFor(
-      () => loadStatsPage({ range: '24h', sort: 'recent', search: '', page: 1 }),
-      (data) => (data?.summary.lookups ?? 0) === 1,
+      () => loadStatsPage(query()),
+      (data) => (data?.summary.total ?? 0) === 1,
     );
 
     expect(page?.summary.errors).toBe(1);
-    expect(page?.summary.playersInRange).toBe(0);
-    expect(page?.players).toEqual([]);
+    expect(page?.summary.players).toBe(1);
+    expect(page?.rows[0]).toMatchObject({ status: 404, username: null, stars: null });
+    expect(await db.selectFrom('tracked_players').selectAll().execute()).toHaveLength(0);
   });
 
-  it('prunes request rows past the retention window but keeps player counters', async () => {
+  it('filters by explicit dates', async () => {
     recordLookups([observation()], 'public');
-
     await waitFor(
-      () => db.selectFrom('lookup_events').select((eb) => eb.fn.countAll<string>().as('count')).executeTakeFirst(),
+      () => db.selectFrom('lookup_log').select((eb) => eb.fn.countAll<string>().as('count')).executeTakeFirst(),
       (row) => Number(row?.count ?? 0) === 1,
     );
 
-    const deleted = await pruneLookupEvents(Date.now() + 91 * 24 * 60 * 60 * 1000);
+    const inWindow = await loadStatsPage(
+      query({ from: new Date(Date.now() - 60_000), to: new Date(Date.now() + 60_000) }),
+    );
+    expect(inWindow?.summary.total).toBe(1);
+
+    const outside = await loadStatsPage(
+      query({ from: new Date(Date.now() - 7_200_000), to: new Date(Date.now() - 3_600_000) }),
+    );
+    expect(outside?.summary.total).toBe(0);
+  });
+
+  it('prunes log rows past retention but keeps player counters', async () => {
+    recordLookups([observation()], 'public');
+
+    await waitFor(
+      () => db.selectFrom('lookup_log').select((eb) => eb.fn.countAll<string>().as('count')).executeTakeFirst(),
+      (row) => Number(row?.count ?? 0) === 1,
+    );
+
+    const deleted = await pruneLookupLogs(Date.now() + 8 * 24 * 60 * 60 * 1000);
 
     expect(deleted).toBe(1);
-    const events = await db.selectFrom('lookup_events').select((eb) => eb.fn.countAll<string>().as('count')).executeTakeFirst();
+    const log = await db.selectFrom('lookup_log').select((eb) => eb.fn.countAll<string>().as('count')).executeTakeFirst();
     const players = await db.selectFrom('tracked_players').select((eb) => eb.fn.countAll<string>().as('count')).executeTakeFirst();
 
-    expect(Number(events?.count ?? -1)).toBe(0);
+    expect(Number(log?.count ?? -1)).toBe(0);
     expect(Number(players?.count ?? -1)).toBe(1);
   });
 });

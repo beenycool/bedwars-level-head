@@ -1,173 +1,172 @@
-import { sql, type SelectQueryBuilder } from 'kysely';
+import { sql } from 'kysely';
 import { db } from './database/db';
 import { ensureInitialized, isDatabaseReady } from './cache';
-import type { Database, TrackedPlayerTable } from './database/schema';
-import {
-  chartGranularity,
-  rangeSince,
-  STATS_PAGE_SIZE,
-  type StatsQuery,
-  type StatsRange,
-} from '../util/statsQuery';
+import type { LookupLogTable } from './database/schema';
+import { chartGranularity, statsWindow, type StatsQuery } from '../util/statsQuery';
+import { ensureRuntimeSample, runtimeSnapshot, type RuntimeSnapshot } from './runtimeMetrics';
 
-export interface StatsSummary {
-  lookups: number;
-  cacheHits: number;
-  errors: number;
-  averageLatencyMs: number | null;
-  playersInRange: number;
-  trackedPlayers: number;
-  cacheEntries: number;
-  databaseSize: string;
+export interface LatencyStats {
+  p50: number;
+  p95: number;
+  p99: number;
+  min: number;
+  max: number;
+  avg: number;
 }
 
-export interface ChartPoint {
+export interface StatsSummary {
+  total: number;
+  cacheHits: number;
+  success: number;
+  errors: number;
+  players: number;
+  apiCallsLastHour: number;
+  latency: LatencyStats;
+  cacheEntries: number;
+  databaseSize: string;
+  indexSize: string;
+}
+
+export interface TimePoint {
   bucket: Date;
-  lookups: number;
+  total: number;
+  cacheHits: number;
+  avgLatency: number;
+  p95Latency: number;
+}
+
+export interface Slice {
+  label: string;
+  count: number;
+}
+
+export interface TopPlayer {
+  identifier: string;
+  username: string | null;
+  count: number;
+}
+
+export interface StatsCharts {
+  series: TimePoint[];
+  statuses: Slice[];
+  stars: Slice[];
+  latencyHistogram: Slice[];
+  routes: Slice[];
+  topPlayers: TopPlayer[];
 }
 
 export interface StatsPageData {
   summary: StatsSummary;
-  chart: ChartPoint[];
-  players: TrackedPlayerTable[];
-  matchingPlayers: number;
+  charts: StatsCharts;
+  rows: LookupLogTable[];
+  matching: number;
   page: number;
   pageSize: number;
+  runtime: RuntimeSnapshot;
 }
 
-interface EventAggregateRow {
-  players: string;
+interface Window {
+  since: Date | null;
+  until: Date | null;
+}
+
+interface SummaryRow {
+  total: string;
   cache_hits: string;
+  success: string;
   errors: string;
-  latency_sum: string;
+  players: string;
+  api_calls: string;
+  avg: string | null;
+  min: number | null;
+  max: number | null;
+  p50: string | null;
+  p95: string | null;
+  p99: string | null;
+}
+
+interface InfraRow {
+  cache_entries: string;
+  db_size: string;
+  index_size: string;
+}
+
+interface BucketRow {
+  bucket: Date;
+  total: string;
+  hits: string;
+}
+
+interface LatencyRow {
+  bucket: Date;
+  avg: string | null;
+  p95: string | null;
+}
+
+interface SliceRow {
+  label: string;
+  count: string;
+}
+
+interface TopRow {
+  identifier: string;
+  username: string | null;
+  count: string;
 }
 
 interface CountRow {
   count: string;
 }
 
-interface ChartRow {
-  bucket: Date;
-  lookups: string;
-}
+const STAR_ORDER = ['0-9', '10-49', '50-99', '100-199', '200-299', '300-499', '500-999', '1000+', 'Unknown'];
+const LATENCY_ORDER = ['0-50', '50-100', '100-250', '250-500', '500-1000', '1000+'];
 
 function toNumber(value: unknown): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-/** Same filters for the page query and its `COUNT(*)` twin. */
-function playersQuery(
-  query: StatsQuery,
-  since: Date | null,
-): SelectQueryBuilder<Database, 'tracked_players', TrackedPlayerTable> {
-  let builder = db.selectFrom('tracked_players') as SelectQueryBuilder<
-    Database,
-    'tracked_players',
-    TrackedPlayerTable
-  >;
-
-  if (since) {
-    builder = builder.where('last_looked_up_at', '>=', since);
+function whereWindow(window: Window) {
+  const parts = [];
+  if (window.since) {
+    parts.push(sql`looked_up_at >= ${window.since}`);
   }
-
-  if (query.search) {
-    const pattern = `%${query.search.toLowerCase()}%`;
-    builder = builder.where((eb) =>
-      eb.or([eb('username', 'ilike', pattern), eb('identifier', 'like', pattern)]),
-    );
+  if (window.until) {
+    parts.push(sql`looked_up_at <= ${window.until}`);
   }
-
-  return builder;
+  return parts.length > 0 ? sql`WHERE ${sql.join(parts, sql` AND `)}` : sql``;
 }
 
-function orderPlayers(
-  builder: SelectQueryBuilder<Database, 'tracked_players', TrackedPlayerTable>,
-  sort: StatsQuery['sort'],
-): SelectQueryBuilder<Database, 'tracked_players', TrackedPlayerTable> {
+function whereWindowAndSearch(window: Window, search: string) {
+  const parts = [];
+  if (window.since) {
+    parts.push(sql`looked_up_at >= ${window.since}`);
+  }
+  if (window.until) {
+    parts.push(sql`looked_up_at <= ${window.until}`);
+  }
+  if (search) {
+    const pattern = `%${search.toLowerCase()}%`;
+    parts.push(sql`(username ILIKE ${pattern} OR identifier LIKE ${pattern})`);
+  }
+  return parts.length > 0 ? sql`WHERE ${sql.join(parts, sql` AND `)}` : sql``;
+}
+
+function orderBy(sort: StatsQuery['sort']) {
   switch (sort) {
-    case 'lookups':
-      return builder.orderBy('lookups', 'desc').orderBy('last_looked_up_at', 'desc');
+    case 'slowest':
+      return sql`ORDER BY latency_ms DESC, looked_up_at DESC`;
     case 'stars':
-      return builder.orderBy(sql`stars DESC NULLS LAST`).orderBy('last_looked_up_at', 'desc');
+      return sql`ORDER BY stars DESC NULLS LAST, looked_up_at DESC`;
     default:
-      return builder.orderBy('last_looked_up_at', 'desc');
+      return sql`ORDER BY looked_up_at DESC`;
   }
 }
 
-async function loadSummary(since: Date | null): Promise<StatsSummary> {
-  const aggregate = await sql<EventAggregateRow>`
-    SELECT
-      COALESCE(SUM(players), 0) AS players,
-      COALESCE(SUM(cache_hits), 0) AS cache_hits,
-      COALESCE(SUM(errors), 0) AS errors,
-      COALESCE(SUM(latency_sum_ms), 0) AS latency_sum
-    FROM lookup_events
-    ${since ? sql`WHERE looked_up_at >= ${since}` : sql``}
-  `.execute(db);
-
-  const totals = await sql<{ in_range: string; total: string }>`
-    SELECT
-      ${since ? sql`COUNT(*) FILTER (WHERE last_looked_up_at >= ${since})` : sql`COUNT(*)`} AS in_range,
-      COUNT(*) AS total
-    FROM tracked_players
-  `.execute(db);
-
-  const cacheRow = await sql<CountRow>`SELECT COUNT(*) AS count FROM player_stats_cache`.execute(db);
-  const sizeRow = await sql<{ size: string }>`
-    SELECT pg_size_pretty(pg_database_size(current_database())) AS size
-  `.execute(db);
-
-  const eventRow = aggregate.rows[0];
-  const totalRow = totals.rows[0];
-  const lookups = toNumber(eventRow?.players);
-  const latencySum = toNumber(eventRow?.latency_sum);
-
-  return {
-    lookups,
-    cacheHits: toNumber(eventRow?.cache_hits),
-    errors: toNumber(eventRow?.errors),
-    averageLatencyMs: lookups > 0 ? latencySum / lookups : null,
-    playersInRange: toNumber(totalRow?.in_range),
-    trackedPlayers: toNumber(totalRow?.total),
-    cacheEntries: toNumber(cacheRow.rows[0]?.count),
-    databaseSize: sizeRow.rows[0]?.size ?? '—',
-  };
-}
-
-/**
- * Fills the gaps so the chart always has a fixed number of columns: 24 hours or
- * 7/30 days. Empty periods are meaningful (the proxy was idle) and must not squash
- * the bars that do exist.
- */
-export function buildChartSeries(range: StatsRange, rows: ChartRow[], now: number = Date.now()): ChartPoint[] {
-  const counts = new Map<number, number>();
-  for (const row of rows) {
-    const timestamp = new Date(row.bucket).getTime();
-    if (Number.isFinite(timestamp)) {
-      counts.set(timestamp, (counts.get(timestamp) ?? 0) + toNumber(row.lookups));
-    }
-  }
-
-  if (range === 'all') {
-    // No fixed window to fill: show the buckets that exist, newest last.
-    return [...counts.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .slice(-60)
-      .map(([timestamp, lookups]) => ({ bucket: new Date(timestamp), lookups }));
-  }
-
-  const stepMs = range === '24h' ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
-  const bucketCount = range === '24h' ? 24 : range === '7d' ? 7 : 30;
-  const currentBucket = Math.floor(now / stepMs) * stepMs;
-
-  // For hourly buckets the window includes the current hour, so start one step back.
-  const points: ChartPoint[] = [];
-  for (let index = bucketCount - 1; index >= 0; index -= 1) {
-    const timestamp = currentBucket - index * stepMs;
-    points.push({ bucket: new Date(timestamp), lookups: counts.get(timestamp) ?? 0 });
-  }
-  return points;
+/** Zero-fills a distribution so every bucket is visible, not just populated ones. */
+function fillSlices(slices: Slice[], order: string[]): Slice[] {
+  const byLabel = new Map(slices.map((slice) => [slice.label, slice.count]));
+  return order.map((label) => ({ label, count: byLabel.get(label) ?? 0 }));
 }
 
 export async function loadStatsPage(query: StatsQuery): Promise<StatsPageData | null> {
@@ -176,48 +175,227 @@ export async function loadStatsPage(query: StatsQuery): Promise<StatsPageData | 
     return null;
   }
 
-  const since = rangeSince(query.range);
-  const granularity = chartGranularity(query.range);
+  ensureRuntimeSample();
+  const window = statsWindow(query);
+  const bucket =
+    chartGranularity(window.since, window.until) === 'hour'
+      ? sql`date_trunc('hour', looked_up_at)`
+      : sql`date_trunc('day', looked_up_at)`;
+  const scope = whereWindow(window);
+  const pageScope = whereWindowAndSearch(window, query.search);
+  const offset = (query.page - 1) * query.limit;
 
-  const [summary, chartRows, players, matchingRow] = await Promise.all([
-    loadSummary(since),
-    sql<ChartRow>`
-      SELECT ${granularity === 'hour' ? sql`date_trunc('hour', looked_up_at)` : sql`date_trunc('day', looked_up_at)`} AS bucket,
-             SUM(players) AS lookups
-      FROM lookup_events
-      ${since ? sql`WHERE looked_up_at >= ${since}` : sql``}
+  const [
+    summaryRows,
+    infraRows,
+    requestRows,
+    latencyRows,
+    statusRows,
+    starRows,
+    histogramRows,
+    routeRows,
+    topRows,
+    rows,
+    matchingRows,
+  ] = await Promise.all([
+    sql<SummaryRow>`
+      SELECT
+        COUNT(*) AS total,
+        COUNT(*) FILTER (WHERE source = 'cache') AS cache_hits,
+        COUNT(*) FILTER (WHERE status < 400) AS success,
+        COUNT(*) FILTER (WHERE status >= 400) AS errors,
+        COUNT(DISTINCT identifier) AS players,
+        (SELECT COUNT(*) FROM lookup_log
+          WHERE source = 'network' AND looked_up_at >= NOW() - INTERVAL '1 hour') AS api_calls,
+        AVG(latency_ms) AS avg,
+        MIN(latency_ms) AS min,
+        MAX(latency_ms) AS max,
+        percentile_cont(0.5) WITHIN GROUP (ORDER BY latency_ms) AS p50,
+        percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p95,
+        percentile_cont(0.99) WITHIN GROUP (ORDER BY latency_ms) AS p99
+      FROM lookup_log
+      ${scope}
+    `.execute(db),
+    sql<InfraRow>`
+      SELECT
+        (SELECT COUNT(*) FROM player_stats_cache) AS cache_entries,
+        pg_size_pretty(pg_database_size(current_database())) AS db_size,
+        (SELECT pg_size_pretty(COALESCE(SUM(pg_relation_size(indexrelid)), 0))
+           FROM pg_stat_user_indexes) AS index_size
+    `.execute(db),
+    sql<BucketRow>`
+      SELECT ${bucket} AS bucket,
+             COUNT(*) AS total,
+             COUNT(*) FILTER (WHERE source = 'cache') AS hits
+      FROM lookup_log
+      ${scope}
       GROUP BY 1
       ORDER BY 1
     `.execute(db),
-    orderPlayers(playersQuery(query, since), query.sort)
-      .selectAll()
-      .limit(STATS_PAGE_SIZE)
-      .offset((query.page - 1) * STATS_PAGE_SIZE)
-      .execute(),
-    playersQuery(query, since)
-      .select((eb) => eb.fn.countAll<string>().as('count'))
-      .executeTakeFirst(),
+    sql<LatencyRow>`
+      SELECT ${bucket} AS bucket,
+             AVG(latency_ms) AS avg,
+             percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p95
+      FROM lookup_log
+      ${scope}
+      GROUP BY 1
+      ORDER BY 1
+    `.execute(db),
+    sql<SliceRow>`
+      SELECT status::text AS label, COUNT(*) AS count
+      FROM lookup_log
+      ${scope}
+      GROUP BY status
+      ORDER BY count DESC
+      LIMIT 8
+    `.execute(db),
+    sql<SliceRow>`
+      SELECT CASE
+               WHEN stars IS NULL THEN 'Unknown'
+               WHEN stars < 10 THEN '0-9'
+               WHEN stars < 50 THEN '10-49'
+               WHEN stars < 100 THEN '50-99'
+               WHEN stars < 200 THEN '100-199'
+               WHEN stars < 300 THEN '200-299'
+               WHEN stars < 500 THEN '300-499'
+               WHEN stars < 1000 THEN '500-999'
+               ELSE '1000+'
+             END AS label,
+             COUNT(*) AS count
+      FROM lookup_log
+      ${scope}
+      GROUP BY 1
+    `.execute(db),
+    sql<SliceRow>`
+      SELECT CASE
+               WHEN latency_ms < 50 THEN '0-50'
+               WHEN latency_ms < 100 THEN '50-100'
+               WHEN latency_ms < 250 THEN '100-250'
+               WHEN latency_ms < 500 THEN '250-500'
+               WHEN latency_ms < 1000 THEN '500-1000'
+               ELSE '1000+'
+             END AS label,
+             COUNT(*) AS count
+      FROM lookup_log
+      ${scope}
+      GROUP BY 1
+    `.execute(db),
+    sql<SliceRow>`
+      SELECT route AS label, COUNT(*) AS count
+      FROM lookup_log
+      ${scope}
+      GROUP BY route
+      ORDER BY count DESC
+    `.execute(db),
+    sql<TopRow>`
+      SELECT identifier, MAX(username) AS username, COUNT(*) AS count
+      FROM lookup_log
+      ${scope}
+      GROUP BY identifier
+      ORDER BY count DESC
+      LIMIT 10
+    `.execute(db),
+    sql<LookupLogTable>`
+      SELECT id, looked_up_at, identifier, username, stars, nicked, source, route, status, latency_ms
+      FROM lookup_log
+      ${pageScope}
+      ${orderBy(query.sort)}
+      LIMIT ${query.limit}
+      OFFSET ${offset}
+    `.execute(db),
+    sql<CountRow>`
+      SELECT COUNT(*) AS count FROM lookup_log ${pageScope}
+    `.execute(db),
   ]);
 
+  const summaryRow = summaryRows.rows[0];
+  const infra = infraRows.rows[0];
+
+  const series = new Map<number, TimePoint>();
+  for (const row of requestRows.rows) {
+    const key = new Date(row.bucket).getTime();
+    series.set(key, {
+      bucket: new Date(key),
+      total: toNumber(row.total),
+      cacheHits: toNumber(row.hits),
+      avgLatency: 0,
+      p95Latency: 0,
+    });
+  }
+  for (const row of latencyRows.rows) {
+    const key = new Date(row.bucket).getTime();
+    const point = series.get(key) ?? {
+      bucket: new Date(key),
+      total: 0,
+      cacheHits: 0,
+      avgLatency: 0,
+      p95Latency: 0,
+    };
+    point.avgLatency = toNumber(row.avg);
+    point.p95Latency = toNumber(row.p95);
+    series.set(key, point);
+  }
+
   return {
-    summary,
-    chart: buildChartSeries(query.range, chartRows.rows),
-    players,
-    matchingPlayers: toNumber(matchingRow?.count),
+    summary: {
+      total: toNumber(summaryRow?.total),
+      cacheHits: toNumber(summaryRow?.cache_hits),
+      success: toNumber(summaryRow?.success),
+      errors: toNumber(summaryRow?.errors),
+      players: toNumber(summaryRow?.players),
+      apiCallsLastHour: toNumber(summaryRow?.api_calls),
+      latency: {
+        p50: toNumber(summaryRow?.p50),
+        p95: toNumber(summaryRow?.p95),
+        p99: toNumber(summaryRow?.p99),
+        min: toNumber(summaryRow?.min),
+        max: toNumber(summaryRow?.max),
+        avg: toNumber(summaryRow?.avg),
+      },
+      cacheEntries: toNumber(infra?.cache_entries),
+      databaseSize: infra?.db_size ?? '—',
+      indexSize: infra?.index_size ?? '—',
+    },
+    charts: {
+      series: [...series.values()].sort((a, b) => a.bucket.getTime() - b.bucket.getTime()),
+      statuses: statusRows.rows.map((row) => ({ label: row.label, count: toNumber(row.count) })),
+      stars: fillSlices(
+        starRows.rows.map((row) => ({ label: row.label, count: toNumber(row.count) })),
+        STAR_ORDER,
+      ),
+      latencyHistogram: fillSlices(
+        histogramRows.rows.map((row) => ({ label: row.label, count: toNumber(row.count) })),
+        LATENCY_ORDER,
+      ),
+      routes: routeRows.rows.map((row) => ({ label: row.label, count: toNumber(row.count) })),
+      topPlayers: topRows.rows.map((row) => ({
+        identifier: row.identifier,
+        username: row.username,
+        count: toNumber(row.count),
+      })),
+    },
+    rows: rows.rows,
+    matching: toNumber(matchingRows.rows[0]?.count),
     page: query.page,
-    pageSize: STATS_PAGE_SIZE,
+    pageSize: query.limit,
+    runtime: runtimeSnapshot(),
   };
 }
 
 /** CSV export shares the table's filters but ignores pagination. */
-export async function loadTrackedPlayersForExport(query: StatsQuery, limit = 50_000): Promise<TrackedPlayerTable[] | null> {
+export async function loadLookupRowsForExport(query: StatsQuery, limit = 50_000): Promise<LookupLogTable[] | null> {
   await ensureInitialized();
   if (!isDatabaseReady()) {
     return null;
   }
 
-  return orderPlayers(playersQuery(query, rangeSince(query.range)), query.sort)
-    .selectAll()
-    .limit(limit)
-    .execute();
+  const result = await sql<LookupLogTable>`
+    SELECT id, looked_up_at, identifier, username, stars, nicked, source, route, status, latency_ms
+    FROM lookup_log
+    ${whereWindowAndSearch(statsWindow(query), query.search)}
+    ${orderBy(query.sort)}
+    LIMIT ${limit}
+  `.execute(db);
+
+  return result.rows;
 }

@@ -1,10 +1,12 @@
 import { purgeExpiredEntries, closeCache } from './services/cache';
-import { pruneLookupEvents } from './services/lookupTracking';
+import { pruneLookupLogs } from './services/lookupTracking';
+import { sampleRuntime } from './services/runtimeMetrics';
 import { logger } from './util/logger';
 
 const PURGE_INTERVAL_MS = 60 * 60 * 1000;
 
 let purgeTimer: ReturnType<typeof setTimeout> | null = null;
+let sampleTimer: ReturnType<typeof setInterval> | null = null;
 let running = false;
 let cacheClosePromise: Promise<void> | null = null;
 
@@ -12,8 +14,8 @@ async function runPurge(): Promise<void> {
   await purgeExpiredEntries().catch((error) => {
     logger.error({ err: error }, '[scheduler] purge failed');
   });
-  await pruneLookupEvents().catch((error) => {
-    logger.error({ err: error }, '[scheduler] lookup-event prune failed');
+  await pruneLookupLogs().catch((error) => {
+    logger.error({ err: error }, '[scheduler] lookup-log prune failed');
   });
 
   if (running) {
@@ -27,6 +29,9 @@ export function startBackgroundServices(): void {
     return;
   }
   running = true;
+  sampleRuntime();
+  sampleTimer = setInterval(() => sampleRuntime(), 60_000);
+  sampleTimer.unref();
   void runPurge();
 }
 
@@ -35,6 +40,10 @@ export async function stopBackgroundServices(): Promise<void> {
   if (purgeTimer) {
     clearTimeout(purgeTimer);
     purgeTimer = null;
+  }
+  if (sampleTimer) {
+    clearInterval(sampleTimer);
+    sampleTimer = null;
   }
 }
 

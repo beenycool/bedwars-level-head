@@ -4,19 +4,21 @@ import {
   formatIsoMinute,
   formatLatency,
   formatNumber,
-  formatPercent,
   formatRelativeTime,
   shortenUuid,
 } from '../util/html';
 import {
+  LATENCY_METRICS,
   rangeLabel,
+  STATS_LIMITS,
   STATS_RANGES,
+  STATS_REFRESH,
   type StatsQuery,
-  type StatsRange,
 } from '../util/statsQuery';
-import type { ChartPoint, StatsPageData } from '../services/lookupStats';
-import type { TrackedPlayerTable } from '../services/database/schema';
+import type { Slice, StatsPageData, TimePoint, TopPlayer } from '../services/lookupStats';
+import type { LookupLogTable } from '../services/database/schema';
 import { renderLayout } from './layout';
+import { barChart, barLabels, donut, lineChart } from './charts';
 
 export interface StatsPageProps {
   query: StatsQuery;
@@ -24,216 +26,459 @@ export interface StatsPageProps {
   retentionDays: number;
 }
 
-const PRESET_LABELS: Record<StatsRange, string> = {
+const PRESET_LABELS: Record<string, string> = {
   '24h': 'Last 24h',
   '7d': 'Last 7 Days',
   '30d': 'Last 30 Days',
   all: 'All Time',
 };
 
-/** Builds a `/stats` URL, omitting defaults so shared links stay short. */
-export function statsHref(query: StatsQuery, overrides: Partial<StatsQuery> = {}): string {
-  const merged: StatsQuery = { ...query, ...overrides };
-  const params = new URLSearchParams();
+const METRIC_LABELS: Record<string, string> = {
+  p50: 'p50 (median)',
+  p95: 'p95',
+  p99: 'p99',
+  min: 'Min',
+  max: 'Max',
+  avg: 'Average',
+};
 
-  if (merged.range !== '24h') params.set('range', merged.range);
-  if (merged.sort !== 'recent') params.set('sort', merged.sort);
-  if (merged.search) params.set('q', merged.search);
-  if (merged.page > 1) params.set('page', String(merged.page));
+const REFRESH_LABELS: Record<number, string> = {
+  0: 'Off',
+  10: '10s',
+  30: '30s',
+  60: '1m',
+  300: '5m',
+};
 
-  const queryString = params.toString();
-  return queryString ? `/stats?${queryString}` : '/stats';
+const HYPIXEL_HOURLY_QUOTA = 7_200;
+
+function datetimeValue(date: Date): string {
+  return date.toISOString().slice(0, 16);
 }
 
-function exportHref(query: StatsQuery): string {
+function plural(count: number, singular: string, pluralForm: string): string {
+  return `${formatNumber(count)} ${count === 1 ? singular : pluralForm}`;
+}
+
+/** Shared mapping from query state to URL parameters. */
+function queryParams(query: StatsQuery): URLSearchParams {
   const params = new URLSearchParams();
   if (query.range !== '24h') params.set('range', query.range);
+  if (query.from) params.set('from', datetimeValue(query.from));
+  if (query.to) params.set('to', datetimeValue(query.to));
+  if (query.limit !== 50) params.set('limit', String(query.limit));
+  if (query.metric !== 'p95') params.set('metric', query.metric);
   if (query.sort !== 'recent') params.set('sort', query.sort);
   if (query.search) params.set('q', query.search);
-  const queryString = params.toString();
-  return queryString ? `/stats/export.csv?${queryString}` : '/stats/export.csv';
+  if (query.page > 1) params.set('page', String(query.page));
+  if (query.refresh) params.set('refresh', String(query.refresh));
+  return params;
 }
 
-function renderFilterBar(query: StatsQuery, data: StatsPageData): string {
+export function statsHref(query: StatsQuery, overrides: Partial<StatsQuery> = {}): string {
+  const params = queryParams({ ...query, ...overrides });
+  const value = params.toString();
+  return value ? `/stats?${value}` : '/stats';
+}
+
+function hiddenQuery(query: StatsQuery, exclude: (keyof StatsQuery)[] = []): string {
+  const params = queryParams(query);
+  return [...params.entries()]
+    .filter(([key]) => !exclude.includes(key as keyof StatsQuery))
+    .map(([key, value]) => `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value)}">`)
+    .join('');
+}
+
+function renderFilters(query: StatsQuery, data: StatsPageData): string {
   const presets = STATS_RANGES.map((range) => {
-    const current = range === query.range ? ' aria-current="page"' : '';
-    return `<a class="preset-btn" href="${statsHref(query, { range, page: 1 })}"${current}>${PRESET_LABELS[range]}</a>`;
+    const current = range === query.range && !query.from && !query.to ? ' aria-current="page"' : '';
+    return `<a class="preset-btn" href="${statsHref(query, { range, from: null, to: null, page: 1 })}"${current}>${PRESET_LABELS[range]}</a>`;
   }).join('');
 
+  const limitOptions = STATS_LIMITS.map(
+    (limit) => `<option value="${limit}"${limit === query.limit ? ' selected' : ''}>${limit}</option>`,
+  ).join('');
+  const refreshOptions = STATS_REFRESH.map(
+    (seconds) => `<option value="${seconds}"${seconds === query.refresh ? ' selected' : ''}>${REFRESH_LABELS[seconds]}</option>`,
+  ).join('');
+
+  const windowText = query.from || query.to
+    ? `${query.from ? escapeHtml(datetimeValue(query.from)) : 'start'} → ${query.to ? escapeHtml(datetimeValue(query.to)) : 'now'}`
+    : rangeLabel(query.range);
+
   return `<div class="filter-controls">
-    <div class="filter-form">
+    <form id="filterForm" method="get" action="/stats" class="filter-form">
+      <input type="hidden" name="q" value="${escapeHtml(query.search)}">
+      <input type="hidden" name="sort" value="${escapeHtml(query.sort)}">
+      <input type="hidden" name="metric" value="${escapeHtml(query.metric)}">
+      <div class="filter-group">
+        <label for="fromDate">From (UTC)</label>
+        <input type="datetime-local" id="fromDate" name="from" value="${query.from ? datetimeValue(query.from) : ''}">
+      </div>
+      <div class="filter-group">
+        <label for="toDate">To (UTC)</label>
+        <input type="datetime-local" id="toDate" name="to" value="${query.to ? datetimeValue(query.to) : ''}">
+      </div>
+      <div class="filter-group">
+        <label for="limitInput">Limit</label>
+        <select id="limitInput" name="limit">${limitOptions}</select>
+      </div>
+      <div class="filter-group">
+        <label for="refreshInput">Auto-refresh</label>
+        <select id="refreshInput" name="refresh">${refreshOptions}</select>
+      </div>
       <div class="filter-presets">${presets}</div>
-      <a class="apply-btn" href="${escapeHtml(exportHref(query))}">Download CSV</a>
-    </div>
-    <p class="meta filter-summary">${escapeHtml(rangeLabel(query.range))} · ${formatNumber(data.summary.playersInRange)} players${query.search ? ` · filtered by “${escapeHtml(query.search)}”` : ''}</p>
+      <div class="filter-actions">
+        <button type="submit" class="apply-btn">Apply Filters</button>
+        <a class="preset-btn" href="${statsHref(query)}">Refresh Now</a>
+        <a class="reset-btn" href="/stats">Reset</a>
+      </div>
+    </form>
+    <p class="meta filter-summary">${windowText} · ${formatNumber(data.summary.total)} lookups · ${plural(data.summary.players, 'player', 'players')}</p>
   </div>`;
 }
 
-function renderStatCards(query: StatsQuery, data: StatsPageData): string {
+function renderMetricForm(query: StatsQuery): string {
+  const options = LATENCY_METRICS.map(
+    (metric) => `<option value="${metric}"${metric === query.metric ? ' selected' : ''}>${METRIC_LABELS[metric]}</option>`,
+  ).join('');
+
+  return `<form method="get" action="/stats" class="metric-form">
+    ${hiddenQuery(query, ['metric'])}
+    <select name="metric" aria-label="Latency metric">${options}</select>
+    <button type="submit">Apply</button>
+  </form>`;
+}
+
+function renderStats(query: StatsQuery, data: StatsPageData): string {
   const { summary } = data;
-  const cacheRate = summary.lookups > 0 ? (summary.cacheHits / summary.lookups) * 100 : 0;
-  const successRate = summary.lookups > 0 ? ((summary.lookups - summary.errors) / summary.lookups) * 100 : 0;
+  const cacheRate = summary.total > 0 ? (summary.cacheHits / summary.total) * 100 : 0;
+  const successRate = summary.total > 0 ? (summary.success / summary.total) * 100 : 0;
+  const latency = summary.latency[query.metric];
 
   return `<div class="stat-grid">
     <div class="card stat-card">
       <p class="stat-label">Total Lookups</p>
-      <p class="stat-value">${formatNumber(summary.lookups)}</p>
-      <p class="stat-sub">${formatNumber(summary.playersInRange)} players · ${escapeHtml(rangeLabel(query.range).toLowerCase())}</p>
+      <p class="stat-value">${formatNumber(summary.total)}</p>
+      <p class="stat-sub">${plural(summary.players, 'player', 'players')} · ${escapeHtml(rangeLabel(query.range).toLowerCase())}</p>
     </div>
     <div class="card stat-card">
       <p class="stat-label">Cache Hit Rate</p>
       <p class="stat-value">${cacheRate.toFixed(1)}%</p>
-      <div class="progress" role="progressbar" aria-label="Cache Hit Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(cacheRate)}"><span style="width:${Math.max(0, Math.min(100, cacheRate)).toFixed(1)}%"></span></div>
+      <div class="progress" role="progressbar" aria-label="Cache Hit Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(cacheRate)}"><span style="width:${cacheRate.toFixed(1)}%"></span></div>
       <p class="stat-sub">${formatNumber(summary.cacheHits)} served from cache</p>
     </div>
     <div class="card stat-card">
       <p class="stat-label">Success Rate</p>
       <p class="stat-value">${successRate.toFixed(1)}%</p>
-      <div class="progress" role="progressbar" aria-label="Success Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(successRate)}"><span style="width:${Math.max(0, Math.min(100, successRate)).toFixed(1)}%"></span></div>
+      <div class="progress" role="progressbar" aria-label="Success Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(successRate)}"><span style="width:${successRate.toFixed(1)}%"></span></div>
       <p class="stat-sub">${formatNumber(summary.errors)} failed lookups</p>
     </div>
     <div class="card stat-card">
-      <p class="stat-label">Latency (avg)</p>
-      <p class="stat-value">${escapeHtml(formatLatency(summary.averageLatencyMs))}</p>
-      <p class="stat-sub">Across ${formatNumber(summary.lookups)} lookups</p>
+      <p class="stat-label">Latency (${escapeHtml(query.metric)})</p>
+      <p class="stat-value">${escapeHtml(formatLatency(latency))}</p>
+      <p class="stat-sub">From ${formatNumber(summary.total)} samples</p>
+      ${renderMetricForm(query)}
     </div>
   </div>`;
 }
 
-/** Area chart, drawn server-side so the page needs no chart library. */
-function volumeChart(points: ChartPoint[], range: StatsRange): string {
-  const width = 640;
-  const height = 180;
-  const padding = 6;
-  const peak = Math.max(1, ...points.map((point) => point.lookups));
-  const step = points.length > 1 ? (width - padding * 2) / (points.length - 1) : 0;
+function renderInfrastructure(data: StatsPageData): string {
+  const { summary } = data;
+  const quota = Math.min(100, (summary.apiCallsLastHour / HYPIXEL_HOURLY_QUOTA) * 100);
 
-  const coordinates = points.map((point, index) => ({
-    x: padding + index * step,
-    y: height - padding - (point.lookups / peak) * (height - padding * 2),
-  }));
-
-  const line = coordinates
-    .map((point, index) => `${index === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`)
-    .join(' ');
-  const area = `${line} L${(width - padding).toFixed(1)},${height - padding} L${padding},${height - padding} Z`;
-
-  const grid = [0.25, 0.5, 0.75]
-    .map(
-      (fraction) =>
-        `<line x1="0" y1="${(height * fraction).toFixed(0)}" x2="${width}" y2="${(height * fraction).toFixed(0)}" stroke="rgba(148,163,184,0.12)" stroke-width="1" />`,
-    )
-    .join('');
-
-  const total = points.reduce((sum, point) => sum + point.lookups, 0);
-  const label = `${rangeLabel(range)}: ${formatNumber(total)} lookups, peak ${formatNumber(peak)} per bucket`;
-
-  return `<svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" role="img" aria-label="${escapeHtml(label)}">
-    <defs>
-      <linearGradient id="volume-fill" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.35" />
-        <stop offset="100%" stop-color="#3b82f6" stop-opacity="0.02" />
-      </linearGradient>
-    </defs>
-    ${grid}
-    <path d="${area}" fill="url(#volume-fill)" />
-    <path d="${line}" fill="none" stroke="#38bdf8" stroke-width="2" vector-effect="non-scaling-stroke" />
-  </svg>`;
+  return `<h2>Infrastructure Health</h2>
+  <div class="stat-grid">
+    <div class="card stat-card">
+      <p class="stat-label">Database Size</p>
+      <p class="stat-value">${escapeHtml(summary.databaseSize)}</p>
+      <p class="stat-sub">Index: ${escapeHtml(summary.indexSize)}</p>
+    </div>
+    <div class="card stat-card">
+      <p class="stat-label">Hypixel API (1h)</p>
+      <p class="stat-value">${formatNumber(summary.apiCallsLastHour)}</p>
+      <div class="progress" role="progressbar" aria-label="Hypixel API quota usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(quota)}"><span style="width:${quota.toFixed(1)}%"></span></div>
+      <p class="stat-sub">Network lookups, last hour</p>
+    </div>
+    <div class="card stat-card">
+      <p class="stat-label">Cached Profiles</p>
+      <p class="stat-value">${formatNumber(summary.cacheEntries)}</p>
+      <p class="stat-sub">Rows ready to serve</p>
+    </div>
+  </div>`;
 }
 
-function statusDonut(data: StatsPageData): string {
-  const { lookups, errors } = data.summary;
-  const success = Math.max(0, lookups - errors);
-  const ratio = lookups > 0 ? success / lookups : 0;
-  const radius = 54;
-  const circumference = 2 * Math.PI * radius;
-  const dash = circumference * ratio;
-  const value = lookups > 0 ? `${(ratio * 100).toFixed(1)}%` : '--';
+function renderProcess(data: StatsPageData): string {
+  const { runtime } = data;
 
-  const ring =
-    lookups > 0
-      ? `<circle cx="80" cy="80" r="${radius}" fill="none" stroke="#f87171" stroke-width="14" opacity="0.85" />
-         <circle cx="80" cy="80" r="${radius}" fill="none" stroke="#4ade80" stroke-width="14" stroke-dasharray="${dash.toFixed(2)} ${(circumference - dash).toFixed(2)}" transform="rotate(-90 80 80)" />`
-      : `<circle cx="80" cy="80" r="${radius}" fill="none" stroke="#334155" stroke-width="14" />`;
+  return `<h2>Process Resources</h2>
+  <div class="stat-grid">
+    <div class="card stat-card">
+      <p class="stat-label">Memory (RSS)</p>
+      <p class="stat-value">${runtime.rssMb.toFixed(1)} MB</p>
+      <p class="stat-sub">Resident Set Size</p>
+    </div>
+    <div class="card stat-card">
+      <p class="stat-label">Heap Used</p>
+      <p class="stat-value">${runtime.heapMb.toFixed(1)} MB</p>
+      <p class="stat-sub">Of ${runtime.heapTotalMb.toFixed(1)} MB allocated</p>
+    </div>
+    <div class="card stat-card">
+      <p class="stat-label">CPU Usage</p>
+      <p class="stat-value">${runtime.cpuPercent.toFixed(1)}%</p>
+      <p class="stat-sub">Since the last sample</p>
+    </div>
+    <div class="card stat-card">
+      <p class="stat-label">Buffer Size</p>
+      <p class="stat-value">${formatNumber(runtime.bufferSize)}</p>
+      <p class="stat-sub">Resource samples in memory</p>
+    </div>
+  </div>`;
+}
 
-  return `<div class="donut">
-    <svg viewBox="0 0 160 160" role="img" aria-label="HTTP status breakdown: ${escapeHtml(value)} success">
-      ${ring}
-      <text x="80" y="82" text-anchor="middle" fill="#e2e8f0" font-size="22" font-weight="700">${escapeHtml(value)}</text>
-      <text x="80" y="99" text-anchor="middle" fill="#94a3b8" font-size="10">success</text>
-    </svg>
-    <ul class="legend">
-      <li><span class="dot" style="background:#4ade80"></span>Success · ${formatNumber(success)} (${formatPercent(success, lookups)})</li>
-      <li><span class="dot" style="background:#f87171"></span>Errors · ${formatNumber(errors)} (${formatPercent(errors, lookups)})</li>
-    </ul>
+function renderRateLimiting(data: StatsPageData): string {
+  const { runtime } = data;
+
+  return `<h2>Rate Limiting</h2>
+  <div class="stat-grid">
+    <div class="card stat-card">
+      <p class="stat-label">Mode</p>
+      <p class="stat-value status-connected">● In-process</p>
+      <p class="stat-sub">No Redis, no network hop</p>
+    </div>
+    <div class="card stat-card">
+      <p class="stat-label">Tracked Buckets</p>
+      <p class="stat-value">${formatNumber(runtime.rateLimitKeys)}</p>
+      <p class="stat-sub">Client IPs with a live bucket</p>
+    </div>
+    <div class="card stat-card">
+      <p class="stat-label">Budget</p>
+      <p class="stat-value">${formatNumber(runtime.rateLimitBudget)}/min</p>
+      <p class="stat-sub">Identifiers per client IP</p>
+    </div>
+  </div>`;
+}
+
+function legend(slices: { label: string; value: number; color: string }[], total: number): string {
+  return `<ul class="legend">${slices
+    .map(
+      (slice) =>
+        `<li><span class="dot" style="background:${slice.color}"></span>${escapeHtml(slice.label)} · ${formatNumber(slice.value)} (${total > 0 ? ((slice.value / total) * 100).toFixed(1) : '0.0'}%)</li>`,
+    )
+    .join('')}</ul>`;
+}
+
+function statusColor(label: string): string {
+  const code = Number(label);
+  if (code >= 500) return '#f87171';
+  if (code >= 400) return '#fde047';
+  if (code >= 300) return '#67e8f9';
+  return '#4ade80';
+}
+
+function shortStarLabel(label: string): string {
+  switch (label) {
+    case '10-49':
+      return '10s';
+    case '50-99':
+      return '50s';
+    case '100-199':
+      return '100s';
+    case '200-299':
+      return '200s';
+    case '300-499':
+      return '300s';
+    case '500-999':
+      return '500s';
+    case '1000+':
+      return '1k+';
+    case 'Unknown':
+      return '?';
+    default:
+      return label;
+  }
+}
+
+function chartCard(title: string, hint: string, body: string, extra = ''): string {
+  return `<div class="card">
+    <div class="card-header"><h2>${escapeHtml(title)}</h2><span class="meta">${escapeHtml(hint)}</span></div>
+    <div class="chart-shell">${body}</div>
+    ${extra}
+  </div>`;
+}
+
+function timeAxis(query: StatsQuery, series: TimePoint[]): string {  if (series.length === 0) {
+    return '';
+  }
+  const first = series[0].bucket;
+  const last = series[series.length - 1].bucket;
+  const short = (date: Date) =>
+    query.range === '24h' && !query.from && !query.to
+      ? `${String(date.getUTCHours()).padStart(2, '0')}:00`
+      : `${date.getUTCMonth() + 1}/${date.getUTCDate()}`;
+  return `<div class="chart-axis"><span>${escapeHtml(short(first))}</span><span>${escapeHtml(short(last))}</span></div>`;
+}
+
+function renderTopPlayers(players: TopPlayer[]): string {
+  const max = Math.max(1, ...players.map((player) => player.count));
+  const rows = players
+    .map((player) => {
+      const name = player.username ?? shortenUuid(player.identifier);
+      const width = ((player.count / max) * 100).toFixed(1);
+      return `<li>
+        <span class="bar-list__label" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+        <span class="bar-list__track"><span style="width:${width}%"></span></span>
+        <span class="bar-list__value">${formatNumber(player.count)}</span>
+      </li>`;
+    })
+    .join('');
+
+  return `<div class="card">
+    <div class="card-header"><h2>Top Queried Players</h2><span class="meta">Most lookups</span></div>
+    <ul class="bar-list">${rows || '<li class="meta">No lookups yet.</li>'}</ul>
   </div>`;
 }
 
 function renderCharts(query: StatsQuery, data: StatsPageData): string {
-  const first = data.chart[0];
-  const last = data.chart[data.chart.length - 1];
-  const total = data.chart.reduce((sum, point) => sum + point.lookups, 0);
-  const bucket = query.range === '24h' ? 'Hourly' : 'Daily';
-
-  const axisLabel = (point: ChartPoint): string => {
-    if (query.range === '24h') {
-      return `${String(point.bucket.getUTCHours()).padStart(2, '0')}:00`;
-    }
-    return point.bucket.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
-  };
+  const { charts, summary } = data;
+  const series = charts.series;
+  const cacheSlices = [
+    { label: 'Cache', value: summary.cacheHits, color: '#22d3ee' },
+    { label: 'Network', value: Math.max(0, summary.total - summary.cacheHits), color: '#3b82f6' },
+  ];
+  const statusSlices = charts.statuses.map((slice) => ({
+    label: slice.label,
+    value: slice.count,
+    color: statusColor(slice.label),
+  }));
+  const routeSlices = charts.routes.map((slice, index) => ({
+    label: slice.label,
+    value: slice.count,
+    color: ['#3b82f6', '#22d3ee', '#a78bfa'][index % 3],
+  }));
+  const cacheRate = summary.total > 0 ? (summary.cacheHits / summary.total) * 100 : 0;
+  const successRate = summary.total > 0 ? (summary.success / summary.total) * 100 : 0;
+  const memory = data.runtime.samples;
 
   return `<div class="dashboard-grid">
-    <div class="card">
-      <div class="card-header"><h2>Requests Over Time</h2><span class="meta">${bucket} buckets</span></div>
-      <div class="chart-shell">${volumeChart(data.chart, query.range)}</div>
-      <div class="chart-axis">
-        <span>${first ? escapeHtml(axisLabel(first)) : ''}</span>
-        <span>${formatNumber(total)} lookups</span>
-        <span>${last ? escapeHtml(axisLabel(last)) : ''}</span>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-header"><h2>Status Breakdown</h2></div>
-      ${statusDonut(data)}
-    </div>
+    ${chartCard(
+      'Cache Performance',
+      'Hits vs network',
+      donut(cacheSlices, `${cacheRate.toFixed(1)}%`, 'cache', `Cache hit rate ${cacheRate.toFixed(1)} percent`),
+      legend(cacheSlices, summary.total),
+    )}
+    ${chartCard(
+      'Star Distribution',
+      'Players by stars',
+      barChart(charts.stars.map((slice) => ({ label: slice.label, value: slice.count })), 'Players by BedWars star range'),
+      barLabels(charts.stars.map((slice) => shortStarLabel(slice.label))),
+    )}
+    ${chartCard(
+      'Latency Pulse',
+      'Avg and p95',
+      lineChart(
+        [
+          { values: series.map((point) => point.avgLatency), color: '#38bdf8', fill: true },
+          { values: series.map((point) => point.p95Latency), color: '#a78bfa' },
+        ],
+        'Average and p95 latency over time',
+      ),
+      `${timeAxis(query, series)}<p class="meta chart-foot">Blue: average · purple: p95</p>`,
+    )}
+    ${chartCard(
+      'Status Breakdown',
+      'HTTP status codes',
+      donut(statusSlices, `${successRate.toFixed(1)}%`, 'success', `HTTP status breakdown, ${successRate.toFixed(1)} percent success`),
+      legend(statusSlices, summary.total),
+    )}
+    ${chartCard(
+      'Request Routes',
+      'Where lookups arrive',
+      donut(routeSlices, formatNumber(summary.total), 'lookups', 'Lookups by route'),
+      legend(routeSlices, summary.total),
+    )}
+    ${chartCard(
+      'Requests Over Time',
+      'Bucketed volume',
+      lineChart([{ values: series.map((point) => point.total), color: '#38bdf8', fill: true }], 'Lookups over time'),
+      timeAxis(query, series),
+    )}
+    ${chartCard(
+      'Cache Hit Rate Over Time',
+      'Percentage per bucket',
+      lineChart(
+        [
+          {
+            values: series.map((point) => (point.total > 0 ? (point.cacheHits / point.total) * 100 : 0)),
+            color: '#22d3ee',
+            fill: true,
+          },
+        ],
+        'Cache hit rate over time',
+      ),
+      timeAxis(query, series),
+    )}
+    ${chartCard(
+      'Latency Distribution',
+      'Sample counts',
+      barChart(
+        charts.latencyHistogram.map((slice) => ({ label: slice.label, value: slice.count })),
+        'Latency distribution in milliseconds',
+      ),
+      barLabels(charts.latencyHistogram.map((slice) => slice.label)),
+    )}
+    ${renderTopPlayers(charts.topPlayers)}
+    ${chartCard(
+      'Process Memory Over Time',
+      'RSS and heap, MB',
+      lineChart(
+        [
+          { values: memory.map((sample) => sample.rssMb), color: '#38bdf8', fill: true },
+          { values: memory.map((sample) => sample.heapMb), color: '#22d3ee' },
+        ],
+        'Process memory over time',
+      ),
+      `<p class="meta chart-foot">Blue: RSS · cyan: heap · ${formatNumber(memory.length)} ${memory.length === 1 ? 'sample' : 'samples'}</p>`,
+    )}
   </div>`;
 }
 
 function statusBadge(status: number): string {
-  const statusClass = `status-${Math.floor(status / 100)}xx`;
-  return `<span class="status-badge ${statusClass}">${escapeHtml(status)}</span>`;
+  return `<span class="status-badge status-${Math.floor(status / 100)}xx">${escapeHtml(status)}</span>`;
 }
 
-function renderRow(player: TrackedPlayerTable): string {
-  const resolved = player.nicked ? '(nicked)' : player.username ?? 'unknown';
-  const stars = player.stars === null ? '--' : formatNumber(player.stars);
-  const source = player.last_source === 'cache' ? 'Cache' : 'Network';
-  const profileUrl = `https://namemc.com/profile/${encodeURIComponent(player.identifier)}`;
+function renderRow(row: LookupLogTable): string {
+  const resolved = row.nicked ? '(nicked)' : row.username ?? 'unknown';
+  const stars = row.stars === null ? '--' : formatNumber(row.stars);
+  const source = row.source === 'cache' ? 'Cache' : 'Network';
+  const profileUrl = `https://namemc.com/profile/${encodeURIComponent(row.identifier)}`;
 
   return `<tr>
-    <td class="col-seen col-seen-cell" title="${escapeHtml(formatIsoMinute(player.last_looked_up_at))}">${escapeHtml(formatRelativeTime(player.last_looked_up_at))}</td>
-    <td class="col-lookup"><a class="lookup-link" href="${profileUrl}" target="_blank" rel="noopener noreferrer">UUID: ${escapeHtml(shortenUuid(player.identifier))}</a></td>
+    <td class="col-seen col-time" title="${escapeHtml(formatIsoMinute(row.looked_up_at))}">${escapeHtml(formatRelativeTime(row.looked_up_at))}</td>
+    <td class="col-lookup"><a class="lookup-link" href="${profileUrl}" target="_blank" rel="noopener noreferrer">UUID: ${escapeHtml(shortenUuid(row.identifier))}</a></td>
     <td>${escapeHtml(resolved)}</td>
     <td class="stars">${escapeHtml(stars)}</td>
     <td class="col-source">${escapeHtml(source)}</td>
-    <td>${statusBadge(player.last_status)}</td>
-    <td class="col-latency latency">${escapeHtml(formatLatency(player.last_latency_ms))}</td>
+    <td class="col-source">${escapeHtml(row.route)}</td>
+    <td>${statusBadge(row.status)}</td>
+    <td class="col-latency latency">${escapeHtml(formatLatency(row.latency_ms))}</td>
   </tr>`;
 }
 
-function renderLookupTable(query: StatsQuery, data: StatsPageData): string {
-  const totalPages = Math.max(1, Math.ceil(data.matchingPlayers / data.pageSize));
-  const rows = data.players.map(renderRow).join('');
+function renderTable(query: StatsQuery, data: StatsPageData): string {
+  const totalPages = Math.max(1, Math.ceil(data.matching / data.pageSize));
+  const rows = data.rows.map(renderRow).join('');
 
   const body = rows
     ? `<div class="table-wrap"><table>
         <thead>
           <tr>
-            <th scope="col" class="col-seen">Last Seen</th>
+            <th scope="col" class="col-seen">Queried At</th>
             <th scope="col" class="col-lookup">Lookup</th>
             <th scope="col">Resolved</th>
             <th scope="col">Stars</th>
             <th scope="col" class="col-source">Source</th>
+            <th scope="col" class="col-source">Route</th>
             <th scope="col">Status</th>
             <th scope="col" class="col-latency">Latency</th>
           </tr>
@@ -241,7 +486,7 @@ function renderLookupTable(query: StatsQuery, data: StatsPageData): string {
         <tbody>${rows}</tbody>
       </table></div>`
     : `<div class="empty-state">
-        <strong>${query.search ? 'No players match this search' : 'No lookups recorded yet'}</strong>
+        <strong>${query.search ? 'No lookups match this search' : 'No lookups recorded yet'}</strong>
         <span class="sub-text">${query.search ? `Nothing found for “${escapeHtml(query.search)}”.` : 'Lookups appear here as soon as the mod asks the proxy for a player.'}</span>
       </div>`;
 
@@ -254,21 +499,19 @@ function renderLookupTable(query: StatsQuery, data: StatsPageData): string {
       ? `<span class="preset-btn" aria-disabled="true">Next →</span>`
       : `<a class="preset-btn" href="${statsHref(query, { page: data.page + 1 })}">Next →</a>`;
 
-  const clearHref = statsHref(query, { search: '', page: 1 });
-
   return `<h2>Recent Player Lookups</h2>
-  <p class="meta">${formatNumber(data.matchingPlayers)} players · page ${formatNumber(data.page)} of ${formatNumber(totalPages)} · one row per player</p>
+  <p class="meta">${formatNumber(data.matching)} lookups · page ${formatNumber(data.page)} of ${formatNumber(totalPages)}</p>
   <div class="controls">
     <form class="search-box" method="get" action="/stats">
-      <input type="hidden" name="range" value="${escapeHtml(query.range)}">
+      ${hiddenQuery(query, ['search', 'page'])}
       <input type="search" name="q" value="${escapeHtml(query.search)}" placeholder="Search by username or UUID" aria-label="Search players">
-      <select name="sort" aria-label="Sort players">
+      <select name="sort" aria-label="Sort lookups">
         <option value="recent"${query.sort === 'recent' ? ' selected' : ''}>Recent first</option>
-        <option value="lookups"${query.sort === 'lookups' ? ' selected' : ''}>Most looked up</option>
+        <option value="slowest"${query.sort === 'slowest' ? ' selected' : ''}>Slowest first</option>
         <option value="stars"${query.sort === 'stars' ? ' selected' : ''}>Highest stars</option>
       </select>
       <button type="submit">Search</button>
-      ${query.search ? `<a class="preset-btn" href="${clearHref}">Clear</a>` : ''}
+      ${query.search ? `<a class="preset-btn" href="${statsHref(query, { search: '', page: 1 })}">Clear</a>` : ''}
     </form>
     <div class="pager">${previous} ${next}</div>
   </div>
@@ -276,17 +519,24 @@ function renderLookupTable(query: StatsQuery, data: StatsPageData): string {
 }
 
 export function renderStatsPage({ query, data, retentionDays }: StatsPageProps): string {
-  const rssMb = Math.round(process.memoryUsage().rss / 1024 / 1024);
+  const exportParams = queryParams(query);
+  exportParams.delete('page');
+  const exportHref = `/stats/export.csv${exportParams.size > 0 ? `?${exportParams}` : ''}`;
 
   return renderLayout({
     title: 'Levelhead Player Stats',
     heading: 'Levelhead Analytics',
     subtitle: 'Live snapshot of BedWars lookups (rendered locally, no external dashboards).',
-    body: `${renderFilterBar(query, data)}
-${renderStatCards(query, data)}
+    refreshSeconds: query.refresh,
+    body: `${renderFilters(query, data)}
+${renderStats(query, data)}
+${renderInfrastructure(data)}
+${renderProcess(data)}
+${renderRateLimiting(data)}
 ${renderCharts(query, data)}
-${renderLookupTable(query, data)}
-<p class="meta page-foot">${formatNumber(data.summary.cacheEntries)} cached profiles · database ${escapeHtml(data.summary.databaseSize)} · ${formatNumber(rssMb)} MB RSS · events pruned after ${formatNumber(retentionDays)} days</p>`,
+${renderTable(query, data)}
+<div class="page-actions"><a class="apply-btn" href="${escapeHtml(exportHref)}">Download CSV</a></div>
+<p class="meta page-foot">Lookup rows are pruned after ${formatNumber(retentionDays)} days · ${formatNumber(data.summary.cacheEntries)} cached profiles · database ${escapeHtml(data.summary.databaseSize)}</p>`,
   });
 }
 
@@ -305,38 +555,34 @@ export function renderUnavailablePage(reason: string): string {
 }
 
 /** RFC 4180 rows for `/stats/export.csv`. */
-export function renderPlayersCsv(players: TrackedPlayerTable[]): string {
+export function renderLookupCsv(rows: LookupLogTable[]): string {
   const header = [
+    'looked_up_at',
     'identifier',
     'username',
     'stars',
     'nicked',
-    'lookups',
-    'cache_hits',
-    'last_source',
-    'last_status',
-    'last_latency_ms',
-    'first_seen_at',
-    'last_looked_up_at',
+    'source',
+    'route',
+    'status',
+    'latency_ms',
   ];
 
-  const rows = players.map((player) =>
+  const lines = rows.map((row) =>
     [
-      player.identifier,
-      player.username,
-      player.stars,
-      player.nicked,
-      player.lookups,
-      player.cache_hits,
-      player.last_source,
-      player.last_status,
-      player.last_latency_ms,
-      player.first_seen_at.toISOString(),
-      player.last_looked_up_at.toISOString(),
+      row.looked_up_at.toISOString(),
+      row.identifier,
+      row.username,
+      row.stars,
+      row.nicked,
+      row.source,
+      row.route,
+      row.status,
+      row.latency_ms,
     ]
       .map(csvCell)
       .join(','),
   );
 
-  return [header.map(csvCell).join(','), ...rows].join('\n');
+  return [header.map(csvCell).join(','), ...lines].join('\n');
 }
