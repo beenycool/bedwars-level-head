@@ -1,4 +1,5 @@
 import { purgeExpiredEntries, closeCache } from './services/cache';
+import { pruneLookupEvents } from './services/lookupTracking';
 import { logger } from './util/logger';
 
 const PURGE_INTERVAL_MS = 60 * 60 * 1000;
@@ -10,6 +11,9 @@ let cacheClosePromise: Promise<void> | null = null;
 async function runPurge(): Promise<void> {
   await purgeExpiredEntries().catch((error) => {
     logger.error({ err: error }, '[scheduler] purge failed');
+  });
+  await pruneLookupEvents().catch((error) => {
+    logger.error({ err: error }, '[scheduler] lookup-event prune failed');
   });
 
   if (running) {

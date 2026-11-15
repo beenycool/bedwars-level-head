@@ -7,6 +7,10 @@ jest.mock('../../src/services/player', () => ({
   warmupPlayerCache: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../../src/services/lookupTracking', () => ({
+  recordLookups: jest.fn(),
+}));
+
 jest.mock('../../src/services/hypixel', () => ({
   getCircuitBreakerState: jest.fn().mockReturnValue({ state: 'closed', failureCount: 0, lastFailureAt: null, nextRetryAt: null }),
 }));

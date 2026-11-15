@@ -46,6 +46,18 @@ export const TRUST_SINGLE_PROXY_HOP = isProduction && TRUST_PROXY_CIDRS.length =
 export const PUBLIC_RATE_LIMIT_MAX = Math.max(1, parseIntEnv('PUBLIC_RATE_LIMIT_MAX', 600));
 export const PUBLIC_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 
+/**
+ * Lookup tracking powers `/stats`. It can be switched off without touching the
+ * database; the proxy then records nothing about who was looked up.
+ */
+export const LOOKUP_TRACKING_ENABLED = process.env.LOOKUP_TRACKING_ENABLED !== 'false';
+
+/** How long request-level rows survive before the hourly prune removes them. */
+export const LOOKUP_EVENT_RETENTION_DAYS = Math.max(
+  1,
+  parseIntEnv('LOOKUP_EVENT_RETENTION_DAYS', 90),
+);
+
 /** SQL cache retention. The in-process LRU is much shorter (see services/player.ts). */
 export const PLAYER_CACHE_DB_TTL_MS = Math.max(
   60 * 60 * 1000,

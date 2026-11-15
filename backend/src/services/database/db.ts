@@ -4,7 +4,7 @@ import { Database } from './schema';
 import { CACHE_DB_URL } from '../../config';
 import { logger } from '../../util/logger';
 
-export const isDatabaseConfigured = CACHE_DB_URL.length > 0;
+export const isDatabaseConfigured = (CACHE_DB_URL ?? '').length > 0;
 
 const rawPoolMax = process.env.DB_POOL_MAX ?? process.env.CACHE_DB_POOL_MAX;
 const parsedPoolMax = rawPoolMax ? Number.parseInt(rawPoolMax, 10) : 10;

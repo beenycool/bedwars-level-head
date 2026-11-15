@@ -9,6 +9,9 @@ jest.mock('../../src/config', () => ({
   TRUST_PROXY_CIDRS: [],
   TRUST_SINGLE_PROXY_HOP: false,
   PLAYER_CACHE_DB_TTL_MS: 86400000,
+  CACHE_DB_URL: '',
+  LOOKUP_TRACKING_ENABLED: true,
+  LOOKUP_EVENT_RETENTION_DAYS: 90,
   HYPIXEL_API_KEY: 'test-key',
   HYPIXEL_API_BASE_URL: 'https://api.hypixel.net',
   HYPIXEL_TIMEOUT_MS: 5000,
@@ -17,6 +20,11 @@ jest.mock('../../src/config', () => ({
   CB_FAILURE_THRESHOLD: 5,
   CB_RESET_TIMEOUT_MS: 30000,
   OUTBOUND_USER_AGENT: 'Levelhead/Test',
+}));
+
+// Tracking writes to PostgreSQL; the route tests only care about the HTTP contract.
+jest.mock('../../src/services/lookupTracking', () => ({
+  recordLookups: jest.fn(),
 }));
 
 jest.mock('../../src/middleware/rateLimit', () => ({

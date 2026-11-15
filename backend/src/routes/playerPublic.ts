@@ -9,6 +9,7 @@ router.get('/:identifier', enforcePublicRateLimit, createPlayerLookupHandler({
   private: false,
   setStaleHeaders: false,
   cacheControl: 'public, max-age=300, stale-while-revalidate=600',
+  route: 'public',
 }));
 
 router.post('/batch', enforcePublicBatchRateLimit, createPlayerBatchHandler({

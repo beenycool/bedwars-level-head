@@ -1,10 +1,17 @@
 import type { RequestHandler } from 'express';
 import pLimit from 'p-limit';
 import { resolvePlayer, ResolvedPlayer, warmupPlayerCache } from '../services/player';
+import type { LookupObservation, LookupRoute } from '../services/lookupTracking';
+import { recordLookups } from '../services/lookupTracking';
 import { HttpError } from '../util/httpError';
 import { extractBatchIdentifiersFromBody, parseAndValidateBatchIdentifiers } from '../util/requestUtils';
 import { getCircuitBreakerState } from '../services/hypixel';
-import { IDENTIFIER_MAX_LENGTH, IDENTIFIER_PATTERN } from '../util/validationConstants';
+import {
+  IDENTIFIER_MAX_LENGTH,
+  IDENTIFIER_PATTERN,
+  isUuid,
+  normalizeIdentifier,
+} from '../util/validationConstants';
 import { computeResponseEtag } from '../util/etag';
 
 interface PlayerLookupHandlerOptions {
@@ -12,6 +19,8 @@ interface PlayerLookupHandlerOptions {
   private: boolean;
   setStaleHeaders: boolean;
   cacheControl: string;
+  /** Label recorded in `lookup_events` for the tracking page. */
+  route: LookupRoute;
 }
 
 interface PlayerBatchHandlerOptions {
@@ -36,6 +45,16 @@ function upstreamUnavailable(retryAfterSeconds: number): HttpError {
   );
 }
 
+/** Only 32-character UUIDs are tracked; usernames rejected upstream never pollute the table. */
+function trackableIdentifier(raw: string): string | null {
+  const normalized = normalizeIdentifier(raw);
+  return isUuid(normalized) ? normalized : null;
+}
+
+function failureStatus(error: unknown): number {
+  return error instanceof HttpError ? error.status : 500;
+}
+
 /**
  * Shared implementation of GET /:identifier for the public and legacy routers.
  * The payload shape is unchanged: the flat minimal stats object plus `nicked`.
@@ -53,6 +72,9 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
       next(new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a valid undashed UUID.'));
       return;
     }
+
+    const startedAt = Date.now();
+    const trackingKey = trackableIdentifier(identifier);
 
     try {
       const resolved = await resolvePlayer(identifier);
@@ -73,6 +95,24 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
       res.set('X-Cache', resolved.source === 'cache' ? 'HIT' : 'MISS');
       res.set('Cache-Control', options.cacheControl);
 
+      const status = req.fresh ? 304 : 200;
+      if (trackingKey) {
+        recordLookups(
+          [
+            {
+              identifier: trackingKey,
+              username: resolved.username,
+              bedwarsExperience: resolved.payload.bedwars_experience,
+              nicked: resolved.nicked,
+              source: resolved.source,
+              status,
+              latencyMs: Date.now() - startedAt,
+            },
+          ],
+          options.route,
+        );
+      }
+
       if (req.fresh) {
         res.status(304).end();
         return;
@@ -86,6 +126,22 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
         ...(options.private && isCircuitOpen ? { degradedMode: true } : {}),
       });
     } catch (error) {
+      if (trackingKey) {
+        recordLookups(
+          [
+            {
+              identifier: trackingKey,
+              username: null,
+              bedwarsExperience: null,
+              nicked: false,
+              source: 'network',
+              status: failureStatus(error),
+              latencyMs: Date.now() - startedAt,
+            },
+          ],
+          options.route,
+        );
+      }
       next(error);
     }
   };
@@ -138,18 +194,40 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
 
       await warmupPlayerCache(uniqueUuids);
 
+      const observations: LookupObservation[] = [];
       const outcomes = await Promise.all(
         uniqueUuids.map((identifier) =>
           batchLimit(async () => {
+            const startedAt = Date.now();
             try {
               const resolved = await resolvePlayer(identifier);
+              observations.push({
+                identifier,
+                username: resolved.username,
+                bedwarsExperience: resolved.payload.bedwars_experience,
+                nicked: resolved.nicked,
+                source: resolved.source,
+                status: 200,
+                latencyMs: Date.now() - startedAt,
+              });
               return { ok: true as const, identifier, resolved };
             } catch (error) {
+              observations.push({
+                identifier,
+                username: null,
+                bedwarsExperience: null,
+                nicked: false,
+                source: 'network',
+                status: failureStatus(error),
+                latencyMs: Date.now() - startedAt,
+              });
               return { ok: false as const, identifier, error };
             }
           }),
         ),
       );
+
+      recordLookups(observations, 'batch');
 
       const data: Record<string, ResolvedPlayer['payload'] & { nicked: boolean }> = {};
       let cacheHits = 0;

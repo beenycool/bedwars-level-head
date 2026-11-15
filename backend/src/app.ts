@@ -7,6 +7,7 @@ import type { ServerResponse } from 'node:http';
 import playerRouter from './routes/player';
 import playerPublicRouter from './routes/playerPublic';
 import adminRouter from './routes/admin';
+import statsRouter from './routes/stats';
 import { HttpError } from './util/httpError';
 import { ADMIN_API_KEYS, TRUST_PROXY_CIDRS, TRUST_SINGLE_PROXY_HOP } from './config';
 import { checkDatabaseHealth } from './services/cache';
@@ -70,6 +71,7 @@ export function createApp(): express.Express {
 
   app.use('/api/public/player', playerPublicRouter);
   app.use('/api/player', playerRouter);
+  app.use('/stats', statsRouter);
 
   if (ADMIN_API_KEYS.length > 0) {
     app.use('/api/admin', adminRouter);

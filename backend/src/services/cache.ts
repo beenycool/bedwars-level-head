@@ -36,6 +36,38 @@ async function createTables(): Promise<void> {
     )`.execute(db);
   await sql`ALTER TABLE player_stats_cache ADD COLUMN IF NOT EXISTS cached_at BIGINT`.execute(db);
   await sql`CREATE INDEX IF NOT EXISTS idx_player_stats_expires ON player_stats_cache (expires_at)`.execute(db);
+
+  // Tracking: one row per player ever resolved, plus one aggregate row per request.
+  await sql`CREATE TABLE IF NOT EXISTS tracked_players (
+      identifier TEXT PRIMARY KEY,
+      username TEXT,
+      stars INTEGER,
+      nicked BOOLEAN NOT NULL DEFAULT FALSE,
+      lookups INTEGER NOT NULL DEFAULT 1,
+      cache_hits INTEGER NOT NULL DEFAULT 0,
+      last_source TEXT NOT NULL DEFAULT 'network',
+      last_status INTEGER NOT NULL DEFAULT 200,
+      last_latency_ms INTEGER NOT NULL DEFAULT 0,
+      first_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_looked_up_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS idx_tracked_players_last_looked_up
+      ON tracked_players (last_looked_up_at DESC)`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS idx_tracked_players_username
+      ON tracked_players (LOWER(username))`.execute(db);
+
+  await sql`CREATE TABLE IF NOT EXISTS lookup_events (
+      id BIGSERIAL PRIMARY KEY,
+      looked_up_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      route TEXT NOT NULL,
+      players INTEGER NOT NULL,
+      cache_hits INTEGER NOT NULL,
+      errors INTEGER NOT NULL,
+      latency_sum_ms BIGINT NOT NULL,
+      latency_max_ms INTEGER NOT NULL
+    )`.execute(db);
+  await sql`CREATE INDEX IF NOT EXISTS idx_lookup_events_looked_up_at
+      ON lookup_events (looked_up_at DESC)`.execute(db);
 }
 
 /**

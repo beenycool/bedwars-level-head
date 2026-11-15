@@ -64,6 +64,7 @@ function createTestApp(): Express {
       private: false,
       setStaleHeaders: false,
       cacheControl: 'no-store',
+      route: 'public',
     }),
   );
   app.post(
