@@ -64,11 +64,19 @@ export function summarizeObservations(observations: LookupObservation[]): Lookup
  * Pure: one upsert row per identifier. Duplicates (possible if a caller hands us the
  * same UUID twice) collapse to the last observation, because PostgreSQL rejects an
  * `ON CONFLICT` statement that touches the same row twice.
+ *
+ * Failed lookups are deliberately skipped: `lookup_events` still counts them, but
+ * writing a player row for every 404 would let a UUID scanner grow the table without
+ * bound. A row therefore only exists for a player the proxy has actually resolved.
  */
 export function buildTrackedPlayerRows(observations: LookupObservation[]): TrackedPlayerUpsert[] {
   const byIdentifier = new Map<string, TrackedPlayerUpsert>();
 
   for (const observation of observations) {
+    if (Math.floor(observation.status / 100) >= 4) {
+      continue;
+    }
+
     byIdentifier.set(observation.identifier, {
       identifier: observation.identifier,
       username: observation.username,

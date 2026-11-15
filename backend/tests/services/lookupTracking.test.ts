@@ -103,12 +103,21 @@ describe('buildTrackedPlayerRows', () => {
 
   it('collapses duplicate identifiers to a single row (last wins) so the upsert is legal', () => {
     const rows = buildTrackedPlayerRows([
-      observation({ status: 500, source: 'network' }),
-      observation({ status: 200, source: 'cache', username: 'Notch2' }),
+      observation({ username: 'Notch' }),
+      observation({ source: 'cache', username: 'Notch2' }),
     ]);
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ username: 'Notch2', lastStatus: 200, lastSource: 'cache' });
+  });
+
+  it('skips failed lookups so random UUID scans cannot grow the table', () => {
+    expect(
+      buildTrackedPlayerRows([
+        observation({ status: 404 }),
+        observation({ identifier: 'b'.repeat(32), status: 502 }),
+      ]),
+    ).toEqual([]);
   });
 });
 

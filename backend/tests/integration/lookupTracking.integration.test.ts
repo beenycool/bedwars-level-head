@@ -165,7 +165,7 @@ describeIntegration('lookup tracking against PostgreSQL', () => {
     expect(byStars?.players[0].stars).toBe(100);
   });
 
-  it('counts failed lookups as errors and keeps the last status', async () => {
+  it('counts failed lookups as errors without creating a player row', async () => {
     recordLookups([observation({ username: null, bedwarsExperience: null, status: 404, latencyMs: 30 })], 'legacy');
 
     const page = await waitFor(
@@ -174,7 +174,8 @@ describeIntegration('lookup tracking against PostgreSQL', () => {
     );
 
     expect(page?.summary.errors).toBe(1);
-    expect(page?.players[0]).toMatchObject({ last_status: 404, username: null, stars: null });
+    expect(page?.summary.playersInRange).toBe(0);
+    expect(page?.players).toEqual([]);
   });
 
   it('prunes request rows past the retention window but keeps player counters', async () => {
