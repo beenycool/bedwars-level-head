@@ -10,7 +10,6 @@ import {
 } from '../util/html';
 import {
   rangeLabel,
-  rangeShortLabel,
   STATS_RANGES,
   type StatsQuery,
   type StatsRange,
@@ -42,10 +41,11 @@ export function statsHref(query: StatsQuery, overrides: Partial<StatsQuery> = {}
 function rangeTabs(query: StatsQuery): string {
   const tabs = STATS_RANGES.map((range: StatsRange) => {
     const current = range === query.range ? ' aria-current="page"' : '';
-    return `<a href="${statsHref(query, { range, page: 1 })}"${current} title="${escapeHtml(rangeLabel(range))}">${rangeShortLabel(range)}</a>`;
+    const short = range === 'all' ? 'All' : range;
+    return `<a href="${statsHref(query, { range, page: 1 })}"${current}><span class="tab-full">${rangeLabel(range)}</span><span class="tab-short">${short}</span></a>`;
   }).join('');
 
-  return `<nav class="tabs" aria-label="Time range">${tabs}</nav>`;
+  return `<div class="tabs" role="tablist">${tabs}</div>`;
 }
 
 function renderTiles(data: StatsPageData, query: StatsQuery): string {
@@ -55,43 +55,37 @@ function renderTiles(data: StatsPageData, query: StatsQuery): string {
       label: 'Lookups',
       value: formatNumber(summary.lookups),
       sub: rangeLabel(query.range).toLowerCase(),
-      lead: true,
     },
     {
-      label: 'Players',
+      label: 'Players seen',
       value: formatNumber(summary.playersInRange),
-      sub: `${formatNumber(summary.trackedPlayers)} all time`,
-      lead: false,
+      sub: `${formatNumber(summary.trackedPlayers)} tracked all time`,
     },
     {
-      label: 'Cache hit',
+      label: 'Cache hit rate',
       value: formatPercent(summary.cacheHits, summary.lookups),
       sub: `${formatNumber(summary.cacheHits)} served from cache`,
-      lead: false,
     },
     {
-      label: 'Errors',
+      label: 'Error rate',
       value: formatPercent(summary.errors, summary.lookups),
       sub: `${formatNumber(summary.errors)} failed lookups`,
-      lead: false,
     },
     {
-      label: 'Latency',
+      label: 'Avg latency',
       value: formatLatency(summary.averageLatencyMs),
       sub: 'per player',
-      lead: false,
     },
     {
       label: 'Profiles',
       value: formatNumber(summary.cacheEntries),
       sub: 'SQL rows ready to serve',
-      lead: false,
     },
   ];
 
   return `<section class="tiles">${tiles
     .map(
-      (tile) => `<div class="tile${tile.lead ? ' tile--lead' : ''}">
+      (tile) => `<div class="tile">
       <div class="label">${escapeHtml(tile.label)}</div>
       <div class="value">${escapeHtml(tile.value)}</div>
       <div class="sub">${escapeHtml(tile.sub)}</div>
@@ -110,15 +104,13 @@ function chartLabel(point: ChartPoint, range: StatsRange): string {
 function renderChart(points: ChartPoint[], query: StatsQuery): string {
   const total = points.reduce((sum, point) => sum + point.lookups, 0);
   const peak = Math.max(1, ...points.map((point) => point.lookups));
-  const maxLookups = points.reduce((max, point) => Math.max(max, point.lookups), 0);
 
   const bars = points
     .map((point) => {
       // Zero still gets a hairline so idle periods remain visible.
       const height = point.lookups === 0 ? 2 : Math.max(4, Math.round((point.lookups / peak) * 100));
       const tooltip = `${formatIsoMinute(point.bucket)} · ${formatNumber(point.lookups)} lookups`;
-      const empty = point.lookups === 0 ? ' bar--empty' : '';
-      return `<div class="bar${empty}" style="height:${height}%" title="${escapeHtml(tooltip)}"></div>`;
+      return `<div class="bar" style="height:${height}%" title="${escapeHtml(tooltip)}"></div>`;
     })
     .join('');
 
@@ -129,26 +121,25 @@ function renderChart(points: ChartPoint[], query: StatsQuery): string {
     : '';
 
   const bucketWord = query.range === '24h' ? 'Hourly' : 'Daily';
-  const chartDescription = `${bucketWord} lookup volume: ${formatNumber(total)} lookups in ${rangeLabel(query.range).toLowerCase()}, peak ${formatNumber(maxLookups)} per ${query.range === '24h' ? 'hour' : 'day'}.`;
 
   return `<section class="panel">
     <div class="panel-head">
       <h2>Lookup volume</h2>
       <span class="hint">${bucketWord} buckets, ${escapeHtml(rangeLabel(query.range).toLowerCase())}</span>
     </div>
-    <div class="chart" role="img" aria-label="${escapeHtml(chartDescription)}">${bars}</div>
+    <div class="chart">${bars}</div>
     ${axis}
   </section>`;
 }
 
-function statusMarker(status: number): string {
+function statusBadge(status: number): string {
   const variant = status >= 500 ? 'bad' : status >= 400 ? 'warn' : status >= 300 ? 'idle' : 'ok';
-  return `<span class="status status--${variant}"><span class="status__mark" aria-hidden="true"></span>${escapeHtml(status)}</span>`;
+  return `<span class="badge ${variant}">${escapeHtml(status)}</span>`;
 }
 
 function renderRow(player: TrackedPlayerTable): string {
   const name = player.username ?? 'Unknown player';
-  const nicked = player.nicked ? ' <span class="player__flag">nicked</span>' : '';
+  const nicked = player.nicked ? ' <span class="badge nicked">nicked</span>' : '';
   const stars = player.stars === null ? '—' : formatNumber(player.stars);
 
   return `<tr>
@@ -160,7 +151,7 @@ function renderRow(player: TrackedPlayerTable): string {
     <td class="num">${formatNumber(player.lookups)}</td>
     <td class="num col-cache">${formatPercent(player.cache_hits, player.lookups)}</td>
     <td class="num col-latency">${escapeHtml(formatLatency(player.last_latency_ms))}</td>
-    <td class="col-status">${statusMarker(player.last_status)}</td>
+    <td class="col-status">${statusBadge(player.last_status)}</td>
     <td class="muted col-seen">${escapeHtml(formatRelativeTime(player.last_looked_up_at))}</td>
   </tr>`;
 }
@@ -210,18 +201,13 @@ function renderTable(query: StatsQuery, data: StatsPageData): string {
         Lookups appear here as soon as the mod asks the proxy for a player.
       </div>`;
 
-  const previous =
-    data.page <= 1
-      ? `<span class="pager__link is-disabled" aria-disabled="true">← Previous</span>`
-      : `<a class="pager__link" href="${statsHref(query, { page: data.page - 1 })}">← Previous</a>`;
-  const next =
-    data.page >= totalPages
-      ? `<span class="pager__link is-disabled" aria-disabled="true">Next →</span>`
-      : `<a class="pager__link" href="${statsHref(query, { page: data.page + 1 })}">Next →</a>`;
-
   const pager = `<div class="pager">
     <span>${formatNumber(data.matchingPlayers)} player${data.matchingPlayers === 1 ? '' : 's'} · page ${formatNumber(data.page)} of ${formatNumber(totalPages)}</span>
-    <span>${previous} <span aria-hidden="true">·</span> ${next}</span>
+    <span>
+      <a class="${data.page <= 1 ? 'disabled' : ''}" href="${statsHref(query, { page: Math.max(1, data.page - 1) })}">← Previous</a>
+      &nbsp;·&nbsp;
+      <a class="${data.page >= totalPages ? 'disabled' : ''}" href="${statsHref(query, { page: data.page + 1 })}">Next →</a>
+    </span>
   </div>`;
 
   return `<section class="panel">
@@ -237,7 +223,7 @@ function renderTable(query: StatsQuery, data: StatsPageData): string {
 export function renderStatsPage({ query, data, retentionDays }: StatsPageProps): string {
   return renderLayout({
     title: 'Tracking · BedWars Levelhead',
-    subtitle: `${escapeHtml(rangeLabel(query.range))} · ${formatNumber(data.summary.trackedPlayers)} players tracked`,
+    subtitle: `${escapeHtml(rangeLabel(query.range))} · ${formatNumber(data.summary.trackedPlayers)} players seen since tracking began`,
     body: `${renderControls(query)}
 ${renderTiles(data, query)}
 ${renderChart(data.chart, query)}
