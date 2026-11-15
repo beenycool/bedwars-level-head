@@ -117,7 +117,8 @@ function renderChart(points: ChartPoint[], query: StatsQuery): string {
       // Zero still gets a hairline so idle periods remain visible.
       const height = point.lookups === 0 ? 2 : Math.max(4, Math.round((point.lookups / peak) * 100));
       const tooltip = `${formatIsoMinute(point.bucket)} · ${formatNumber(point.lookups)} lookups`;
-      return `<div class="bar" style="height:${height}%" title="${escapeHtml(tooltip)}"></div>`;
+      const empty = point.lookups === 0 ? ' bar--empty' : '';
+      return `<div class="bar${empty}" style="height:${height}%" title="${escapeHtml(tooltip)}"></div>`;
     })
     .join('');
 

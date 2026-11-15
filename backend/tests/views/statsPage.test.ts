@@ -73,7 +73,7 @@ describe('renderStatsPage', () => {
     expect(html).toContain('Notch');
     expect(html).toContain('530fa96a…5573');
     expect(html).toContain('90 days');
-    expect((html.match(/class="bar"/g) ?? []).length).toBe(24);
+    expect((html.match(/class="bar/g) ?? []).length).toBe(24);
   });
 
   it('escapes player-controlled values', () => {

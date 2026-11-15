@@ -221,6 +221,8 @@ button:active { background: var(--color-accent-active); }
   transition: background-color var(--dur-short) var(--ease-out);
 }
 .bar:hover { background: var(--color-accent); }
+.bar--empty { background: var(--color-rule); }
+.bar--empty:hover { background: var(--color-rule-strong); }
 .chart-axis {
   display: flex; justify-content: space-between; gap: var(--space-xs);
   margin-top: var(--space-2xs);
