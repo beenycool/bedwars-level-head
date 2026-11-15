@@ -54,9 +54,6 @@ object AboveHeadRender {
     /** 1 / 37.5, the vanilla nametag scale. */
     private const val TEXT_SCALE = 0.016666668f * 1.6f
 
-    /** Vanilla's see-through label pass colour (white, alpha 0x20). */
-    private const val SEE_THROUGH_TEXT_COLOR = 0x20FFFFFF
-
     @SubscribeEvent
     fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
         // B25: reject the entity type before touching Minecraft, config or displays,
@@ -150,7 +147,10 @@ object AboveHeadRender {
         // inline `§` colour codes, so both components are drawn exactly as stored.
         val header = tag.header
         val footer = tag.footer
-        val footerText = footer.value
+
+        // Upstream Levelhead measures the concatenated components, not each one summed,
+        // so centring and the background quad agree with the drawn string exactly.
+        val halfWidth = fontRenderer.getStringWidth(tag.getString()) shr 1
 
         GlStateManager.pushMatrix()
         try {
@@ -164,28 +164,19 @@ object AboveHeadRender {
 
             GlStateManager.disableLighting()
             GlStateManager.depthMask(false)
-            GlStateManager.disableDepth()
             GlStateManager.enableBlend()
             GlStateManager.tryBlendFuncSeparate(
                 GL11.GL_SRC_ALPHA, GL11.GL_ONE_MINUS_SRC_ALPHA, GL11.GL_ONE, GL11.GL_ZERO
             )
 
-            val headerWidth = fontRenderer.getStringWidth(header.value)
-            val totalWidth = headerWidth + fontRenderer.getStringWidth(footerText)
-            val left = -(totalWidth shr 1)
-
             if (config.showBackground) {
-                drawBackground(left, totalWidth, config.backgroundOpacity)
+                drawBackground(halfWidth, config.backgroundOpacity)
             }
 
-            drawComponent(fontRenderer, header.value, header.color, left, config.textShadow)
-            drawComponent(
-                fontRenderer,
-                footerText,
-                footer.color,
-                left + headerWidth,
-                config.textShadow
-            )
+            var textX = -halfWidth
+            renderComponent(fontRenderer, header.value, header.color, textX, config.textShadow)
+            textX += fontRenderer.getStringWidth(header.value)
+            renderComponent(fontRenderer, footer.value, footer.color, textX, config.textShadow)
         } finally {
             // B22/B23: leave the GL state exactly as vanilla's Render.renderLivingLabel
             // leaves it, on every path. Previously depth test and depth mask stayed
@@ -202,35 +193,34 @@ object AboveHeadRender {
     }
 
     /**
-     * B23: the background quad is untextured, exactly like vanilla. Drawing it with
-     * texture2D enabled sampled whatever texture happened to be bound.
+     * Exact upstream geometry: a quad from `-halfWidth-2` to `halfWidth+1`, y -1 to 8,
+     * drawn untextured with the blending already enabled by the caller. Upstream draws
+     * it with depth disabled, which is why the background shows through walls too.
      */
-    private fun drawBackground(left: Int, width: Int, alpha: Float) {
-        val right = left + width
+    private fun drawBackground(halfWidth: Int, alpha: Float) {
+        GlStateManager.disableDepth()
+        GlStateManager.depthMask(false)
         GlStateManager.disableTexture2D()
         val tessellator = Tessellator.getInstance()
         val worldRenderer = tessellator.worldRenderer
         worldRenderer.begin(GL11.GL_QUADS, DefaultVertexFormats.POSITION_COLOR)
-        worldRenderer.pos((left - 1).toDouble(), -1.0, 0.0).color(0.0f, 0.0f, 0.0f, alpha).endVertex()
-        worldRenderer.pos((left - 1).toDouble(), 8.0, 0.0).color(0.0f, 0.0f, 0.0f, alpha).endVertex()
-        worldRenderer.pos((right + 1).toDouble(), 8.0, 0.0).color(0.0f, 0.0f, 0.0f, alpha).endVertex()
-        worldRenderer.pos((right + 1).toDouble(), -1.0, 0.0).color(0.0f, 0.0f, 0.0f, alpha).endVertex()
+        worldRenderer.pos((-halfWidth - 2).toDouble(), -1.0, 0.0).color(0.0f, 0.0f, 0.0f, alpha).endVertex()
+        worldRenderer.pos((-halfWidth - 2).toDouble(), 8.0, 0.0).color(0.0f, 0.0f, 0.0f, alpha).endVertex()
+        worldRenderer.pos((halfWidth + 1).toDouble(), 8.0, 0.0).color(0.0f, 0.0f, 0.0f, alpha).endVertex()
+        worldRenderer.pos((halfWidth + 1).toDouble(), -1.0, 0.0).color(0.0f, 0.0f, 0.0f, alpha).endVertex()
         tessellator.draw()
         GlStateManager.enableTexture2D()
     }
 
     /**
-     * Vanilla draws a label twice: a faint pass that shows through geometry and then
-     * the opaque pass. `textShadow` used to switch the faint pass on and off (and was
-     * therefore misnamed); it now means a real drop shadow, and both passes always run
-     * so depth state is unconditionally restored afterwards (B22).
-     *
-     * Inline `§` colour codes in [text] (for example the prestige-coloured BedWars star
-     * tag) are honoured by [FontRenderer.drawString]. The caller measures the same
-     * string with `getStringWidth`, which counts them as zero width, so the centring
-     * here and the background quad stay aligned with what is actually drawn.
+     * Upstream's two-pass draw, ported exactly: the component is drawn once with depth
+     * disabled (so it is visible through geometry) and then again with depth enabled
+     * (so blocks in front of the player hide it). Both passes use the component's own
+     * colour — the earlier version used a white see-through pass, which washed the
+     * prestige colours out, and left depth disabled for the whole tag so it could never
+     * be occluded.
      */
-    private fun drawComponent(
+    private fun renderComponent(
         fontRenderer: FontRenderer,
         text: String,
         color: Color,
@@ -238,7 +228,12 @@ object AboveHeadRender {
         textShadow: Boolean
     ) {
         if (text.isEmpty()) return
-        fontRenderer.drawString(text, x.toFloat(), 0.0f, SEE_THROUGH_TEXT_COLOR, false)
+        GlStateManager.disableDepth()
+        GlStateManager.depthMask(false)
+        fontRenderer.drawString(text, x.toFloat(), 0.0f, color.rgb, false)
+        GlStateManager.enableDepth()
+        GlStateManager.depthMask(true)
+        GlStateManager.color(1.0f, 1.0f, 1.0f, 1.0f)
         fontRenderer.drawString(text, x.toFloat(), 0.0f, color.rgb, textShadow)
     }
 }
