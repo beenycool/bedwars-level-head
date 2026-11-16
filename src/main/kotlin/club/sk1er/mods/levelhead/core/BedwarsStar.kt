@@ -1,7 +1,5 @@
 package club.sk1er.mods.levelhead.core
 
-import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
-import com.google.gson.JsonObject
 import java.awt.Color
 
 object BedwarsStar {
@@ -77,11 +75,6 @@ object BedwarsStar {
 
     data class PrestigeStyle(val color: Color, val colormap: String)
     data class PrestigeIcon(val level: Int, val symbol: String)
-
-    fun extractExperience(player: JsonObject?): Long? {
-        player ?: return null
-        return BedwarsFetcher.parseBedwarsExperience(player)
-    }
 
     fun calculateStar(experience: Long): Int {
         if (experience <= 0L) return 0

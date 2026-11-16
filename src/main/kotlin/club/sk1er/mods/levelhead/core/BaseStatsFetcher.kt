@@ -15,14 +15,14 @@ abstract class BaseStatsFetcher : GameModeFetcher {
     abstract override val gameMode: GameMode
     protected abstract val modeName: String
 
-    override suspend fun fetch(uuid: UUID, cacheHint: CacheHint): FetchResult {
+    override suspend fun fetch(uuid: UUID): FetchResult {
         if (!ProxyClient.isConfigured()) {
             return FetchResult.PermanentError("OFFLINE_MODE")
         }
-        return ProxyClient.fetchPlayer(uuid.toString(), cacheHint.lastFetchedAt, cacheHint.etag)
+        return ProxyClient.fetchPlayer(uuid.toString())
     }
 
-    abstract override fun buildStats(payload: JsonObject, etag: String?): GameStats?
+    abstract override fun buildStats(payload: JsonObject): GameStats?
 
     override fun resetWarnings() {
         ProxyClient.resetWarnings()

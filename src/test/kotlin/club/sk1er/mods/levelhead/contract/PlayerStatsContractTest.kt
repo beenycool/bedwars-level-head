@@ -36,9 +36,9 @@ import org.junit.jupiter.api.Test
 class PlayerStatsContractTest {
 
     private fun buildStats(mode: GameMode, payload: JsonObject): GameStats? = when (mode) {
-        GameMode.BEDWARS -> BedwarsFetcher.buildStats(payload, null)
-        GameMode.DUELS -> DuelsFetcher.buildStats(payload, null)
-        GameMode.SKYWARS -> SkyWarsFetcher.buildStats(payload, null)
+        GameMode.BEDWARS -> BedwarsFetcher.buildStats(payload)
+        GameMode.DUELS -> DuelsFetcher.buildStats(payload)
+        GameMode.SKYWARS -> SkyWarsFetcher.buildStats(payload)
     }
 
     @Test

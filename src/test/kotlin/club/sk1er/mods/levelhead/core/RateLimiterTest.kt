@@ -27,7 +27,7 @@ class RateLimiterTest {
     )
 
     @Test
-    fun `consume spends a token and reports the remaining budget`() {
+    fun `tryAcquire spends a token and reports the remaining budget`() {
         val cases = listOf(
             // limit, window, tokens to consume
             Triple(5, Duration.ofMinutes(1), 3),
@@ -38,7 +38,7 @@ class RateLimiterTest {
         cases.forEach { (limit, window, consumed) ->
             blockedCalls.clear()
             val limiter = limiter(limit, window)
-            repeat(consumed) { limiter.consume() }
+            repeat(consumed) { limiter.tryAcquire() }
 
             val metrics = limiter.metricsSnapshot()
             val name = "limit=$limit, window=$window, consumed=$consumed"
@@ -50,7 +50,7 @@ class RateLimiterTest {
     }
 
     @Test
-    fun `consume is blocked once the budget is exhausted`() {
+    fun `tryAcquire is blocked once the budget is exhausted`() {
         val cases = listOf(
             Triple(2, 3, "budget of 2, third request"),
             Triple(0, 1, "zero budget"),
@@ -59,7 +59,7 @@ class RateLimiterTest {
         cases.forEach { (limit, attempts, name) ->
             blockedCalls.clear()
             val limiter = limiter(limit)
-            repeat(attempts) { limiter.consume() }
+            repeat(attempts) { limiter.tryAcquire() }
 
             assertEquals(1, blockedCalls.size, "case: $name / blocked callbacks")
             assertEquals(0, blockedCalls.last().remaining, "case: $name / blocked at zero")
@@ -69,8 +69,8 @@ class RateLimiterTest {
     @Test
     fun `reset restores the token budget and notifies once`() {
         val limiter = limiter(5)
-        limiter.consume()
-        limiter.consume()
+        limiter.tryAcquire()
+        limiter.tryAcquire()
         assertEquals(3, limiter.metricsSnapshot().remaining, "case: before reset")
 
         limiter.resetState()
@@ -80,11 +80,11 @@ class RateLimiterTest {
     }
 
     @Test
-    fun `a server cooldown blocks consume, and silence only suppresses the callback`() {
+    fun `a server cooldown blocks tryAcquire, and silence only suppresses the callback`() {
         // Non-silent: the cooldown is announced and every request is refused.
         val loud = limiter(5)
         loud.registerServerCooldown(Duration.ofMinutes(1), silent = false)
-        loud.consume()
+        loud.tryAcquire()
         assertTrue(blockedCalls.isNotEmpty(), "case: non-silent cooldown must notify")
         assertNotNull(blockedCalls[0].serverCooldown, "case: non-silent cooldown metrics")
 
@@ -92,7 +92,7 @@ class RateLimiterTest {
         blockedCalls.clear()
         val silent = limiter(5)
         silent.registerServerCooldown(Duration.ofMinutes(1), silent = true)
-        silent.consume()
+        silent.tryAcquire()
         assertEquals(0, blockedCalls.size, "case: silent cooldown must not notify")
     }
 

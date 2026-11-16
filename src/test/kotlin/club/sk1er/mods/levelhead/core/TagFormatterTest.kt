@@ -79,7 +79,6 @@ class TagFormatterTest {
                  "bedwars_final_kills":11249,"bedwars_final_deaths":4446}
                 """.trimIndent(),
             ),
-            null,
         )
         check(flat is GameStats.Bedwars)
         assertEquals(368, flat.star)
@@ -94,7 +93,6 @@ class TagFormatterTest {
                 }}}}
                 """.trimIndent(),
             ),
-            null,
         )
         check(nested is GameStats.Bedwars)
         assertEquals("✰", nested.starIcon)
@@ -106,7 +104,6 @@ class TagFormatterTest {
                  "bedwars_final_kills":11249,"bedwars_final_deaths":4446}
                 """.trimIndent(),
             ),
-            null,
         )
         check(missing is GameStats.Bedwars)
         assertNull(missing.starIcon)
@@ -124,9 +121,9 @@ class TagFormatterTest {
         // Fetching nothing must never fabricate a GameStats whose null fields the
         // formatter would turn into "?". The fetchers return null instead.
         val empty = JsonObject()
-        assertNull(BedwarsFetcher.buildStats(empty, null))
-        assertNull(DuelsFetcher.buildStats(empty, null))
-        assertNull(SkyWarsFetcher.buildStats(empty, null))
+        assertNull(BedwarsFetcher.buildStats(empty))
+        assertNull(DuelsFetcher.buildStats(empty))
+        assertNull(SkyWarsFetcher.buildStats(empty))
 
         val bedwarsOnly = payload(
             """
@@ -137,8 +134,8 @@ class TagFormatterTest {
             }}}}
             """.trimIndent(),
         )
-        assertNull(DuelsFetcher.buildStats(bedwarsOnly, null))
-        assertNull(SkyWarsFetcher.buildStats(bedwarsOnly, null))
+        assertNull(DuelsFetcher.buildStats(bedwarsOnly))
+        assertNull(SkyWarsFetcher.buildStats(bedwarsOnly))
     }
 
     @Test
@@ -164,7 +161,6 @@ class TagFormatterTest {
                 }}}}
                 """.trimIndent(),
             ),
-            null,
         )
         check(stats is GameStats.Bedwars)
         assertTrue(stats.nicked)

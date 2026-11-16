@@ -16,7 +16,6 @@ object DuelsStats {
         val name: String,
         val id: String,
         val color: Color,
-        val colorCode: String,
         val bold: Boolean
     )
 
@@ -24,7 +23,6 @@ object DuelsStats {
         val displayName: String,
         val romanLevel: String,
         val color: Color,
-        val colorCode: String,
         val bold: Boolean,
         val id: String
     )
@@ -35,18 +33,18 @@ object DuelsStats {
      * Legend+ divisions are displayed in bold.
      */
     private val overallDivisions = listOf(
-        DivisionRequirement(0, 0, 5, "None", "none", Color(170, 170, 170), "7", false),
-        DivisionRequirement(100, 20, 5, "Rookie", "rookie", Color(170, 170, 170), "7", false),
-        DivisionRequirement(200, 60, 5, "Iron", "iron", Color(255, 255, 255), "f", false),
-        DivisionRequirement(500, 100, 5, "Gold", "gold", Color(255, 170, 0), "6", false),
-        DivisionRequirement(1000, 200, 5, "Diamond", "diamond", Color(0, 170, 170), "3", false),
-        DivisionRequirement(2000, 400, 5, "Master", "master", Color(0, 170, 0), "2", false),
-        DivisionRequirement(4000, 1200, 5, "Legend", "legend", Color(170, 0, 0), "4", true),
-        DivisionRequirement(10000, 2000, 5, "Grandmaster", "grandmaster", Color(255, 255, 85), "e", true),
-        DivisionRequirement(20000, 6000, 5, "Godlike", "godlike", Color(170, 0, 170), "5", true),
-        DivisionRequirement(50000, 10000, 5, "CELESTIAL", "celestial", Color(85, 255, 255), "b", true),
-        DivisionRequirement(100000, 20000, 5, "DIVINE", "divine", Color(255, 85, 255), "d", true),
-        DivisionRequirement(200000, 20000, 50, "ASCENDED", "ascended", Color(255, 85, 85), "c", true)
+        DivisionRequirement(0, 0, 5, "None", "none", Color(170, 170, 170), false),
+        DivisionRequirement(100, 20, 5, "Rookie", "rookie", Color(170, 170, 170), false),
+        DivisionRequirement(200, 60, 5, "Iron", "iron", Color(255, 255, 255), false),
+        DivisionRequirement(500, 100, 5, "Gold", "gold", Color(255, 170, 0), false),
+        DivisionRequirement(1000, 200, 5, "Diamond", "diamond", Color(0, 170, 170), false),
+        DivisionRequirement(2000, 400, 5, "Master", "master", Color(0, 170, 0), false),
+        DivisionRequirement(4000, 1200, 5, "Legend", "legend", Color(170, 0, 0), true),
+        DivisionRequirement(10000, 2000, 5, "Grandmaster", "grandmaster", Color(255, 255, 85), true),
+        DivisionRequirement(20000, 6000, 5, "Godlike", "godlike", Color(170, 0, 170), true),
+        DivisionRequirement(50000, 10000, 5, "CELESTIAL", "celestial", Color(85, 255, 255), true),
+        DivisionRequirement(100000, 20000, 5, "DIVINE", "divine", Color(255, 85, 255), true),
+        DivisionRequirement(200000, 20000, 50, "ASCENDED", "ascended", Color(255, 85, 85), true)
     )
 
     /**
@@ -67,7 +65,6 @@ object DuelsStats {
                 displayName = "-",
                 romanLevel = "-",
                 color = active.color,
-                colorCode = active.colorCode,
                 bold = active.bold,
                 id = active.id
             )
@@ -86,7 +83,6 @@ object DuelsStats {
             displayName = "${active.name}$suffix",
             romanLevel = roman,
             color = active.color,
-            colorCode = active.colorCode,
             bold = active.bold,
             id = active.id
         )

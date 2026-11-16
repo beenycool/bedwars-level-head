@@ -127,7 +127,7 @@ class FetchExecutor(
                             lastFetchSuccessAt = System.currentTimeMillis()
                             entries.forEach { entry ->
                                 val cachedEntry = StatsFetcher.buildGameStats(
-                                    result.payload, entry.gameMode, result.etag
+                                    result.payload, entry.gameMode
                                 )
                                 onResult(entry.key, cachedEntry)
                                 claims[entry.key]?.complete(cachedEntry)

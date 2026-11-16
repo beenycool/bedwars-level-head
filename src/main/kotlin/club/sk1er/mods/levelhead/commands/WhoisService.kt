@@ -106,7 +106,7 @@ object WhoisService {
 
         when (val result = StatsFetcher.fetchPlayer(resolved.uuid, gameMode)) {
             is FetchResult.Success -> {
-                val stats = StatsFetcher.buildGameStats(result.payload, gameMode, result.etag)
+                val stats = StatsFetcher.buildGameStats(result.payload, gameMode)
                 parseWhoisResult(result.payload, stats, resolved.displayName ?: resolved.uuid.toString(), gameMode, resolved.uuid)
             }
             is FetchResult.TemporaryError -> {

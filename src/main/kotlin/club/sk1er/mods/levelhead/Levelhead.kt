@@ -1,6 +1,7 @@
 package club.sk1er.mods.levelhead
 
 import cc.polyfrost.oneconfig.utils.commands.CommandManager
+import club.sk1er.mods.levelhead.commands.CommandUtils
 import club.sk1er.mods.levelhead.commands.LevelheadCommand
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.DisplayManager
@@ -142,10 +143,7 @@ object Levelhead {
     fun isOnHypixel(): Boolean = ClientAccess.hypixelServerCheck()
 
     fun sendChat(message: String) {
-        val formatted = "${ChatColor.AQUA}[Levelhead] ${ChatColor.RESET}$message"
-        minecraft.addScheduledTask {
-            minecraft.thePlayer?.addChatMessage(ChatComponentText(formatted))
-        }
+        CommandUtils.sendPrefixedChat(ChatComponentText(message))
     }
 
     /**

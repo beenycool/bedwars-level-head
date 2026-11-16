@@ -16,10 +16,10 @@ object BedwarsFetcher : BaseStatsFetcher() {
         ProxyClient.resetWarnings()
     }
 
-    override fun buildStats(payload: JsonObject, etag: String?): GameStats? {
+    override fun buildStats(payload: JsonObject): GameStats? {
         val bedwars = findBedwarsStats(payload) ?: return null
         val nicked = StatsPayloadParser.isNicked(payload)
-        val experience = BedwarsStar.extractExperience(payload)
+        val experience = parseBedwarsExperience(payload)
         val star = experience?.let { BedwarsStar.calculateStar(it) }
         val fkdr = parseBedwarsFkdr(payload)
         val starIcon = BedwarsStar.iconForCosmetic(bedwars.stringValue("active_star"))
@@ -28,17 +28,16 @@ object BedwarsFetcher : BaseStatsFetcher() {
             fkdr = fkdr,
             nicked = nicked,
             fetchedAt = System.currentTimeMillis(),
-            etag = etag,
             starIcon = starIcon
         )
     }
 
-    fun parseBedwarsExperience(json: JsonObject): Long? {
+    private fun parseBedwarsExperience(json: JsonObject): Long? {
         val bedwars = findBedwarsStats(json) ?: return null
         return parseExperienceFromBedwars(bedwars)
     }
 
-    fun parseBedwarsFkdr(json: JsonObject): Double? {
+    private fun parseBedwarsFkdr(json: JsonObject): Double? {
         val bedwars = findBedwarsStats(json) ?: return null
         val fkdrElement = bedwars.get("fkdr")
         if (fkdrElement != null && !fkdrElement.isJsonNull) {

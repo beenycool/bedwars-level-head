@@ -45,8 +45,7 @@ object StatsFormatter {
             }
         }
         
-        // Staleness is derived from the fetch timestamp so a tag can be re-coloured
-        // (or expired) later without recomputing the rest of the tag.
+        // Staleness is derived from the fetch timestamp so an old cached tag renders grey.
         val fetchedAt = stats?.fetchedAt ?: System.currentTimeMillis()
         val age = System.currentTimeMillis() - fetchedAt
         val isStale = age > 3600 * 1000
@@ -54,7 +53,6 @@ object StatsFormatter {
         val finalColor = if (isStale && stats != null) Color.GRAY else footerColor
         
         val tag = LevelheadTag(uuid)
-        tag.fetchedAt = fetchedAt
         tag.header.value = config.headerString.takeIf { it.isNotBlank() }?.let { "$it: " } ?: ""
         tag.header.color = config.headerColor
         tag.footer.value = footerValue
@@ -135,7 +133,7 @@ object StatsFormatter {
     
     /**
      * Format SkyWars stats.
-     * Uses levelInt for display (integer only) while preserving Double precision internally.
+     * Displays the integer part of the level while preserving Double precision internally.
      */
     private fun formatSkyWarsStats(
         stats: GameStats.SkyWars,
