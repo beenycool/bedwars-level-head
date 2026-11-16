@@ -5,13 +5,18 @@ import { AddressInfo } from 'net';
 jest.mock('../../src/config', () => ({
   PUBLIC_RATE_LIMIT_MAX: 3,
   PUBLIC_RATE_LIMIT_WINDOW_MS: 60000,
+  DYNAMIC_RATE_LIMIT_ENABLED: false,
+  DYNAMIC_RATE_LIMIT_MIN: 1,
+  DYNAMIC_RATE_LIMIT_MAX: 3,
+  DYNAMIC_RATE_LIMIT_CACHE_TTL_MS: 10000,
+  HYPIXEL_HOURLY_QUOTA: 7200,
   ADMIN_API_KEYS: [],
   TRUST_PROXY_CIDRS: [],
   TRUST_SINGLE_PROXY_HOP: false,
   PLAYER_CACHE_DB_TTL_MS: 86400000,
   CACHE_DB_URL: '',
   LOOKUP_TRACKING_ENABLED: true,
-  LOOKUP_EVENT_RETENTION_DAYS: 90,
+  LOOKUP_LOG_RETENTION_DAYS: 7,
   HYPIXEL_API_KEY: 'test-key',
   HYPIXEL_API_BASE_URL: 'https://api.hypixel.net',
   HYPIXEL_TIMEOUT_MS: 5000,
@@ -83,6 +88,36 @@ describe('TokenBucketLimiter', () => {
     expect(limiter.consume('a', 1, 0).allowed).toBe(true);
     expect(limiter.consume('a', 1, 0).allowed).toBe(false);
     expect(limiter.consume('b', 1, 0).allowed).toBe(true);
+  });
+
+  it('follows a dynamic ceiling without letting it exceed the hard cap', () => {
+    let ceiling = 10;
+    const limiter = new TokenBucketLimiter({
+      capacity: 10,
+      windowMs: 60_000,
+      getCapacity: () => ceiling,
+    });
+
+    expect(limiter.consume('ip', 10, 0).allowed).toBe(true);
+    expect(limiter.consume('ip', 1, 0).allowed).toBe(false);
+
+    // Clamped to the hard cap even if the provider asks for more.
+    ceiling = 1_000;
+    expect(limiter.consume('ip', 10, 60_000).allowed).toBe(true);
+
+    // A smaller ceiling takes effect on the next refill.
+    ceiling = 2;
+    expect(limiter.consume('ip', 2, 120_000).allowed).toBe(true);
+    expect(limiter.consume('ip', 1, 120_000).allowed).toBe(false);
+  });
+
+  it('counts only clients active inside the current window', () => {
+    const limiter = new TokenBucketLimiter({ capacity: 5, windowMs: 1_000 });
+
+    limiter.consume('a', 1, 0);
+    limiter.consume('b', 1, 500);
+    expect(limiter.activeClients(500)).toBe(2);
+    expect(limiter.activeClients(2_000)).toBe(0);
   });
 });
 

@@ -4,10 +4,10 @@ import {
   getClientIpAddress,
   TokenBucketLimiter,
 } from '../middleware/rateLimit';
-import { LOOKUP_EVENT_RETENTION_DAYS } from '../config';
+import { LOOKUP_LOG_RETENTION_DAYS } from '../config';
 import { parseStatsQuery } from '../util/statsQuery';
-import { loadStatsPage, loadTrackedPlayersForExport } from '../services/lookupStats';
-import { renderPlayersCsv, renderStatsPage, renderUnavailablePage } from '../views/statsPage';
+import { loadLookupRowsForExport, loadStatsPage } from '../services/lookupStats';
+import { renderLookupCsv, renderStatsPage, renderUnavailablePage } from '../views/statsPage';
 import { logger } from '../util/logger';
 
 /**
@@ -27,17 +27,17 @@ const enforceStatsRateLimit = createRateLimitMiddleware({
 router.get('/export.csv', enforceStatsRateLimit, async (req, res, next) => {
   try {
     const query = parseStatsQuery(req.query as Record<string, unknown>);
-    const players = await loadTrackedPlayersForExport(query);
+    const rows = await loadLookupRowsForExport(query);
 
-    if (!players) {
+    if (!rows) {
       res.status(503).type('text/plain').send('Tracking database unavailable.');
       return;
     }
 
-    const filename = `levelhead-tracking-${new Date().toISOString().slice(0, 10)}.csv`;
+    const filename = `levelhead-lookups-${new Date().toISOString().slice(0, 10)}.csv`;
     res.set('Cache-Control', 'no-store');
     res.set('Content-Disposition', `attachment; filename="${filename}"`);
-    res.type('text/csv; charset=utf-8').send(renderPlayersCsv(players));
+    res.type('text/csv; charset=utf-8').send(renderLookupCsv(rows));
   } catch (error) {
     next(error);
   }
@@ -57,7 +57,7 @@ router.get('/', enforceStatsRateLimit, async (req, res, next) => {
     }
 
     res.type('html').send(
-      renderStatsPage({ query, data, retentionDays: LOOKUP_EVENT_RETENTION_DAYS }),
+      renderStatsPage({ query, data, retentionDays: LOOKUP_LOG_RETENTION_DAYS }),
     );
   } catch (error) {
     logger.error({ err: error }, '[stats] failed to render the tracking page');

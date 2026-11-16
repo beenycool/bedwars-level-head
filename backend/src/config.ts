@@ -47,15 +47,45 @@ export const PUBLIC_RATE_LIMIT_MAX = Math.max(1, parseIntEnv('PUBLIC_RATE_LIMIT_
 export const PUBLIC_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 
 /**
+ * Dynamic per-client budgets. Instead of handing every IP the same fixed budget,
+ * the limiter divides the remaining Hypixel quota between active clients and
+ * throttles further when recent demand is high. Cached lookups cost no quota, so
+ * the cache hit rate widens the budget.
+ */
+export const DYNAMIC_RATE_LIMIT_ENABLED = parseBooleanEnv('DYNAMIC_RATE_LIMIT_ENABLED', true);
+export const DYNAMIC_RATE_LIMIT_MIN = Math.min(
+  PUBLIC_RATE_LIMIT_MAX,
+  Math.max(1, parseIntEnv('DYNAMIC_RATE_LIMIT_MIN', 20)),
+);
+export const DYNAMIC_RATE_LIMIT_MAX = Math.min(
+  PUBLIC_RATE_LIMIT_MAX,
+  Math.max(
+    DYNAMIC_RATE_LIMIT_MIN,
+    parseIntEnv('DYNAMIC_RATE_LIMIT_MAX', PUBLIC_RATE_LIMIT_MAX),
+  ),
+);
+export const DYNAMIC_RATE_LIMIT_CACHE_TTL_MS = Math.max(
+  1000,
+  parseIntEnv('DYNAMIC_RATE_LIMIT_CACHE_TTL_MS', 10_000),
+);
+
+/** Hypixel allows roughly 120 requests/minute; the limiter protects the hourly pool. */
+export const HYPIXEL_HOURLY_QUOTA = Math.max(60, parseIntEnv('HYPIXEL_HOURLY_QUOTA', 7_200));
+
+/**
  * Lookup tracking powers `/stats`. It can be switched off without touching the
  * database; the proxy then records nothing about who was looked up.
  */
 export const LOOKUP_TRACKING_ENABLED = process.env.LOOKUP_TRACKING_ENABLED !== 'false';
 
-/** How long request-level rows survive before the hourly prune removes them. */
-export const LOOKUP_EVENT_RETENTION_DAYS = Math.max(
+/**
+ * How long per-lookup rows survive before the hourly prune removes them. The old
+ * page's per-lookup panels need real samples, but the log grows with traffic, so it
+ * is kept short on purpose.
+ */
+export const LOOKUP_LOG_RETENTION_DAYS = Math.max(
   1,
-  parseIntEnv('LOOKUP_EVENT_RETENTION_DAYS', 90),
+  parseIntEnv('LOOKUP_LOG_RETENTION_DAYS', parseIntEnv('LOOKUP_EVENT_RETENTION_DAYS', 30)),
 );
 
 /** SQL cache retention. The in-process LRU is much shorter (see services/player.ts). */
@@ -102,6 +132,20 @@ function parseIntEnv(name: string, defaultValue: number): number {
   }
   const parsed = Number.parseInt(raw, 10);
   return Number.isNaN(parsed) ? defaultValue : parsed;
+}
+
+function parseBooleanEnv(name: string, defaultValue: boolean): boolean {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (raw === undefined) {
+    return defaultValue;
+  }
+  if (['true', '1', 'yes', 'on'].includes(raw)) {
+    return true;
+  }
+  if (['false', '0', 'no', 'off'].includes(raw)) {
+    return false;
+  }
+  return defaultValue;
 }
 
 function readPackageVersion(): string {

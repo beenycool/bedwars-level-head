@@ -1,9 +1,10 @@
 import { sql } from 'kysely';
 import { db } from './database/db';
 import { ensureInitialized, isDatabaseReady } from './cache';
-import { LOOKUP_EVENT_RETENTION_DAYS, LOOKUP_TRACKING_ENABLED } from '../config';
+import { LOOKUP_LOG_RETENTION_DAYS, LOOKUP_TRACKING_ENABLED } from '../config';
 import { bedwarsStars } from '../util/bedwarsStars';
 import { logger } from '../util/logger';
+import { recordLookupSignals } from './rateLimitSignals';
 
 /** Where the lookup came from; kept coarse so the site can break traffic down. */
 export type LookupRoute = 'public' | 'legacy' | 'batch';
@@ -19,14 +20,6 @@ export interface LookupObservation {
   latencyMs: number;
 }
 
-export interface LookupSummary {
-  players: number;
-  cacheHits: number;
-  errors: number;
-  latencySumMs: number;
-  latencyMaxMs: number;
-}
-
 export interface TrackedPlayerUpsert {
   identifier: string;
   username: string | null;
@@ -38,26 +31,39 @@ export interface TrackedPlayerUpsert {
   latencyMs: number;
 }
 
-/** Pure: aggregate one request's observations into the `lookup_events` row. */
-export function summarizeObservations(observations: LookupObservation[]): LookupSummary {
-  let cacheHits = 0;
-  let errors = 0;
-  let latencySumMs = 0;
-  let latencyMaxMs = 0;
+/** One row in `lookup_log`, preserving every observation for the analytics page. */
+export interface LookupLogRow {
+  lookedUpAt: Date;
+  identifier: string;
+  username: string | null;
+  stars: number | null;
+  nicked: boolean;
+  source: string;
+  route: LookupRoute;
+  status: number;
+  latencyMs: number;
+}
 
-  for (const observation of observations) {
-    if (observation.source === 'cache') {
-      cacheHits += 1;
-    }
-    if (Math.floor(observation.status / 100) >= 4) {
-      errors += 1;
-    }
-    const latency = Number.isFinite(observation.latencyMs) ? Math.max(0, Math.round(observation.latencyMs)) : 0;
-    latencySumMs += latency;
-    latencyMaxMs = Math.max(latencyMaxMs, latency);
-  }
-
-  return { players: observations.length, cacheHits, errors, latencySumMs, latencyMaxMs };
+/**
+ * Pure: one log row per observation, including failures. Unlike `tracked_players`,
+ * the log is append-only and pruned, so failures are cheap to keep.
+ */
+export function buildLookupLogRows(
+  observations: LookupObservation[],
+  route: LookupRoute,
+  lookedUpAt: Date,
+): LookupLogRow[] {
+  return observations.map((observation) => ({
+    lookedUpAt,
+    identifier: observation.identifier,
+    username: observation.username,
+    stars: observation.nicked ? null : bedwarsStars(observation.bedwarsExperience),
+    nicked: observation.nicked,
+    source: observation.source,
+    route,
+    status: observation.status,
+    latencyMs: Math.max(0, Math.round(observation.latencyMs)),
+  }));
 }
 
 /**
@@ -65,9 +71,9 @@ export function summarizeObservations(observations: LookupObservation[]): Lookup
  * same UUID twice) collapse to the last observation, because PostgreSQL rejects an
  * `ON CONFLICT` statement that touches the same row twice.
  *
- * Failed lookups are deliberately skipped: `lookup_events` still counts them, but
- * writing a player row for every 404 would let a UUID scanner grow the table without
- * bound. A row therefore only exists for a player the proxy has actually resolved.
+ * Failed lookups are deliberately skipped: writing a player row for every 404 would
+ * let a UUID scanner grow the table without bound. A row therefore only exists for a
+ * player the proxy has actually resolved.
  */
 export function buildTrackedPlayerRows(observations: LookupObservation[]): TrackedPlayerUpsert[] {
   const byIdentifier = new Map<string, TrackedPlayerUpsert>();
@@ -97,6 +103,7 @@ export function buildTrackedPlayerRows(observations: LookupObservation[]): Track
  * write is detached and every failure is downgraded to a warning.
  */
 export function recordLookups(observations: LookupObservation[], route: LookupRoute): void {
+  recordLookupSignals(observations);
   if (!LOOKUP_TRACKING_ENABLED || observations.length === 0) {
     return;
   }
@@ -112,23 +119,30 @@ async function persistLookups(observations: LookupObservation[], route: LookupRo
   }
 
   const lookedUpAt = new Date();
-  const rows = buildTrackedPlayerRows(observations);
-  const summary = summarizeObservations(observations);
+  const players = buildTrackedPlayerRows(observations);
 
-  await buildTrackedPlayersUpsert(rows, lookedUpAt).execute(db);
+  await buildLookupLogInsert(buildLookupLogRows(observations, route, lookedUpAt)).execute(db);
+  if (players.length > 0) {
+    await buildTrackedPlayersUpsert(players, lookedUpAt).execute(db);
+  }
+}
 
-  await db
-    .insertInto('lookup_events')
-    .values({
-      looked_up_at: lookedUpAt,
-      route,
-      players: summary.players,
-      cache_hits: summary.cacheHits,
-      errors: summary.errors,
-      latency_sum_ms: summary.latencySumMs,
-      latency_max_ms: summary.latencyMaxMs,
-    })
-    .execute();
+/** Multi-row insert for the append-only log. Exported so it can be compiled in tests. */
+export function buildLookupLogInsert(rows: LookupLogRow[]) {
+  const values = rows.map(
+    (row) => sql`(
+      ${row.lookedUpAt}, ${row.identifier}, ${row.username}, ${row.stars}, ${row.nicked},
+      ${row.source}, ${row.route}, ${row.status}, ${row.latencyMs}
+    )`,
+  );
+
+  return sql`
+    INSERT INTO lookup_log (
+      looked_up_at, identifier, username, stars, nicked,
+      source, route, status, latency_ms
+    )
+    VALUES ${sql.join(values, sql`, `)}
+  `;
 }
 
 /**
@@ -163,18 +177,18 @@ export function buildTrackedPlayersUpsert(rows: TrackedPlayerUpsert[], lookedUpA
   `;
 }
 
-/** Deletes request rows past the retention window. Called hourly by the scheduler. */
-export async function pruneLookupEvents(now: number = Date.now()): Promise<number> {
+/** Deletes log rows past the retention window. Called hourly by the scheduler. */
+export async function pruneLookupLogs(now: number = Date.now()): Promise<number> {
   await ensureInitialized();
   if (!isDatabaseReady()) {
     return 0;
   }
 
-  const cutoff = new Date(now - LOOKUP_EVENT_RETENTION_DAYS * 24 * 60 * 60 * 1000);
-  const result = await sql`DELETE FROM lookup_events WHERE looked_up_at < ${cutoff}`.execute(db);
+  const cutoff = new Date(now - LOOKUP_LOG_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+  const result = await sql`DELETE FROM lookup_log WHERE looked_up_at < ${cutoff}`.execute(db);
   const deleted = Number(result.numAffectedRows ?? 0);
   if (deleted > 0) {
-    logger.info(`[tracking] pruned ${deleted} lookup_events rows older than ${LOOKUP_EVENT_RETENTION_DAYS} days`);
+    logger.info(`[tracking] pruned ${deleted} lookup_log rows older than ${LOOKUP_LOG_RETENTION_DAYS} days`);
   }
   return deleted;
 }

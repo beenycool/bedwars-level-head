@@ -55,9 +55,10 @@ npm test                  # jest
 
 `HYPIXEL_API_KEY` is the only required variable. `CACHE_DB_URL` is optional: without it the
 service runs from an in-process cache and still serves data; with it, one PostgreSQL table
-(`player_stats_cache`) keeps rows for 24 hours. Rate limiting is an in-process token bucket sized
-for a full BedWars hub (`PUBLIC_RATE_LIMIT_MAX`, default 600 identifiers/minute). There is no
-Redis, no dashboard and no `/metrics` endpoint.
+(`player_stats_cache`) keeps rows for 24 hours. Rate limiting is an in-process token bucket per
+client IP with a dynamic ceiling: it divides the remaining Hypixel quota between active clients
+and widens when cache hits absorb the traffic (`DYNAMIC_RATE_LIMIT_MIN`/`MAX`, default 20–600
+identifiers/minute). There is no Redis, no external dashboard and no `/metrics` endpoint.
 
 ## Deploy
 

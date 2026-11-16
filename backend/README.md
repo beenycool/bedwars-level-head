@@ -41,16 +41,23 @@ is unusable for every identifier (circuit breaker open, 5xx or upstream 429).
 
 ## Tracking
 
-`/stats` is built for operators, not players: it shows lookup volume, cache hit
-rate, error rate, latency and the players that have been resolved. It is plain
-HTML with no client-side JavaScript, so Helmet's default CSP needs no exceptions.
+`/stats` is the pre-rewrite analytics page, rebuilt without Chart.js:
+
+- **Overview** — total lookups, cache hit rate, success rate and a selectable latency
+  percentile (p50/p95/p99/min/max/avg), plus infrastructure and process cards.
+- **Charts** — cache performance, star distribution, latency pulse, status breakdown,
+  request routes, requests over time, cache hit rate over time, latency distribution,
+  top queried players and process memory, all server-rendered SVG.
+- **Recent Player Lookups** — one row per lookup, searchable, sortable and exportable
+  as CSV.
 
 Two tables keep storage bounded:
 
 - `tracked_players` — one row per UUID ever seen, with running `lookups`/`cache_hits`
   counters and the last observed stars, status and latency. Upserted per lookup.
-- `lookup_events` — one row per HTTP request (a 20-player batch is one row), holding
-  aggregate counts. Rows older than `LOOKUP_EVENT_RETENTION_DAYS` are pruned hourly.
+- `lookup_log` — one append-only row per lookup, including failures. This is what the
+  per-lookup table, percentiles and distributions read. Rows older than
+  `LOOKUP_LOG_RETENTION_DAYS` are pruned hourly.
 
 Only 32-character UUIDs are recorded; rejected usernames and malformed identifiers
 never reach the tables. Set `LOOKUP_TRACKING_ENABLED=false` to record nothing at
@@ -58,10 +65,16 @@ all — the player endpoints keep working and `/stats` reports no data.
 
 ## Rate limiting
 
-A single in-memory token bucket per client IP, sized at `PUBLIC_RATE_LIMIT_MAX`
-identifiers per minute (default 600). A full BedWars hub is one burst of ~100;
-sustained traffic is held to the minute budget. There is no Redis dependency and
-no fail-closed mode. `/healthz` bypasses the limiter.
+Each client IP gets its own in-memory token bucket. The ceiling is dynamic:
+every ten seconds the limiter divides the remaining Hypixel hourly quota by the
+number of active clients and recent demand, then widens it by the observed cache
+hit rate. Budgets stay between `DYNAMIC_RATE_LIMIT_MIN` and
+`DYNAMIC_RATE_LIMIT_MAX` (default 20–600 identifiers/minute). A full BedWars hub
+is one burst; each identifier in a batch costs one token. `/healthz` bypasses the
+limiter.
+
+Set `DYNAMIC_RATE_LIMIT_ENABLED=false` to use the flat `PUBLIC_RATE_LIMIT_MAX`
+budget instead. There is no Redis dependency and no fail-closed mode.
 
 ## Configuration
 
@@ -72,9 +85,13 @@ See `.env.example`. The short version:
 - `ADMIN_API_KEYS` (optional admin purge)
 - `TRUST_PROXY_CIDRS` (optional; one proxy hop is trusted in production when unset)
 - `PUBLIC_RATE_LIMIT_MAX` (default 600/minute)
+- `DYNAMIC_RATE_LIMIT_ENABLED` (default true)
+- `DYNAMIC_RATE_LIMIT_MIN` / `DYNAMIC_RATE_LIMIT_MAX` (default 20 / 600 per minute)
+- `DYNAMIC_RATE_LIMIT_CACHE_TTL_MS` (default 10s)
+- `HYPIXEL_HOURLY_QUOTA` (default 7200 calls/hour)
 - `PLAYER_CACHE_DB_TTL_MS` (default 24h)
 - `LOOKUP_TRACKING_ENABLED` (default true; `false` disables `/stats` recording)
-- `LOOKUP_EVENT_RETENTION_DAYS` (default 90)
+- `LOOKUP_LOG_RETENTION_DAYS` (default 30)
 - `PORT`, `HOST`, `HYPIXEL_TIMEOUT_MS` (defaults: 3000, 0.0.0.0, 5000)
 
 ## Tests
