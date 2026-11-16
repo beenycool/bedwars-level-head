@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "build": "esbuild src/index.ts --bundle --platform=node --target=node22 --outfile=dist/index.js --external:pg-native --loader:.html=text",
-    "bundle": "esbuild src/index.ts --bundle --platform=node --target=node22 --outfile=dist/index.js --external:pg-native --loader:.html=text",
+    "bundle": "npm run build",
     "start": "node dist/index.js",
     "dev": "LOG_PRETTY=1 NODE_ENV=development ts-node-dev --respawn src/index.ts",
     "test": "jest",

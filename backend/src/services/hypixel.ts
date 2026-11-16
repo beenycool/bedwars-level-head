@@ -115,29 +115,8 @@ export interface HypixelPlayerResponse {
   } | null;
 }
 
-interface ProxyPlayerPayload {
-  success: boolean;
-  cause?: string;
-  message?: string;
-  data?: {
-    bedwars?: Record<string, unknown>;
-  };
-  bedwars?: Record<string, unknown>;
-  player?: {
-    uuid?: string;
-    displayname?: string;
-    stats?: {
-      Bedwars?: Record<string, unknown>;
-      Duels?: Record<string, unknown>;
-      SkyWars?: Record<string, unknown>;
-    };
-  };
-  nicked?: boolean;
-  display?: string;
-}
-
 export interface HypixelFetchResult {
-  payload: ProxyPlayerPayload;
+  payload: HypixelPlayerResponse;
   etag: string | null;
   lastModified: number | null;
 }
@@ -165,73 +144,6 @@ function jitterDelay(): number {
 
 async function wait(ms: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-/**
- * Shapes the Hypixel player response into the proxy payload format.
- * **Does NOT mutate** the input response object. It clones the bedwars stats
- * and injects/overwrites bedwars_experience, Experience, fkdr, and winstreak.
- */
-export function shapePayload(response: HypixelPlayerResponse): ProxyPlayerPayload {
-  if (!response.success) {
-    const cause = response.cause ?? 'UNKNOWN_HYPIXEL_ERROR';
-    throw new HttpError(502, cause, 'Hypixel returned an error response.');
-  }
-
-  const bedwarsStatsRaw = response.player?.stats?.Bedwars;
-  const bedwarsStats = isNonArrayObject(bedwarsStatsRaw) ? bedwarsStatsRaw : {};
-  const getNumericStat = (stats: Record<string, unknown>, key: string): number | undefined => {
-    const val = stats[key];
-    return typeof val === 'number' ? val : undefined;
-  };
-
-  const experience = getNumericStat(bedwarsStats, 'bedwars_experience') 
-                  ?? getNumericStat(bedwarsStats, 'Experience');
-  const finalKillsRaw = getNumericStat(bedwarsStats, 'final_kills_bedwars');
-  const finalDeathsRaw = getNumericStat(bedwarsStats, 'final_deaths_bedwars');
-  const winstreakRaw = getNumericStat(bedwarsStats, 'winstreak');
-
-  const finalKills = Number(finalKillsRaw ?? 0);
-  const finalDeaths = Number(finalDeathsRaw ?? 0);
-  const winstreakNumber = Number(winstreakRaw);
-  const winstreak = Number.isFinite(winstreakNumber) ? winstreakNumber : undefined;
-  const fkdr = finalDeaths <= 0 ? finalKills : finalKills / finalDeaths;
-
-  // Clone to avoid hidden mutation
-  const shapedStats: Record<string, unknown> = { ...bedwarsStats };
-
-  if (experience !== undefined) {
-    shapedStats.bedwars_experience = experience;
-    shapedStats.Experience = experience;
-  }
-  if (Number.isFinite(fkdr)) {
-    shapedStats.fkdr = fkdr;
-  }
-  if (winstreak !== undefined) {
-    shapedStats.winstreak = winstreak;
-  } else if ('winstreak' in shapedStats) {
-    delete shapedStats.winstreak;
-  }
-
-  const duelsStats = response.player?.stats?.Duels ?? {};
-  const skywarsStats = response.player?.stats?.SkyWars ?? {};
-
-  return {
-    success: true,
-    data: {
-      bedwars: shapedStats,
-    },
-    bedwars: shapedStats,
-    player: {
-      uuid: response.player?.uuid,
-      displayname: response.player?.displayname,
-      stats: {
-        Bedwars: shapedStats,
-        Duels: duelsStats,
-        SkyWars: skywarsStats,
-      },
-    },
-  };
 }
 
 function buildHeaders(): Record<string, string> {
@@ -288,8 +200,14 @@ export async function fetchHypixelPlayer(uuid: string): Promise<HypixelFetchResu
 
       circuitBreakerSuccess();
 
+      const payload = response.data;
+      if (!payload.success) {
+        const cause = payload.cause ?? 'UNKNOWN_HYPIXEL_ERROR';
+        throw new HttpError(502, cause, 'Hypixel returned an error response.');
+      }
+
       return {
-        payload: shapePayload(response.data),
+        payload,
         etag: response.headers['etag'] ?? null,
         lastModified: parseLastModified(response.headers['last-modified']),
       };

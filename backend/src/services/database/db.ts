@@ -6,7 +6,7 @@ import { logger } from '../../util/logger';
 
 export const isDatabaseConfigured = (CACHE_DB_URL ?? '').length > 0;
 
-const rawPoolMax = process.env.DB_POOL_MAX ?? process.env.CACHE_DB_POOL_MAX;
+const rawPoolMax = process.env.CACHE_DB_POOL_MAX;
 const parsedPoolMax = rawPoolMax ? Number.parseInt(rawPoolMax, 10) : 10;
 const poolMax = Number.isFinite(parsedPoolMax) && parsedPoolMax > 0 ? parsedPoolMax : 10;
 

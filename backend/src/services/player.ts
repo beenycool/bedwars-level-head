@@ -38,15 +38,8 @@ export interface ResolvedPlayer {
   etag: string | null;
   lastModified: number | null;
   source: 'cache' | 'network';
-  revalidated: boolean;
-  uuid: string | null;
   username: string | null;
-  lookupType: 'uuid' | 'ign';
-  lookupValue: string;
   nicked: boolean;
-  /** Present on responses served from a stale cache entry (legacy route hints). */
-  isStale?: boolean;
-  staleAgeMs?: number;
 }
 
 function buildNickedStats(): MinimalPlayerStats {
@@ -92,18 +85,14 @@ function normalizeUuidLookupStats(stats: MinimalPlayerStats): { payload: Minimal
   return { payload: stats, nicked: false };
 }
 
-function fromCacheEntry(uuid: string, entry: CachedPlayerStats): ResolvedPlayer {
+function fromCacheEntry(entry: CachedPlayerStats): ResolvedPlayer {
   const { payload, nicked } = normalizeUuidLookupStats(entry.value);
   return {
     payload,
     etag: entry.etag,
     lastModified: entry.lastModified,
     source: 'cache',
-    revalidated: false,
-    uuid,
     username: normalizeDisplayName(payload.displayname),
-    lookupType: 'uuid',
-    lookupValue: uuid,
     nicked,
   };
 }
@@ -122,11 +111,7 @@ async function loadFromUpstream(uuid: string): Promise<ResolvedPlayer> {
     etag: response.etag,
     lastModified: response.lastModified,
     source: 'network',
-    revalidated: false,
-    uuid,
     username: normalizeDisplayName(payload.displayname),
-    lookupType: 'uuid',
-    lookupValue: uuid,
     nicked,
   };
 }
@@ -160,7 +145,7 @@ export async function resolvePlayer(identifier: string): Promise<ResolvedPlayer>
     // A batch warmup that already missed in SQL does not need a second SELECT.
     const warmedMiss = warmedMisses.delete(uuid);
     const cached = warmedMiss ? null : await getPlayerStats(buildPlayerCacheKey(uuid));
-    const resolved = cached ? fromCacheEntry(uuid, cached) : await loadFromUpstream(uuid);
+    const resolved = cached ? fromCacheEntry(cached) : await loadFromUpstream(uuid);
     memoizedResults.set(uuid, resolved);
     return resolved;
   })().finally(() => {
@@ -197,7 +182,7 @@ export async function warmupPlayerCache(identifiers: string[]): Promise<void> {
     }
     const entry = entries.get(key);
     if (entry) {
-      memoizedResults.set(uuid, fromCacheEntry(uuid, entry));
+      memoizedResults.set(uuid, fromCacheEntry(entry));
     } else {
       warmedMisses.add(uuid);
     }

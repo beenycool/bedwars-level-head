@@ -12,7 +12,6 @@ jest.mock('../../src/config', () => ({
   PLAYER_CACHE_DB_TTL_MS: 86400000,
   CACHE_DB_URL: '',
   LOOKUP_TRACKING_ENABLED: true,
-  LOOKUP_EVENT_RETENTION_DAYS: 90,
   HYPIXEL_API_KEY: 'test-key',
   HYPIXEL_API_BASE_URL: 'https://api.hypixel.net',
   HYPIXEL_TIMEOUT_MS: 5000,
@@ -129,11 +128,7 @@ const baseResolved = {
   etag: '"base-etag-123"',
   lastModified: Date.now() - 1000,
   source: 'network' as const,
-  revalidated: false,
-  uuid: '530fa96a303d42199b5a329d493a5573',
   username: 'TestPlayer',
-  lookupType: 'uuid' as const,
-  lookupValue: '530fa96a303d42199b5a329d493a5573',
   nicked: false,
 };
 
@@ -157,7 +152,6 @@ describe('GET /api/player/:identifier happy path', () => {
       displayname: 'TestPlayer',
       nicked: false,
     });
-    expect(response.body.stale).toBeUndefined();
   });
 
   it('marks nicked players in the ETag variant and payload', async () => {
@@ -172,23 +166,6 @@ describe('GET /api/player/:identifier happy path', () => {
     expect(response.status).toBe(200);
     expect(response.headers['etag']).toBe('"player-v2-nicked-base-etag-123"');
     expect(response.body.nicked).toBe(true);
-  });
-
-  it('exposes stale SWR responses with stale headers and payload flag', async () => {
-    (resolvePlayer as jest.Mock).mockResolvedValue({
-      ...baseResolved,
-      source: 'cache' as const,
-      isStale: true,
-      staleAgeMs: 30_000,
-    });
-
-    const response = await makeRequest(app, 'GET', '/api/player/530fa96a303d42199b5a329d493a5573');
-
-    expect(response.status).toBe(200);
-    expect(response.headers['x-cache']).toBe('HIT');
-    expect(response.headers['x-cache-stale']).toBe('1');
-    expect(response.headers['age']).toBe('30');
-    expect(response.body.stale).toBe(true);
   });
 
   it('propagates clean errors from the player service (no ETag written)', async () => {

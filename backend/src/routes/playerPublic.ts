@@ -8,7 +8,6 @@ const router = Router();
 
 router.get('/:identifier', enforceRequestRateLimit, enforcePublicRateLimit, createPlayerLookupHandler({
   private: false,
-  setStaleHeaders: false,
   cacheControl: 'public, max-age=300, stale-while-revalidate=600',
   route: 'public',
 }));

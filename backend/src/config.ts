@@ -95,7 +95,7 @@ export const LOOKUP_TRACKING_ENABLED = process.env.LOOKUP_TRACKING_ENABLED !== '
  */
 export const LOOKUP_LOG_RETENTION_DAYS = Math.max(
   1,
-  parseIntEnv('LOOKUP_LOG_RETENTION_DAYS', parseIntEnv('LOOKUP_EVENT_RETENTION_DAYS', 30)),
+  parseIntEnv('LOOKUP_LOG_RETENTION_DAYS', 30),
 );
 
 /** SQL cache retention. The in-process LRU is much shorter (see services/player.ts). */

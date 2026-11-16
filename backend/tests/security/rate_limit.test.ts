@@ -147,11 +147,7 @@ describe('/healthz is never rate limited', () => {
       etag: null,
       lastModified: null,
       source: 'network',
-      revalidated: false,
-      uuid: UUID,
       username: 'TestPlayer',
-      lookupType: 'uuid',
-      lookupValue: UUID,
       nicked: false,
     });
   });
@@ -185,11 +181,7 @@ describe('cached lookups refund their identifier tokens', () => {
       etag: null,
       lastModified: null,
       source: 'cache',
-      revalidated: false,
-      uuid: UUID,
       username: 'TestPlayer',
-      lookupType: 'uuid',
-      lookupValue: UUID,
       nicked: false,
     });
   });

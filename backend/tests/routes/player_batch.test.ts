@@ -52,11 +52,7 @@ function resolvedFor(uuid: string) {
     etag: null,
     lastModified: null,
     source: 'network' as const,
-    revalidated: false,
-    uuid,
     username: `Player${uuid.slice(-1)}`,
-    lookupType: 'uuid' as const,
-    lookupValue: uuid,
     nicked: false,
   };
 }

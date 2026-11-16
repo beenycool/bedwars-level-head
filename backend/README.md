@@ -51,10 +51,8 @@ is unusable for every identifier (circuit breaker open, 5xx or upstream 429).
 - **Recent Player Lookups** — one row per lookup, searchable, sortable and exportable
   as CSV.
 
-Two tables keep storage bounded:
+One table keeps storage bounded:
 
-- `tracked_players` — one row per UUID ever seen, with running `lookups`/`cache_hits`
-  counters and the last observed stars, status and latency. Upserted per lookup.
 - `lookup_log` — one append-only row per lookup, including failures. This is what the
   per-lookup table, percentiles and distributions read. Rows older than
   `LOOKUP_LOG_RETENTION_DAYS` are pruned hourly.

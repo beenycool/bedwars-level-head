@@ -14,7 +14,6 @@ const router = Router();
 
 router.get('/:identifier', enforceRequestRateLimit, enforceRateLimit, createPlayerLookupHandler({
   private: true,
-  setStaleHeaders: true,
   cacheControl: 'public, max-age=300, stale-while-revalidate=600',
   route: 'legacy',
 }));

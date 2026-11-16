@@ -16,9 +16,8 @@ import {
 import { computeResponseEtag } from '../util/etag';
 
 interface PlayerLookupHandlerOptions {
-  /** Legacy `/api/player` route: exposes degradation hints and stale headers. */
+  /** Legacy `/api/player` route: exposes degradation hints. */
   private: boolean;
-  setStaleHeaders: boolean;
   cacheControl: string;
   /** Label recorded in `lookup_events` for the tracking page. */
   route: LookupRoute;
@@ -88,11 +87,6 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
         res.set('Last-Modified', new Date(resolved.lastModified).toUTCString());
       }
 
-      if (options.setStaleHeaders && resolved.isStale) {
-        res.set('X-Cache-Stale', '1');
-        res.set('Age', Math.floor((resolved.staleAgeMs ?? 0) / 1000).toString());
-      }
-
       res.set('X-Cache', resolved.source === 'cache' ? 'HIT' : 'MISS');
       res.set('Cache-Control', options.cacheControl);
 
@@ -127,7 +121,6 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
       res.status(200).json({
         ...resolved.payload,
         nicked: resolved.nicked,
-        ...(options.private && resolved.isStale ? { stale: true } : {}),
         ...(options.private && isCircuitOpen ? { degradedMode: true } : {}),
       });
     } catch (error) {

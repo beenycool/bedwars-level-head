@@ -20,17 +20,6 @@ export interface LookupObservation {
   latencyMs: number;
 }
 
-export interface TrackedPlayerUpsert {
-  identifier: string;
-  username: string | null;
-  stars: number | null;
-  nicked: boolean;
-  cacheHit: boolean;
-  lastSource: string;
-  lastStatus: number;
-  latencyMs: number;
-}
-
 /** One row in `lookup_log`, preserving every observation for the analytics page. */
 export interface LookupLogRow {
   lookedUpAt: Date;
@@ -45,8 +34,8 @@ export interface LookupLogRow {
 }
 
 /**
- * Pure: one log row per observation, including failures. Unlike `tracked_players`,
- * the log is append-only and pruned, so failures are cheap to keep.
+ * Pure: one log row per observation, including failures. The log is append-only
+ * and pruned, so failures are cheap to keep.
  */
 export function buildLookupLogRows(
   observations: LookupObservation[],
@@ -64,38 +53,6 @@ export function buildLookupLogRows(
     status: observation.status,
     latencyMs: Math.max(0, Math.round(observation.latencyMs)),
   }));
-}
-
-/**
- * Pure: one upsert row per identifier. Duplicates (possible if a caller hands us the
- * same UUID twice) collapse to the last observation, because PostgreSQL rejects an
- * `ON CONFLICT` statement that touches the same row twice.
- *
- * Failed lookups are deliberately skipped: writing a player row for every 404 would
- * let a UUID scanner grow the table without bound. A row therefore only exists for a
- * player the proxy has actually resolved.
- */
-export function buildTrackedPlayerRows(observations: LookupObservation[]): TrackedPlayerUpsert[] {
-  const byIdentifier = new Map<string, TrackedPlayerUpsert>();
-
-  for (const observation of observations) {
-    if (Math.floor(observation.status / 100) >= 4) {
-      continue;
-    }
-
-    byIdentifier.set(observation.identifier, {
-      identifier: observation.identifier,
-      username: observation.username,
-      stars: observation.nicked ? null : bedwarsStars(observation.bedwarsExperience),
-      nicked: observation.nicked,
-      cacheHit: observation.source === 'cache',
-      lastSource: observation.source,
-      lastStatus: observation.status,
-      latencyMs: Math.max(0, Math.round(observation.latencyMs)),
-    });
-  }
-
-  return [...byIdentifier.values()];
 }
 
 /**
@@ -119,12 +76,8 @@ async function persistLookups(observations: LookupObservation[], route: LookupRo
   }
 
   const lookedUpAt = new Date();
-  const players = buildTrackedPlayerRows(observations);
 
   await buildLookupLogInsert(buildLookupLogRows(observations, route, lookedUpAt)).execute(db);
-  if (players.length > 0) {
-    await buildTrackedPlayersUpsert(players, lookedUpAt).execute(db);
-  }
 }
 
 /** Multi-row insert for the append-only log. Exported so it can be compiled in tests. */
@@ -142,38 +95,6 @@ export function buildLookupLogInsert(rows: LookupLogRow[]) {
       source, route, status, latency_ms
     )
     VALUES ${sql.join(values, sql`, `)}
-  `;
-}
-
-/**
- * Multi-row upsert written as SQL: `excluded` is the only way to express "increment
- * the existing counter" without a read-modify-write race. Exported so the SQL can be
- * compiled in tests without a live database.
- */
-export function buildTrackedPlayersUpsert(rows: TrackedPlayerUpsert[], lookedUpAt: Date) {
-  const values = rows.map(
-    (row) => sql`(
-      ${row.identifier}, ${row.username}, ${row.stars}, ${row.nicked},
-      ${row.cacheHit ? 1 : 0}, ${row.lastSource}, ${row.lastStatus}, ${row.latencyMs}, ${lookedUpAt}
-    )`,
-  );
-
-  return sql`
-    INSERT INTO tracked_players (
-      identifier, username, stars, nicked, cache_hits,
-      last_source, last_status, last_latency_ms, last_looked_up_at
-    )
-    VALUES ${sql.join(values, sql`, `)}
-    ON CONFLICT (identifier) DO UPDATE SET
-      lookups = tracked_players.lookups + 1,
-      cache_hits = tracked_players.cache_hits + CASE WHEN excluded.last_source = 'cache' THEN 1 ELSE 0 END,
-      username = COALESCE(excluded.username, tracked_players.username),
-      stars = COALESCE(excluded.stars, tracked_players.stars),
-      nicked = excluded.nicked,
-      last_source = excluded.last_source,
-      last_status = excluded.last_status,
-      last_latency_ms = excluded.last_latency_ms,
-      last_looked_up_at = excluded.last_looked_up_at
   `;
 }
 
