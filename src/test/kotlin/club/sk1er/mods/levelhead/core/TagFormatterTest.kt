@@ -22,28 +22,32 @@ import org.junit.jupiter.api.Test
 class TagFormatterTest {
 
     @Test
-    fun `rainbow prestiges use the multicolour colormap below star 1100`() {
-        // 1000-1099 is the rainbow prestige and still uses the hollow star. Every
-        // character is coloured from the 7-character colormap, including the tails.
-        assertEquals("§c[§61§e0§a5§b0§d✫§5]", BedwarsStar.formatStarTag(1050))
-        assertEquals("§c[§61§e0§a9§b9§d✫§5]", BedwarsStar.formatStarTag(1099))
+    fun `rainbow prestiges use the multicolour colormap and filled star from 1000`() {
+        // 1000-1099 is the rainbow prestige. Every character is coloured from the
+        // 7-character colormap, including the tails; the icon is the filled star.
+        assertEquals("§c[§61§e0§a5§b0§d✪§5]", BedwarsStar.formatStarTag(1050))
+        assertEquals("§c[§61§e0§a9§b9§d✪§5]", BedwarsStar.formatStarTag(1099))
+        // Matches the tag Hypixel showed for a 1063-star player in chat.
+        assertEquals("§c[§61§e0§a6§b3§d✪§5]", BedwarsStar.formatStarTag(1063))
     }
 
     @Test
-    fun `the star icon switches from hollow to filled at 1100`() {
-        assertEquals("✫", BedwarsStar.getPrestigeIcon(1099))
-        assertEquals("✪", BedwarsStar.getPrestigeIcon(1100))
+    fun `the star icon changes every 1000 stars`() {
+        assertEquals("✫", BedwarsStar.getPrestigeIcon(999))
+        assertEquals("✪", BedwarsStar.getPrestigeIcon(1000))
         assertEquals(
             "§7[§f1§f1§f0§f0§7✪§7]",
             BedwarsStar.formatStarTag(1100),
-            "1100 starts the Iron Prime colormap and the filled star",
+            "1100 starts the Iron Prime colormap and keeps the filled star",
         )
 
         // The later icon boundaries are also part of the tag contract.
-        assertEquals("✪", BedwarsStar.getPrestigeIcon(2099))
-        assertEquals("⚝", BedwarsStar.getPrestigeIcon(2100))
-        assertEquals("⚝", BedwarsStar.getPrestigeIcon(3099))
-        assertEquals("✥", BedwarsStar.getPrestigeIcon(3100))
+        assertEquals("✪", BedwarsStar.getPrestigeIcon(1999))
+        assertEquals("⚝", BedwarsStar.getPrestigeIcon(2000))
+        assertEquals("⚝", BedwarsStar.getPrestigeIcon(2999))
+        assertEquals("✥", BedwarsStar.getPrestigeIcon(3000))
+        assertEquals("✥", BedwarsStar.getPrestigeIcon(3999))
+        assertEquals("✭", BedwarsStar.getPrestigeIcon(4000))
     }
 
     @Test

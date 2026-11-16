@@ -2,6 +2,7 @@ package club.sk1er.mods.levelhead.commands
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.bedwars.FetchResult
+import club.sk1er.mods.levelhead.core.BedwarsStar
 import club.sk1er.mods.levelhead.core.StatsFetcher
 import club.sk1er.mods.levelhead.core.GameMode
 import club.sk1er.mods.levelhead.core.GameStats
@@ -136,7 +137,7 @@ object WhoisService {
             displayName.equals("(nicked)", ignoreCase = true)
 
         val statValue = when (stats) {
-            is GameStats.Bedwars -> stats.star?.let { "$it✪" } ?: "?"
+            is GameStats.Bedwars -> stats.star?.let { "$it${BedwarsStar.getPrestigeIcon(it)}" } ?: "?"
             is GameStats.Duels -> stats.wins?.toString() ?: "?"
             is GameStats.SkyWars -> stats.level?.let { "$it${SkyWarsStats.getDefaultEmblem(it)}" } ?: "?"
             null -> "?"

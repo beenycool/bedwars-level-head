@@ -14,7 +14,7 @@
   "cases": [
     {
       "mode": "BEDWARS",
-      "description": "Rainbow prestige (star 1050): must use the multicolour colormap and the sub-1100 ✫ icon.",
+      "description": "Rainbow prestige (star 1050): must use the multicolour colormap and the 1000+ ✪ icon.",
       "uuid": "0b3d7a1c4e5f42d8a9c6b1e2f3a4c5d6",
       "upstream": {
         "success": true,
@@ -69,8 +69,8 @@
         "skywars_kills": 1500,
         "skywars_deaths": 1200
       },
-      "expectedFooter": "§c[§61§e0§a5§b0§d✫§5]",
-      "expectedTag": "BedWars Star: §c[§61§e0§a5§b0§d✫§5]"
+      "expectedFooter": "§c[§61§e0§a5§b0§d✪§5]",
+      "expectedTag": "BedWars Star: §c[§61§e0§a5§b0§d✪§5]"
     },
     {
       "mode": "DUELS",
