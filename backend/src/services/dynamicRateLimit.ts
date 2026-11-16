@@ -84,7 +84,6 @@ export interface DynamicRateLimitSnapshot {
   networkCallsLastHour: number;
   cacheHitRate: number | null;
   hypixelRemaining: number;
-  computedAt: Date;
 }
 
 export function dynamicRateLimitSnapshot(
@@ -103,7 +102,6 @@ export function dynamicRateLimitSnapshot(
     networkCallsLastHour: signals.networkLastHour,
     cacheHitRate: signals.cacheHitRate,
     hypixelRemaining: Math.max(0, HYPIXEL_HOURLY_QUOTA - signals.networkLastHour),
-    computedAt: new Date(cached?.computedAt ?? now),
   };
 }
 
