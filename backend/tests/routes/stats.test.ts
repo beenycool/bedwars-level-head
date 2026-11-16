@@ -78,6 +78,7 @@ const pageData: StatsPageData = {
     rateLimitNetworkCalls: 40,
     rateLimitCacheHitRate: 0.6,
     rateLimitHypixelRemaining: 7_160,
+    rateLimitRequestBudget: 1_200,
   },
 };
 

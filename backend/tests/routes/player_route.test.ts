@@ -5,6 +5,7 @@ import { AddressInfo } from 'net';
 jest.mock('../../src/config', () => ({
   PUBLIC_RATE_LIMIT_MAX: 600,
   PUBLIC_RATE_LIMIT_WINDOW_MS: 60000,
+  PUBLIC_REQUEST_LIMIT_MAX: 1200,
   ADMIN_API_KEYS: [],
   TRUST_PROXY_CIDRS: [],
   TRUST_SINGLE_PROXY_HOP: false,
@@ -30,6 +31,8 @@ jest.mock('../../src/services/lookupTracking', () => ({
 jest.mock('../../src/middleware/rateLimit', () => ({
   enforceRateLimit: (_req: unknown, _res: unknown, next: () => void) => next(),
   enforceBatchRateLimit: (_req: unknown, _res: unknown, next: () => void) => next(),
+  enforceRequestRateLimit: (_req: unknown, _res: unknown, next: () => void) => next(),
+  refundPublicTokens: jest.fn(),
 }));
 
 jest.mock('../../src/services/player', () => ({

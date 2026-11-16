@@ -85,6 +85,7 @@ function data(overrides: Partial<StatsPageData> = {}): StatsPageData {
       rateLimitNetworkCalls: 120,
       rateLimitCacheHitRate: 0.75,
       rateLimitHypixelRemaining: 7_080,
+      rateLimitRequestBudget: 1_200,
     },
     ...overrides,
   };

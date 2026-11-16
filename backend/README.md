@@ -70,8 +70,11 @@ every ten seconds the limiter divides the remaining Hypixel hourly quota by the
 number of active clients and recent demand, then widens it by the observed cache
 hit rate. Budgets stay between `DYNAMIC_RATE_LIMIT_MIN` and
 `DYNAMIC_RATE_LIMIT_MAX` (default 20–600 identifiers/minute). A full BedWars hub
-is one burst; each identifier in a batch costs one token. `/healthz` bypasses the
-limiter.
+is one burst; each identifier in a batch costs one token. Cache hits refund that
+token because no upstream work happened, so cached lookups are free against the
+identifier budget. A separate fixed guard (`PUBLIC_REQUEST_LIMIT_MAX`, default
+1,200/minute) still caps HTTP requests so a cached-request flood cannot exhaust
+the process. `/healthz` bypasses both limiters.
 
 Set `DYNAMIC_RATE_LIMIT_ENABLED=false` to use the flat `PUBLIC_RATE_LIMIT_MAX`
 budget instead. There is no Redis dependency and no fail-closed mode.
@@ -85,6 +88,7 @@ See `.env.example`. The short version:
 - `ADMIN_API_KEYS` (optional admin purge)
 - `TRUST_PROXY_CIDRS` (optional; one proxy hop is trusted in production when unset)
 - `PUBLIC_RATE_LIMIT_MAX` (default 600/minute)
+- `PUBLIC_REQUEST_LIMIT_MAX` (default 1,200 requests/minute; cached traffic guard)
 - `DYNAMIC_RATE_LIMIT_ENABLED` (default true)
 - `DYNAMIC_RATE_LIMIT_MIN` / `DYNAMIC_RATE_LIMIT_MAX` (default 20 / 600 per minute)
 - `DYNAMIC_RATE_LIMIT_CACHE_TTL_MS` (default 10s)

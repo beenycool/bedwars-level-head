@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { enforceBatchRateLimit, enforceRateLimit } from '../middleware/rateLimit';
+import { enforceBatchRateLimit, enforceRateLimit, enforceRequestRateLimit } from '../middleware/rateLimit';
 import { MAX_BATCH_SIZE } from '../util/validationConstants';
 import { createPlayerBatchHandler, createPlayerLookupHandler } from './playerHandlers';
 
@@ -12,14 +12,14 @@ import { createPlayerBatchHandler, createPlayerLookupHandler } from './playerHan
  */
 const router = Router();
 
-router.get('/:identifier', enforceRateLimit, createPlayerLookupHandler({
+router.get('/:identifier', enforceRequestRateLimit, enforceRateLimit, createPlayerLookupHandler({
   private: true,
   setStaleHeaders: true,
   cacheControl: 'public, max-age=300, stale-while-revalidate=600',
   route: 'legacy',
 }));
 
-router.post('/batch', enforceBatchRateLimit, createPlayerBatchHandler({
+router.post('/batch', enforceRequestRateLimit, enforceBatchRateLimit, createPlayerBatchHandler({
   batchSize: MAX_BATCH_SIZE,
 }));
 

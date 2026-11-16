@@ -1,4 +1,4 @@
-import { PUBLIC_RATE_LIMIT_WINDOW_MS } from '../config';
+import { PUBLIC_RATE_LIMIT_WINDOW_MS, PUBLIC_REQUEST_LIMIT_MAX } from '../config';
 import { publicRateLimiter } from '../middleware/rateLimit';
 import { dynamicRateLimitSnapshot } from './dynamicRateLimit';
 
@@ -31,6 +31,7 @@ export interface RuntimeSnapshot {
   rateLimitNetworkCalls: number;
   rateLimitCacheHitRate: number | null;
   rateLimitHypixelRemaining: number;
+  rateLimitRequestBudget: number;
 }
 
 const MAX_SAMPLES = 120;
@@ -105,5 +106,6 @@ export function runtimeSnapshot(): RuntimeSnapshot {
     rateLimitNetworkCalls: rateLimits.networkCallsLastHour,
     rateLimitCacheHitRate: rateLimits.cacheHitRate,
     rateLimitHypixelRemaining: rateLimits.hypixelRemaining,
+    rateLimitRequestBudget: PUBLIC_REQUEST_LIMIT_MAX,
   };
 }

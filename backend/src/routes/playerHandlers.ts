@@ -6,6 +6,7 @@ import { recordLookups } from '../services/lookupTracking';
 import { HttpError } from '../util/httpError';
 import { extractBatchIdentifiersFromBody, parseAndValidateBatchIdentifiers } from '../util/requestUtils';
 import { getCircuitBreakerState } from '../services/hypixel';
+import { refundPublicTokens } from '../middleware/rateLimit';
 import {
   IDENTIFIER_MAX_LENGTH,
   IDENTIFIER_PATTERN,
@@ -111,6 +112,10 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
           ],
           options.route,
         );
+      }
+
+      if (resolved.source === 'cache') {
+        refundPublicTokens(req, 1);
       }
 
       if (req.fresh) {
@@ -245,6 +250,8 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
           upstreamFailures += 1;
         }
       }
+
+      refundPublicTokens(req, cacheHits);
 
       // Nothing worked and every failure came from upstream: fail the batch so the
       // client backs off instead of interpreting an empty 200 as "no such players".

@@ -5,6 +5,7 @@ import { AddressInfo } from 'net';
 jest.mock('../../src/config', () => ({
   PUBLIC_RATE_LIMIT_MAX: 3,
   PUBLIC_RATE_LIMIT_WINDOW_MS: 60000,
+  PUBLIC_REQUEST_LIMIT_MAX: 1200,
   DYNAMIC_RATE_LIMIT_ENABLED: false,
   DYNAMIC_RATE_LIMIT_MIN: 1,
   DYNAMIC_RATE_LIMIT_MAX: 3,
@@ -119,6 +120,20 @@ describe('TokenBucketLimiter', () => {
     expect(limiter.activeClients(500)).toBe(2);
     expect(limiter.activeClients(2_000)).toBe(0);
   });
+
+  it('refunds cached identifiers without exceeding the bucket ceiling', () => {
+    const limiter = new TokenBucketLimiter({ capacity: 3, windowMs: 60_000 });
+
+    expect(limiter.consume('ip', 3, 0).allowed).toBe(true);
+    expect(limiter.consume('ip', 1, 0).allowed).toBe(false);
+
+    limiter.refund('ip', 2, 0);
+    expect(limiter.consume('ip', 2, 0).allowed).toBe(true);
+    expect(limiter.consume('ip', 1, 0).allowed).toBe(false);
+
+    // A refund for an unknown key is a no-op, not a crash.
+    expect(() => limiter.refund('missing', 5, 0)).not.toThrow();
+  });
 });
 
 describe('/healthz is never rate limited', () => {
@@ -156,6 +171,34 @@ describe('/healthz is never rate limited', () => {
     const health = await request(app, '/healthz');
     expect(health.status).toBe(200);
     expect(health.body.status).toBe('ok');
+  });
+});
+
+describe('cached lookups refund their identifier tokens', () => {
+  const app = createApp();
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    publicRateLimiter.reset();
+    (resolvePlayer as jest.Mock).mockResolvedValue({
+      payload: { displayname: 'TestPlayer', bedwars_experience: 1 },
+      etag: null,
+      lastModified: null,
+      source: 'cache',
+      revalidated: false,
+      uuid: UUID,
+      username: 'TestPlayer',
+      lookupType: 'uuid',
+      lookupValue: UUID,
+      nicked: false,
+    });
+  });
+
+  it('serves more than the three-token budget when every lookup is cached', async () => {
+    for (let i = 0; i < 6; i += 1) {
+      const response = await request(app, '/api/public/player/' + UUID);
+      expect(response.status).toBe(200);
+    }
   });
 });
 

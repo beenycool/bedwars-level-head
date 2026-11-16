@@ -79,11 +79,15 @@ npm test                  # jest
 | `HYPIXEL_API_KEY` | Yes | The shared Hypixel API key |
 | `CACHE_DB_URL` | No | PostgreSQL connection. Without it, the service uses an in-process cache and still works. With it, the `player_stats_cache` table keeps rows for 24 hours |
 | `PUBLIC_RATE_LIMIT_MAX` | No | Hard ceiling for the dynamic per-IP token bucket. Default: 600 identifiers per minute |
+| `PUBLIC_REQUEST_LIMIT_MAX` | No | Fixed per-IP request guard for cached traffic. Default: 1,200 requests per minute |
 
-The per-IP budget is dynamic: it scales between 20 and 600 identifiers per minute from the
-remaining Hypixel quota, active clients and the cache hit rate. Tune it with
+The per-IP identifier budget is dynamic: it scales between 20 and 600 identifiers per minute
+from the remaining Hypixel quota, active clients and the cache hit rate. Tune it with
 `DYNAMIC_RATE_LIMIT_MIN`, `DYNAMIC_RATE_LIMIT_MAX` and `HYPIXEL_HOURLY_QUOTA`, or set
 `DYNAMIC_RATE_LIMIT_ENABLED=false` for a flat `PUBLIC_RATE_LIMIT_MAX` budget.
+
+Cache hits refund their identifier cost, so cached lookups are free against that budget. Every
+HTTP request still counts against the separate `PUBLIC_REQUEST_LIMIT_MAX` guard.
 
 The backend has no Redis dependency, no external dashboard and no `/metrics` endpoint; `/stats`
 is rendered by the service itself.
