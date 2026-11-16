@@ -88,6 +88,7 @@ code {
 .chart-yaxis { display: flex; flex-direction: column; justify-content: space-between; flex: 0 0 auto; min-width: 2.1rem; padding: 1px 0; text-align: right; font-size: 0.66rem; line-height: 1; color: #94a3b8; font-variant-numeric: tabular-nums; }
 .chart-plot { flex: 1; min-width: 0; }
 .chart-plot svg { display: block; width: 100%; height: 100%; }
+.chart-hit { cursor: crosshair; }
 .chart-axis { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.4rem; font-size: 0.72rem; color: #94a3b8; }
 .donut { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; min-height: var(--chart-height); }
 .donut svg { width: 132px; height: 132px; flex: 0 0 132px; }

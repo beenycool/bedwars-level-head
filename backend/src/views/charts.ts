@@ -16,6 +16,10 @@ export interface LineSeries {
   values: number[];
   color: string;
   fill?: boolean;
+  /** Name shown in the hover tooltip, e.g. "Average". */
+  name?: string;
+  /** Optional exact-value formatter for the hover tooltip. */
+  format?: (value: number) => string;
 }
 
 /** Rounds a maximum up to 1/2/5×10ⁿ so the midpoint tick is a readable number. */
@@ -49,6 +53,11 @@ function trimZero(value: number, digits: number): string {
   return value.toFixed(digits).replace(/\.0$/, '');
 }
 
+/** Exact number for a tooltip, unlike the compact axis labels. */
+function formatValue(value: number): string {
+  return Number.isFinite(value) ? new Intl.NumberFormat('en-US').format(Math.round(value)) : '0';
+}
+
 function grid(): string {
   return [0, 0.5, 1]
     .map((fraction) => {
@@ -63,7 +72,7 @@ function yAxis(max: number): string {
   return `<div class="chart-yaxis" aria-hidden="true"><span>${formatTick(max)}</span><span>${formatTick(max / 2)}</span><span>0</span></div>`;
 }
 
-export function lineChart(series: LineSeries[], ariaLabel: string): string {
+export function lineChart(series: LineSeries[], ariaLabel: string, labels?: string[]): string {
   // A single sample would otherwise draw a triangle from the point to the baseline.
   const prepared = series.map((entry) => ({
     ...entry,
@@ -91,12 +100,53 @@ export function lineChart(series: LineSeries[], ariaLabel: string): string {
              <stop offset="100%" stop-color="${entry.color}" stop-opacity="0.01" />
            </linearGradient></defs>`
         : '';
-      return `${gradient}${area}<path d="${line}" fill="none" stroke="${entry.color}" stroke-width="2" vector-effect="non-scaling-stroke" />`;
+      // Keep small dots on readable charts; the hover bands below carry the
+      // values for every bucket, including the dense all-time view.
+      const dots =
+        points.length <= 64
+          ? points
+              .map(
+                (point) =>
+                  `<circle cx="${point.x.toFixed(1)}" cy="${point.y.toFixed(1)}" r="2.2" fill="${entry.color}" opacity="0.85" />`,
+              )
+              .join('')
+          : '';
+      return `${gradient}${area}<path d="${line}" fill="none" stroke="${entry.color}" stroke-width="2" vector-effect="non-scaling-stroke" />${dots}`;
+    })
+    .join('');
+
+  // One full-height transparent band per x bucket, so hovering anywhere in a
+  // column shows every series' value there. Sample the bands on dense charts;
+  // the line still draws all buckets.
+  const hasPoints = prepared.some((entry) => entry.values.length > 0);
+  const hoverStride = Math.max(1, Math.ceil(count / 48));
+  const hoverBands = !hasPoints
+    ? ''
+    : Array.from({ length: count }, (_, position) => position)
+        .filter((position) => position % hoverStride === 0 || position === count - 1)
+        .map((position) => {
+      const x = PAD + position * step;
+      const x0 = Math.max(0, x - step / 2);
+      const x1 = Math.min(WIDTH, x + step / 2);
+      const label = labels?.[Math.min(position, Math.max(0, (labels?.length ?? 1) - 1))];
+      const values = prepared
+        .map((entry) => {
+          const value = entry.values[position];
+          if (value === undefined) {
+            return null;
+          }
+          const text = entry.format ? entry.format(value) : formatTick(value);
+          return `${entry.name ? `${entry.name}: ` : ''}${text}`;
+        })
+        .filter((value): value is string => value !== null)
+        .join(' · ');
+      const tooltip = `${label ? `${label} — ` : ''}${values}`;
+      return `<rect class="chart-hit" x="${x0.toFixed(1)}" y="0" width="${Math.max(1, x1 - x0).toFixed(1)}" height="${HEIGHT}" fill="transparent" pointer-events="all"><title>${escapeText(tooltip)}</title></rect>`;
     })
     .join('');
 
   const svg = `<svg viewBox="0 0 ${WIDTH} ${HEIGHT}" preserveAspectRatio="none" role="img" aria-label="${escapeAttr(ariaLabel)}">
-    ${grid()}${paths}
+    ${grid()}${paths}${hoverBands}
   </svg>`;
 
   return `<div class="chart-frame">${yAxis(max)}<div class="chart-plot">${svg}</div></div>`;
@@ -112,7 +162,7 @@ export function barChart(bars: { label: string; value: number }[], ariaLabel: st
       const height = (Math.max(0, bar.value) / max) * (HEIGHT - 10);
       const x = index * slot + (slot - barWidth) / 2;
       const y = HEIGHT - 4 - height;
-      return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(1, height).toFixed(1)}" rx="2" fill="#3b82f6" />`;
+      return `<rect class="chart-hit" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(1, height).toFixed(1)}" rx="2" fill="#3b82f6"><title>${escapeText(`${bar.label}: ${formatValue(bar.value)}`)}</title></rect>`;
     })
     .join('');
 
@@ -150,9 +200,10 @@ export function donut(
       ? slices
           .map((slice) => {
             const length = (Math.max(0, slice.value) / total) * circumference;
-            const segment = `<circle cx="80" cy="80" r="${radius}" fill="none" stroke="${slice.color}" stroke-width="14"
+            const percent = ((Math.max(0, slice.value) / total) * 100).toFixed(1);
+            const segment = `<circle class="chart-hit" cx="80" cy="80" r="${radius}" fill="none" stroke="${slice.color}" stroke-width="14"
               stroke-dasharray="${length.toFixed(2)} ${(circumference - length).toFixed(2)}"
-              stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 80 80)" />`;
+              stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 80 80)"><title>${escapeText(`${slice.label}: ${formatValue(slice.value)} (${percent}%)`)}</title></circle>`;
             offset += length;
             return segment;
           })

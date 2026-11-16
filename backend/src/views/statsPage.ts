@@ -346,6 +346,23 @@ function timeAxis(query: StatsQuery, series: TimePoint[]): string {
   return `<div class="chart-axis"><span>${escapeHtml(label(first))}</span><span>${escapeHtml(label(last))}</span></div>`;
 }
 
+/** Full UTC timestamp for a chart hover tooltip. */
+function tooltipTime(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
+}
+
+/** Labels for the line-chart hover targets, matching the SQL bucket granularity. */
+function seriesLabels(query: StatsQuery, series: TimePoint[]): string[] {
+  const window = statsWindow(query);
+  const hourly = chartGranularity(window.since, window.until) === 'hour';
+  return series.map((point) => {
+    const date = point.bucket;
+    const key = tooltipTime(date);
+    return hourly ? key : key.slice(0, 10);
+  });
+}
+
 function renderTopPlayers(players: TopPlayer[]): string {
   const max = Math.max(1, ...players.map((player) => player.count));
   const rows = players
@@ -412,10 +429,22 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
       `avg ${formatLatency(lastBucket?.avgLatency)} · p95 ${formatLatency(lastBucket?.p95Latency)}`,
       lineChart(
         [
-          { values: series.map((point) => point.avgLatency), color: '#38bdf8', fill: true },
-          { values: series.map((point) => point.p95Latency), color: '#a78bfa' },
+          {
+            values: series.map((point) => point.avgLatency),
+            color: '#38bdf8',
+            fill: true,
+            name: 'Average',
+            format: (value) => formatLatency(value),
+          },
+          {
+            values: series.map((point) => point.p95Latency),
+            color: '#a78bfa',
+            name: 'p95',
+            format: (value) => formatLatency(value),
+          },
         ],
         'Average and p95 latency over time',
+        seriesLabels(query, series),
       ),
       `${timeAxis(query, series)}<p class="meta chart-foot">Blue: average · purple: p95</p>`,
     )}
@@ -434,7 +463,19 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
     ${chartCard(
       'Requests Over Time',
       `Latest ${formatNumber(lastBucket?.total ?? 0)}`,
-      lineChart([{ values: series.map((point) => point.total), color: '#38bdf8', fill: true }], 'Lookups over time'),
+      lineChart(
+        [
+          {
+            values: series.map((point) => point.total),
+            color: '#38bdf8',
+            fill: true,
+            name: 'Lookups',
+            format: (value) => `${formatNumber(value)} lookups`,
+          },
+        ],
+        'Lookups over time',
+        seriesLabels(query, series),
+      ),
       timeAxis(query, series),
     )}
     ${chartCard(
@@ -446,9 +487,12 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
             values: series.map((point) => (point.total > 0 ? (point.cacheHits / point.total) * 100 : 0)),
             color: '#22d3ee',
             fill: true,
+            name: 'Cache hit rate',
+            format: (value) => `${value.toFixed(1)}%`,
           },
         ],
         'Cache hit rate over time',
+        seriesLabels(query, series),
       ),
       timeAxis(query, series),
     )}
@@ -470,10 +514,22 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
       `${(lastMemory?.rssMb ?? 0).toFixed(0)} MB RSS`,
       lineChart(
         [
-          { values: memory.map((sample) => sample.rssMb), color: '#38bdf8', fill: true },
-          { values: memory.map((sample) => sample.heapMb), color: '#22d3ee' },
+          {
+            values: memory.map((sample) => sample.rssMb),
+            color: '#38bdf8',
+            fill: true,
+            name: 'RSS',
+            format: (value) => `${value.toFixed(0)} MB`,
+          },
+          {
+            values: memory.map((sample) => sample.heapMb),
+            color: '#22d3ee',
+            name: 'Heap',
+            format: (value) => `${value.toFixed(0)} MB`,
+          },
         ],
         'Process memory over time',
+        memory.map((sample) => tooltipTime(sample.at)),
       ),
       `<p class="meta chart-foot">Blue: RSS · cyan: heap · ${formatNumber(memory.length)} ${memory.length === 1 ? 'sample' : 'samples'}</p>`,
     )}
