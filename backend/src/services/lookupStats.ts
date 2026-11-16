@@ -95,10 +95,6 @@ interface BucketRow {
   bucket: Date;
   total: string;
   hits: string;
-}
-
-interface LatencyRow {
-  bucket: Date;
   avg: string | null;
   p95: string | null;
 }
@@ -120,6 +116,9 @@ interface CountRow {
 
 const STAR_ORDER = ['0-9', '10-49', '50-99', '100-199', '200-299', '300-499', '500-999', '1000+', 'Unknown'];
 const LATENCY_ORDER = ['0-50', '50-100', '100-250', '250-500', '500-1000', '1000+'];
+
+/** Upper bound on zero-filled chart buckets; older buckets are trimmed. */
+const MAX_SERIES_BUCKETS = 2_000;
 
 function toNumber(value: unknown): number {
   const parsed = Number(value);
@@ -146,8 +145,10 @@ function whereWindowAndSearch(window: Window, search: string) {
     parts.push(sql`looked_up_at <= ${window.until}`);
   }
   if (search) {
-    const pattern = `%${search.toLowerCase()}%`;
-    parts.push(sql`(username ILIKE ${pattern} OR identifier LIKE ${pattern})`);
+    // Escape LIKE metacharacters so a literal `%`, `_` or `\` only matches itself.
+    // ILIKE on both columns keeps UUID searches case-insensitive, like usernames.
+    const pattern = `%${search.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+    parts.push(sql`(username ILIKE ${pattern} OR identifier ILIKE ${pattern})`);
   }
   return parts.length > 0 ? sql`WHERE ${sql.join(parts, sql` AND `)}` : sql``;
 }
@@ -177,10 +178,8 @@ export async function loadStatsPage(query: StatsQuery): Promise<StatsPageData | 
 
   ensureRuntimeSample();
   const window = statsWindow(query);
-  const bucket =
-    chartGranularity(window.since, window.until) === 'hour'
-      ? sql`date_trunc('hour', looked_up_at)`
-      : sql`date_trunc('day', looked_up_at)`;
+  const unit = chartGranularity(window.since, window.until) === 'hour' ? 'hour' : 'day';
+  const step = unit === 'hour' ? sql`INTERVAL '1 hour'` : sql`INTERVAL '1 day'`;
   const scope = whereWindow(window);
   const pageScope = whereWindowAndSearch(window, query.search);
   const offset = (query.page - 1) * query.limit;
@@ -189,7 +188,6 @@ export async function loadStatsPage(query: StatsQuery): Promise<StatsPageData | 
     summaryRows,
     infraRows,
     requestRows,
-    latencyRows,
     statusRows,
     starRows,
     histogramRows,
@@ -223,23 +221,37 @@ export async function loadStatsPage(query: StatsQuery): Promise<StatsPageData | 
         (SELECT pg_size_pretty(COALESCE(SUM(pg_relation_size(indexrelid)), 0))
            FROM pg_stat_user_indexes) AS index_size
     `.execute(db),
+    // Zero-filled time series: generate_series creates every hourly/daily bucket,
+    // then the scoped rows are left-joined onto it. Empty buckets come back with
+    // zero counts and null latency, which the caller renders as zeros.
     sql<BucketRow>`
-      SELECT ${bucket} AS bucket,
-             COUNT(*) AS total,
-             COUNT(*) FILTER (WHERE source = 'cache') AS hits
-      FROM lookup_log
-      ${scope}
-      GROUP BY 1
-      ORDER BY 1
-    `.execute(db),
-    sql<LatencyRow>`
-      SELECT ${bucket} AS bucket,
-             AVG(latency_ms) AS avg,
-             percentile_cont(0.95) WITHIN GROUP (ORDER BY latency_ms) AS p95
-      FROM lookup_log
-      ${scope}
-      GROUP BY 1
-      ORDER BY 1
+      WITH raw_bounds AS (
+        SELECT
+          date_trunc(${unit}, COALESCE(${window.since}::timestamptz, (SELECT MIN(looked_up_at) FROM lookup_log), NOW())) AS start,
+          date_trunc(${unit}, COALESCE(${window.until}::timestamptz, NOW())) AS finish
+      ),
+      bounds AS (
+        SELECT GREATEST(start, finish - (${MAX_SERIES_BUCKETS - 1} * ${step})) AS start, finish
+        FROM raw_bounds
+      ),
+      buckets AS (
+        SELECT generate_series(start, finish, ${step}) AS bucket
+        FROM bounds
+      ),
+      filtered AS (
+        SELECT date_trunc(${unit}, looked_up_at) AS bucket, source, latency_ms
+        FROM lookup_log
+        ${scope}
+      )
+      SELECT b.bucket AS bucket,
+             COUNT(f.bucket)::text AS total,
+             COUNT(f.bucket) FILTER (WHERE f.source = 'cache')::text AS hits,
+             AVG(f.latency_ms)::text AS avg,
+             percentile_cont(0.95) WITHIN GROUP (ORDER BY f.latency_ms)::text AS p95
+      FROM buckets b
+      LEFT JOIN filtered f ON f.bucket = b.bucket
+      GROUP BY b.bucket
+      ORDER BY b.bucket
     `.execute(db),
     sql<SliceRow>`
       SELECT status::text AS label, COUNT(*) AS count
@@ -311,30 +323,13 @@ export async function loadStatsPage(query: StatsQuery): Promise<StatsPageData | 
   const summaryRow = summaryRows.rows[0];
   const infra = infraRows.rows[0];
 
-  const series = new Map<number, TimePoint>();
-  for (const row of requestRows.rows) {
-    const key = new Date(row.bucket).getTime();
-    series.set(key, {
-      bucket: new Date(key),
-      total: toNumber(row.total),
-      cacheHits: toNumber(row.hits),
-      avgLatency: 0,
-      p95Latency: 0,
-    });
-  }
-  for (const row of latencyRows.rows) {
-    const key = new Date(row.bucket).getTime();
-    const point = series.get(key) ?? {
-      bucket: new Date(key),
-      total: 0,
-      cacheHits: 0,
-      avgLatency: 0,
-      p95Latency: 0,
-    };
-    point.avgLatency = toNumber(row.avg);
-    point.p95Latency = toNumber(row.p95);
-    series.set(key, point);
-  }
+  const series: TimePoint[] = requestRows.rows.map((row) => ({
+    bucket: new Date(row.bucket),
+    total: toNumber(row.total),
+    cacheHits: toNumber(row.hits),
+    avgLatency: toNumber(row.avg),
+    p95Latency: toNumber(row.p95),
+  }));
 
   return {
     summary: {
@@ -357,7 +352,7 @@ export async function loadStatsPage(query: StatsQuery): Promise<StatsPageData | 
       indexSize: infra?.index_size ?? '—',
     },
     charts: {
-      series: [...series.values()].sort((a, b) => a.bucket.getTime() - b.bucket.getTime()),
+      series,
       statuses: statusRows.rows.map((row) => ({ label: row.label, count: toNumber(row.count) })),
       stars: fillSlices(
         starRows.rows.map((row) => ({ label: row.label, count: toNumber(row.count) })),

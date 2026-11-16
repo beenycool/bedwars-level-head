@@ -27,8 +27,8 @@ does not sleep; there is deliberately no `/api/cron/ping` pinger.
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET` | `/api/public/player/:uuid` | Single player, undashed UUID |
-| `POST` | `/api/public/player/batch` | `{ "uuids": [...] }`, up to 20 |
+| `GET` | `/api/public/player/:uuid` | Single player, UUID (dashes optional) |
+| `POST` | `/api/public/player/batch` | `{ "uuids": [...] }`, up to 20 (dashes optional, case-insensitive) |
 | `GET` | `/api/player/...` | Legacy alias for the two routes above; same data, same rate-limit bucket |
 | `GET` | `/healthz` | Liveness. No auth, no rate limit |
 | `GET` | `/stats` | Server-rendered tracking page (`range`, `sort`, `q`, `page`) |

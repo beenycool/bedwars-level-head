@@ -4,7 +4,7 @@ import { AddressInfo } from 'net';
 
 jest.mock('../../src/services/player', () => ({
   resolvePlayer: jest.fn(),
-  warmupPlayerCache: jest.fn().mockResolvedValue(undefined),
+  warmupPlayerCache: jest.fn().mockResolvedValue(new Set()),
 }));
 
 jest.mock('../../src/services/lookupTracking', () => ({
@@ -21,11 +21,14 @@ jest.mock('../../src/middleware/rateLimitPublic', () => ({
 }));
 
 import playerPublicRouter from '../../src/routes/playerPublic';
-import { resolvePlayer } from '../../src/services/player';
+import { resolvePlayer, warmupPlayerCache } from '../../src/services/player';
+import { recordLookups } from '../../src/services/lookupTracking';
 import { getCircuitBreakerState } from '../../src/services/hypixel';
 import { HttpError } from '../../src/util/httpError';
 
 const UUIDS = Array.from({ length: 10 }, (_, index) => index.toString(16).padStart(32, '0'));
+const MIXED_UUID = 'abcdef0123456789abcdef0123456789';
+const MIXED_UUID_DASHED = 'ABCDEF01-2345-6789-ABCD-EF0123456789';
 
 function payloadFor(uuid: string) {
   return {
@@ -102,6 +105,8 @@ describe('POST /api/public/player/batch failure isolation', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    (resolvePlayer as jest.Mock).mockReset();
+    (warmupPlayerCache as jest.Mock).mockResolvedValue(new Set());
     (getCircuitBreakerState as jest.Mock).mockReturnValue({
       state: 'closed',
       failureCount: 0,
@@ -178,5 +183,42 @@ describe('POST /api/public/player/batch failure isolation', () => {
 
     expect(response.status).toBe(503);
     expect(resolvePlayer).not.toHaveBeenCalled();
+  });
+
+  it('normalizes case/dash variants into one warmup, lookup and response key', async () => {
+    const warmMisses = new Set([MIXED_UUID]);
+    (warmupPlayerCache as jest.Mock).mockResolvedValue(warmMisses);
+    (resolvePlayer as jest.Mock).mockImplementation(async (identifier: string) => resolvedFor(identifier));
+
+    const response = await postBatch(app, [MIXED_UUID.toUpperCase(), MIXED_UUID_DASHED]);
+
+    expect(response.status).toBe(200);
+    expect(warmupPlayerCache).toHaveBeenCalledWith([MIXED_UUID]);
+    expect(resolvePlayer).toHaveBeenCalledTimes(1);
+    expect(resolvePlayer).toHaveBeenCalledWith(MIXED_UUID, warmMisses);
+    expect(Object.keys(response.body.data as Record<string, unknown>)).toEqual([MIXED_UUID]);
+  });
+
+  it('tracks a failed batch lookup under the normalized UUID only', async () => {
+    (resolvePlayer as jest.Mock).mockRejectedValue(
+      new HttpError(502, 'HYPIXEL_ERROR', 'Hypixel responded with status 500.'),
+    );
+
+    const response = await postBatch(app, [MIXED_UUID_DASHED]);
+
+    expect(response.status).toBe(503);
+    expect(recordLookups).toHaveBeenCalledWith(
+      [expect.objectContaining({ identifier: MIXED_UUID, status: 502 })],
+      'batch',
+    );
+  });
+
+  it('rejects a batch containing a username instead of logging it', async () => {
+    const response = await postBatch(app, [MIXED_UUID, 'Notch']);
+
+    expect(response.status).toBe(400);
+    expect(response.body.cause).toBe('INVALID_IDENTIFIER');
+    expect(warmupPlayerCache).not.toHaveBeenCalled();
+    expect(recordLookups).not.toHaveBeenCalled();
   });
 });

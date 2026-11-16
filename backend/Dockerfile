@@ -30,6 +30,9 @@ WORKDIR /app
 COPY --from=builder /app/dist/index.js ./dist/index.js
 COPY --from=builder /app/package.json ./package.json
 
+# The bundle only reads its files and listens on a port; run unprivileged.
+USER node
+
 ENV NODE_ENV=production
 ENV NODE_OPTIONS="--max-old-space-size=512"
 

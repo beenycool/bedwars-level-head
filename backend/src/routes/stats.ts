@@ -24,7 +24,7 @@ const enforceStatsRateLimit = createRateLimitMiddleware({
   label: 'stats',
 });
 
-router.get('/export.csv', enforceStatsRateLimit, async (req, res, next) => {
+router.get('/export.csv', enforceStatsRateLimit, async (req, res) => {
   try {
     const query = parseStatsQuery(req.query as Record<string, unknown>);
     const rows = await loadLookupRowsForExport(query);
@@ -39,7 +39,10 @@ router.get('/export.csv', enforceStatsRateLimit, async (req, res, next) => {
     res.set('Content-Disposition', `attachment; filename="${filename}"`);
     res.type('text/csv; charset=utf-8').send(renderLookupCsv(rows));
   } catch (error) {
-    next(error);
+    // A broken database is a service outage, not an internal bug: answer with the
+    // same plain-text 503 the route uses for an unconfigured database.
+    logger.error({ err: error }, '[stats] failed to export lookup CSV');
+    res.status(503).type('text/plain').send('Tracking database unavailable. Try again shortly.');
   }
 });
 

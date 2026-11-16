@@ -7,7 +7,7 @@ import {
 import { getDynamicPublicLimit } from '../services/dynamicRateLimit';
 import { HttpError } from '../util/httpError';
 import { logger } from '../util/logger';
-import { MAX_BATCH_SIZE } from '../util/validationConstants';
+import { MAX_BATCH_SIZE, normalizeIdentifier } from '../util/validationConstants';
 import { extractBatchIdentifiersFromBody } from '../util/requestUtils';
 
 export interface ConsumeResult {
@@ -275,7 +275,9 @@ export function resolveBatchCost(req: Request): number {
     if (typeof value === 'string') {
       const trimmed = value.trim();
       if (trimmed.length > 0) {
-        unique.add(trimmed);
+        // Case and dash variants of the same UUID are one identifier, matching
+        // the batch handler's deduplication.
+        unique.add(normalizeIdentifier(trimmed));
       }
     }
   }

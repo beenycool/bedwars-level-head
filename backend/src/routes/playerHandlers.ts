@@ -7,12 +7,7 @@ import { HttpError } from '../util/httpError';
 import { extractBatchIdentifiersFromBody, parseAndValidateBatchIdentifiers } from '../util/requestUtils';
 import { getCircuitBreakerState } from '../services/hypixel';
 import { refundPublicTokens } from '../middleware/rateLimit';
-import {
-  IDENTIFIER_MAX_LENGTH,
-  IDENTIFIER_PATTERN,
-  isUuid,
-  normalizeIdentifier,
-} from '../util/validationConstants';
+import { IDENTIFIER_MAX_LENGTH, normalizeUuid } from '../util/validationConstants';
 import { computeResponseEtag } from '../util/etag';
 
 interface PlayerLookupHandlerOptions {
@@ -45,12 +40,6 @@ function upstreamUnavailable(retryAfterSeconds: number): HttpError {
   );
 }
 
-/** Only 32-character UUIDs are tracked; usernames rejected upstream never pollute the table. */
-function trackableIdentifier(raw: string): string | null {
-  const normalized = normalizeIdentifier(raw);
-  return isUuid(normalized) ? normalized : null;
-}
-
 function failureStatus(error: unknown): number {
   return error instanceof HttpError ? error.status : 500;
 }
@@ -68,16 +57,18 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
       return;
     }
 
-    if (!IDENTIFIER_PATTERN.test(identifier)) {
-      next(new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a valid undashed UUID.'));
+    // Dashed and undashed UUIDs are equivalent; tracking and the cache both use
+    // the lowercase, undashed form.
+    const trackingKey = normalizeUuid(identifier);
+    if (!trackingKey) {
+      next(new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a UUID (dashes optional).'));
       return;
     }
 
     const startedAt = Date.now();
-    const trackingKey = trackableIdentifier(identifier);
 
     try {
-      const resolved = await resolvePlayer(identifier);
+      const resolved = await resolvePlayer(trackingKey);
       const responseEtag = computeResponseEtag(resolved.etag, resolved.nicked);
       if (responseEtag) {
         res.set('ETag', responseEtag);
@@ -91,22 +82,20 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
       res.set('Cache-Control', options.cacheControl);
 
       const status = req.fresh ? 304 : 200;
-      if (trackingKey) {
-        recordLookups(
-          [
-            {
-              identifier: trackingKey,
-              username: resolved.username,
-              bedwarsExperience: resolved.payload.bedwars_experience,
-              nicked: resolved.nicked,
-              source: resolved.source,
-              status,
-              latencyMs: Date.now() - startedAt,
-            },
-          ],
-          options.route,
-        );
-      }
+      recordLookups(
+        [
+          {
+            identifier: trackingKey,
+            username: resolved.username,
+            bedwarsExperience: resolved.payload.bedwars_experience,
+            nicked: resolved.nicked,
+            source: resolved.source,
+            status,
+            latencyMs: Date.now() - startedAt,
+          },
+        ],
+        options.route,
+      );
 
       if (resolved.source === 'cache') {
         refundPublicTokens(req, 1);
@@ -124,22 +113,20 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
         ...(options.private && isCircuitOpen ? { degradedMode: true } : {}),
       });
     } catch (error) {
-      if (trackingKey) {
-        recordLookups(
-          [
-            {
-              identifier: trackingKey,
-              username: null,
-              bedwarsExperience: null,
-              nicked: false,
-              source: 'network',
-              status: failureStatus(error),
-              latencyMs: Date.now() - startedAt,
-            },
-          ],
-          options.route,
-        );
-      }
+      recordLookups(
+        [
+          {
+            identifier: trackingKey,
+            username: null,
+            bedwarsExperience: null,
+            nicked: false,
+            source: 'network',
+            status: failureStatus(error),
+            latencyMs: Date.now() - startedAt,
+          },
+        ],
+        options.route,
+      );
       next(error);
     }
   };
@@ -169,19 +156,19 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
 
     const { uniqueUuids, hasInvalid } = parseAndValidateBatchIdentifiers(uuidsValue);
 
-    if (uniqueUuids.length === 0) {
-      res.json({ success: true, data: {} });
-      return;
-    }
-
     if (hasInvalid) {
       next(
         new HttpError(
           400,
           'INVALID_IDENTIFIER',
-          'All identifiers must be valid undashed UUIDs.',
+          'All identifiers must be valid UUIDs (dashes optional).',
         ),
       );
+      return;
+    }
+
+    if (uniqueUuids.length === 0) {
+      res.json({ success: true, data: {} });
       return;
     }
 
@@ -190,7 +177,7 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
         throw upstreamUnavailable(30);
       }
 
-      await warmupPlayerCache(uniqueUuids);
+      const warmedMisses = await warmupPlayerCache(uniqueUuids);
 
       const observations: LookupObservation[] = [];
       const outcomes = await Promise.all(
@@ -198,7 +185,7 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
           batchLimit(async () => {
             const startedAt = Date.now();
             try {
-              const resolved = await resolvePlayer(identifier);
+              const resolved = await resolvePlayer(identifier, warmedMisses);
               observations.push({
                 identifier,
                 username: resolved.username,
@@ -210,15 +197,20 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
               });
               return { ok: true as const, identifier, resolved };
             } catch (error) {
-              observations.push({
-                identifier,
-                username: null,
-                bedwarsExperience: null,
-                nicked: false,
-                source: 'network',
-                status: failureStatus(error),
-                latencyMs: Date.now() - startedAt,
-              });
+              // Batch validation already normalized these, but keep the tracking
+              // table UUID-only if that ever changes: usernames are not loggable.
+              const tracked = normalizeUuid(identifier);
+              if (tracked) {
+                observations.push({
+                  identifier: tracked,
+                  username: null,
+                  bedwarsExperience: null,
+                  nicked: false,
+                  source: 'network',
+                  status: failureStatus(error),
+                  latencyMs: Date.now() - startedAt,
+                });
+              }
               return { ok: false as const, identifier, error };
             }
           }),

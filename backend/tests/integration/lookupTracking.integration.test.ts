@@ -150,8 +150,14 @@ describeIntegration('lookup analytics against PostgreSQL', () => {
     expect(page?.summary.latency.p50).toBe(15);
     expect(page?.summary.latency.max).toBe(120);
     expect(page?.summary.databaseSize).toMatch(/kB|MB|GB/);
-    expect(page?.charts.series).toHaveLength(1);
-    expect(page?.charts.series[0].total).toBe(3);
+    // The 24h window is zero-filled to one hourly bucket per hour; every row
+    // landed in the current hour.
+    const series = page?.charts.series ?? [];
+    expect(series).toHaveLength(25);
+    expect(series.reduce((sum, point) => sum + point.total, 0)).toBe(3);
+    expect(series[series.length - 1]).toMatchObject({ total: 3, cacheHits: 2 });
+    expect(series[series.length - 1].avgLatency).toBeCloseTo(145 / 3, 1);
+    expect(series[series.length - 1].p95Latency).toBeCloseTo(109.5, 1);
     expect(page?.charts.statuses).toEqual([{ label: '200', count: 3 }]);
     expect(page?.charts.stars).toEqual(
       expect.arrayContaining([
@@ -210,6 +216,88 @@ describeIntegration('lookup analytics against PostgreSQL', () => {
       query({ from: new Date(Date.now() - 7_200_000), to: new Date(Date.now() - 3_600_000) }),
     );
     expect(outside?.summary.total).toBe(0);
+  });
+
+  it('zero-fills hours without lookups instead of collapsing the gap', async () => {
+    const base = new Date('2026-11-10T00:00:00Z');
+    const first = new Date(base.getTime() + 20 * 60_000);
+    const second = new Date(base.getTime() + 2 * 3_600_000 + 20 * 60_000);
+
+    await sql`
+      INSERT INTO lookup_log (looked_up_at, identifier, username, stars, nicked, source, route, status, latency_ms)
+      VALUES
+        (${first}, ${UUID_NOTCH}, 'Notch', NULL, FALSE, 'network', 'public', 200, 40),
+        (${second}, ${UUID_JEB}, 'Jeb', NULL, FALSE, 'cache', 'public', 200, 10)
+    `.execute(db);
+
+    const page = await loadStatsPage(
+      query({ from: base, to: new Date(base.getTime() + 3 * 3_600_000 + 20 * 60_000) }),
+    );
+
+    expect(page?.charts.series.map((point) => point.total)).toEqual([1, 0, 1, 0]);
+    expect(page?.charts.series.map((point) => point.cacheHits)).toEqual([0, 0, 1, 0]);
+    expect(page?.charts.series[1]).toMatchObject({ avgLatency: 0, p95Latency: 0 });
+    expect(page?.charts.series[0].avgLatency).toBe(40);
+    // Empty buckets must not change the summary or table filters.
+    expect(page?.summary.total).toBe(2);
+    expect(page?.matching).toBe(2);
+  });
+
+  it('zero-fills daily buckets for multi-day windows', async () => {
+    const from = new Date('2026-11-01T12:00:00Z');
+    const to = new Date('2026-11-05T12:00:00Z');
+    const at = new Date('2026-11-03T10:00:00Z');
+
+    await sql`
+      INSERT INTO lookup_log (looked_up_at, identifier, username, stars, nicked, source, route, status, latency_ms)
+      VALUES (${at}, ${UUID_NOTCH}, 'Notch', NULL, FALSE, 'network', 'public', 200, 40)
+    `.execute(db);
+
+    const page = await loadStatsPage(query({ from, to }));
+    const series = page?.charts.series ?? [];
+
+    expect(series.map((point) => point.bucket.toISOString().slice(0, 10))).toEqual([
+      '2026-11-01',
+      '2026-11-02',
+      '2026-11-03',
+      '2026-11-04',
+      '2026-11-05',
+    ]);
+    expect(series.map((point) => point.total)).toEqual([0, 0, 1, 0, 0]);
+  });
+
+  it('escapes LIKE wildcards and matches identifiers case-insensitively', async () => {
+    const rows: [string, string | null][] = [
+      ['a'.repeat(32), 'Alpha_One'],
+      ['b'.repeat(32), 'AlphaXOne'],
+      ['c'.repeat(32), '100%Real'],
+      ['d'.repeat(32), '1000Real'],
+      ['e'.repeat(32), 'Back\\slash'],
+    ];
+    const at = new Date();
+    for (const [identifier, username] of rows) {
+      await sql`
+        INSERT INTO lookup_log (looked_up_at, identifier, username, stars, nicked, source, route, status, latency_ms)
+        VALUES (${at}, ${identifier}, ${username}, NULL, FALSE, 'network', 'public', 200, 50)
+      `.execute(db);
+    }
+
+    const underscore = await loadStatsPage(query({ search: 'alpha_one' }));
+    expect(underscore?.matching).toBe(1);
+    expect(underscore?.rows[0].username).toBe('Alpha_One');
+
+    const percent = await loadStatsPage(query({ search: '100%' }));
+    expect(percent?.matching).toBe(1);
+    expect(percent?.rows[0].username).toBe('100%Real');
+
+    const backslash = await loadStatsPage(query({ search: '\\' }));
+    expect(backslash?.matching).toBe(1);
+    expect(backslash?.rows[0].username).toBe('Back\\slash');
+
+    // Identifier search is case-insensitive like the username search.
+    const uuid = await loadStatsPage(query({ search: 'A'.repeat(32) }));
+    expect(uuid?.matching).toBe(1);
+    expect(uuid?.rows[0].identifier).toBe('a'.repeat(32));
   });
 
   it('prunes log rows past retention', async () => {

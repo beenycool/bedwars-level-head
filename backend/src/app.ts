@@ -22,7 +22,9 @@ export function createApp(): express.Express {
   app.use(requestId);
 
   // Browser CORS is not needed by the mod (no Origin header), so only same-origin
-  // and header-less requests are allowed.
+  // and header-less requests are allowed. A foreign Origin is served without CORS
+  // headers rather than failing the request: rejecting it here would turn an
+  // otherwise public GET into a 500 through the error middleware.
   app.use(cors((req, callback) => {
     const origin = req.headers.origin;
     const serverOrigin = `${req.protocol}://${req.get('host')}`;
@@ -30,7 +32,7 @@ export function createApp(): express.Express {
       callback(null, { origin: true });
       return;
     }
-    callback(new Error('Not allowed by CORS'));
+    callback(null, { origin: false });
   }));
 
   app.use(helmet({

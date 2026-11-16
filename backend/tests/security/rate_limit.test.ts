@@ -46,7 +46,7 @@ jest.mock('../../src/services/hypixel', () => ({
 
 jest.mock('../../src/services/player', () => ({
   resolvePlayer: jest.fn(),
-  warmupPlayerCache: jest.fn().mockResolvedValue(undefined),
+  warmupPlayerCache: jest.fn().mockResolvedValue(new Set()),
 }));
 
 jest.mock('../../src/services/statsCache', () => ({
@@ -56,8 +56,9 @@ jest.mock('../../src/services/statsCache', () => ({
 }));
 
 import { createApp } from '../../src/app';
-import { TokenBucketLimiter, publicRateLimiter } from '../../src/middleware/rateLimit';
+import { resolveBatchCost, TokenBucketLimiter, publicRateLimiter } from '../../src/middleware/rateLimit';
 import { resolvePlayer } from '../../src/services/player';
+import type { Request } from 'express';
 
 const UUID = '530fa96a303d42199b5a329d493a5573';
 
@@ -136,6 +137,40 @@ describe('TokenBucketLimiter', () => {
   });
 });
 
+describe('resolveBatchCost', () => {
+  const requestWith = (uuids: unknown[]): Request => ({ body: { uuids } }) as Request;
+
+  it('charges once for case and dash variants of the same UUID', () => {
+    expect(
+      resolveBatchCost(
+        requestWith([
+          'ABCDEF01-2345-6789-ABCD-EF0123456789',
+          'abcdef0123456789abcdef0123456789',
+        ]),
+      ),
+    ).toBe(1);
+  });
+
+  it('deduplicates exact repeats and caps the batch cost', () => {
+    expect(resolveBatchCost(requestWith(['a'.repeat(32), 'a'.repeat(32)]))).toBe(1);
+    expect(
+      resolveBatchCost(requestWith(Array.from({ length: 40 }, (_, index) => index.toString(16).padStart(32, '0')))),
+    ).toBe(20);
+  });
+});
+
+describe('CORS', () => {
+  const app = createApp();
+
+  it('serves a foreign Origin without CORS headers instead of returning a 500', async () => {
+    const response = await request(app, '/healthz', { origin: 'https://evil.example' });
+
+    expect(response.status).toBe(200);
+    expect(response.headers['access-control-allow-origin']).toBeUndefined();
+    expect(response.body).toMatchObject({ status: 'ok' });
+  });
+});
+
 describe('/healthz is never rate limited', () => {
   const app = createApp();
 
@@ -197,12 +232,13 @@ describe('cached lookups refund their identifier tokens', () => {
 async function request(
   app: express.Express,
   path: string,
+  headers: Record<string, string> = {},
 ): Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Record<string, unknown> }> {
   const server = app.listen(0);
   const address = server.address() as AddressInfo;
 
   const response = await new Promise<{ status: number; headers: http.IncomingHttpHeaders; body: Record<string, unknown> }>((resolve, reject) => {
-    const req = http.request({ hostname: '127.0.0.1', method: 'GET', path, port: address.port }, (res) => {
+    const req = http.request({ hostname: '127.0.0.1', method: 'GET', path, port: address.port, headers }, (res) => {
       let data = '';
       res.on('data', (chunk) => (data += chunk));
       res.on('end', () =>

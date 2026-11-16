@@ -224,4 +224,14 @@ describe('GET /stats/export.csv', () => {
     expect(response.status).toBe(503);
     expect(response.body).toContain('Tracking database unavailable');
   });
+
+  it('returns a plain-text 503 instead of the JSON error handler when the query throws', async () => {
+    (loadLookupRowsForExport as jest.Mock).mockRejectedValue(new Error('connection reset'));
+
+    const response = await makeRequest(app, '/stats/export.csv');
+
+    expect(response.status).toBe(503);
+    expect(response.headers['content-type']).toContain('text/plain');
+    expect(response.body).toContain('Tracking database unavailable');
+  });
 });

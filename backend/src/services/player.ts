@@ -1,6 +1,6 @@
 import { LRUCache } from 'lru-cache';
 import { HttpError } from '../util/httpError';
-import { IDENTIFIER_MAX_LENGTH, isUuid, normalizeIdentifier } from '../util/validationConstants';
+import { IDENTIFIER_MAX_LENGTH, normalizeUuid } from '../util/validationConstants';
 import { fetchHypixelPlayer, extractMinimalStats, MinimalPlayerStats } from './hypixel';
 import { logger } from '../util/logger';
 import {
@@ -21,16 +21,9 @@ const memoizedResults = new LRUCache<string, ResolvedPlayer>({
 
 const inFlightRequests = new Map<string, Promise<ResolvedPlayer>>();
 
-/**
- * UUIDs that a recent batch warmup already looked up in SQL and did not find.
- * Saves one duplicate SELECT per cache miss in a 100-player lobby.
- */
-const warmedMisses = new Set<string>();
-
 export function clearInMemoryPlayerCache(): void {
   memoizedResults.clear();
   inFlightRequests.clear();
-  warmedMisses.clear();
 }
 
 export interface ResolvedPlayer {
@@ -117,17 +110,26 @@ async function loadFromUpstream(uuid: string): Promise<ResolvedPlayer> {
 }
 
 /**
- * Resolves one player by undashed UUID. Lookups are deduped in-process (memoised
- * results plus a single in-flight promise per UUID) and backed by the SQL cache.
+ * Resolves one player by UUID (dashed or undashed). Lookups are deduped in-process
+ * (memoised results plus a single in-flight promise per UUID) and backed by the SQL
+ * cache.
+ *
+ * `warmedMisses` is the per-request set returned by `warmupPlayerCache()`. When the
+ * caller supplies it, a UUID the warmup already missed in SQL skips the duplicate
+ * SELECT. The set is never shared between requests, so an overlapping resolve cannot
+ * leave a stale miss behind for a later request.
  */
-export async function resolvePlayer(identifier: string): Promise<ResolvedPlayer> {
+export async function resolvePlayer(
+  identifier: string,
+  warmedMisses?: Set<string>,
+): Promise<ResolvedPlayer> {
   if (!identifier || typeof identifier !== 'string' || identifier.length > IDENTIFIER_MAX_LENGTH) {
     throw new HttpError(400, 'INVALID_IDENTIFIER', `Identifier must be ${IDENTIFIER_MAX_LENGTH} characters or less.`);
   }
 
-  const uuid = normalizeIdentifier(identifier);
-  if (!isUuid(uuid)) {
-    throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a 32-character UUID (no dashes).');
+  const uuid = normalizeUuid(identifier);
+  if (!uuid) {
+    throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a 32-character UUID (dashes optional).');
   }
 
   const memoized = memoizedResults.get(uuid);
@@ -143,7 +145,7 @@ export async function resolvePlayer(identifier: string): Promise<ResolvedPlayer>
 
   const promise = (async (): Promise<ResolvedPlayer> => {
     // A batch warmup that already missed in SQL does not need a second SELECT.
-    const warmedMiss = warmedMisses.delete(uuid);
+    const warmedMiss = warmedMisses?.delete(uuid) ?? false;
     const cached = warmedMiss ? null : await getPlayerStats(buildPlayerCacheKey(uuid));
     const resolved = cached ? fromCacheEntry(cached) : await loadFromUpstream(uuid);
     memoizedResults.set(uuid, resolved);
@@ -158,24 +160,25 @@ export async function resolvePlayer(identifier: string): Promise<ResolvedPlayer>
 
 /**
  * Pre-fills the in-process cache for a batch from a single SQL round-trip.
- * Identifiers that miss are resolved individually by the caller.
+ * Returns the UUIDs that were absent from SQL so the caller can tell `resolvePlayer`
+ * to skip one SELECT each. The set is scoped to that batch request only.
  */
-export async function warmupPlayerCache(identifiers: string[]): Promise<void> {
-  if (warmedMisses.size > 10_000) {
-    warmedMisses.clear();
-  }
+export async function warmupPlayerCache(identifiers: string[]): Promise<Set<string>> {
   const keys: { key: string; uuid: string }[] = [];
+  const requested = new Set<string>();
   for (const identifier of identifiers) {
-    const uuid = normalizeIdentifier(identifier);
-    if (isUuid(uuid)) {
+    const uuid = normalizeUuid(identifier);
+    if (uuid && !requested.has(uuid)) {
+      requested.add(uuid);
       keys.push({ key: buildPlayerCacheKey(uuid), uuid });
     }
   }
   if (keys.length === 0) {
-    return;
+    return new Set();
   }
 
   const entries = await getManyPlayerStats(keys.map((entry) => entry.key));
+  const misses = new Set<string>();
   for (const { key, uuid } of keys) {
     if (memoizedResults.has(uuid)) {
       continue;
@@ -184,7 +187,8 @@ export async function warmupPlayerCache(identifiers: string[]): Promise<void> {
     if (entry) {
       memoizedResults.set(uuid, fromCacheEntry(entry));
     } else {
-      warmedMisses.add(uuid);
+      misses.add(uuid);
     }
   }
+  return misses;
 }

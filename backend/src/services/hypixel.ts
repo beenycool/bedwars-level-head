@@ -375,6 +375,7 @@ export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPla
     // SkyWars
     skywars_experience: skywars.skywars_experience
                        ?? skywars.SkyWars_experience
+                       ?? skywars.experience
                        ?? skywars.Experience
                        ?? null,
     skywars_wins: skywarsAggregates.wins,

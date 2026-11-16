@@ -50,6 +50,7 @@ jest.mock('../../src/services/hypixel', () => ({
 
 import playerRouter from '../../src/routes/player';
 import { resolvePlayer } from '../../src/services/player';
+import { recordLookups } from '../../src/services/lookupTracking';
 
 function createTestApp(): Express {
   const app = express();
@@ -178,5 +179,31 @@ describe('GET /api/player/:identifier happy path', () => {
     // Express may add its own weak ETag for the JSON body; the player ETag must not be present.
     expect(response.headers['etag'] ?? '').not.toContain('player-v2');
     expect(response.body).toMatchObject({ code: 'PLAYER_NOT_FOUND' });
+  });
+
+  it('normalizes a dashed, uppercase UUID before resolving and tracking it', async () => {
+    (resolvePlayer as jest.Mock).mockResolvedValue({ ...baseResolved });
+
+    const response = await makeRequest(
+      app,
+      'GET',
+      '/api/player/530FA96A-303D-4219-9B5A-329D493A5573',
+    );
+
+    expect(response.status).toBe(200);
+    expect(resolvePlayer).toHaveBeenCalledWith('530fa96a303d42199b5a329d493a5573');
+    expect(recordLookups).toHaveBeenCalledWith(
+      [expect.objectContaining({ identifier: '530fa96a303d42199b5a329d493a5573' })],
+      'legacy',
+    );
+  });
+
+  it('rejects Minecraft usernames now that only UUID lookups are supported', async () => {
+    const response = await makeRequest(app, 'GET', '/api/player/Notch');
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('INVALID_IDENTIFIER');
+    expect(resolvePlayer).not.toHaveBeenCalled();
+    expect(recordLookups).not.toHaveBeenCalled();
   });
 });

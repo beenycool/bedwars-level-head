@@ -152,6 +152,42 @@ describe('extractMinimalStats Optimization', () => {
     expect(stats.skywars_deaths).toBe(98);
   });
 
+  it('reads lowercase skywars.experience like the mod parser', () => {
+    const payload: HypixelPlayerResponse = {
+      success: true,
+      player: {
+        uuid: 'test-uuid-skywars-experience',
+        displayname: 'SkyWarsPlayer',
+        stats: {
+          SkyWars: {
+            experience: 123_456,
+          },
+        },
+      },
+    };
+
+    expect(extractMinimalStats(payload).skywars_experience).toBe(123_456);
+  });
+
+  it('prefers skywars_experience over the lowercase fallback', () => {
+    const payload: HypixelPlayerResponse = {
+      success: true,
+      player: {
+        uuid: 'test-uuid-skywars-precedence',
+        displayname: 'SkyWarsPlayer',
+        stats: {
+          SkyWars: {
+            skywars_experience: 999,
+            experience: 123,
+            Experience: 456,
+          },
+        },
+      },
+    };
+
+    expect(extractMinimalStats(payload).skywars_experience).toBe(999);
+  });
+
   it('passes the selected BedWars star cosmetic through', () => {
     const payload: HypixelPlayerResponse = {
       success: true,

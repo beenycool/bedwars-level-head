@@ -103,6 +103,10 @@ describe('statsHref', () => {
   });
 });
 
+function formSection(html: string, marker: string): string {
+  return html.split(marker)[1]?.split('</form>')[0] ?? '';
+}
+
 describe('renderStatsPage', () => {
   it('renders every section of the analytics page', () => {
     const html = renderStatsPage({ query, data: data(), retentionDays: 7 });
@@ -184,6 +188,79 @@ describe('renderStatsPage', () => {
 
     expect(off).not.toContain('http-equiv="refresh"');
     expect(on).toContain('http-equiv="refresh" content="30"');
+  });
+
+  it('does not shadow the search form with hidden q/sort inputs', () => {
+    const html = renderStatsPage({
+      query: { ...query, range: '7d', search: 'Notch', sort: 'slowest', page: 2 },
+      data: data({ page: 2 }),
+      retentionDays: 7,
+    });
+    const form = formSection(html, 'class="search-box"');
+
+    expect(form).not.toContain('type="hidden" name="q"');
+    expect(form).not.toContain('type="hidden" name="sort"');
+    expect(form).toContain('type="search" name="q"');
+    expect(form).toContain('<option value="slowest" selected>');
+    expect(form).toContain('<input type="hidden" name="range" value="7d">');
+  });
+
+  it('keeps the range preset when the filter form is applied', () => {
+    const html = renderStatsPage({ query: { ...query, range: '7d' }, data: data(), retentionDays: 7 });
+    const form = formSection(html, 'id="filterForm"');
+
+    expect(form).toContain('<input type="hidden" name="range" value="7d">');
+  });
+
+  it('keeps an active custom window when the filter form is submitted', () => {
+    const html = renderStatsPage({
+      query: {
+        ...query,
+        from: new Date('2026-11-01T10:00:00Z'),
+        to: new Date('2026-11-02T10:00:00Z'),
+      },
+      data: data(),
+      retentionDays: 7,
+    });
+    const form = formSection(html, 'id="filterForm"');
+
+    expect(form).toContain('name="from" value="2026-11-01T10:00"');
+    expect(form).toContain('name="to" value="2026-11-02T10:00"');
+  });
+
+  it('labels a custom date window instead of the range preset', () => {
+    const html = renderStatsPage({
+      query: {
+        ...query,
+        from: new Date('2026-11-01T10:00:00Z'),
+        to: new Date('2026-11-02T10:00:00Z'),
+      },
+      data: data(),
+      retentionDays: 7,
+    });
+
+    expect(html).toContain('2026-11-01T10:00 → 2026-11-02T10:00');
+    expect(html).not.toContain('Last 24 hours');
+  });
+
+  it('uses clock labels for a short custom window', () => {
+    const base = data();
+    const series = [
+      { bucket: new Date('2026-11-15T10:00:00Z'), total: 1, cacheHits: 0, avgLatency: 10, p95Latency: 10 },
+      { bucket: new Date('2026-11-15T11:00:00Z'), total: 0, cacheHits: 0, avgLatency: 0, p95Latency: 0 },
+      { bucket: new Date('2026-11-15T12:00:00Z'), total: 2, cacheHits: 1, avgLatency: 10, p95Latency: 10 },
+    ];
+    const html = renderStatsPage({
+      query: {
+        ...query,
+        from: new Date('2026-11-15T10:00:00Z'),
+        to: new Date('2026-11-15T12:00:00Z'),
+      },
+      data: data({ charts: { ...base.charts, series } }),
+      retentionDays: 7,
+    });
+
+    expect(html).toContain('<span>10:00</span><span>12:00</span>');
   });
 });
 
