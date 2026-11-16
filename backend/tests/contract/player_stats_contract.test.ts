@@ -9,7 +9,7 @@ import { AddressInfo } from 'net';
  *
  * Hypixel is mocked at the service boundary with the fixture's upstream payload.
  * Everything below that boundary is production code: the handler, resolvePlayer,
- * shapePayload, extractMinimalStats and the HTTP response assembly.
+ * extractMinimalStats and the HTTP response assembly.
  */
 jest.mock('../../src/services/statsCache', () => ({
   buildPlayerCacheKey: (uuid: string) => `player:${uuid}`,
@@ -28,7 +28,7 @@ jest.mock('../../src/services/hypixel', () => {
 
 import { createPlayerBatchHandler, createPlayerLookupHandler } from '../../src/routes/playerHandlers';
 import { clearInMemoryPlayerCache } from '../../src/services/player';
-import { fetchHypixelPlayer, shapePayload } from '../../src/services/hypixel';
+import { fetchHypixelPlayer } from '../../src/services/hypixel';
 import { MAX_BATCH_SIZE } from '../../src/util/validationConstants';
 
 interface ContractCase {
@@ -62,7 +62,6 @@ function createTestApp(): Express {
     '/player/:identifier',
     createPlayerLookupHandler({
       private: false,
-      setStaleHeaders: false,
       cacheControl: 'no-store',
       route: 'public',
     }),
@@ -124,8 +123,7 @@ describe('player-stats contract fixture', () => {
     (fetchHypixelPlayer as jest.Mock).mockImplementation(async (uuid: string) => {
       const contractCase = upstreamFor(uuid);
       return {
-        // Production reshaping runs; only the upstream HTTP call is mocked.
-        payload: shapePayload(contractCase.upstream as unknown as Parameters<typeof shapePayload>[0]),
+        payload: contractCase.upstream,
         etag: null,
         lastModified: null,
       };

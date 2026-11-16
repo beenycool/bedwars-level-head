@@ -265,7 +265,8 @@ function renderRateLimiting(data: StatsPageData): string {
       <p class="stat-value">${formatNumber(runtime.rateLimitNetworkCalls)}/h</p>
       <p class="stat-sub">${cacheHit} · ${formatNumber(runtime.rateLimitHypixelRemaining)} quota left</p>
     </div>
-  </div>`;
+  </div>
+  <p class="meta">Cache hits refund their identifier cost; every request still counts against the ${formatNumber(runtime.rateLimitRequestBudget)}/min request guard.</p>`;
 }
 
 function legend(slices: { label: string; value: number; color: string }[], total: number): string {

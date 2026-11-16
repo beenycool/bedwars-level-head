@@ -69,13 +69,6 @@ class RateLimiter(
         }
     }
 
-    /**
-     * Backwards-compatible name for [tryAcquire]. The return value is a real
-     * decision: callers that send on `false` are the bug this method exists to
-     * prevent.
-     */
-    fun consume(): Boolean = tryAcquire()
-
     /** True while a server-requested cooldown is active. */
     fun isCoolingDown(now: Long = System.currentTimeMillis()): Boolean = now < serverCooldownUntil.get()
 

@@ -6,6 +6,7 @@ import { recordLookups } from '../services/lookupTracking';
 import { HttpError } from '../util/httpError';
 import { extractBatchIdentifiersFromBody, parseAndValidateBatchIdentifiers } from '../util/requestUtils';
 import { getCircuitBreakerState } from '../services/hypixel';
+import { refundPublicTokens } from '../middleware/rateLimit';
 import {
   IDENTIFIER_MAX_LENGTH,
   IDENTIFIER_PATTERN,
@@ -15,9 +16,8 @@ import {
 import { computeResponseEtag } from '../util/etag';
 
 interface PlayerLookupHandlerOptions {
-  /** Legacy `/api/player` route: exposes degradation hints and stale headers. */
+  /** Legacy `/api/player` route: exposes degradation hints. */
   private: boolean;
-  setStaleHeaders: boolean;
   cacheControl: string;
   /** Label recorded in `lookup_events` for the tracking page. */
   route: LookupRoute;
@@ -87,11 +87,6 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
         res.set('Last-Modified', new Date(resolved.lastModified).toUTCString());
       }
 
-      if (options.setStaleHeaders && resolved.isStale) {
-        res.set('X-Cache-Stale', '1');
-        res.set('Age', Math.floor((resolved.staleAgeMs ?? 0) / 1000).toString());
-      }
-
       res.set('X-Cache', resolved.source === 'cache' ? 'HIT' : 'MISS');
       res.set('Cache-Control', options.cacheControl);
 
@@ -113,6 +108,10 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
         );
       }
 
+      if (resolved.source === 'cache') {
+        refundPublicTokens(req, 1);
+      }
+
       if (req.fresh) {
         res.status(304).end();
         return;
@@ -122,7 +121,6 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
       res.status(200).json({
         ...resolved.payload,
         nicked: resolved.nicked,
-        ...(options.private && resolved.isStale ? { stale: true } : {}),
         ...(options.private && isCircuitOpen ? { degradedMode: true } : {}),
       });
     } catch (error) {
@@ -245,6 +243,8 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
           upstreamFailures += 1;
         }
       }
+
+      refundPublicTokens(req, cacheHits);
 
       // Nothing worked and every failure came from upstream: fail the batch so the
       // client backs off instead of interpreting an empty 200 as "no such players".

@@ -5,13 +5,13 @@ import { AddressInfo } from 'net';
 jest.mock('../../src/config', () => ({
   PUBLIC_RATE_LIMIT_MAX: 600,
   PUBLIC_RATE_LIMIT_WINDOW_MS: 60000,
+  PUBLIC_REQUEST_LIMIT_MAX: 1200,
   ADMIN_API_KEYS: [],
   TRUST_PROXY_CIDRS: [],
   TRUST_SINGLE_PROXY_HOP: false,
   PLAYER_CACHE_DB_TTL_MS: 86400000,
   CACHE_DB_URL: '',
   LOOKUP_TRACKING_ENABLED: true,
-  LOOKUP_EVENT_RETENTION_DAYS: 90,
   HYPIXEL_API_KEY: 'test-key',
   HYPIXEL_API_BASE_URL: 'https://api.hypixel.net',
   HYPIXEL_TIMEOUT_MS: 5000,
@@ -30,6 +30,8 @@ jest.mock('../../src/services/lookupTracking', () => ({
 jest.mock('../../src/middleware/rateLimit', () => ({
   enforceRateLimit: (_req: unknown, _res: unknown, next: () => void) => next(),
   enforceBatchRateLimit: (_req: unknown, _res: unknown, next: () => void) => next(),
+  enforceRequestRateLimit: (_req: unknown, _res: unknown, next: () => void) => next(),
+  refundPublicTokens: jest.fn(),
 }));
 
 jest.mock('../../src/services/player', () => ({
@@ -110,6 +112,7 @@ const baseResolved = {
   payload: {
     displayname: 'TestPlayer',
     bedwars_experience: 12345,
+    bedwars_active_star: null,
     bedwars_final_kills: 10,
     bedwars_final_deaths: 5,
     duels_wins: 0,
@@ -125,11 +128,7 @@ const baseResolved = {
   etag: '"base-etag-123"',
   lastModified: Date.now() - 1000,
   source: 'network' as const,
-  revalidated: false,
-  uuid: '530fa96a303d42199b5a329d493a5573',
   username: 'TestPlayer',
-  lookupType: 'uuid' as const,
-  lookupValue: '530fa96a303d42199b5a329d493a5573',
   nicked: false,
 };
 
@@ -153,7 +152,6 @@ describe('GET /api/player/:identifier happy path', () => {
       displayname: 'TestPlayer',
       nicked: false,
     });
-    expect(response.body.stale).toBeUndefined();
   });
 
   it('marks nicked players in the ETag variant and payload', async () => {
@@ -168,23 +166,6 @@ describe('GET /api/player/:identifier happy path', () => {
     expect(response.status).toBe(200);
     expect(response.headers['etag']).toBe('"player-v2-nicked-base-etag-123"');
     expect(response.body.nicked).toBe(true);
-  });
-
-  it('exposes stale SWR responses with stale headers and payload flag', async () => {
-    (resolvePlayer as jest.Mock).mockResolvedValue({
-      ...baseResolved,
-      source: 'cache' as const,
-      isStale: true,
-      staleAgeMs: 30_000,
-    });
-
-    const response = await makeRequest(app, 'GET', '/api/player/530fa96a303d42199b5a329d493a5573');
-
-    expect(response.status).toBe(200);
-    expect(response.headers['x-cache']).toBe('HIT');
-    expect(response.headers['x-cache-stale']).toBe('1');
-    expect(response.headers['age']).toBe('30');
-    expect(response.body.stale).toBe(true);
   });
 
   it('propagates clean errors from the player service (no ETag written)', async () => {

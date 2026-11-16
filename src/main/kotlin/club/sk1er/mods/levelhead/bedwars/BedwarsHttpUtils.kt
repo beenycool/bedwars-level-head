@@ -14,11 +14,6 @@ import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
 
 object BedwarsHttpUtils {
-    // Regex patterns for sanitizing logs - compiled once for performance
-    private val KEY_TOKEN_REGEX = Regex("""(?i)(key|token)=([^&\s]+)""")
-    private val JSON_KEY_TOKEN_REGEX = Regex("""(?i)"(key|token|api_key|apikey)"\s*:\s*"([^"]+)"""")
-    private val AUTHORIZATION_BEARER_REGEX = Regex("""(?i)(authorization\s*:\s*bearer\s+)([^\s"]+)""")
-
     fun String.sanitizeForLogs(): String {
         if (isEmpty()) return this
         var sanitized = this
@@ -27,15 +22,6 @@ object BedwarsHttpUtils {
             .forEach { secret ->
                 sanitized = sanitized.replace(secret, "***")
             }
-        sanitized = sanitized.replace(KEY_TOKEN_REGEX) { matchResult ->
-            "${matchResult.groupValues[1]}=***"
-        }
-        sanitized = sanitized.replace(JSON_KEY_TOKEN_REGEX) { matchResult ->
-            "\"${matchResult.groupValues[1]}\":\"***\""
-        }
-        sanitized = sanitized.replace(AUTHORIZATION_BEARER_REGEX) { matchResult ->
-            "${matchResult.groupValues[1]}***"
-        }
         return sanitized
     }
 

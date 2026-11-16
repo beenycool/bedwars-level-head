@@ -1,7 +1,5 @@
 package club.sk1er.mods.levelhead.core
 
-import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
-import com.google.gson.JsonObject
 import java.awt.Color
 
 object BedwarsStar {
@@ -69,18 +67,14 @@ object BedwarsStar {
     // Star symbols change at specific prestige levels
     private val prestigeIcons = listOf(
         PrestigeIcon(0, "✫"),
-        PrestigeIcon(1100, "✪"),
-        PrestigeIcon(2100, "⚝"),
-        PrestigeIcon(3100, "✥")
+        PrestigeIcon(1000, "✪"),
+        PrestigeIcon(2000, "⚝"),
+        PrestigeIcon(3000, "✥"),
+        PrestigeIcon(4000, "✭")
     )
 
     data class PrestigeStyle(val color: Color, val colormap: String)
     data class PrestigeIcon(val level: Int, val symbol: String)
-
-    fun extractExperience(player: JsonObject?): Long? {
-        player ?: return null
-        return BedwarsFetcher.parseBedwarsExperience(player)
-    }
 
     fun calculateStar(experience: Long): Int {
         if (experience <= 0L) return 0
@@ -114,12 +108,17 @@ object BedwarsStar {
     }
 
     /**
-     * Get the appropriate star symbol for the given level.
-     * Star symbols change at specific prestige tiers:
-     * 0-1099: ✫
-     * 1100-2099: ✪
-     * 2100-3099: ⚝
-     * 3100+: ✥
+     * Get the appropriate default star symbol for the given level.
+     * Since Hypixel's May 2026 Dreamfeast update the default icon changes every
+     * 1000 stars:
+     * 0-999: ✫
+     * 1000-1999: ✪
+     * 2000-2999: ⚝
+     * 3000-3999: ✥
+     * 4000+: ✭
+     *
+     * Players can now pick a custom star, so this is the default appearance rather
+     * than a guarantee of what a particular player shows.
      */
     fun getPrestigeIcon(star: Int): String {
         return prestigeIcons
@@ -128,17 +127,37 @@ object BedwarsStar {
     }
 
     /**
+     * Maps Hypixel's `active_star` cosmetic id to the glyph the player picked in
+     * the Prestige Customizer. Returns null for an absent, random, or unknown id
+     * so the caller can fall back to the level's default icon.
+     */
+    fun iconForCosmetic(id: String?): String? = when (id) {
+        "star_black_open" -> "✫"
+        "star_white_circled" -> "✪"
+        "star_white_outlined" -> "⚝"
+        "star_four_clubs" -> "✥"
+        "star_black_outlined" -> "✭"
+        "star_four_pointed" -> "✦"
+        "star_pinwheel" -> "✯"
+        "star_hollow" -> "✰"
+        else -> null
+    }
+
+    /**
      * Format a star tag with accurate per-character coloring.
      * For single-color prestiges (colormap length 1): all characters get the same color
      * For multi-color prestiges: each character position maps to its corresponding color code
      *
-     * Example for level 1234 with Rainbow colormap "c6eabd5":
-     * Input: "[1234✫]"
-     * Output: "§c[§61§e2§a3§b4§d✫§5]"
+     * Example for level 1234 with the Gold Prime colormap "7eeee67":
+     * Input: "[1234✪]"
+     * Output: "§7[§e1§e2§e3§e4§6✪§7]"
+     *
+     * The 1000-1099 Rainbow tier uses the multicolour "c6eabd5" colormap, so
+     * 1063 becomes "§c[§61§e0§a6§b3§d✪§5]" — the same tag Hypixel shows in chat.
      */
-    fun formatStarTag(star: Int): String {
+    fun formatStarTag(star: Int, iconOverride: String? = null): String {
         val style = styleForStar(star)
-        val icon = getPrestigeIcon(star)
+        val icon = iconOverride ?: getPrestigeIcon(star)
         val tag = "[$star$icon]"
         return applyColormap(tag, style.colormap)
     }

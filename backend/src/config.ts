@@ -47,6 +47,16 @@ export const PUBLIC_RATE_LIMIT_MAX = Math.max(1, parseIntEnv('PUBLIC_RATE_LIMIT_
 export const PUBLIC_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 
 /**
+ * Every HTTP request still costs one request token, even when it is served from
+ * cache. This is a much higher ceiling than the identifier budget: it exists only to
+ * stop a cached-request flood, not to charge normal mod traffic.
+ */
+export const PUBLIC_REQUEST_LIMIT_MAX = Math.max(
+  PUBLIC_RATE_LIMIT_MAX,
+  Math.max(1, parseIntEnv('PUBLIC_REQUEST_LIMIT_MAX', 1_200)),
+);
+
+/**
  * Dynamic per-client budgets. Instead of handing every IP the same fixed budget,
  * the limiter divides the remaining Hypixel quota between active clients and
  * throttles further when recent demand is high. Cached lookups cost no quota, so
@@ -85,7 +95,7 @@ export const LOOKUP_TRACKING_ENABLED = process.env.LOOKUP_TRACKING_ENABLED !== '
  */
 export const LOOKUP_LOG_RETENTION_DAYS = Math.max(
   1,
-  parseIntEnv('LOOKUP_LOG_RETENTION_DAYS', parseIntEnv('LOOKUP_EVENT_RETENTION_DAYS', 30)),
+  parseIntEnv('LOOKUP_LOG_RETENTION_DAYS', 30),
 );
 
 /** SQL cache retention. The in-process LRU is much shorter (see services/player.ts). */

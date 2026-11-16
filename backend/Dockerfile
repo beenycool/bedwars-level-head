@@ -17,7 +17,7 @@ RUN npm ci --no-audit --no-fund && npm cache clean --force
 COPY . .
 
 # Build the self-contained bundle (esbuild inlines all deps into dist/index.js)
-RUN npm run bundle
+RUN npm run build
 
 # ============================================================
 # Stage 2: runner – minimal production image

@@ -22,21 +22,16 @@ object StatsFetcher {
     /**
      * Fetch stats for a player in the specified game mode.
      */
-    suspend fun fetchPlayer(
-        uuid: UUID,
-        gameMode: GameMode,
-        lastFetchedAt: Long? = null,
-        etag: String? = null
-    ): FetchResult {
-        return fetcher(gameMode).fetch(uuid, CacheHint(lastFetchedAt, etag))
+    suspend fun fetchPlayer(uuid: UUID, gameMode: GameMode): FetchResult {
+        return fetcher(gameMode).fetch(uuid)
     }
 
     /**
      * Build GameStats from a fetch result payload based on game mode.
      * Returns null if the payload does not contain stats for the specified game mode.
      */
-    fun buildGameStats(payload: JsonObject, gameMode: GameMode, etag: String? = null): GameStats? {
-        return fetcher(gameMode).buildStats(payload, etag)
+    fun buildGameStats(payload: JsonObject, gameMode: GameMode): GameStats? {
+        return fetcher(gameMode).buildStats(payload)
     }
 
     /**

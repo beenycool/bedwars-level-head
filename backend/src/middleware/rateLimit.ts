@@ -1,5 +1,9 @@
 import type { Request, RequestHandler } from 'express';
-import { PUBLIC_RATE_LIMIT_MAX, PUBLIC_RATE_LIMIT_WINDOW_MS } from '../config';
+import {
+  PUBLIC_RATE_LIMIT_MAX,
+  PUBLIC_RATE_LIMIT_WINDOW_MS,
+  PUBLIC_REQUEST_LIMIT_MAX,
+} from '../config';
 import { getDynamicPublicLimit } from '../services/dynamicRateLimit';
 import { HttpError } from '../util/httpError';
 import { logger } from '../util/logger';
@@ -86,6 +90,35 @@ export class TokenBucketLimiter {
     };
   }
 
+  /**
+   * Returns tokens after a cache hit. The identifier budget should only pay for
+   * upstream work, so a request that never touched Hypixel gets its cost back.
+   */
+  refund(key: string, amount: number = 1, now: number = Date.now()): void {
+    const tokens = Number.isFinite(amount) && amount > 0 ? Math.floor(amount) : 0;
+    if (tokens === 0) {
+      return;
+    }
+
+    const capacity = this.resolveCapacity(now);
+    const bucket = this.buckets.get(key);
+    if (!bucket) {
+      return;
+    }
+
+    if (now > bucket.updatedAt) {
+      bucket.tokens = Math.min(
+        capacity,
+        bucket.tokens + (now - bucket.updatedAt) * (capacity / this.windowMs),
+      );
+      bucket.updatedAt = now;
+    } else if (bucket.tokens > capacity) {
+      bucket.tokens = capacity;
+    }
+
+    bucket.tokens = Math.min(capacity, bucket.tokens + tokens);
+  }
+
   /** Clients that made a request inside the current refill window. */
   activeClients(now: number = Date.now()): number {
     const cutoff = now - this.windowMs;
@@ -138,6 +171,12 @@ export const publicRateLimiter = new TokenBucketLimiter({
   getCapacity: (activeClients) => getDynamicPublicLimit(activeClients),
 });
 
+/** High-ceiling guard for cached traffic; one token per HTTP request. */
+export const requestRateLimiter = new TokenBucketLimiter({
+  capacity: Number.isFinite(PUBLIC_REQUEST_LIMIT_MAX) ? PUBLIC_REQUEST_LIMIT_MAX : 1_200,
+  windowMs: PUBLIC_RATE_LIMIT_WINDOW_MS,
+});
+
 export const adminRateLimiter = new TokenBucketLimiter({
   capacity: 60,
   windowMs: PUBLIC_RATE_LIMIT_WINDOW_MS,
@@ -156,6 +195,14 @@ export function getClientIpAddress(req: Request): string {
     return socketIp;
   }
   throw new HttpError(400, 'INVALID_REQUEST', 'Unable to identify client IP address');
+}
+
+/** Refunds identifier tokens for lookups that were served without touching Hypixel. */
+export function refundPublicTokens(req: Request, count: number): void {
+  if (!Number.isFinite(count) || count <= 0) {
+    return;
+  }
+  publicRateLimiter.refund(`public:${getClientIpAddress(req)}`, Math.floor(count));
 }
 
 interface RateLimitOptions {
@@ -202,6 +249,13 @@ export const enforceRateLimit = createRateLimitMiddleware({
   limiter: publicRateLimiter,
   getBucketKey: (req) => `public:${getClientIpAddress(req)}`,
   label: 'legacy',
+});
+
+/** One request token for every API call, cache hit or miss. */
+export const enforceRequestRateLimit = createRateLimitMiddleware({
+  limiter: requestRateLimiter,
+  getBucketKey: (req) => `request:${getClientIpAddress(req)}`,
+  label: 'request',
 });
 
 export const enforceAdminRateLimit = createRateLimitMiddleware({

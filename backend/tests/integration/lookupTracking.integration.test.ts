@@ -73,14 +73,14 @@ describeIntegration('lookup analytics against PostgreSQL', () => {
   });
 
   beforeEach(async () => {
-    await sql`TRUNCATE lookup_log, tracked_players`.execute(db);
+    await sql`TRUNCATE lookup_log`.execute(db);
   });
 
   afterAll(async () => {
     await db.destroy();
   });
 
-  it('writes one log row per lookup and keeps player counters', async () => {
+  it('writes one log row per lookup', async () => {
     recordLookups(
       [
         observation(),
@@ -108,21 +108,10 @@ describeIntegration('lookup analytics against PostgreSQL', () => {
 
     recordLookups([observation({ source: 'cache', latencyMs: 15 })], 'public');
 
-    const notch = await waitFor(
-      () => db.selectFrom('tracked_players').selectAll().where('identifier', '=', UUID_NOTCH).executeTakeFirst(),
-      (row) => Number(row?.lookups ?? 0) === 2,
+    const log = await waitFor(
+      () => db.selectFrom('lookup_log').selectAll().orderBy('id').execute(),
+      (rows) => rows.length === 3,
     );
-
-    expect(notch).toMatchObject({
-      username: 'Notch',
-      stars: 5,
-      cache_hits: 1,
-      last_source: 'cache',
-      last_status: 200,
-      last_latency_ms: 15,
-    });
-
-    const log = await db.selectFrom('lookup_log').selectAll().orderBy('id').execute();
     expect(log).toHaveLength(3);
     expect(log[0]).toMatchObject({ identifier: UUID_NOTCH, source: 'network', route: 'batch', status: 200, latency_ms: 120 });
     expect(log[1]).toMatchObject({ identifier: UUID_JEB, stars: 100, source: 'cache', route: 'batch' });
@@ -192,7 +181,7 @@ describeIntegration('lookup analytics against PostgreSQL', () => {
     expect(slowest?.rows[0].latency_ms).toBe(120);
   });
 
-  it('logs failures and counts them as errors without creating a player row', async () => {
+  it('logs failures and counts them as errors', async () => {
     recordLookups([observation({ username: null, bedwarsExperience: null, status: 404, latencyMs: 30 })], 'legacy');
 
     const page = await waitFor(
@@ -203,7 +192,6 @@ describeIntegration('lookup analytics against PostgreSQL', () => {
     expect(page?.summary.errors).toBe(1);
     expect(page?.summary.players).toBe(1);
     expect(page?.rows[0]).toMatchObject({ status: 404, username: null, stars: null });
-    expect(await db.selectFrom('tracked_players').selectAll().execute()).toHaveLength(0);
   });
 
   it('filters by explicit dates', async () => {
@@ -224,7 +212,7 @@ describeIntegration('lookup analytics against PostgreSQL', () => {
     expect(outside?.summary.total).toBe(0);
   });
 
-  it('prunes log rows past retention but keeps player counters', async () => {
+  it('prunes log rows past retention', async () => {
     recordLookups([observation()], 'public');
 
     await waitFor(
@@ -236,9 +224,7 @@ describeIntegration('lookup analytics against PostgreSQL', () => {
 
     expect(deleted).toBe(1);
     const log = await db.selectFrom('lookup_log').select((eb) => eb.fn.countAll<string>().as('count')).executeTakeFirst();
-    const players = await db.selectFrom('tracked_players').select((eb) => eb.fn.countAll<string>().as('count')).executeTakeFirst();
 
     expect(Number(log?.count ?? -1)).toBe(0);
-    expect(Number(players?.count ?? -1)).toBe(1);
   });
 });

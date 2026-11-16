@@ -2,8 +2,6 @@ package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
-import java.awt.Color
-import java.util.Locale
 import java.util.UUID
 
 /**
@@ -22,14 +20,6 @@ object DebugLogging {
      * Render diagnostics use the single debug flag as well.
      */
     fun isRenderDebugEnabled(): Boolean = LevelheadConfig.debugRequests
-
-    /**
-     * Format a Color as a hex string (#RRGGBB).
-     * Returns uppercase hex for consistency.
-     */
-    fun Color.formatAsHex(): String {
-        return String.format(Locale.ROOT, "#%02X%02X%02X", red, green, blue)
-    }
 
     /**
      * Truncate a string safely, handling special characters like § and ✪.

@@ -2,17 +2,11 @@ export const IDENTIFIER_MAX_LENGTH = 64;
 export const MAX_BATCH_SIZE = 20;
 
 const UUID_PATTERN = /^[0-9a-f]{32}$/i;
-const IGN_PATTERN = /^[a-zA-Z0-9_]{1,16}$/;
 
 export const IDENTIFIER_PATTERN = /^(?:[0-9a-f]{32}|[a-zA-Z0-9_]{1,16})$/i;
 /** True for a 32-character hex UUID with no dashes. */
 export function isUuid(value: string): boolean {
   return UUID_PATTERN.test(value);
-}
-
-/** True for a Minecraft username (1-16 chars, letters/digits/underscore). */
-export function isIgn(value: string): boolean {
-  return IGN_PATTERN.test(value);
 }
 
 /**

@@ -13,7 +13,7 @@ object DuelsFetcher : BaseStatsFetcher() {
     override val gameMode = GameMode.DUELS
     override val modeName = "Duels"
 
-    override fun buildStats(payload: JsonObject, etag: String?): GameStats? {
+    override fun buildStats(payload: JsonObject): GameStats? {
         StatsPayloadParser.findStatsObject(payload, GameMode.DUELS) ?: return null
         val nicked = StatsPayloadParser.isNicked(payload)
         val wins = DuelsStats.parseWins(payload)
@@ -22,7 +22,7 @@ object DuelsFetcher : BaseStatsFetcher() {
         val deaths = DuelsStats.parseDeaths(payload)
         return GameStats.Duels(
             wins = wins, losses = losses, kills = kills, deaths = deaths,
-            nicked = nicked, fetchedAt = System.currentTimeMillis(), etag = etag
+            nicked = nicked, fetchedAt = System.currentTimeMillis()
         )
     }
 }

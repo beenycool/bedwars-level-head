@@ -61,7 +61,7 @@ object ProxyClient {
         return LevelheadConfig.proxyBaseUrl.isNotBlank()
     }
 
-    suspend fun fetchPlayer(identifierInput: String, lastFetchedAt: Long?, etag: String? = null): FetchResult {
+    suspend fun fetchPlayer(identifierInput: String): FetchResult {
         val baseUrl = LevelheadConfig.proxyBaseUrl
         val identifier = sanitizeProxyIdentifier(identifierInput)
         val url = HttpUrl.parse(baseUrl)
@@ -147,8 +147,7 @@ object ProxyClient {
 
                 networkIssueWarned.set(false)
                 handleRetryAfterHint("proxy", retryAfterMillis, silent = isCacheHit)
-                val newEtag = response.header("ETag")
-                FetchResult.Success(json, newEtag)
+                FetchResult.Success(json)
             }
         } catch (ex: IOException) {
             notifyNetworkIssue(ex)

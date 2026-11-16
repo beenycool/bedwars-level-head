@@ -2,7 +2,6 @@ import {
   csvCell,
   escapeHtml,
   formatLatency,
-  formatPercent,
   formatRelativeTime,
   shortenUuid,
 } from '../../src/util/html';
@@ -21,13 +20,6 @@ describe('escapeHtml', () => {
   it('renders null and undefined as an empty string', () => {
     expect(escapeHtml(null)).toBe('');
     expect(escapeHtml(undefined)).toBe('');
-  });
-});
-
-describe('formatPercent', () => {
-  it('keeps one decimal and guards division by zero', () => {
-    expect(formatPercent(1, 3)).toBe('33.3%');
-    expect(formatPercent(0, 0)).toBe('—');
   });
 });
 

@@ -1,75 +1,98 @@
 # BedWars Levelhead
 
-A Levelhead fork that shows BedWars (plus Duels/SkyWars) stats above players' heads and in
-the tab list on Minecraft 1.8.9 Forge, with a small companion backend that holds one Hypixel
-API key so the mod never needs a personal one.
+A Levelhead fork for Minecraft 1.8.9 (Forge) that shows BedWars, Duels and SkyWars stats above players' heads and in the tab list.
+
+Stats come from a small companion backend that holds a single Hypixel API key, so players never need their own.
+
+## Highlights
+
+- Stats above nametags and in the tab list
+- No personal Hypixel API key needed
+- Self-contained jar: OneConfig is embedded and Essential is **not** required
+- Compatible with Patcher and other tab mods (rendering uses plain vanilla GL, and the tab mixin is a non-exclusive `@Inject`)
 
 ## Requirements
 
 - Minecraft 1.8.9 with Forge
-- JDK 17 to build
+- JDK 17 (to build)
 
-The jar is self-contained: OneConfig is embedded, and **Essential is not required**. The render
-path uses plain vanilla GL and the tab mixin uses a non-exclusive `@Inject`, so it coexists with
-Patcher and other tab mods.
-
-## Layout
+## Repository layout
 
 | Path | Contents |
 | --- | --- |
-| `src/main/kotlin/` | Mod source (Minecraft 1.8.9 Forge) |
+| `src/main/kotlin/` | Mod source |
 | `src/main/java/` | The single tab-list mixin |
-| `build.gradle.kts` | Polyfrost defaults + Loom single-project build (Minecraft 1.8.9) |
+| `build.gradle.kts` | Polyfrost defaults and Loom single-project build |
 | `backend/` | Express/TypeScript stats proxy (see `backend/README.md`) |
-| `.github/workflows/` | CI: mod build, and backend image build + Render deploy |
+| `.github/workflows/` | CI for the mod build and for the backend image build and Render deploy |
 
-## Building the mod
+## Mod
+
+### Build
 
 ```sh
 JAVA_HOME=/path/to/jdk17 ./gradlew --no-daemon build
 ```
 
-The jar lands in `build/libs/`. Run the tests with `./gradlew test`
-(they are headless — no game client needed).
+The jar is written to `build/libs/`.
 
-## Commands
+### Test
+
+```sh
+JAVA_HOME=/path/to/jdk17 ./gradlew --offline test
+```
+
+Tests are headless; no game client is needed.
+
+### Commands
 
 `/levelhead` opens the settings GUI. Chat subcommands:
 
 | Command | Purpose |
 | --- | --- |
-| `/levelhead status` | Backend URL, cache state, last HTTP status and any active cooldown |
+| `/levelhead status` | Show the backend URL, cache state, last HTTP status and any active cooldown |
 | `/levelhead reload` | Re-read settings and clear display caches |
-| `/levelhead whois <player>` | Resolve a name/UUID and show its stats |
+| `/levelhead whois <player>` | Resolve a name or UUID and show its stats |
 
 ## Backend
 
+### Run locally
+
 ```sh
 cd backend
-cp .env.example .env      # set HYPIXEL_API_KEY
+cp .env.example .env      # then set HYPIXEL_API_KEY
 npm ci
 npm run dev               # or: npm run build && npm start
-npm run typecheck         # tsc over src + tests
+```
+
+### Check and test
+
+```sh
+npm run typecheck         # tsc over src and tests
 npm test                  # jest
 ```
 
-`HYPIXEL_API_KEY` is the only required variable. `CACHE_DB_URL` is optional: without it the
-service runs from an in-process cache and still serves data; with it, one PostgreSQL table
-(`player_stats_cache`) keeps rows for 24 hours. Rate limiting is an in-process token bucket per
-client IP with a dynamic ceiling: it divides the remaining Hypixel quota between active clients
-and widens when cache hits absorb the traffic (`DYNAMIC_RATE_LIMIT_MIN`/`MAX`, default 20–600
-identifiers/minute). There is no Redis, no external dashboard and no `/metrics` endpoint.
+### Configuration
 
-## Deploy
+| Variable | Required | Purpose |
+| --- | --- | --- |
+| `HYPIXEL_API_KEY` | Yes | The shared Hypixel API key |
+| `CACHE_DB_URL` | No | PostgreSQL connection. Without it, the service uses an in-process cache and still works. With it, the `player_stats_cache` table keeps rows for 24 hours |
+| `PUBLIC_RATE_LIMIT_MAX` | No | Hard ceiling for the dynamic per-IP token bucket. Default: 600 identifiers per minute |
+| `PUBLIC_REQUEST_LIMIT_MAX` | No | Fixed per-IP request guard for cached traffic. Default: 1,200 requests per minute |
 
-- **Mod:** GitHub Actions builds `build/libs/*.jar` on push/release.
-- **Backend:** `deploy-backend.yml` typechecks + tests, builds the Docker image, pushes it to
-  GHCR and triggers the Render deploy described in `render.yaml` (starter plan, so the instance
-  does not sleep).
+The per-IP identifier budget is dynamic: it scales between 20 and 600 identifiers per minute
+from the remaining Hypixel quota, active clients and the cache hit rate. Tune it with
+`DYNAMIC_RATE_LIMIT_MIN`, `DYNAMIC_RATE_LIMIT_MAX` and `HYPIXEL_HOURLY_QUOTA`, or set
+`DYNAMIC_RATE_LIMIT_ENABLED=false` for a flat `PUBLIC_RATE_LIMIT_MAX` budget.
 
-## Tests
+Cache hits refund their identifier cost, so cached lookups are free against that budget. Every
+HTTP request still counts against the separate `PUBLIC_REQUEST_LIMIT_MAX` guard.
 
-```sh
-JAVA_HOME=/path/to/jdk17 ./gradlew --offline test          # mod, headless
-cd backend && npm test                                     # backend, jest
-```
+The backend has no Redis dependency, no external dashboard and no `/metrics` endpoint; `/stats`
+is rendered by the service itself.
+
+## Deployment
+
+- **Mod:** GitHub Actions builds `build/libs/*.jar` on push and on release.
+- **Backend:** `deploy-backend.yml` typechecks and tests, builds the Docker image, pushes it to GHCR, then triggers the Render deploy defined in `render.yaml`. It uses the starter plan so the instance does not sleep.

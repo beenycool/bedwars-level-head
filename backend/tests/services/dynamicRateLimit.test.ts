@@ -5,6 +5,7 @@ jest.mock('../../src/config', () => ({
   DYNAMIC_RATE_LIMIT_CACHE_TTL_MS: 10_000,
   HYPIXEL_HOURLY_QUOTA: 7_200,
   PUBLIC_RATE_LIMIT_MAX: 600,
+  PUBLIC_REQUEST_LIMIT_MAX: 1_200,
 }));
 
 import {

@@ -4,9 +4,6 @@ import java.awt.Color
 import java.util.*
 
 class LevelheadTag(val owner: UUID) {
-    /** When the underlying stats were fetched; used to expire display tags. */
-    var fetchedAt: Long = 0L
-
     var header: LevelheadComponent = LevelheadComponent()
     var footer: LevelheadComponent = LevelheadComponent()
 

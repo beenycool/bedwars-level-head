@@ -13,7 +13,7 @@ object SkyWarsFetcher : BaseStatsFetcher() {
     override val gameMode = GameMode.SKYWARS
     override val modeName = "SkyWars"
 
-    override fun buildStats(payload: JsonObject, etag: String?): GameStats? {
+    override fun buildStats(payload: JsonObject): GameStats? {
         StatsPayloadParser.findStatsObject(payload, GameMode.SKYWARS) ?: return null
         val nicked = StatsPayloadParser.isNicked(payload)
         val experience = SkyWarsStats.parseExperience(payload)
@@ -25,7 +25,7 @@ object SkyWarsFetcher : BaseStatsFetcher() {
         return GameStats.SkyWars(
             level = level, wins = wins, losses = losses,
             kills = kills, deaths = deaths,
-            nicked = nicked, fetchedAt = System.currentTimeMillis(), etag = etag
+            nicked = nicked, fetchedAt = System.currentTimeMillis()
         )
     }
 }

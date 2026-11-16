@@ -31,6 +31,7 @@ function payloadFor(uuid: string) {
   return {
     displayname: `Player${uuid.slice(-1)}`,
     bedwars_experience: 1000,
+    bedwars_active_star: null,
     bedwars_final_kills: 1,
     bedwars_final_deaths: 1,
     duels_wins: 0,
@@ -51,11 +52,7 @@ function resolvedFor(uuid: string) {
     etag: null,
     lastModified: null,
     source: 'network' as const,
-    revalidated: false,
-    uuid,
     username: `Player${uuid.slice(-1)}`,
-    lookupType: 'uuid' as const,
-    lookupValue: uuid,
     nicked: false,
   };
 }

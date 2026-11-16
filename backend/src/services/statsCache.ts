@@ -5,18 +5,17 @@ import { MinimalPlayerStats } from './hypixel';
 import { logger } from '../util/logger';
 import { db } from './database/db';
 
-export interface CachedPlayerStats extends CacheEntry<MinimalPlayerStats> {
-  cachedAt: number;
-  source: string | null;
-}
+export type CachedPlayerStats = CacheEntry<MinimalPlayerStats>;
 
-const PLAYER_KEY_PREFIX = 'player:';
+// Versioned so a payload-shape change invalidates old rows without a manual
+// purge. v2 adds bedwars_active_star for Prestige Customizer stars.
+const PLAYER_KEY_PREFIX = 'player:v2:';
 
 export function buildPlayerCacheKey(uuid: string): string {
   return `${PLAYER_KEY_PREFIX}${uuid.toLowerCase()}`;
 }
 
-function mapRow(row: { payload: unknown; expires_at: unknown; cached_at: unknown; etag: string | null; last_modified: unknown; source: string | null }): CachedPlayerStats | null {
+function mapRow(row: { payload: unknown; expires_at: unknown; etag: string | null; last_modified: unknown }): CachedPlayerStats | null {
   let payload: unknown = row.payload;
   if (typeof payload === 'string') {
     try {
@@ -37,10 +36,8 @@ function mapRow(row: { payload: unknown; expires_at: unknown; cached_at: unknown
   return {
     value: payload as unknown as MinimalPlayerStats,
     expiresAt,
-    cachedAt: Number(row.cached_at) || expiresAt - PLAYER_CACHE_DB_TTL_MS,
     etag: row.etag,
     lastModified: row.last_modified === null ? null : Number(row.last_modified),
-    source: row.source,
   };
 }
 
@@ -115,8 +112,8 @@ export async function setPlayerStats(
     return;
   }
 
-  const cachedAt = Date.now();
-  const expiresAt = cachedAt + PLAYER_CACHE_DB_TTL_MS;
+  const now = Date.now();
+  const expiresAt = now + PLAYER_CACHE_DB_TTL_MS;
   const payload = JSON.stringify(stats);
   const etag = metadata.etag ?? null;
   const lastModified = metadata.lastModified ?? null;
@@ -127,18 +124,14 @@ export async function setPlayerStats(
         cache_key: key,
         payload,
         expires_at: expiresAt,
-        cached_at: cachedAt,
         etag,
         last_modified: lastModified,
-        source: 'hypixel',
       })
       .onConflict((oc) => oc.column('cache_key').doUpdateSet({
         payload,
         expires_at: expiresAt,
-        cached_at: cachedAt,
         etag,
         last_modified: lastModified,
-        source: 'hypixel',
       }))
       .execute();
   } catch (error) {

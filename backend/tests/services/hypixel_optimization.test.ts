@@ -151,4 +151,40 @@ describe('extractMinimalStats Optimization', () => {
     expect(stats.skywars_kills).toBe(76);
     expect(stats.skywars_deaths).toBe(98);
   });
+
+  it('passes the selected BedWars star cosmetic through', () => {
+    const payload: HypixelPlayerResponse = {
+      success: true,
+      player: {
+        uuid: 'test-uuid-custom-star',
+        displayname: 'CustomStar',
+        stats: {
+          Bedwars: {
+            bedwars_experience: 2882000,
+            active_star: 'star_hollow',
+          },
+        },
+      },
+    };
+
+    expect(extractMinimalStats(payload).bedwars_active_star).toBe('star_hollow');
+  });
+
+  it('omits a missing or non-string BedWars star cosmetic', () => {
+    const payload: HypixelPlayerResponse = {
+      success: true,
+      player: {
+        uuid: 'test-uuid-default-star',
+        displayname: 'DefaultStar',
+        stats: {
+          Bedwars: {
+            bedwars_experience: 1000,
+            active_star: 42,
+          },
+        },
+      },
+    };
+
+    expect(extractMinimalStats(payload).bedwars_active_star).toBeNull();
+  });
 });

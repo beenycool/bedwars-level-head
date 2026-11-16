@@ -32,14 +32,6 @@ export function formatNumber(value: number): string {
   return new Intl.NumberFormat('en-US').format(Math.round(value));
 }
 
-/** `numerator / denominator` as a one-decimal percentage, or an em dash. */
-export function formatPercent(numerator: number, denominator: number): string {
-  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) {
-    return '—';
-  }
-  return `${((numerator / denominator) * 100).toFixed(1)}%`;
-}
-
 /** Sub-second values stay in milliseconds; anything else reads better in seconds. */
 export function formatLatency(milliseconds: number | null | undefined): string {
   if (milliseconds === null || milliseconds === undefined || !Number.isFinite(milliseconds)) {
@@ -51,7 +43,7 @@ export function formatLatency(milliseconds: number | null | undefined): string {
   return `${Math.round(milliseconds)} ms`;
 }
 
-/** Coarse "3m ago" label used in the tracked-players table. */
+/** Coarse "3m ago" label used in the lookup table. */
 export function formatRelativeTime(value: Date | null | undefined, now: number = Date.now()): string {
   if (!value) {
     return '—';
