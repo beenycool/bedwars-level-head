@@ -307,7 +307,8 @@ function chartCard(title: string, hint: string, body: string, extra = ''): strin
   </div>`;
 }
 
-function timeAxis(query: StatsQuery, series: TimePoint[]): string {  if (series.length === 0) {
+function timeAxis(query: StatsQuery, series: TimePoint[]): string {
+  if (series.length === 0) {
     return '';
   }
   const first = series[0].bucket;
@@ -359,6 +360,10 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
   const cacheRate = summary.total > 0 ? (summary.cacheHits / summary.total) * 100 : 0;
   const successRate = summary.total > 0 ? (summary.success / summary.total) * 100 : 0;
   const memory = data.runtime.samples;
+  const lastBucket = series.length > 0 ? series[series.length - 1] : null;
+  const lastMemory = memory.length > 0 ? memory[memory.length - 1] : null;
+  const lastCacheRate =
+    lastBucket && lastBucket.total > 0 ? (lastBucket.cacheHits / lastBucket.total) * 100 : 0;
 
   return `<div class="dashboard-grid">
     ${chartCard(
@@ -371,11 +376,14 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
       'Star Distribution',
       'Players by stars',
       barChart(charts.stars.map((slice) => ({ label: slice.label, value: slice.count })), 'Players by BedWars star range'),
-      barLabels(charts.stars.map((slice) => shortStarLabel(slice.label))),
+      barLabels(
+        charts.stars.map((slice) => shortStarLabel(slice.label)),
+        charts.stars.map((slice) => slice.count),
+      ),
     )}
     ${chartCard(
       'Latency Pulse',
-      'Avg and p95',
+      `avg ${formatLatency(lastBucket?.avgLatency)} · p95 ${formatLatency(lastBucket?.p95Latency)}`,
       lineChart(
         [
           { values: series.map((point) => point.avgLatency), color: '#38bdf8', fill: true },
@@ -399,13 +407,13 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
     )}
     ${chartCard(
       'Requests Over Time',
-      'Bucketed volume',
+      `Latest ${formatNumber(lastBucket?.total ?? 0)}`,
       lineChart([{ values: series.map((point) => point.total), color: '#38bdf8', fill: true }], 'Lookups over time'),
       timeAxis(query, series),
     )}
     ${chartCard(
       'Cache Hit Rate Over Time',
-      'Percentage per bucket',
+      `Latest ${lastCacheRate.toFixed(1)}%`,
       lineChart(
         [
           {
@@ -425,12 +433,15 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
         charts.latencyHistogram.map((slice) => ({ label: slice.label, value: slice.count })),
         'Latency distribution in milliseconds',
       ),
-      barLabels(charts.latencyHistogram.map((slice) => slice.label)),
+      barLabels(
+        charts.latencyHistogram.map((slice) => slice.label),
+        charts.latencyHistogram.map((slice) => slice.count),
+      ),
     )}
     ${renderTopPlayers(charts.topPlayers)}
     ${chartCard(
       'Process Memory Over Time',
-      'RSS and heap, MB',
+      `${(lastMemory?.rssMb ?? 0).toFixed(0)} MB RSS`,
       lineChart(
         [
           { values: memory.map((sample) => sample.rssMb), color: '#38bdf8', fill: true },

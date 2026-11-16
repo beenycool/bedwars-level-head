@@ -232,7 +232,7 @@ describeIntegration('lookup analytics against PostgreSQL', () => {
       (row) => Number(row?.count ?? 0) === 1,
     );
 
-    const deleted = await pruneLookupLogs(Date.now() + 8 * 24 * 60 * 60 * 1000);
+    const deleted = await pruneLookupLogs(Date.now() + 31 * 24 * 60 * 60 * 1000);
 
     expect(deleted).toBe(1);
     const log = await db.selectFrom('lookup_log').select((eb) => eb.fn.countAll<string>().as('count')).executeTakeFirst();

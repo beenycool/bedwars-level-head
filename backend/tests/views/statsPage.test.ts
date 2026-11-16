@@ -126,6 +126,19 @@ describe('renderStatsPage', () => {
     expect(html).toContain('530fa96a…5573');
   });
 
+  it('labels every axis and bar with readable numbers', () => {
+    const html = renderStatsPage({ query, data: data(), retentionDays: 7 });
+
+    // Line charts get a 0 / midpoint / maximum axis in HTML beside the plot.
+    expect(html).toContain('class="chart-yaxis"');
+    expect(html).toContain('<span>200</span><span>100</span><span>0</span>');
+    // Bar charts print the count above each bucket.
+    expect(html).toContain('<span><b>3</b><small>0-9</small></span>');
+    // Card headers carry the latest reading too.
+    expect(html).toContain('avg 120 ms · p95 200 ms');
+    expect(html).toContain('Latest 10');
+  });
+
   it('escapes player-controlled values', () => {
     const html = renderStatsPage({
       query: { ...query, search: '<img onerror=alert(1)>' },

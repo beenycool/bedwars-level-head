@@ -2,6 +2,10 @@
  * Server-rendered SVG charts. The old analytics page used Chart.js from a CDN and a
  * nonce-enabled script policy; these primitives keep the same look with no client
  * JavaScript, no CSP exception and a fraction of the code.
+ *
+ * Axis labels are plain HTML next to the plot rather than `<text>` in the SVG: the
+ * plot is stretched to the card width, which would also stretch any text inside it.
+ * HTML keeps the numbers readable on phones.
  */
 
 const WIDTH = 640;
@@ -14,17 +18,49 @@ export interface LineSeries {
   fill?: boolean;
 }
 
+/** Rounds a maximum up to 1/2/5×10ⁿ so the midpoint tick is a readable number. */
 function niceMax(values: number[]): number {
-  return Math.max(1, ...values.map((value) => (Number.isFinite(value) ? value : 0)));
+  const raw = Math.max(0, ...values.map((value) => (Number.isFinite(value) ? value : 0)));
+  if (raw <= 0) {
+    return 1;
+  }
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const normalized = raw / magnitude;
+  const step = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+  return step * magnitude;
+}
+
+/** Compact axis labels: 950 → 950, 1200 → 1.2k, 1500000 → 1.5M, 0.5 → 0.5. */
+function formatTick(value: number): string {
+  const abs = Math.abs(value);
+  if (abs >= 1_000_000) {
+    return `${trimZero(value / 1_000_000, abs >= 10_000_000 ? 0 : 1)}M`;
+  }
+  if (abs >= 1_000) {
+    return `${trimZero(value / 1_000, abs >= 10_000 ? 0 : 1)}k`;
+  }
+  if (abs >= 10 || Number.isInteger(value)) {
+    return String(Math.round(value));
+  }
+  return trimZero(value, 1);
+}
+
+function trimZero(value: number, digits: number): string {
+  return value.toFixed(digits).replace(/\.0$/, '');
 }
 
 function grid(): string {
-  return [0.25, 0.5, 0.75]
-    .map(
-      (fraction) =>
-        `<line x1="0" y1="${(HEIGHT * fraction).toFixed(0)}" x2="${WIDTH}" y2="${(HEIGHT * fraction).toFixed(0)}" stroke="rgba(148,163,184,0.12)" stroke-width="1" />`,
-    )
+  return [0, 0.5, 1]
+    .map((fraction) => {
+      const y = Math.min(HEIGHT - 1, Math.max(1, HEIGHT * fraction));
+      const opacity = fraction === 0.5 ? 0.12 : 0.2;
+      return `<line x1="0" y1="${y.toFixed(0)}" x2="${WIDTH}" y2="${y.toFixed(0)}" stroke="rgba(148,163,184,${opacity})" stroke-width="1" />`;
+    })
     .join('');
+}
+
+function yAxis(max: number): string {
+  return `<div class="chart-yaxis" aria-hidden="true"><span>${formatTick(max)}</span><span>${formatTick(max / 2)}</span><span>0</span></div>`;
 }
 
 export function lineChart(series: LineSeries[], ariaLabel: string): string {
@@ -41,13 +77,13 @@ export function lineChart(series: LineSeries[], ariaLabel: string): string {
     .map((entry, index) => {
       const points = entry.values.map((value, position) => ({
         x: PAD + position * step,
-        y: HEIGHT - PAD - (Math.max(0, value) / max) * (HEIGHT - PAD * 2),
+        y: HEIGHT - 1 - (Math.min(max, Math.max(0, value)) / max) * (HEIGHT - 2),
       }));
       const line = points
         .map((point, position) => `${position === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`)
         .join(' ');
       const area = entry.fill
-        ? `<path d="${line} L${(WIDTH - PAD).toFixed(1)},${HEIGHT - PAD} L${PAD},${HEIGHT - PAD} Z" fill="url(#chart-fill-${index})" />`
+        ? `<path d="${line} L${(WIDTH - PAD).toFixed(1)},${HEIGHT - 1} L${PAD},${HEIGHT - 1} Z" fill="url(#chart-fill-${index})" />`
         : '';
       const gradient = entry.fill
         ? `<defs><linearGradient id="chart-fill-${index}" x1="0" y1="0" x2="0" y2="1">
@@ -59,9 +95,11 @@ export function lineChart(series: LineSeries[], ariaLabel: string): string {
     })
     .join('');
 
-  return `<svg viewBox="0 0 ${WIDTH} ${HEIGHT}" preserveAspectRatio="none" role="img" aria-label="${escapeAttr(ariaLabel)}">
+  const svg = `<svg viewBox="0 0 ${WIDTH} ${HEIGHT}" preserveAspectRatio="none" role="img" aria-label="${escapeAttr(ariaLabel)}">
     ${grid()}${paths}
   </svg>`;
+
+  return `<div class="chart-frame">${yAxis(max)}<div class="chart-plot">${svg}</div></div>`;
 }
 
 export function barChart(bars: { label: string; value: number }[], ariaLabel: string): string {
@@ -83,9 +121,17 @@ export function barChart(bars: { label: string; value: number }[], ariaLabel: st
   </svg>`;
 }
 
-/** Label row for bar charts: HTML keeps the text readable at card widths. */
-export function barLabels(labels: string[]): string {
-  return `<div class="bar-labels">${labels.map((label) => `<span>${escapeText(label)}</span>`).join('')}</div>`;
+/**
+ * Value + label row for bar charts. The values are rendered as text here, not in the
+ * SVG, so they stay legible when the chart is squeezed onto a phone.
+ */
+export function barLabels(labels: string[], values: number[]): string {
+  return `<div class="bar-labels">${labels
+    .map(
+      (label, index) =>
+        `<span><b>${formatTick(values[index] ?? 0)}</b><small>${escapeText(label)}</small></span>`,
+    )
+    .join('')}</div>`;
 }
 
 export function donut(

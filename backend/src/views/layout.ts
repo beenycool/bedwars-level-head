@@ -80,9 +80,14 @@ code {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
   gap: 0.75rem; margin-bottom: 1rem;
 }
-.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+.card-header { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem; margin-bottom: 0.5rem; }
+.card-header .meta { text-align: right; }
 .chart-shell { height: var(--chart-height); }
 .chart-shell svg { display: block; width: 100%; height: 100%; }
+.chart-frame { display: flex; gap: 0.45rem; height: 100%; }
+.chart-yaxis { display: flex; flex-direction: column; justify-content: space-between; flex: 0 0 auto; min-width: 2.1rem; padding: 1px 0; text-align: right; font-size: 0.66rem; line-height: 1; color: #94a3b8; font-variant-numeric: tabular-nums; }
+.chart-plot { flex: 1; min-width: 0; }
+.chart-plot svg { display: block; width: 100%; height: 100%; }
 .chart-axis { display: flex; justify-content: space-between; gap: 0.5rem; margin-top: 0.4rem; font-size: 0.72rem; color: #94a3b8; }
 .donut { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; min-height: var(--chart-height); }
 .donut svg { width: 132px; height: 132px; flex: 0 0 132px; }
@@ -171,8 +176,10 @@ tbody tr:nth-child(even) td { background: rgba(148, 163, 184, 0.05); }
 .status-5xx { color: #f87171; background: rgba(248, 113, 113, 0.15); }
 .status-connected { color: #4ade80; }
 .chart-foot { margin: 0.35rem 0 0; font-size: 0.72rem; color: #94a3b8; }
-.bar-labels { display: flex; gap: 2px; margin-top: 0.3rem; font-size: 0.62rem; color: #94a3b8; }
-.bar-labels span { flex: 1; text-align: center; white-space: nowrap; }
+.bar-labels { display: flex; gap: 2px; margin-top: 0.45rem; font-size: 0.62rem; color: #94a3b8; }
+.bar-labels span { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 0.1rem; min-width: 0; white-space: nowrap; }
+.bar-labels b { color: #e2e8f0; font-size: 0.7rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bar-labels small { font-size: 0.62rem; }
 .bar-list { list-style: none; margin: 0.4rem 0 0; padding: 0; display: grid; gap: 0.3rem; }
 .bar-list li { display: grid; grid-template-columns: minmax(4.5rem, 32%) 1fr auto; gap: 0.4rem; align-items: center; font-size: 0.72rem; color: #cbd5f5; }
 .bar-list__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
