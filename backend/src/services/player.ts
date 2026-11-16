@@ -53,6 +53,7 @@ function buildNickedStats(): MinimalPlayerStats {
   return {
     displayname: '(nicked)',
     bedwars_experience: null,
+    bedwars_active_star: null,
     bedwars_final_kills: 0,
     bedwars_final_deaths: 0,
     duels_wins: 0,

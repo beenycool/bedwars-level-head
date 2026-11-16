@@ -57,6 +57,7 @@
       "minimalStats": {
         "displayname": "BedwarsLegend",
         "bedwars_experience": 5107000,
+        "bedwars_active_star": null,
         "bedwars_final_kills": 12345,
         "bedwars_final_deaths": 1000,
         "duels_wins": 321,
@@ -114,6 +115,7 @@
       "minimalStats": {
         "displayname": "DuelsDuelist",
         "bedwars_experience": 500000,
+        "bedwars_active_star": null,
         "bedwars_final_kills": 450,
         "bedwars_final_deaths": 300,
         "duels_wins": 6500,
@@ -168,6 +170,7 @@
       "minimalStats": {
         "displayname": "SkyWarsSage",
         "bedwars_experience": 301000,
+        "bedwars_active_star": null,
         "bedwars_final_kills": 800,
         "bedwars_final_deaths": 400,
         "duels_wins": 1500,

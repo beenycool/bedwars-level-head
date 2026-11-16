@@ -351,8 +351,9 @@ export async function checkHypixelReachability(): Promise<boolean> {
 export interface MinimalPlayerStats {
   displayname: string | null;
 
-  // Bedwars-specific (for stars calculation, FKDR)
+  // Bedwars-specific (for stars calculation, FKDR, star cosmetic)
   bedwars_experience: number | null;
+  bedwars_active_star: string | null;
   bedwars_final_kills: number;
   bedwars_final_deaths: number;
 
@@ -433,6 +434,7 @@ export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPla
 
   const bedwars = bedwarsStats as Record<string, number | undefined>;
   const skywars = skywarsStats as Record<string, number | undefined>;
+  const activeStar = typeof bedwarsStats.active_star === 'string' ? bedwarsStats.active_star : null;
 
   const duelsAggregates = extractModeStats(duelsStats);
   const skywarsAggregates = extractModeStats(skywarsStats);
@@ -442,6 +444,7 @@ export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPla
 
     // Bedwars
     bedwars_experience: bedwars.bedwars_experience ?? bedwars.Experience ?? null,
+    bedwars_active_star: activeStar,
     bedwars_final_kills: Number(bedwars.final_kills_bedwars ?? 0),
     bedwars_final_deaths: Number(bedwars.final_deaths_bedwars ?? 0),
 

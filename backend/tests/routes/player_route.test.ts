@@ -113,6 +113,7 @@ const baseResolved = {
   payload: {
     displayname: 'TestPlayer',
     bedwars_experience: 12345,
+    bedwars_active_star: null,
     bedwars_final_kills: 10,
     bedwars_final_deaths: 5,
     duels_wins: 0,
