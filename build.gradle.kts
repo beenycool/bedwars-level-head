@@ -77,11 +77,6 @@ dependencies {
     embed("com.squareup.okhttp3:okhttp:3.14.9")
     embed("com.google.code.gson:gson:2.10.1")
     compileOnly("org.spongepowered:mixin:0.8.5")
-
-    // Test dependencies - pure JVM
-    testImplementation(platform("org.junit:junit-bom:5.10.0"))
-    testImplementation("org.junit.jupiter:junit-jupiter")
-    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 val manifestAttributes = mapOf(
@@ -128,11 +123,6 @@ tasks.named<RemapJarTask>("remapJar") {
     input.set(tasks.named<ShadowJar>("shadowJar").flatMap { it.archiveFile })
     dependsOn(tasks.named("shadowJar"))
     archiveClassifier.set("")
-}
-
-// Configure JUnit5 for tests
-tasks.test {
-    useJUnitPlatform()
 }
 
 // Expand version placeholders in mcmod.info (no-op for other resources).

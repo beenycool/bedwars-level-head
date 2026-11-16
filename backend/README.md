@@ -96,18 +96,3 @@ See `.env.example`. The short version:
 - `LOOKUP_LOG_RETENTION_DAYS` (default 30)
 - `PORT`, `HOST`, `HYPIXEL_TIMEOUT_MS` (defaults: 3000, 0.0.0.0, 5000)
 
-## Tests
-
-```bash
-npm ci
-npm run typecheck
-npm test
-```
-
-`npm test` is offline. The tracking SQL has an opt-in integration suite that runs
-against a real PostgreSQL database (it creates its own tables and truncates them):
-
-```bash
-TEST_DB_URL=postgresql://postgres@127.0.0.1:5432/levelhead_test \
-CACHE_DB_URL=$TEST_DB_URL npx jest tests/integration --runInBand
-```

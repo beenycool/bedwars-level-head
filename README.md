@@ -36,14 +36,6 @@ JAVA_HOME=/path/to/jdk17 ./gradlew --no-daemon build
 
 The jar is written to `build/libs/`.
 
-### Test
-
-```sh
-JAVA_HOME=/path/to/jdk17 ./gradlew --offline test
-```
-
-Tests are headless; no game client is needed.
-
 ### Commands
 
 `/levelhead` opens the settings GUI. Chat subcommands:
@@ -65,11 +57,10 @@ npm ci
 npm run dev               # or: npm run build && npm start
 ```
 
-### Check and test
+### Check
 
 ```sh
-npm run typecheck         # tsc over src and tests
-npm test                  # jest
+npm run typecheck         # tsc over src
 ```
 
 ### Configuration
@@ -95,4 +86,4 @@ is rendered by the service itself.
 ## Deployment
 
 - **Mod:** GitHub Actions builds `build/libs/*.jar` on push and on release.
-- **Backend:** `deploy-backend.yml` typechecks and tests, builds the Docker image, pushes it to GHCR, then triggers the Render deploy defined in `render.yaml`. It uses the starter plan so the instance does not sleep.
+- **Backend:** `deploy-backend.yml` typechecks, builds the Docker image, pushes it to GHCR, then triggers the Render deploy defined in `render.yaml`. It uses the starter plan so the instance does not sleep.
