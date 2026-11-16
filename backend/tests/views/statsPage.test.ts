@@ -78,6 +78,13 @@ function data(overrides: Partial<StatsPageData> = {}): StatsPageData {
       rateLimitKeys: 3,
       rateLimitBudget: 600,
       rateLimitWindowMs: 60_000,
+      rateLimitMode: 'dynamic',
+      rateLimitMin: 20,
+      rateLimitMax: 600,
+      rateLimitActiveClients: 2,
+      rateLimitNetworkCalls: 120,
+      rateLimitCacheHitRate: 0.75,
+      rateLimitHypixelRemaining: 7_080,
     },
     ...overrides,
   };
@@ -107,6 +114,8 @@ describe('renderStatsPage', () => {
     expect(html).toContain('Infrastructure Health');
     expect(html).toContain('Process Resources');
     expect(html).toContain('Rate Limiting');
+    expect(html).toContain('Dynamic per IP');
+    expect(html).toContain('Upstream Signal');
     for (const chart of [
       'Cache Performance',
       'Star Distribution',

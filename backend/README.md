@@ -65,10 +65,16 @@ all — the player endpoints keep working and `/stats` reports no data.
 
 ## Rate limiting
 
-A single in-memory token bucket per client IP, sized at `PUBLIC_RATE_LIMIT_MAX`
-identifiers per minute (default 600). A full BedWars hub is one burst of ~100;
-sustained traffic is held to the minute budget. There is no Redis dependency and
-no fail-closed mode. `/healthz` bypasses the limiter.
+Each client IP gets its own in-memory token bucket. The ceiling is dynamic:
+every ten seconds the limiter divides the remaining Hypixel hourly quota by the
+number of active clients and recent demand, then widens it by the observed cache
+hit rate. Budgets stay between `DYNAMIC_RATE_LIMIT_MIN` and
+`DYNAMIC_RATE_LIMIT_MAX` (default 20–600 identifiers/minute). A full BedWars hub
+is one burst; each identifier in a batch costs one token. `/healthz` bypasses the
+limiter.
+
+Set `DYNAMIC_RATE_LIMIT_ENABLED=false` to use the flat `PUBLIC_RATE_LIMIT_MAX`
+budget instead. There is no Redis dependency and no fail-closed mode.
 
 ## Configuration
 
@@ -79,6 +85,10 @@ See `.env.example`. The short version:
 - `ADMIN_API_KEYS` (optional admin purge)
 - `TRUST_PROXY_CIDRS` (optional; one proxy hop is trusted in production when unset)
 - `PUBLIC_RATE_LIMIT_MAX` (default 600/minute)
+- `DYNAMIC_RATE_LIMIT_ENABLED` (default true)
+- `DYNAMIC_RATE_LIMIT_MIN` / `DYNAMIC_RATE_LIMIT_MAX` (default 20 / 600 per minute)
+- `DYNAMIC_RATE_LIMIT_CACHE_TTL_MS` (default 10s)
+- `HYPIXEL_HOURLY_QUOTA` (default 7200 calls/hour)
 - `PLAYER_CACHE_DB_TTL_MS` (default 24h)
 - `LOOKUP_TRACKING_ENABLED` (default true; `false` disables `/stats` recording)
 - `LOOKUP_LOG_RETENTION_DAYS` (default 30)

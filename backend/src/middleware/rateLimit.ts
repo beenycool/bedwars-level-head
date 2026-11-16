@@ -1,5 +1,6 @@
 import type { Request, RequestHandler } from 'express';
 import { PUBLIC_RATE_LIMIT_MAX, PUBLIC_RATE_LIMIT_WINDOW_MS } from '../config';
+import { getDynamicPublicLimit } from '../services/dynamicRateLimit';
 import { HttpError } from '../util/httpError';
 import { logger } from '../util/logger';
 import { MAX_BATCH_SIZE } from '../util/validationConstants';
@@ -21,34 +22,52 @@ export interface TokenBucketOptions {
   capacity: number;
   /** Time to refill an empty bucket. */
   windowMs: number;
+  /**
+   * Optional dynamic ceiling, recomputed from live demand. The callback receives a
+   * lazy client count so a cached limit does not walk the bucket map on every request.
+   */
+  getCapacity?: (activeClients: () => number) => number;
 }
 
 /**
  * Single-instance in-memory token bucket.
  *
- * A bucket refills continuously at `capacity / windowMs`, so a lobby-sized burst
- * (one batch of ~100 identifiers) is admitted immediately while a sustained client
- * is still held to the per-minute budget. No Redis, no database, no network calls.
+ * A bucket refills continuously at `capacity / windowMs`, so a whole batch of
+ * identifiers is admitted immediately while a sustained client is still held to the
+ * per-minute budget. No Redis, no database, no network calls.
+ *
+ * When `getCapacity` is supplied, the ceiling moves with server and upstream
+ * pressure instead of staying fixed. Buckets retain their tokens; a smaller ceiling
+ * clamps them, and a larger one lets them refill toward the new ceiling.
  */
 export class TokenBucketLimiter {
   private readonly buckets = new Map<string, Bucket>();
-  private readonly capacity: number;
-  private readonly refillPerMs: number;
+  private readonly maxCapacity: number;
+  private readonly windowMs: number;
+  private readonly getCapacity: ((activeClients: () => number) => number) | undefined;
   private readonly sweepAfter: number;
 
   constructor(options: TokenBucketOptions) {
-    this.capacity = Math.max(1, Math.floor(options.capacity));
-    this.refillPerMs = this.capacity / Math.max(1, options.windowMs);
+    this.maxCapacity = Math.max(1, Math.floor(options.capacity));
+    this.windowMs = Math.max(1, options.windowMs);
+    this.getCapacity = options.getCapacity;
     this.sweepAfter = Math.max(1000, options.windowMs * 2);
   }
 
   consume(key: string, cost: number = 1, now: number = Date.now()): ConsumeResult {
+    const capacity = this.resolveCapacity(now);
+    const refillPerMs = capacity / this.windowMs;
     const amount = Number.isFinite(cost) && cost > 0 ? Math.ceil(cost) : 1;
-    const bucket = this.buckets.get(key) ?? { tokens: this.capacity, updatedAt: now };
+    const bucket = this.buckets.get(key) ?? { tokens: capacity, updatedAt: now };
 
     if (now > bucket.updatedAt) {
-      bucket.tokens = Math.min(this.capacity, bucket.tokens + (now - bucket.updatedAt) * this.refillPerMs);
+      bucket.tokens = Math.min(
+        capacity,
+        bucket.tokens + (now - bucket.updatedAt) * refillPerMs,
+      );
       bucket.updatedAt = now;
+    } else if (bucket.tokens > capacity) {
+      bucket.tokens = capacity;
     }
 
     if (bucket.tokens >= amount) {
@@ -63,8 +82,31 @@ export class TokenBucketLimiter {
     return {
       allowed: false,
       remaining: Math.floor(bucket.tokens),
-      retryAfterMs: Math.ceil(deficit / this.refillPerMs),
+      retryAfterMs: Math.ceil(deficit / refillPerMs),
     };
+  }
+
+  /** Clients that made a request inside the current refill window. */
+  activeClients(now: number = Date.now()): number {
+    const cutoff = now - this.windowMs;
+    let active = 0;
+    for (const bucket of this.buckets.values()) {
+      if (bucket.updatedAt >= cutoff) {
+        active += 1;
+      }
+    }
+    return active;
+  }
+
+  private resolveCapacity(now: number): number {
+    if (!this.getCapacity) {
+      return this.maxCapacity;
+    }
+    const dynamic = this.getCapacity(() => this.activeClients(now));
+    if (!Number.isFinite(dynamic)) {
+      return this.maxCapacity;
+    }
+    return Math.min(this.maxCapacity, Math.max(1, Math.floor(dynamic)));
   }
 
   /** Test/ops helper: drop all buckets. */
@@ -93,6 +135,7 @@ export class TokenBucketLimiter {
 export const publicRateLimiter = new TokenBucketLimiter({
   capacity: PUBLIC_RATE_LIMIT_MAX,
   windowMs: PUBLIC_RATE_LIMIT_WINDOW_MS,
+  getCapacity: (activeClients) => getDynamicPublicLimit(activeClients),
 });
 
 export const adminRateLimiter = new TokenBucketLimiter({

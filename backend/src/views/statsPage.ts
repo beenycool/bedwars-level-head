@@ -15,6 +15,7 @@ import {
   STATS_REFRESH,
   type StatsQuery,
 } from '../util/statsQuery';
+import { HYPIXEL_HOURLY_QUOTA } from '../config';
 import type { Slice, StatsPageData, TimePoint, TopPlayer } from '../services/lookupStats';
 import type { LookupLogTable } from '../services/database/schema';
 import { renderLayout } from './layout';
@@ -49,8 +50,6 @@ const REFRESH_LABELS: Record<number, string> = {
   60: '1m',
   300: '5m',
 };
-
-const HYPIXEL_HOURLY_QUOTA = 7_200;
 
 function datetimeValue(date: Date): string {
   return date.toISOString().slice(0, 16);
@@ -238,23 +237,33 @@ function renderProcess(data: StatsPageData): string {
 
 function renderRateLimiting(data: StatsPageData): string {
   const { runtime } = data;
+  const cacheHit =
+    runtime.rateLimitCacheHitRate === null
+      ? 'No samples yet'
+      : `${(runtime.rateLimitCacheHitRate * 100).toFixed(0)}% cache hits`;
+  const dynamic = runtime.rateLimitMode === 'dynamic';
 
   return `<h2>Rate Limiting</h2>
   <div class="stat-grid">
     <div class="card stat-card">
       <p class="stat-label">Mode</p>
-      <p class="stat-value status-connected">● In-process</p>
-      <p class="stat-sub">No Redis, no network hop</p>
+      <p class="stat-value status-connected">● ${dynamic ? 'Dynamic per IP' : 'Fixed per IP'}</p>
+      <p class="stat-sub">${dynamic ? 'API lookups · adapts to pressure' : 'Static per-IP API budget'}</p>
     </div>
     <div class="card stat-card">
-      <p class="stat-label">Tracked Buckets</p>
-      <p class="stat-value">${formatNumber(runtime.rateLimitKeys)}</p>
-      <p class="stat-sub">Client IPs with a live bucket</p>
-    </div>
-    <div class="card stat-card">
-      <p class="stat-label">Budget</p>
+      <p class="stat-label">API Budget</p>
       <p class="stat-value">${formatNumber(runtime.rateLimitBudget)}/min</p>
-      <p class="stat-sub">Identifiers per client IP</p>
+      <p class="stat-sub">${dynamic ? `Identifiers per client · ${formatNumber(runtime.rateLimitMin)}–${formatNumber(runtime.rateLimitMax)}/min` : 'Identifiers per client IP'}</p>
+    </div>
+    <div class="card stat-card">
+      <p class="stat-label">Active Clients</p>
+      <p class="stat-value">${formatNumber(runtime.rateLimitActiveClients)}</p>
+      <p class="stat-sub">${formatNumber(runtime.rateLimitKeys)} tracked API buckets</p>
+    </div>
+    <div class="card stat-card">
+      <p class="stat-label">Upstream Signal</p>
+      <p class="stat-value">${formatNumber(runtime.rateLimitNetworkCalls)}/h</p>
+      <p class="stat-sub">${cacheHit} · ${formatNumber(runtime.rateLimitHypixelRemaining)} quota left</p>
     </div>
   </div>`;
 }

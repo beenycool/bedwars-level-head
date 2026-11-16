@@ -4,6 +4,7 @@ import { ensureInitialized, isDatabaseReady } from './cache';
 import { LOOKUP_LOG_RETENTION_DAYS, LOOKUP_TRACKING_ENABLED } from '../config';
 import { bedwarsStars } from '../util/bedwarsStars';
 import { logger } from '../util/logger';
+import { recordLookupSignals } from './rateLimitSignals';
 
 /** Where the lookup came from; kept coarse so the site can break traffic down. */
 export type LookupRoute = 'public' | 'legacy' | 'batch';
@@ -102,6 +103,7 @@ export function buildTrackedPlayerRows(observations: LookupObservation[]): Track
  * write is detached and every failure is downgraded to a warning.
  */
 export function recordLookups(observations: LookupObservation[], route: LookupRoute): void {
+  recordLookupSignals(observations);
   if (!LOOKUP_TRACKING_ENABLED || observations.length === 0) {
     return;
   }

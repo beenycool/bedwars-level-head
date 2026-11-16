@@ -71,6 +71,13 @@ const pageData: StatsPageData = {
     rateLimitKeys: 1,
     rateLimitBudget: 600,
     rateLimitWindowMs: 60_000,
+    rateLimitMode: 'dynamic',
+    rateLimitMin: 20,
+    rateLimitMax: 600,
+    rateLimitActiveClients: 1,
+    rateLimitNetworkCalls: 40,
+    rateLimitCacheHitRate: 0.6,
+    rateLimitHypixelRemaining: 7_160,
   },
 };
 

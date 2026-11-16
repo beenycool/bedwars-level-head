@@ -1,5 +1,6 @@
-import { PUBLIC_RATE_LIMIT_MAX, PUBLIC_RATE_LIMIT_WINDOW_MS } from '../config';
+import { PUBLIC_RATE_LIMIT_WINDOW_MS } from '../config';
 import { publicRateLimiter } from '../middleware/rateLimit';
+import { dynamicRateLimitSnapshot } from './dynamicRateLimit';
 
 /**
  * A tiny in-process ring buffer for the "Process Memory Over Time" chart. The old
@@ -23,6 +24,13 @@ export interface RuntimeSnapshot {
   rateLimitKeys: number;
   rateLimitBudget: number;
   rateLimitWindowMs: number;
+  rateLimitMode: 'dynamic' | 'fixed';
+  rateLimitMin: number;
+  rateLimitMax: number;
+  rateLimitActiveClients: number;
+  rateLimitNetworkCalls: number;
+  rateLimitCacheHitRate: number | null;
+  rateLimitHypixelRemaining: number;
 }
 
 const MAX_SAMPLES = 120;
@@ -79,6 +87,7 @@ export function ensureRuntimeSample(now: number = Date.now()): void {
 
 export function runtimeSnapshot(): RuntimeSnapshot {
   const memory = process.memoryUsage();
+  const rateLimits = dynamicRateLimitSnapshot(publicRateLimiter.activeClients());
   return {
     rssMb: memory.rss / 1024 / 1024,
     heapMb: memory.heapUsed / 1024 / 1024,
@@ -87,7 +96,14 @@ export function runtimeSnapshot(): RuntimeSnapshot {
     bufferSize: samples.length,
     samples: [...samples],
     rateLimitKeys: publicRateLimiter.size,
-    rateLimitBudget: PUBLIC_RATE_LIMIT_MAX,
+    rateLimitBudget: rateLimits.limit,
     rateLimitWindowMs: PUBLIC_RATE_LIMIT_WINDOW_MS,
+    rateLimitMode: rateLimits.enabled ? 'dynamic' : 'fixed',
+    rateLimitMin: rateLimits.min,
+    rateLimitMax: rateLimits.max,
+    rateLimitActiveClients: rateLimits.activeClients,
+    rateLimitNetworkCalls: rateLimits.networkCallsLastHour,
+    rateLimitCacheHitRate: rateLimits.cacheHitRate,
+    rateLimitHypixelRemaining: rateLimits.hypixelRemaining,
   };
 }
