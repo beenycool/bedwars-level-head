@@ -91,6 +91,8 @@ object StatsPayloadParser {
         when (gameMode) {
             GameMode.BEDWARS -> {
                 source.get("bedwars_experience")?.let { minimal.add("bedwars_experience", it) }
+                (source.get("bedwars_active_star") ?: source.get("active_star"))
+                    ?.let { minimal.add("active_star", it) }
                 source.get("bedwars_final_kills")?.let { minimal.add("final_kills_bedwars", it) }
                 source.get("bedwars_final_deaths")?.let { minimal.add("final_deaths_bedwars", it) }
             }

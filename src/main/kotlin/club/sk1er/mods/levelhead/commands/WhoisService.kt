@@ -137,7 +137,9 @@ object WhoisService {
             displayName.equals("(nicked)", ignoreCase = true)
 
         val statValue = when (stats) {
-            is GameStats.Bedwars -> stats.star?.let { "$it${BedwarsStar.getPrestigeIcon(it)}" } ?: "?"
+            is GameStats.Bedwars -> stats.star?.let {
+                "$it${stats.starIcon ?: BedwarsStar.getPrestigeIcon(it)}"
+            } ?: "?"
             is GameStats.Duels -> stats.wins?.toString() ?: "?"
             is GameStats.SkyWars -> stats.level?.let { "$it${SkyWarsStats.getDefaultEmblem(it)}" } ?: "?"
             null -> "?"

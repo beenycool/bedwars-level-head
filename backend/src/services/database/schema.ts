@@ -1,4 +1,4 @@
-/** One table: player stats rows keyed by `player:<uuid>`. */
+/** One table: player stats rows keyed by `player:v2:<uuid>`. */
 export interface PlayerStatsCacheTable {
   cache_key: string;
   payload: string; // JSON-serialised MinimalPlayerStats

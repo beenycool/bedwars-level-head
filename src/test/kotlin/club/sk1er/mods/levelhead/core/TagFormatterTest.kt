@@ -51,6 +51,68 @@ class TagFormatterTest {
     }
 
     @Test
+    fun `prestige customizer stars override the level default`() {
+        assertEquals("✫", BedwarsStar.iconForCosmetic("star_black_open"))
+        assertEquals("✪", BedwarsStar.iconForCosmetic("star_white_circled"))
+        assertEquals("⚝", BedwarsStar.iconForCosmetic("star_white_outlined"))
+        assertEquals("✥", BedwarsStar.iconForCosmetic("star_four_clubs"))
+        assertEquals("✭", BedwarsStar.iconForCosmetic("star_black_outlined"))
+        assertEquals("✦", BedwarsStar.iconForCosmetic("star_four_pointed"))
+        assertEquals("✯", BedwarsStar.iconForCosmetic("star_pinwheel"))
+        assertEquals("✰", BedwarsStar.iconForCosmetic("star_hollow"))
+        assertNull(BedwarsStar.iconForCosmetic("random_cosmetic"))
+        assertNull(BedwarsStar.iconForCosmetic(null))
+
+        // 368 and 592 are both Sapphire/Diamond-level tags whose players picked
+        // the hollow star; the glyph must come from the cosmetic, not the level.
+        assertEquals("§b[§b3§b6§b8§b✰§b]", BedwarsStar.formatStarTag(368, "✰"))
+        assertEquals("§3[§35§39§32§3✰§3]", BedwarsStar.formatStarTag(592, "✰"))
+    }
+
+    @Test
+    fun `the fetcher keeps the selected star cosmetic from flat and nested payloads`() {
+        val flat = BedwarsFetcher.buildStats(
+            payload(
+                """
+                {"displayname":"qskilz","bedwars_experience":1788000,
+                 "bedwars_active_star":"star_hollow",
+                 "bedwars_final_kills":11249,"bedwars_final_deaths":4446}
+                """.trimIndent(),
+            ),
+            null,
+        )
+        check(flat is GameStats.Bedwars)
+        assertEquals(368, flat.star)
+        assertEquals("✰", flat.starIcon)
+
+        val nested = BedwarsFetcher.buildStats(
+            payload(
+                """
+                {"player":{"displayname":"qskilz","stats":{"Bedwars":{
+                  "bedwars_experience":1788000,"active_star":"star_hollow",
+                  "final_kills_bedwars":11249,"final_deaths_bedwars":4446
+                }}}}
+                """.trimIndent(),
+            ),
+            null,
+        )
+        check(nested is GameStats.Bedwars)
+        assertEquals("✰", nested.starIcon)
+
+        val missing = BedwarsFetcher.buildStats(
+            payload(
+                """
+                {"displayname":"DefaultStar","bedwars_experience":1788000,
+                 "bedwars_final_kills":11249,"bedwars_final_deaths":4446}
+                """.trimIndent(),
+            ),
+            null,
+        )
+        check(missing is GameStats.Bedwars)
+        assertNull(missing.starIcon)
+    }
+
+    @Test
     fun `single-colour prestiges colour every character`() {
         // 0-99 is the grey tier; the single-character colormap path must still emit
         // a code before the brackets as well as the text.

@@ -74,6 +74,54 @@
       "expectedTag": "BedWars Star: §c[§61§e0§a5§b0§d✪§5]"
     },
     {
+      "mode": "BEDWARS",
+      "description": "Prestige Customizer star (star 368, star_hollow): must use the selected ✰, not the level default.",
+      "uuid": "3e6a0b2d4f7c45a1b8d9e2f3a4b5c6d7",
+      "upstream": {
+        "success": true,
+        "player": {
+          "uuid": "3e6a0b2d4f7c45a1b8d9e2f3a4b5c6d7",
+          "displayname": "CustomStar",
+          "stats": {
+            "Bedwars": {
+              "bedwars_experience": 1788000,
+              "Experience": 1788000,
+              "active_star": "star_hollow",
+              "final_kills_bedwars": 11249,
+              "final_deaths_bedwars": 4446,
+              "wins_bedwars": 900,
+              "losses_bedwars": 700,
+              "kills_bedwars": 15000,
+              "deaths_bedwars": 9000,
+              "beds_broken_bedwars": 1200,
+              "winstreak": 3,
+              "coins": 500000
+            },
+            "Duels": {},
+            "SkyWars": {}
+          }
+        }
+      },
+      "minimalStats": {
+        "displayname": "CustomStar",
+        "bedwars_experience": 1788000,
+        "bedwars_active_star": "star_hollow",
+        "bedwars_final_kills": 11249,
+        "bedwars_final_deaths": 4446,
+        "duels_wins": 0,
+        "duels_losses": 0,
+        "duels_kills": 0,
+        "duels_deaths": 0,
+        "skywars_experience": null,
+        "skywars_wins": 0,
+        "skywars_losses": 0,
+        "skywars_kills": 0,
+        "skywars_deaths": 0
+      },
+      "expectedFooter": "§b[§b3§b6§b8§b✰§b]",
+      "expectedTag": "BedWars Star: §b[§b3§b6§b8§b✰§b]"
+    },
+    {
       "mode": "DUELS",
       "description": "Overall Legend III (6500 wins): bold division title, with a non-empty roman level.",
       "uuid": "1c4e8b2d5f6a43e9b0d7c2f3a5b6d7e8",

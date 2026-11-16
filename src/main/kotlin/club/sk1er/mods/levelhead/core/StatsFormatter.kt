@@ -73,7 +73,7 @@ object StatsFormatter {
         val starValue = stats.star
         // Use the same prestige-aware tag as the tab fallback so the nametag, tab
         // and formatter never disagree on the icon or colours (B26/B29).
-        val starString = starValue?.let { BedwarsStar.formatStarTag(it) } ?: "?"
+        val starString = starValue?.let { BedwarsStar.formatStarTag(it, stats.starIcon) } ?: "?"
         val fkdrString = stats.fkdr?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "?"
         
         var footerValue = template

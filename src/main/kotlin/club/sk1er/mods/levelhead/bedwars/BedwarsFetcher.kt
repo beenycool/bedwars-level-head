@@ -17,17 +17,19 @@ object BedwarsFetcher : BaseStatsFetcher() {
     }
 
     override fun buildStats(payload: JsonObject, etag: String?): GameStats? {
-        StatsPayloadParser.findStatsObject(payload, GameMode.BEDWARS) ?: return null
+        val bedwars = findBedwarsStats(payload) ?: return null
         val nicked = StatsPayloadParser.isNicked(payload)
         val experience = BedwarsStar.extractExperience(payload)
         val star = experience?.let { BedwarsStar.calculateStar(it) }
         val fkdr = parseBedwarsFkdr(payload)
+        val starIcon = BedwarsStar.iconForCosmetic(bedwars.stringValue("active_star"))
         return GameStats.Bedwars(
             star = star,
             fkdr = fkdr,
             nicked = nicked,
             fetchedAt = System.currentTimeMillis(),
-            etag = etag
+            etag = etag,
+            starIcon = starIcon
         )
     }
 
@@ -69,5 +71,13 @@ object BedwarsFetcher : BaseStatsFetcher() {
         val element = get(key) ?: return null
         if (element.isJsonNull) return null
         return kotlin.runCatching { element.asDouble }.getOrNull()
+    }
+
+    private fun JsonObject.stringValue(key: String): String? {
+        val element = get(key) ?: return null
+        if (element.isJsonNull || !element.isJsonPrimitive || !element.asJsonPrimitive.isString) {
+            return null
+        }
+        return element.asString
     }
 }

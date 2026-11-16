@@ -10,7 +10,9 @@ export interface CachedPlayerStats extends CacheEntry<MinimalPlayerStats> {
   source: string | null;
 }
 
-const PLAYER_KEY_PREFIX = 'player:';
+// Versioned so a payload-shape change invalidates old rows without a manual
+// purge. v2 adds bedwars_active_star for Prestige Customizer stars.
+const PLAYER_KEY_PREFIX = 'player:v2:';
 
 export function buildPlayerCacheKey(uuid: string): string {
   return `${PLAYER_KEY_PREFIX}${uuid.toLowerCase()}`;

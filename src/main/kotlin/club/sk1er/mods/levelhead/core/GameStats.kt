@@ -24,7 +24,9 @@ sealed class GameStats {
         val fkdr: Double?,
         override val nicked: Boolean,
         override val fetchedAt: Long,
-        override val etag: String? = null
+        override val etag: String? = null,
+        /** The glyph selected in the Prestige Customizer, or null for the level default. */
+        val starIcon: String? = null
     ) : GameStats() {
         override fun isExpired(ttl: Duration, now: Long): Boolean {
             return now - fetchedAt >= ttl.toMillis()
