@@ -99,9 +99,20 @@ class StatsStore(
         return result
     }
 
-    /** True when the request loops should enqueue this player. */
-    fun needsFetch(uuid: UUID, gameMode: GameMode, now: Long = clock()): Boolean =
-        lookup(uuid, gameMode, now) != StatsLookup.HIT
+    /**
+     * True when the request loops should enqueue this player.
+     *
+     * This is a non-counting poll: it must not increment the cold/expired miss
+     * counters, because it runs every couple of seconds and [lookup] is the single
+     * place that records a real request decision. A key already in flight
+     * ([StatsState.Loading]) is not enqueued again.
+     */
+    fun needsFetch(uuid: UUID, gameMode: GameMode, now: Long = clock()): Boolean {
+        val state = state(uuid, gameMode) ?: return true
+        if (state is StatsState.Loading) return false
+        val stats = state.statsOrNull ?: return true
+        return stats.isExpired(ttlProvider(), now)
+    }
 
     /** Store a successful lookup. A success replaces a failure. */
     fun putSuccess(uuid: UUID, gameMode: GameMode, stats: GameStats, now: Long = clock()) {
@@ -144,6 +155,21 @@ class StatsStore(
     /** Explicit refresh only; world joins must not call this. */
     fun clear() {
         entries.clear()
+    }
+
+    /**
+     * Drop in-flight placeholders whose owning coroutine was cancelled (for example
+     * by a world hop). Without this a stranded [StatsState.Loading] would suppress
+     * every future request for that player because [needsFetch] treats loading as
+     * "already handled".
+     */
+    fun clearLoading() {
+        val iterator = entries.entries.iterator()
+        while (iterator.hasNext()) {
+            if (iterator.next().value.state is StatsState.Loading) {
+                iterator.remove()
+            }
+        }
     }
 
     fun size(): Int = entries.size

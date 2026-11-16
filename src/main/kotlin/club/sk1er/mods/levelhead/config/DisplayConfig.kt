@@ -38,9 +38,8 @@ class DisplayConfig(private val role: DisplayRole = DisplayRole.ABOVE_HEAD) {
             LevelheadConfig.showSelf = value
         }
 
-    /** The header follows the detected game mode (B36). */
-    val headerString: String
-        get() = LevelheadConfig.headerTextFor(gameMode)
+    /** The header for the mode the caller is formatting, independent of [gameMode]. */
+    fun headerStringFor(gameMode: GameMode): String = LevelheadConfig.headerTextFor(gameMode)
 
     var headerColor: Color
         get() = LevelheadConfig.headerColor.toJavaColor()

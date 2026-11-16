@@ -1,6 +1,8 @@
 package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.bedwars.FetchResult
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
@@ -149,6 +151,39 @@ class StatsStoreTest {
     }
 
     @Test
+    fun `needsFetch polls without counting misses and skips loading entries`() {
+        val store = store()
+
+        assertTrue(store.needsFetch(uuid, GameMode.BEDWARS))
+        assertEquals(0L, store.metricsSnapshot().cold, "a needsFetch poll must not count a cold miss")
+        assertEquals(0L, store.metricsSnapshot().expired)
+
+        store.markLoading(uuid, GameMode.BEDWARS, now)
+        assertFalse(
+            store.needsFetch(uuid, GameMode.BEDWARS),
+            "an in-flight request must not be enqueued a second time"
+        )
+
+        // lookup() remains the only miss-counting call.
+        assertEquals(StatsLookup.MISS, store.lookup(uuid, GameMode.BEDWARS))
+        assertEquals(1L, store.metricsSnapshot().cold)
+    }
+
+    @Test
+    fun `needsFetch does not count a stale poll twice`() {
+        val store = store(ttlMinutes = 30)
+        val fetchedAt = now
+        store.putSuccess(uuid, GameMode.BEDWARS, stats(fetchedAt = fetchedAt))
+
+        now = fetchedAt + Duration.ofMinutes(31).toMillis()
+        assertTrue(store.needsFetch(uuid, GameMode.BEDWARS))
+        assertEquals(0L, store.metricsSnapshot().expired, "polling must not record the expiry")
+
+        assertEquals(StatsLookup.STALE, store.lookup(uuid, GameMode.BEDWARS))
+        assertEquals(1L, store.metricsSnapshot().expired)
+    }
+
+    @Test
     fun `LRU cap evicts the least recently used entry`() {
         val store = store(maxSize = 2)
         val first = UUID.randomUUID()
@@ -198,6 +233,87 @@ class StatsStoreTest {
         coordinator.reset()
 
         assertSame(success, store.get(uuid, GameMode.BEDWARS))
+    }
+
+    @Test
+    fun `a buildable batch success records success and clears backoff`() {
+        var successes = 0
+        val payload = JsonParser.parseString(
+            """
+            {"bedwars_experience":5107000,"final_kills_bedwars":10,"final_deaths_bedwars":5}
+            """.trimIndent()
+        ).asJsonObject
+        val executor = FetchExecutor(
+            worldScopeProvider = { CoroutineScope(Dispatchers.Default) },
+            rateLimiter = RateLimiter(100, Duration.ofMinutes(1), {}, {}),
+            logger = logger,
+            batchFetcher = { ids -> ids.associateWith { FetchResult.Success(payload) } },
+        )
+        FetchBackoff.recordFailure(uuid)
+        val planned = listOf(FetchWork(uuid, GameMode.BEDWARS, cached = null))
+
+        runBlocking {
+            executor.executeProxyBatch(planned) { _, stats ->
+                if (stats != null) successes++
+            }
+        }
+
+        assertEquals(1, successes)
+        assertTrue(executor.lastSuccessAgeMillis != null, "a built payload counts as a successful fetch")
+        assertTrue(
+            FetchBackoff.canAttempt(uuid, System.currentTimeMillis()),
+            "a real success clears the player's backoff"
+        )
+    }
+
+    @Test
+    fun `a successful batch response without stats records failure and keeps backoff`() {
+        var failures = 0
+        var successes = 0
+        val executor = FetchExecutor(
+            worldScopeProvider = { CoroutineScope(Dispatchers.Default) },
+            rateLimiter = RateLimiter(100, Duration.ofMinutes(1), {}, {}),
+            logger = logger,
+            batchFetcher = { ids ->
+                ids.associateWith { FetchResult.Success(JsonObject()) }
+            },
+        )
+        val planned = listOf(FetchWork(uuid, GameMode.BEDWARS, cached = null))
+
+        val remaining = runBlocking {
+            executor.executeProxyBatch(planned) { _, stats ->
+                if (stats == null) failures++ else successes++
+            }
+        }
+
+        assertTrue(remaining.isEmpty())
+        assertEquals(0, successes, "a payload without BedWars stats must not produce a tag")
+        assertEquals(1, failures, "the unbuildable entry is reported as absent")
+        assertNull(executor.lastSuccessAgeMillis, "an unbuildable payload is not a successful fetch")
+        assertFalse(
+            FetchBackoff.canAttempt(uuid, System.currentTimeMillis()),
+            "the player must enter backoff instead of being retried every two seconds"
+        )
+    }
+
+    @Test
+    fun `a world reset clears stranded loading placeholders`() {
+        val store = store()
+        store.markLoading(uuid, GameMode.BEDWARS, now)
+        val coordinator = RequestCoordinator(
+            worldScopeProvider = { CoroutineScope(Dispatchers.Default) },
+            store = store,
+            rateLimiter = RateLimiter(100, Duration.ofMinutes(1), {}, {}),
+            isOnHypixel = { true },
+            logger = logger,
+        )
+
+        coordinator.reset()
+
+        assertTrue(
+            store.needsFetch(uuid, GameMode.BEDWARS),
+            "a cancelled in-flight request must not block the next world's fetch"
+        )
     }
 
     @Test

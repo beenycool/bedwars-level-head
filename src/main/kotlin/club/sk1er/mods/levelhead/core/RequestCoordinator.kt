@@ -69,7 +69,13 @@ class RequestCoordinator(
                 val uuid = trimmedUuid.dashUUID ?: return@forEach
                 groupedRequests
                     .groupBy { GameMode.resolve(it.type, logger) }
-                    .forEach { (gameMode, modeRequests) ->
+                    .forEach modeLoop@ { (gameMode, modeRequests) ->
+                        // A slow request already owns this key. Skipping it before
+                        // lookup() keeps the poll from enqueueing a duplicate (and
+                        // from recording a miss that is really in-flight work).
+                        if (store.state(uuid, gameMode) is StatsState.Loading) {
+                            return@modeLoop
+                        }
                         val lookup = store.lookup(uuid, gameMode, now)
                         val debug = DebugLogging.isRequestDebugEnabled()
                         val maskedUuid = if (debug) uuid.maskForLogs() else null
@@ -113,6 +119,9 @@ class RequestCoordinator(
 
     fun reset() {
         executor.reset()
+        // executor.reset() cancels the coroutines that owned any in-flight keys, so
+        // their Loading placeholders no longer describe real work.
+        store.clearLoading()
     }
 
     fun resetFetchTimestamps() {

@@ -366,7 +366,7 @@ object Levelhead {
         synchronized(worldScopeLock) {
             worldJob.cancel()
             worldJob = SupervisorJob(modJob)
-            worldScope = CoroutineScope(worldJob + Dispatchers.IO)
+            worldScope = CoroutineScope(worldJob + Dispatchers.IO + coroutineExceptionHandler)
         }
     }
 

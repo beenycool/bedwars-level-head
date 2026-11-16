@@ -6,7 +6,6 @@ import net.minecraft.client.Minecraft
 import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.potion.Potion
 import net.minecraft.scoreboard.Team.EnumVisible
-import kotlin.math.min
 
 class AboveHeadDisplay(config: DisplayConfig) : LevelheadDisplay(config) {
 
@@ -16,8 +15,8 @@ class AboveHeadDisplay(config: DisplayConfig) : LevelheadDisplay(config) {
         if (!renderFromTeam(player)) return false
         if (player.riddenByEntity != null) return false
         val localPlayer = Minecraft.getMinecraft()?.thePlayer ?: return false
-        val min = min(4096, Levelhead.displayManager.config.renderDistance * Levelhead.displayManager.config.renderDistance)
-        return player.getDistanceSqToEntity(localPlayer) <= min
+        val maxDistanceSq = Levelhead.displayManager.config.renderDistance * Levelhead.displayManager.config.renderDistance
+        return player.getDistanceSqToEntity(localPlayer) <= maxDistanceSq
                 && (!player.hasCustomName() || player.customNameTag.isNotEmpty())
                 && player.displayNameString.isNotEmpty()
                 && super.loadOrRender(player)

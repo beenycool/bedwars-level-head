@@ -248,21 +248,14 @@ class ModeTracker(
         return detected
     }
 
+    /**
+     * Record the detected context for one game. This is deliberately a pure state
+     * update: [updateResolved] is the only place that commits the public
+     * `(mode, context)` pair and fires display callbacks, so a first sample (or a
+     * single blank one) cannot request or clear anything before hysteresis.
+     */
     private fun updateContext(gameMode: GameMode, detected: ModeContext) {
-        val state = states.getValue(gameMode)
-        val current = state.cachedContext
-        if (current == detected) return
-
-        val old = current ?: ModeContext.NONE
-        state.cachedContext = detected
-        if (old == detected) return
-
-        logger?.debug("mode transition: {} {} -> {}", gameMode, old, detected)
-        when {
-            detected == ModeContext.MATCH && old != ModeContext.MATCH -> requestDisplays()
-            !old.isActive && detected.isActive -> requestDisplays()
-            old.isActive && !detected.isActive -> onClearDisplays()
-        }
+        states.getValue(gameMode).cachedContext = detected
     }
 
     private fun requestDisplays() {
@@ -303,19 +296,17 @@ class ModeTracker(
 
     private fun updateResolved(resolved: GameMode?, force: Boolean) {
         if (force) {
-            mode = resolved
-            context = contextFor(resolved)
-            pendingResolved = null
-            hasPending = false
-            pendingCount = 0
+            resetPending()
+            commit(resolved, contextFor(resolved))
             return
         }
 
         if (resolved == mode) {
-            pendingResolved = null
-            hasPending = false
-            pendingCount = 0
-            context = contextFor(mode)
+            resetPending()
+            // A context change inside the same game is safe to commit at once:
+            // it cannot be a stale sidebar sample because the mode itself still
+            // resolves to the same game.
+            commit(resolved, contextFor(resolved))
             return
         }
 
@@ -327,13 +318,47 @@ class ModeTracker(
             pendingCount = 1
         }
 
-        if (pendingCount >= HYSTERESIS_SAMPLES) {
-            mode = resolved
-            pendingResolved = null
-            hasPending = false
-            pendingCount = 0
+        if (pendingCount < HYSTERESIS_SAMPLES) return
+
+        resetPending()
+        commit(resolved, contextFor(resolved))
+    }
+
+    /**
+     * Commit the resolved pair, then emit exactly the transition that the public
+     * state just went through. Both fields are written first so a callback that
+     * reads [mode] or [context] sees the new value.
+     */
+    private fun commit(newMode: GameMode?, newContext: ModeContext) {
+        val oldMode = mode
+        val oldContext = context
+        mode = newMode
+        context = newContext
+
+        if (oldMode != newMode) {
+            logger?.debug("mode transition: {} -> {}", oldMode, newMode)
+            when {
+                oldMode == null && newMode != null -> requestDisplays()
+                oldMode != null && newMode == null -> onClearDisplays()
+                oldMode != null && newMode != null -> requestDisplays()
+            }
+            return
         }
-        context = contextFor(mode)
+
+        if (oldContext == newContext) return
+
+        logger?.debug("context transition: {} {} -> {}", newMode, oldContext, newContext)
+        when {
+            newContext == ModeContext.MATCH && oldContext != ModeContext.MATCH -> requestDisplays()
+            !oldContext.isActive && newContext.isActive -> requestDisplays()
+            oldContext.isActive && !newContext.isActive -> onClearDisplays()
+        }
+    }
+
+    private fun resetPending() {
+        pendingResolved = null
+        hasPending = false
+        pendingCount = 0
     }
 
     private fun contextFor(gameMode: GameMode?): ModeContext =

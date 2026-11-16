@@ -26,6 +26,9 @@ class DisplayManager {
     companion object {
         private const val TAB_FETCH_INTERVAL_MS = 2000L
         private const val MISSING_RETRY_INTERVAL_MS = 2000L
+
+        /** Backend batch size; draining more per tick overlaps the next tick's batch. */
+        private const val MAX_REQUESTS_PER_TICK = 20
     }
 
     /**
@@ -126,7 +129,7 @@ class DisplayManager {
         synchronized(pendingRequests) {
             val it = pendingRequests.values.iterator()
             var count = 0
-            while (it.hasNext() && count < 32) {
+            while (it.hasNext() && count < MAX_REQUESTS_PER_TICK) {
                 batch.add(it.next())
                 it.remove()
                 count++
@@ -184,6 +187,7 @@ class DisplayManager {
      * Tab list players may not be world entities, so requestAllDisplays() misses them.
      */
     private fun requestTabListPlayers() {
+        if (!config.enabled) return
         if (!LevelheadConfig.showTabStats) return
         if (!ModeManager.shouldRequestData()) return
         val activeMode = ModeManager.getActiveGameMode() ?: return
@@ -246,7 +250,9 @@ class DisplayManager {
         val activeMode = ModeManager.getActiveGameMode() ?: return
         val now = System.currentTimeMillis()
         for (uuid in uuids) {
+            if (uuid.version() == 2) continue
             if (!FetchBackoff.canAttempt(uuid, now)) continue
+            if (!Levelhead.statsStore.needsFetch(uuid, activeMode, now)) continue
             enqueueRequest(uuid.trimmed, activeMode.typeId, Levelhead.RequestReason.REQUEST_ALL_DISPLAYS)
         }
     }

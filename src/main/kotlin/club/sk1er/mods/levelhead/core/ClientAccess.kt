@@ -39,7 +39,10 @@ object ClientAccess {
     }
 
     private val defaultVisiblePlayerIds: () -> List<UUID> = {
-        Minecraft.getMinecraft()?.theWorld?.playerEntities?.map { it.uniqueID } ?: emptyList()
+        Minecraft.getMinecraft()?.theWorld?.playerEntities
+            ?.map { it.uniqueID }
+            ?.filter { it.version() != 2 }
+            ?: emptyList()
     }
 
     /** Current scoreboard, or null when no world/scoreboard is loaded. */

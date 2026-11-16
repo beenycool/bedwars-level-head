@@ -100,7 +100,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         val snapshot = Levelhead.statusSnapshot()
 
         Levelhead.sendChat("§b§lBedWars Levelhead Status")
-        Levelhead.sendChat(" §7- §bBackend: §e${proxyBaseUrl.ifBlank { DEFAULT_PROXY_URL }}")
+        val backend = if (snapshot.backendConfigured) "§e$proxyBaseUrl" else "§cNot configured"
+        Levelhead.sendChat(" §7- §bBackend: $backend")
         Levelhead.sendChat(" §7- §bCache Size: §e${snapshot.cacheSize} players")
 
         val rateLimitResetSeconds = snapshot.rateLimitResetMillis / 1000
@@ -489,7 +490,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     /**
      * The header is a per-mode concept that needs no stored copy: it is the game
      * mode's own label, or nothing while [showHeader] is off. Keeping the signature
-     * means [DisplayConfig.headerString] and the formatter stay unchanged.
+     * means [DisplayConfig.headerStringFor] and the formatter stay unchanged.
      */
     fun headerTextFor(gameMode: GameMode): String = if (showHeader) gameMode.defaultHeader else ""
 

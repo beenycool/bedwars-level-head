@@ -124,15 +124,36 @@ class FetchExecutor(
 
                     when (result) {
                         is FetchResult.Success -> {
-                            lastFetchSuccessAt = System.currentTimeMillis()
+                            var builtAny = false
+                            val missing = ArrayList<FetchWork>()
                             entries.forEach { entry ->
-                                val cachedEntry = StatsFetcher.buildGameStats(
+                                val stats = StatsFetcher.buildGameStats(
                                     result.payload, entry.gameMode
                                 )
-                                onResult(entry.key, cachedEntry)
-                                claims[entry.key]?.complete(cachedEntry)
+                                if (stats != null) {
+                                    builtAny = true
+                                    onResult(entry.key, stats)
+                                    claims[entry.key]?.complete(stats)
+                                } else {
+                                    // The HTTP call succeeded but this payload has no
+                                    // stats for the requested mode. Treat it as a
+                                    // failure for this player, otherwise Success clears
+                                    // the backoff and the 2 s retry loop never stops.
+                                    missing.add(entry)
+                                }
                             }
-                            backoff.recordSuccess(uuid)
+                            if (missing.isNotEmpty()) {
+                                backoff.recordFailure(uuid)
+                                missing.forEach { entry ->
+                                    onResult(entry.key, null)
+                                    claims[entry.key]?.complete(null)
+                                }
+                            } else {
+                                backoff.recordSuccess(uuid)
+                            }
+                            if (builtAny) {
+                                lastFetchSuccessAt = System.currentTimeMillis()
+                            }
                         }
                         else -> {
                             entries.forEach { entry ->

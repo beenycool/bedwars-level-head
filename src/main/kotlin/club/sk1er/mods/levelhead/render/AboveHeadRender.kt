@@ -82,8 +82,9 @@ object AboveHeadRender {
         val localPlayer = mc.thePlayer
         val isSelf = localPlayer != null && localPlayer.uniqueID == player.uniqueID
 
-        // Vertical distance from the vanilla nametag anchor. `y` below already carries
-        // this, so BELOW mode must not add it a second time (B24).
+        // Vertical distance of this tag from the vanilla nametag anchor. It is passed
+        // to renderName separately from the entity's base Y so ABOVE adds it and
+        // BELOW subtracts it exactly once (B24).
         val anchoredOffset = if (isSelf) {
             config.offset
         } else {
@@ -114,7 +115,9 @@ object AboveHeadRender {
                 )
                 if (display.loadOrRender(player)) {
                     val offset = anchoredOffset + index * 0.3
-                    renderName(tag, player, event.x, event.y + offset, event.z, offset)
+                    // Pass the entity's base Y and the offset separately: renderName
+                    // decides whether the offset grows up (ABOVE) or down (BELOW).
+                    renderName(tag, player, event.x, event.y, event.z, offset)
                 }
             }
             index++
@@ -127,20 +130,21 @@ object AboveHeadRender {
         x: Double,
         y: Double,
         z: Double,
-        aboveHeadOffset: Double
+        verticalOffset: Double
     ) {
         val mc = Minecraft.getMinecraft()
         val fontRenderer = mc.fontRendererObj
         val config = displayManager.config
 
-        // `y` is positioned for ABOVE mode. BELOW mode anchors to the vanilla nametag
-        // block and then drops by the same distance, in the same direction as ABOVE
-        // grows, so the offset slider keeps working once and stacked displays separate.
+        // `y` is the entity's base position; `verticalOffset` is applied once in
+        // the direction of the selected position. ABOVE grows upwards from the
+        // vanilla nametag anchor, BELOW clears the whole vanilla nametag block and
+        // then moves further down, so the slider and stacked displays both work.
         val vanillaAnchorY = y.toFloat() + entityIn.height + 0.5f
         val renderY = when (config.displayPosition) {
-            MasterConfig.DisplayPosition.ABOVE -> vanillaAnchorY
+            MasterConfig.DisplayPosition.ABOVE -> vanillaAnchorY + verticalOffset.toFloat()
             MasterConfig.DisplayPosition.BELOW ->
-                vanillaAnchorY - BELOW_NAMETAG_DROP - aboveHeadOffset.toFloat()
+                vanillaAnchorY - BELOW_NAMETAG_DROP - verticalOffset.toFloat()
         }
 
         // StatsFormatter already emits the prestige-aware star tag, including its
