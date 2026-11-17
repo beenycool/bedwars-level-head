@@ -10,26 +10,6 @@ object DebugLogging {
 
     fun isRequestDebugEnabled(): Boolean = LevelheadConfig.debugRequests
 
-    fun isRenderDebugEnabled(): Boolean = LevelheadConfig.debugRequests
-
-    fun String.truncateForLogs(maxLength: Int): String {
-        if (maxLength <= 3) return ".".repeat(maxLength.coerceAtLeast(0))
-        if (length <= maxLength) return this
-
-        val effectiveMax = maxLength - 3
-        var cutoff = effectiveMax
-
-        while (cutoff > 0 && (this[cutoff - 1] == '§' || this[cutoff - 1] == '✪')) {
-            cutoff--
-        }
-
-        return if (cutoff > 0) {
-            substring(0, cutoff) + "..."
-        } else {
-            "..."
-        }
-    }
-
     /**
      * Mask a UUID for privacy-safe logging.
      * Keeps only the last 4 characters, e.g., "****-abcd".
@@ -52,22 +32,13 @@ object DebugLogging {
         return this
     }
 
+    /**
+     * Request tracing only. Never call this from a render loop: one line per player
+     * per frame is thousands of synchronous log writes per second on the client thread.
+     */
     fun logRequestDebug(message: () -> String) {
         if (isRequestDebugEnabled()) {
             Levelhead.logger.info(message())
-        }
-    }
-
-    fun logTabDebug(message: () -> String) {
-        if (isRenderDebugEnabled()) {
-            Levelhead.logger.info(message())
-        }
-    }
-
-    @JvmStatic
-    fun logTabDebug(message: String) {
-        if (isRenderDebugEnabled()) {
-            Levelhead.logger.info(message)
         }
     }
 }

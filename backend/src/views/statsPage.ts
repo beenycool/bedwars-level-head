@@ -396,10 +396,19 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
   const cacheRate = summary.total > 0 ? (summary.cacheHits / summary.total) * 100 : 0;
   const successRate = summary.total > 0 ? (summary.success / summary.total) * 100 : 0;
   const memory = data.runtime.samples;
-  const lastBucket = series.length > 0 ? series[series.length - 1] : null;
+  const lastActiveBucket = [...series].reverse().find((point) => point.total > 0) ?? null;
+  const lastBucket = lastActiveBucket ?? (series.length > 0 ? series[series.length - 1] : null);
   const lastMemory = memory.length > 0 ? memory[memory.length - 1] : null;
-  const lastCacheRate =
-    lastBucket && lastBucket.total > 0 ? (lastBucket.cacheHits / lastBucket.total) * 100 : 0;
+  const lastCacheRate = lastActiveBucket
+    ? (lastActiveBucket.cacheHits / lastActiveBucket.total) * 100
+    : 0;
+  let lastKnownCacheRate = 0;
+  const cacheRateSeries = series.map((point) => {
+    if (point.total > 0) {
+      lastKnownCacheRate = (point.cacheHits / point.total) * 100;
+    }
+    return lastKnownCacheRate;
+  });
 
   return `<div class="dashboard-grid">
     ${chartCard(
@@ -477,7 +486,7 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
       lineChart(
         [
           {
-            values: series.map((point) => (point.total > 0 ? (point.cacheHits / point.total) * 100 : 0)),
+            values: cacheRateSeries,
             color: '#22d3ee',
             fill: true,
             name: 'Cache hit rate',

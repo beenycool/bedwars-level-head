@@ -4,6 +4,7 @@ import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.Levelhead.displayManager
 import club.sk1er.mods.levelhead.config.MasterConfig
 import club.sk1er.mods.levelhead.core.ModeManager
+import club.sk1er.mods.levelhead.core.NametagShadowCompat
 import club.sk1er.mods.levelhead.core.TagFormatter
 import club.sk1er.mods.levelhead.display.LevelheadTag
 import net.minecraft.client.Minecraft
@@ -52,7 +53,9 @@ object AboveHeadRender {
 
         val player = entity
         val localPlayer = mc.thePlayer
-        val isSelf = localPlayer != null && localPlayer.uniqueID == player.uniqueID
+        val isSelf = player.isSelf
+        val polyNametag = NametagShadowCompat.polyNametagActive
+        val textShadow = if (polyNametag) false else (NametagShadowCompat.patcherTextShadow() ?: config.textShadow)
 
         val anchoredOffset = if (isSelf) {
             config.offset
@@ -70,8 +73,10 @@ object AboveHeadRender {
         var index = 0
         while (index < displays.size) {
             val display = displays[index]
+            // Keep the second isSelf call: PolyNametag redirects ordinal 1 to apply
+            // its show-own-nametag setting.
             if (display.config.enabled &&
-                !(isSelf && !display.config.showSelf)
+                !(player.isSelf && !display.config.showSelf)
             ) {
                 val tag = TagFormatter.formatTag(
                     player.uniqueID,
@@ -82,7 +87,7 @@ object AboveHeadRender {
                 )
                 if (display.loadOrRender(player)) {
                     val offset = anchoredOffset + index * 0.3
-                    renderName(tag, player, event.x, event.y, event.z, offset)
+                    renderName(tag, player, event.x, event.y, event.z, offset, textShadow, polyNametag)
                 }
             }
             index++
@@ -95,7 +100,9 @@ object AboveHeadRender {
         x: Double,
         y: Double,
         z: Double,
-        verticalOffset: Double
+        verticalOffset: Double,
+        textShadow: Boolean,
+        polyNametag: Boolean
     ) {
         val mc = Minecraft.getMinecraft()
         val fontRenderer = mc.fontRendererObj
@@ -135,9 +142,17 @@ object AboveHeadRender {
             }
 
             var textX = -halfWidth
-            renderComponent(fontRenderer, header.value, header.color, textX, config.textShadow)
+            if (polyNametag) {
+                render(fontRenderer, header, textX)
+            } else {
+                renderComponent(fontRenderer, header.value, header.color, textX, textShadow)
+            }
             textX += fontRenderer.getStringWidth(header.value)
-            renderComponent(fontRenderer, footer.value, footer.color, textX, config.textShadow)
+            if (polyNametag) {
+                render(fontRenderer, footer, textX)
+            } else {
+                renderComponent(fontRenderer, footer.value, footer.color, textX, textShadow)
+            }
         } finally {
             GlStateManager.enableTexture2D()
             GlStateManager.enableDepth()
@@ -162,15 +177,30 @@ object AboveHeadRender {
         worldRenderer.pos((halfWidth + 1).toDouble(), -1.0, 0.0).color(0.0f, 0.0f, 0.0f, alpha).endVertex()
         tessellator.draw()
         GlStateManager.enableTexture2D()
+        GlStateManager.enableDepth()
+        GlStateManager.depthMask(true)
     }
 
     /**
-     * Upstream's two-pass draw, ported exactly: the component is drawn once with depth
-     * disabled (so it is visible through geometry) and then again with depth enabled
-     * (so blocks in front of the player hide it). Both passes use the component's own
-     * colour — the earlier version used a white see-through pass, which washed the
-     * prestige colours out, and left depth disabled for the whole tag so it could never
-     * be occluded.
+     * PolyNametag redirects the int drawString calls in this method to apply its
+     * Text Type (No Shadow / Shadow / Full Shadow). Keep this name and signature
+     * stable so that mixin keeps applying.
+     */
+    private fun render(renderer: FontRenderer, component: LevelheadTag.LevelheadComponent, x: Int) {
+        if (component.value.isEmpty()) return
+        GlStateManager.disableDepth()
+        GlStateManager.depthMask(false)
+        val faintColor = (component.color.rgb and 0xFFFFFF) or (0x33 shl 24)
+        renderer.drawString(component.value, x, 0, faintColor)
+        GlStateManager.enableDepth()
+        GlStateManager.depthMask(true)
+        GlStateManager.color(1.0f, 1.0f, 1.0f, 1.0f)
+        renderer.drawString(component.value, x, 0, component.color.rgb)
+    }
+
+    /**
+     * Fallback draw for setups without PolyNametag: the faint see-through copy and
+     * the normal drop shadow follow the effective shadow setting.
      */
     private fun renderComponent(
         fontRenderer: FontRenderer,
@@ -180,12 +210,20 @@ object AboveHeadRender {
         textShadow: Boolean
     ) {
         if (text.isEmpty()) return
-        GlStateManager.disableDepth()
-        GlStateManager.depthMask(false)
-        fontRenderer.drawString(text, x.toFloat(), 0.0f, color.rgb, false)
+        if (textShadow) {
+            GlStateManager.disableDepth()
+            GlStateManager.depthMask(false)
+            val faintColor = (color.rgb and 0xFFFFFF) or (0x33 shl 24)
+            fontRenderer.drawString(text, x.toFloat(), 0.0f, faintColor, false)
+            GlStateManager.enableDepth()
+            GlStateManager.depthMask(true)
+            GlStateManager.color(1.0f, 1.0f, 1.0f, 1.0f)
+        }
         GlStateManager.enableDepth()
         GlStateManager.depthMask(true)
-        GlStateManager.color(1.0f, 1.0f, 1.0f, 1.0f)
         fontRenderer.drawString(text, x.toFloat(), 0.0f, color.rgb, textShadow)
     }
+
+    private val EntityPlayer.isSelf: Boolean
+        get() = Minecraft.getMinecraft()?.thePlayer?.uniqueID == uniqueID
 }

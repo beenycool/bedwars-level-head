@@ -1,6 +1,5 @@
 package club.sk1er.mods.levelhead.mixin;
 
-import club.sk1er.mods.levelhead.core.DebugLogging;
 import club.sk1er.mods.levelhead.render.TabRender;
 import net.minecraft.client.gui.GuiPlayerTabOverlay;
 import net.minecraft.client.network.NetworkPlayerInfo;
@@ -48,9 +47,6 @@ public class MixinGuiPlayerTabOverlay {
     private void levelhead$beginFrame(int width, Scoreboard scoreboard, ScoreObjective objective, CallbackInfo ci) {
         try {
             TabRender.beginFrame(objective);
-            if (DebugLogging.INSTANCE.isRenderDebugEnabled()) {
-                DebugLogging.INSTANCE.logTabDebug("[LevelheadDebug][tab][mixin] renderPlayerlist HEAD fired");
-            }
         } catch (Throwable throwable) {
             if (!loggedBeginFrame) {
                 loggedBeginFrame = true;
@@ -63,9 +59,6 @@ public class MixinGuiPlayerTabOverlay {
     private void levelhead$endFrame(int width, Scoreboard scoreboard, ScoreObjective objective, CallbackInfo ci) {
         try {
             TabRender.endFrame();
-            if (DebugLogging.INSTANCE.isRenderDebugEnabled()) {
-                DebugLogging.INSTANCE.logTabDebug("[LevelheadDebug][tab][mixin] renderPlayerlist RETURN fired");
-            }
         } catch (Throwable throwable) {
             if (!loggedEndFrame) {
                 loggedEndFrame = true;
@@ -93,11 +86,6 @@ public class MixinGuiPlayerTabOverlay {
             String padded = TabRender.getMeasuredName(original, info);
             if (padded != null && !padded.equals(original)) {
                 cir.setReturnValue(padded);
-                if (DebugLogging.INSTANCE.isRenderDebugEnabled()) {
-                    DebugLogging.INSTANCE.logTabDebug(
-                        "[LevelheadDebug][tab][mixin] padMeasuredName for " + info.getGameProfile().getName()
-                    );
-                }
             }
         } catch (Throwable throwable) {
             if (!loggedPadding) {
@@ -116,11 +104,6 @@ public class MixinGuiPlayerTabOverlay {
     private void levelhead$drawTabStats(int offset, int x, int y, NetworkPlayerInfo info, CallbackInfo ci) {
         try {
             TabRender.drawPrepared(offset, x, y, info);
-            if (DebugLogging.INSTANCE.isRenderDebugEnabled()) {
-                DebugLogging.INSTANCE.logTabDebug(
-                    "[LevelheadDebug][tab][mixin] drawPing for " + info.getGameProfile().getName()
-                );
-            }
         } catch (Throwable throwable) {
             if (!loggedDraw) {
                 loggedDraw = true;

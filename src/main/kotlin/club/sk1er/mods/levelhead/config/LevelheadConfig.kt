@@ -230,7 +230,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     @Switch(
         name = "Text Shadow",
-        description = "Render text with a shadow. Disable to match Patcher nametag settings.",
+        description = "Render text with a shadow. Ignored when PolyNametag or Patcher is installed (their nametag text shadow setting is used).",
         category = "Appearance"
     )
     var textShadow: Boolean = true

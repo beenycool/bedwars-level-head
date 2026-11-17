@@ -2,9 +2,6 @@ package club.sk1er.mods.levelhead.render
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
-import club.sk1er.mods.levelhead.core.DebugLogging
-import club.sk1er.mods.levelhead.core.DebugLogging.maskForLogs
-import club.sk1er.mods.levelhead.core.DebugLogging.truncateForLogs
 import club.sk1er.mods.levelhead.core.ModeManager
 import club.sk1er.mods.levelhead.core.TagFormatter
 import club.sk1er.mods.levelhead.display.LevelheadTag
@@ -85,7 +82,6 @@ object TabRender {
             )
         }
 
-        DebugLogging.logTabDebug { "[LevelheadDebug][tab] beginFrame prepared=${map.size} mode=$mode" }
         frameState = FrameState(objective, map)
     }
 
@@ -105,10 +101,7 @@ object TabRender {
 
         val extraSpaces = (entry.width + spaceWidth - 1) / spaceWidth
         if (extraSpaces <= 0) return original
-        val padded = original + spaces(extraSpaces)
-
-        DebugLogging.logTabDebug { "[LevelheadDebug][tab] getMeasuredName uuid=${uuid.maskForLogs()} extraWidth=${entry.width} spaces=$extraSpaces" }
-        return padded
+        return original + spaces(extraSpaces)
     }
 
     private fun spaces(count: Int): String {
@@ -141,7 +134,6 @@ object TabRender {
             }
         }
 
-        DebugLogging.logTabDebug { "[LevelheadDebug][tab] drawPrepared uuid=${uuid.maskForLogs()} text='${entry.text.truncateForLogs(40)}' drawX=$drawX y=$y" }
         font.drawStringWithShadow(entry.text, drawX.toFloat(), y.toFloat(), 0xFFFFFF)
     }
 

@@ -316,13 +316,22 @@ export async function loadStatsPage(query: StatsQuery): Promise<StatsPageData | 
   const summaryRow = summaryRows.rows[0];
   const infra = infraRows.rows[0];
 
-  const series: TimePoint[] = requestRows.rows.map((row) => ({
-    bucket: new Date(row.bucket),
-    total: toNumber(row.total),
-    cacheHits: toNumber(row.hits),
-    avgLatency: toNumber(row.avg),
-    p95Latency: toNumber(row.p95),
-  }));
+  let lastAvgLatency = 0;
+  let lastP95Latency = 0;
+  const series: TimePoint[] = requestRows.rows.map((row) => {
+    const total = toNumber(row.total);
+    if (total > 0) {
+      lastAvgLatency = toNumber(row.avg);
+      lastP95Latency = toNumber(row.p95);
+    }
+    return {
+      bucket: new Date(row.bucket),
+      total,
+      cacheHits: toNumber(row.hits),
+      avgLatency: total > 0 ? toNumber(row.avg) : lastAvgLatency,
+      p95Latency: total > 0 ? toNumber(row.p95) : lastP95Latency,
+    };
+  });
 
   return {
     summary: {
