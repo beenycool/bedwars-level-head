@@ -3,13 +3,13 @@ import { enforceAdminRateLimit } from '../middleware/rateLimit';
 import { enforceAdminAuth } from '../middleware/adminAuth';
 import { clearInMemoryPlayerCache } from '../services/player';
 import { HttpError } from '../util/httpError';
-import { IDENTIFIER_MAX_LENGTH, isUuid, normalizeIdentifier } from '../util/validationConstants';
+import { IDENTIFIER_MAX_LENGTH, normalizeUuid } from '../util/validationConstants';
 import { buildPlayerCacheKey, clearAllPlayerStatsCaches, deletePlayerStatsEntries } from '../services/statsCache';
 
 /**
  * Single operator endpoint, called by hand:
  *   curl -X POST $URL/api/admin/cache/purge -H "Authorization: Bearer $TOKEN" \
- *        -H 'content-type: application/json' -d '{"identifier":"<undashed uuid>"}'
+ *        -H 'content-type: application/json' -d '{"identifier":"<uuid>"}'
  * Omit `identifier` to clear every cached row.
  */
 const router = Router();
@@ -24,11 +24,11 @@ router.post('/cache/purge', enforceAdminRateLimit, enforceAdminAuth, async (req,
       purged = await clearAllPlayerStatsCaches();
     } else {
       if (typeof identifier !== 'string' || identifier.length > IDENTIFIER_MAX_LENGTH) {
-        throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be an undashed UUID.');
+        throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a UUID.');
       }
-      const uuid = normalizeIdentifier(identifier.trim());
-      if (!isUuid(uuid)) {
-        throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be an undashed UUID.');
+      const uuid = normalizeUuid(identifier.trim());
+      if (!uuid) {
+        throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a UUID.');
       }
       purged = await deletePlayerStatsEntries([buildPlayerCacheKey(uuid)]);
     }

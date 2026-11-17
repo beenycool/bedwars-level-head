@@ -91,6 +91,18 @@ object WhoisService {
     }
 
     private suspend fun fetchWhois(resolved: ResolvedIdentifier, gameMode: GameMode): WhoisResult = withContext(Dispatchers.IO) {
+        // Whois shares the display cache: a tag already fetched for the same
+        // player/mode answers without spending a rate-limit token.
+        Levelhead.statsStore.get(resolved.uuid, gameMode)?.let { cached ->
+            return@withContext createWhoisResult(
+                uuid = resolved.uuid,
+                displayName = resolved.displayName ?: resolved.uuid.toString(),
+                stats = cached,
+                gameMode = gameMode,
+                nicked = cached.nicked
+            )
+        }
+
         if (!Levelhead.rateLimiter.tryAcquire()) {
             throw CommandException(
                 "Stats requests are paused by the rate limit.",
@@ -107,6 +119,9 @@ object WhoisService {
         when (val result = StatsFetcher.fetchPlayer(resolved.uuid, gameMode)) {
             is FetchResult.Success -> {
                 val stats = StatsFetcher.buildGameStats(result.payload, gameMode)
+                if (stats != null) {
+                    Levelhead.statsStore.putSuccess(resolved.uuid, gameMode, stats)
+                }
                 parseWhoisResult(result.payload, stats, resolved.displayName ?: resolved.uuid.toString(), gameMode, resolved.uuid)
             }
             is FetchResult.TemporaryError -> {
@@ -136,12 +151,22 @@ object WhoisService {
             payload.booleanValue("nicked") == true ||
             displayName.equals("(nicked)", ignoreCase = true)
 
+        return createWhoisResult(uuid, displayName, stats, gameMode, nicked)
+    }
+
+    private fun createWhoisResult(
+        uuid: UUID,
+        displayName: String,
+        stats: GameStats?,
+        gameMode: GameMode,
+        nicked: Boolean
+    ): WhoisResult {
         val statValue = when (stats) {
             is GameStats.Bedwars -> stats.star?.let {
                 "$it${stats.starIcon ?: BedwarsStar.getPrestigeIcon(it)}"
             } ?: "?"
             is GameStats.Duels -> stats.wins?.toString() ?: "?"
-            is GameStats.SkyWars -> stats.level?.let { "$it${SkyWarsStats.getDefaultEmblem(it)}" } ?: "?"
+            is GameStats.SkyWars -> stats.level?.let { "$it${SkyWarsStats.getDefaultEmblem(it.toInt())}" } ?: "?"
             null -> "?"
         }
 
@@ -162,7 +187,9 @@ object WhoisService {
     }
 
     private fun formatResultComponent(result: WhoisResult): IChatComponent {
-        val nickedText = if (result.nicked) " ${ChatColor.GRAY}(nicked)" else ""
+        // The backend already names nicked players "(nicked)"; don't print it twice.
+        val alreadySuffixed = result.displayName.trim().equals("(nicked)", ignoreCase = true)
+        val nickedText = if (result.nicked && !alreadySuffixed) " ${ChatColor.GRAY}(nicked)" else ""
 
         val nameComponent = CommandUtils.createClickableCommand(
             result.uuid.toString(),

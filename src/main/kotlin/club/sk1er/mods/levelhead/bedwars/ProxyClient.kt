@@ -8,6 +8,7 @@ import club.sk1er.mods.levelhead.bedwars.BedwarsHttpUtils.sanitizeForLogs
 import club.sk1er.mods.levelhead.config.LevelheadConfig
 import club.sk1er.mods.levelhead.core.await
 import club.sk1er.mods.levelhead.core.DebugLogging
+import club.sk1er.mods.levelhead.core.DebugSession
 import com.google.gson.JsonArray
 import com.google.gson.JsonParser
 import com.google.gson.JsonObject
@@ -85,13 +86,15 @@ object ProxyClient {
             .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
             .header("Accept", "application/json")
             .header("X-Levelhead-Install", LevelheadConfig.installId)
+            .header(DebugSession.SESSION_HEADER, DebugSession.id)
             .get()
             .build()
 
         DebugLogging.logRequestDebug {
-            "[LevelheadDebug][network] proxy request: ${url.toString().sanitizeForLogs()}"
+            "[LevelheadDebug][network] ${DebugSession.prefix()} proxy request: ${url.toString().sanitizeForLogs()}"
         }
 
+        val requestStartedAt = System.currentTimeMillis()
         return try {
             executeWithRetries(request, "proxy player").use { response ->
                 val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
@@ -104,7 +107,7 @@ object ProxyClient {
                     val etagVal = response.header("ETag")
                     val cacheVal = cacheHeader ?: "<absent>"
                     val hasEtag = etagVal != null
-                    "[LevelheadDebug][network] proxy response status=${response.code()} etagPresent=$hasEtag etagValue=$etagVal cache=$cacheVal bodyLen=${body.length}"
+                    "[LevelheadDebug][network] ${DebugSession.prefix()} proxy response status=${response.code()} elapsedMs=${System.currentTimeMillis() - requestStartedAt} etagPresent=$hasEtag etagValue=$etagVal cache=$cacheVal bodyLen=${body.length}"
                 }
 
                 if (!response.isSuccessful) {
@@ -165,7 +168,12 @@ object ProxyClient {
 
         // We assume ensureConfigured() or similar was checked by caller or we check here.
         // Since isAvailable handles warnings, we should use it.
-        if (!isAvailable()) return emptyMap()
+        if (!isAvailable()) {
+            DebugLogging.logRequestDebug {
+                "[LevelheadDebug][network] ${DebugSession.prefix()} batch unavailable: proxyBaseUrl is blank"
+            }
+            return emptyMap()
+        }
 
         val identifierToUuid = uuids.associateBy { it.toString().replace("-", "").lowercase(Locale.ROOT) }
 
@@ -199,12 +207,14 @@ object ProxyClient {
             .header("User-Agent", "Levelhead/${Levelhead.VERSION}")
             .header("Accept", "application/json")
             .header("X-Levelhead-Install", LevelheadConfig.installId)
+            .header(DebugSession.SESSION_HEADER, DebugSession.id)
             .build()
 
         DebugLogging.logRequestDebug {
-            "[LevelheadDebug][network] proxy batch request: ${url.toString().sanitizeForLogs()} count=${uuids.size}"
+            "[LevelheadDebug][network] ${DebugSession.prefix()} proxy batch request: ${url.toString().sanitizeForLogs()} count=${uuids.size}"
         }
 
+        val requestStartedAt = System.currentTimeMillis()
         return try {
             executeWithRetries(request, "proxy batch").use { response ->
                 val body = response.body()?.string().orEmpty()
@@ -217,7 +227,7 @@ object ProxyClient {
                     val etag = response.header("ETag")
                     val cacheDisplay = cacheHeader ?: "<absent>"
                     val hasEtag = etag != null
-                    "[LevelheadDebug][network] proxy batch response status=${response.code()} etagPresent=$hasEtag cache=$cacheDisplay bodyLen=${body.length}"
+                    "[LevelheadDebug][network] ${DebugSession.prefix()} proxy batch response status=${response.code()} elapsedMs=${System.currentTimeMillis() - requestStartedAt} etagPresent=$hasEtag cache=$cacheDisplay bodyLen=${body.length}"
                 }
 
                 if (!response.isSuccessful) {
@@ -279,7 +289,7 @@ object ProxyClient {
 
                 DebugLogging.logRequestDebug {
                     val successCount = results.values.count { it is FetchResult.Success }
-                    "[LevelheadDebug][network] proxy batch processed chunkSize=${uuids.size} resultsReturned=${results.size} successCount=$successCount"
+                    "[LevelheadDebug][network] ${DebugSession.prefix()} proxy batch processed chunkSize=${uuids.size} resultsReturned=${results.size} successCount=$successCount elapsedMs=${System.currentTimeMillis() - requestStartedAt}"
                 }
 
                 results

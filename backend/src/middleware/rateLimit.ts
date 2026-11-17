@@ -7,7 +7,7 @@ import {
 import { getDynamicPublicLimit } from '../services/dynamicRateLimit';
 import { HttpError } from '../util/httpError';
 import { logger } from '../util/logger';
-import { MAX_BATCH_SIZE } from '../util/validationConstants';
+import { MAX_BATCH_SIZE, normalizeIdentifier } from '../util/validationConstants';
 import { extractBatchIdentifiersFromBody } from '../util/requestUtils';
 
 export interface ConsumeResult {
@@ -221,11 +221,21 @@ export function createRateLimitMiddleware({
   return (req, _res, next): void => {
     try {
       const key = getBucketKey(req);
-      const result = limiter.consume(key, getCost ? getCost(req) : 1);
+      const cost = getCost ? getCost(req) : 1;
+      const result = limiter.consume(key, cost);
 
       if (!result.allowed) {
         const retryAfterSeconds = Math.max(1, Math.ceil(result.retryAfterMs / 1000));
-        logger.warn(`[rate-limit] ${label} 429 ${key.substring(0, 24)} (retry ${retryAfterSeconds}s)`);
+        logger.warn({
+          label,
+          bucket: key.substring(0, 24),
+          session: req.header('x-levelhead-session') ?? 'none',
+          install: req.header('x-levelhead-install') ?? 'none',
+          ip: getClientIpAddress(req),
+          cost,
+          remaining: result.remaining,
+          retryAfterMs: result.retryAfterMs,
+        }, `[rate-limit] ${label} 429 (retry ${retryAfterSeconds}s)`);
         next(
           new HttpError(
             429,
@@ -275,7 +285,9 @@ export function resolveBatchCost(req: Request): number {
     if (typeof value === 'string') {
       const trimmed = value.trim();
       if (trimmed.length > 0) {
-        unique.add(trimmed);
+        // Case and dash variants of the same UUID are one identifier, matching
+        // the batch handler's deduplication.
+        unique.add(normalizeIdentifier(trimmed));
       }
     }
   }

@@ -195,14 +195,6 @@ object SkyWarsStats {
     }
 
     /**
-     * Get the default emblem for a given level (Double version).
-     * Uses floor of the level for emblem calculation.
-     */
-    fun getDefaultEmblem(level: Double): String {
-        return getDefaultEmblem(level.toInt())
-    }
-
-    /**
      * Parse SkyWars experience from a player JSON response.
      * Looks for 'skywars_experience' (preferred) or 'experience' within the SkyWars stats object.
      */

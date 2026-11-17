@@ -53,7 +53,7 @@ object StatsFormatter {
         val finalColor = if (isStale && stats != null) Color.GRAY else footerColor
         
         val tag = LevelheadTag(uuid)
-        tag.header.value = config.headerString.takeIf { it.isNotBlank() }?.let { "$it: " } ?: ""
+        tag.header.value = config.headerStringFor(gameMode).takeIf { it.isNotBlank() }?.let { "$it: " } ?: ""
         tag.header.color = config.headerColor
         tag.footer.value = footerValue
         tag.footer.color = finalColor
@@ -124,7 +124,9 @@ object StatsFormatter {
         val usesDivisionColor = when (duelsMode) {
             LevelheadConfig.DuelsStatMode.DIVISION_TITLE,
             LevelheadConfig.DuelsStatMode.DIVISION_SYMBOL -> true
-            LevelheadConfig.DuelsStatMode.CUSTOM -> template.contains("%division%", ignoreCase = true)
+            LevelheadConfig.DuelsStatMode.CUSTOM ->
+                template.contains("%division%", ignoreCase = true) ||
+                    template.contains("%divsymbol%", ignoreCase = true)
             else -> false
         }
         val color = if (usesDivisionColor) (divisionInfo?.color ?: config.footerColor) else config.footerColor

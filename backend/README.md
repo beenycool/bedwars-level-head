@@ -27,8 +27,8 @@ does not sleep; there is deliberately no `/api/cron/ping` pinger.
 
 | Method | Path | Notes |
 |---|---|---|
-| `GET` | `/api/public/player/:uuid` | Single player, undashed UUID |
-| `POST` | `/api/public/player/batch` | `{ "uuids": [...] }`, up to 20 |
+| `GET` | `/api/public/player/:uuid` | Single player, UUID (dashes optional) |
+| `POST` | `/api/public/player/batch` | `{ "uuids": [...] }`, up to 20 (dashes optional, case-insensitive) |
 | `GET` | `/api/player/...` | Legacy alias for the two routes above; same data, same rate-limit bucket |
 | `GET` | `/healthz` | Liveness. No auth, no rate limit |
 | `GET` | `/stats` | Server-rendered tracking page (`range`, `sort`, `q`, `page`) |
@@ -96,18 +96,3 @@ See `.env.example`. The short version:
 - `LOOKUP_LOG_RETENTION_DAYS` (default 30)
 - `PORT`, `HOST`, `HYPIXEL_TIMEOUT_MS` (defaults: 3000, 0.0.0.0, 5000)
 
-## Tests
-
-```bash
-npm ci
-npm run typecheck
-npm test
-```
-
-`npm test` is offline. The tracking SQL has an opt-in integration suite that runs
-against a real PostgreSQL database (it creates its own tables and truncates them):
-
-```bash
-TEST_DB_URL=postgresql://postgres@127.0.0.1:5432/levelhead_test \
-CACHE_DB_URL=$TEST_DB_URL npx jest tests/integration --runInBand
-```

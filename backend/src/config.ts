@@ -25,6 +25,23 @@ export const HYPIXEL_TIMEOUT_MS = parseIntEnv('HYPIXEL_TIMEOUT_MS', 5000);
 export const HYPIXEL_RETRY_DELAY_MIN_MS = parseIntEnv('HYPIXEL_RETRY_DELAY_MIN_MS', 50);
 export const HYPIXEL_RETRY_DELAY_MAX_MS = parseIntEnv('HYPIXEL_RETRY_DELAY_MAX_MS', 150);
 
+/**
+ * Global cap on concurrent Hypixel requests. Cold lookups open fresh TLS
+ * connections, and a lobby join can fire a dozen at once; capping keeps that
+ * burst from turning into multi-second connect stalls. Queueing is cheap
+ * compared with the upstream request itself.
+ */
+export const HYPIXEL_MAX_CONCURRENCY = Math.max(1, parseIntEnv('HYPIXEL_MAX_CONCURRENCY', 6));
+
+/**
+ * Outbound pacing. Hypixel also throttles bursts that stay under the 5-minute
+ * quota, so a small token bucket spreads a lobby join over a second or two
+ * instead of firing dozens in the same tick. Normal traffic (a couple of
+ * lookups per second) never waits.
+ */
+export const HYPIXEL_REQUESTS_PER_SECOND = Math.max(1, parseFloatEnv('HYPIXEL_REQUESTS_PER_SECOND', 5));
+export const HYPIXEL_BURST_CAPACITY = Math.max(1, parseIntEnv('HYPIXEL_BURST_CAPACITY', 4));
+
 /** Optional PostgreSQL cache. Absent/blank means "in-memory cache only". */
 export const CACHE_DB_URL = (process.env.CACHE_DB_URL ?? process.env.DATABASE_URL ?? '').trim();
 
@@ -142,6 +159,15 @@ function parseIntEnv(name: string, defaultValue: number): number {
   }
   const parsed = Number.parseInt(raw, 10);
   return Number.isNaN(parsed) ? defaultValue : parsed;
+}
+
+function parseFloatEnv(name: string, defaultValue: number): number {
+  const raw = process.env[name];
+  if (raw === undefined) {
+    return defaultValue;
+  }
+  const parsed = Number.parseFloat(raw);
+  return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
 function parseBooleanEnv(name: string, defaultValue: boolean): boolean {

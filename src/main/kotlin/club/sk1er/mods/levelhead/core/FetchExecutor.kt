@@ -67,6 +67,9 @@ class FetchExecutor(
         onResult: (StatsKey, GameStats?) -> Unit
     ): List<FetchWork> {
         if (planned.isEmpty()) return emptyList()
+        DebugLogging.logRequestDebug {
+            "[LevelheadDebug][batch] ${DebugSession.prefix()} planned=${planned.size} inFlightStats=${inFlightStatsRequests.size} inFlightProxy=${inFlightProxyRequests.size} proxyReady=${backoff.proxyReady(System.currentTimeMillis())}"
+        }
 
         val claims = LinkedHashMap<StatsKey, CompletableDeferred<GameStats?>>()
         for (entry in planned) {
@@ -81,6 +84,9 @@ class FetchExecutor(
         // Entries we did not claim keep whatever path they already have (in-flight
         // dedupe or a call that awaits an existing proxy result).
         val remaining = planned.filterNot { it.key in claims }
+        DebugLogging.logRequestDebug {
+            "[LevelheadDebug][batch] ${DebugSession.prefix()} claimed=${claims.size} remaining=${remaining.size} sample=${claims.keys.take(8).map { it.uuid.maskForLogs() + "/" + it.gameMode.name }}"
+        }
         if (claims.isEmpty()) return remaining
 
         val candidates = planned.filter { it.key in claims }
@@ -100,10 +106,17 @@ class FetchExecutor(
             val entriesByUuid = candidates.groupBy { it.uuid }
 
             for (chunk in entriesByUuid.keys.chunked(20)) {
+                DebugLogging.logRequestDebug {
+                    "[LevelheadDebug][batch] ${DebugSession.prefix()} chunk size=${chunk.size} rate=${rateLimiter.metricsSnapshot()}"
+                }
                 // One token per identifier, matching the public batch budget.
                 if (!rateLimiter.tryAcquire(chunk.size)) {
                     // No token: this chunk is not sent. Back off so the retry loop
                     // does not spin, and let the deferreds complete.
+                    DebugSession.inc("batch_rate_denied", chunk.size)
+                    DebugLogging.logRequestDebug {
+                        "[LevelheadDebug][batch] ${DebugSession.prefix()} rateDenied chunk=${chunk.size} rate=${rateLimiter.metricsSnapshot()}"
+                    }
                     chunk.forEach { uuid ->
                         entriesByUuid[uuid].orEmpty().forEach { entry ->
                             backoff.recordFailure(uuid)
@@ -115,7 +128,16 @@ class FetchExecutor(
                 }
 
                 lastFetchAttemptAt = System.currentTimeMillis()
+                val fetchStartedAt = System.currentTimeMillis()
                 val results = batchFetcher(chunk)
+                val successCount = results.values.count { it is FetchResult.Success }
+                DebugSession.inc("batch_chunks")
+                DebugSession.inc("batch_entries", chunk.size)
+                DebugSession.inc("batch_results", results.size)
+                DebugSession.inc("batch_success", successCount)
+                DebugLogging.logRequestDebug {
+                    "[LevelheadDebug][batch] ${DebugSession.prefix()} chunk=${chunk.size} results=${results.size} success=$successCount elapsedMs=${System.currentTimeMillis() - fetchStartedAt}"
+                }
 
                 chunk.forEach { uuid ->
                     val result = results[uuid]
@@ -124,15 +146,36 @@ class FetchExecutor(
 
                     when (result) {
                         is FetchResult.Success -> {
-                            lastFetchSuccessAt = System.currentTimeMillis()
+                            var builtAny = false
+                            val missing = ArrayList<FetchWork>()
                             entries.forEach { entry ->
-                                val cachedEntry = StatsFetcher.buildGameStats(
+                                val stats = StatsFetcher.buildGameStats(
                                     result.payload, entry.gameMode
                                 )
-                                onResult(entry.key, cachedEntry)
-                                claims[entry.key]?.complete(cachedEntry)
+                                if (stats != null) {
+                                    builtAny = true
+                                    onResult(entry.key, stats)
+                                    claims[entry.key]?.complete(stats)
+                                } else {
+                                    // The HTTP call succeeded but this payload has no
+                                    // stats for the requested mode. Treat it as a
+                                    // failure for this player, otherwise Success clears
+                                    // the backoff and the 2 s retry loop never stops.
+                                    missing.add(entry)
+                                }
                             }
-                            backoff.recordSuccess(uuid)
+                            if (missing.isNotEmpty()) {
+                                backoff.recordFailure(uuid)
+                                missing.forEach { entry ->
+                                    onResult(entry.key, null)
+                                    claims[entry.key]?.complete(null)
+                                }
+                            } else {
+                                backoff.recordSuccess(uuid)
+                            }
+                            if (builtAny) {
+                                lastFetchSuccessAt = System.currentTimeMillis()
+                            }
                         }
                         else -> {
                             entries.forEach { entry ->
@@ -192,9 +235,15 @@ class FetchExecutor(
 
         val cached = work.cached
         val isRevalidation = cached != null
+        DebugLogging.logRequestDebug {
+            "[LevelheadDebug][direct] ${DebugSession.prefix()} start uuid=${cacheKey.uuid.maskForLogs()} mode=${cacheKey.gameMode.name} revalidation=$isRevalidation"
+        }
         val deferred = worldScopeProvider().async {
             starFetchSemaphore.withPermit {
                 if (!backoff.canAttempt(cacheKey.uuid)) {
+                    DebugLogging.logRequestDebug {
+                        "[LevelheadDebug][direct] ${DebugSession.prefix()} backoff-skip uuid=${cacheKey.uuid.maskForLogs()} mode=${cacheKey.gameMode.name}"
+                    }
                     return@withPermit cached
                 }
                 if (isRevalidation) {
@@ -202,12 +251,17 @@ class FetchExecutor(
                 }
                 try {
                     if (!rateLimiter.tryAcquire()) {
+                        DebugSession.inc("direct_rate_denied")
+                        DebugLogging.logRequestDebug {
+                            "[LevelheadDebug][direct] ${DebugSession.prefix()} rateDenied uuid=${cacheKey.uuid.maskForLogs()} mode=${cacheKey.gameMode.name} rate=${rateLimiter.metricsSnapshot()}"
+                        }
                         backoff.recordFailure(cacheKey.uuid)
                         onResult(cacheKey, null)
                         return@withPermit cached
                     }
                     lastFetchAttemptAt = System.currentTimeMillis()
                     val gameMode = cacheKey.gameMode
+                    val fetchStartedAt = System.currentTimeMillis()
                     when (val result = StatsFetcher.fetchPlayer(cacheKey.uuid, gameMode)) {
                         is FetchResult.Success -> {
                             lastFetchSuccessAt = System.currentTimeMillis()
@@ -219,11 +273,19 @@ class FetchExecutor(
                                 backoff.recordFailure(cacheKey.uuid)
                                 onResult(cacheKey, null)
                             }
+                            DebugSession.inc("direct_success")
+                            DebugLogging.logRequestDebug {
+                                "[LevelheadDebug][direct] ${DebugSession.prefix()} success=true built=${entry != null} uuid=${cacheKey.uuid.maskForLogs()} mode=${gameMode.name} elapsedMs=${System.currentTimeMillis() - fetchStartedAt}"
+                            }
                             entry
                         }
                         else -> {
                             backoff.recordFailure(cacheKey.uuid)
                             onResult(cacheKey, null)
+                            DebugSession.inc("direct_failure")
+                            DebugLogging.logRequestDebug {
+                                "[LevelheadDebug][direct] ${DebugSession.prefix()} success=false uuid=${cacheKey.uuid.maskForLogs()} mode=${gameMode.name} elapsedMs=${System.currentTimeMillis() - fetchStartedAt} result=$result"
+                            }
                             null
                         }
                     }
@@ -235,6 +297,10 @@ class FetchExecutor(
                 } catch (throwable: Throwable) {
                     // A user-visible failure, not a debug footnote: this is why a
                     // fetch that failed used to be indistinguishable from "no data".
+                    DebugSession.inc("direct_exception")
+                    DebugLogging.logRequestDebug {
+                        "[LevelheadDebug][direct] ${DebugSession.prefix()} exception uuid=${cacheKey.uuid.maskForLogs()} mode=${cacheKey.gameMode.name} error=${throwable.javaClass.simpleName}: ${throwable.message}"
+                    }
                     logger.warn(
                         "Failed to fetch stats for {} ({})",
                         cacheKey.uuid,
@@ -259,6 +325,9 @@ class FetchExecutor(
     }
 
     fun reset() {
+        DebugLogging.logRequestDebug {
+            "[LevelheadDebug][batch] ${DebugSession.prefix()} reset inFlightStats=${inFlightStatsRequests.size} inFlightProxy=${inFlightProxyRequests.size}"
+        }
         inFlightStatsRequests.values.forEach { it.cancel() }
         inFlightStatsRequests.clear()
         inFlightProxyRequests.values.forEach { if (!it.isCompleted) it.complete(null) }

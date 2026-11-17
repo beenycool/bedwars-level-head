@@ -38,7 +38,13 @@ class RequestCoordinator(
 
             val epoch = ModeManager.worldEpoch
             val now = System.currentTimeMillis()
+            DebugLogging.logRequestDebug {
+                "[LevelheadDebug][plan] ${DebugSession.prefix()} incoming=${requests.size} epoch=$epoch"
+            }
             val pending = plan(requests, now)
+            DebugLogging.logRequestDebug {
+                "[LevelheadDebug][plan] ${DebugSession.prefix()} pending=${pending.size} epoch=$epoch"
+            }
             if (pending.isEmpty()) return@launch
 
             pending.forEach { store.markLoading(it.uuid, it.gameMode) }
@@ -47,6 +53,9 @@ class RequestCoordinator(
             // Try the proxy batch first; anything it does not claim falls through
             // to the direct path (which dedupes against in-flight work).
             val remaining = executor.executeProxyBatch(pending, ::recordResult)
+            DebugLogging.logRequestDebug {
+                "[LevelheadDebug][plan] ${DebugSession.prefix()} proxyRemaining=${remaining.size} pending=${pending.size}"
+            }
             if (remaining.isEmpty()) return@launch
             if (ModeManager.worldEpoch != epoch) return@launch
 
@@ -63,13 +72,26 @@ class RequestCoordinator(
      */
     private fun plan(requests: List<Levelhead.LevelheadRequest>, now: Long): List<FetchWork> {
         val pending = mutableListOf<FetchWork>()
+        val uniqueCount = requests.map { it.uuid }.toSet().size
+        val reasonCounts = requests.groupBy { it.reason }.mapValues { it.value.size }
+        var hits = 0
+        var stale = 0
+        var misses = 0
+        var loadingSkips = 0
         requests
             .groupBy { it.uuid }
             .forEach { (trimmedUuid, groupedRequests) ->
                 val uuid = trimmedUuid.dashUUID ?: return@forEach
                 groupedRequests
                     .groupBy { GameMode.resolve(it.type, logger) }
-                    .forEach { (gameMode, modeRequests) ->
+                    .forEach modeLoop@ { (gameMode, modeRequests) ->
+                        // A slow request already owns this key. Skipping it before
+                        // lookup() keeps the poll from enqueueing a duplicate (and
+                        // from recording a miss that is really in-flight work).
+                        if (store.state(uuid, gameMode) is StatsState.Loading) {
+                            loadingSkips++
+                            return@modeLoop
+                        }
                         val lookup = store.lookup(uuid, gameMode, now)
                         val debug = DebugLogging.isRequestDebugEnabled()
                         val maskedUuid = if (debug) uuid.maskForLogs() else null
@@ -77,17 +99,20 @@ class RequestCoordinator(
 
                         when (lookup) {
                             StatsLookup.HIT -> {
+                                hits++
                                 DebugLogging.logRequestDebug {
                                     "[LevelheadDebug][store] HIT: uuid=$maskedUuid mode=${gameMode.name} reasons=$reasons"
                                 }
                             }
                             StatsLookup.STALE -> {
+                                stale++
                                 DebugLogging.logRequestDebug {
                                     "[LevelheadDebug][store] STALE refresh: uuid=$maskedUuid mode=${gameMode.name} reasons=$reasons"
                                 }
                                 pending += FetchWork(uuid, gameMode, store.get(uuid, gameMode))
                             }
                             StatsLookup.MISS -> {
+                                misses++
                                 DebugLogging.logRequestDebug {
                                     "[LevelheadDebug][store] MISS: uuid=$maskedUuid mode=${gameMode.name} reasons=$reasons"
                                 }
@@ -96,6 +121,16 @@ class RequestCoordinator(
                         }
                     }
             }
+        DebugSession.inc("plan_requests", requests.size)
+        DebugSession.inc("plan_unique", uniqueCount)
+        DebugSession.inc("plan_pending", pending.size)
+        DebugSession.inc("plan_hit", hits)
+        DebugSession.inc("plan_stale", stale)
+        DebugSession.inc("plan_miss", misses)
+        DebugSession.inc("plan_loading_skip", loadingSkips)
+        DebugLogging.logRequestDebug {
+            "[LevelheadDebug][plan] ${DebugSession.prefix()} incoming=${requests.size} unique=$uniqueCount pending=${pending.size} hit=$hits stale=$stale miss=$misses loadingSkip=$loadingSkips reasons=$reasonCounts"
+        }
         return pending
     }
 
@@ -113,6 +148,9 @@ class RequestCoordinator(
 
     fun reset() {
         executor.reset()
+        // executor.reset() cancels the coroutines that owned any in-flight keys, so
+        // their Loading placeholders no longer describe real work.
+        store.clearLoading()
     }
 
     fun resetFetchTimestamps() {

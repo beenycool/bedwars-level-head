@@ -5,6 +5,9 @@ pluginManagement {
         maven("https://maven.fabricmc.net")
         maven("https://maven.architectury.dev/")
         maven("https://maven.minecraftforge.net")
+        // Mirror for Forge's Loom toolchain artifacts (binarypatcher, srgutils)
+        // when the Forge Maven is missing or slow.
+        maven("https://repo.spongepowered.org/repository/maven-public/")
         maven("https://repo.polyfrost.org/releases")
         maven("https://repo.polyfrost.cc/releases")
     }

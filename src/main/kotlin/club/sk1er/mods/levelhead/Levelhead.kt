@@ -4,6 +4,7 @@ import cc.polyfrost.oneconfig.utils.commands.CommandManager
 import club.sk1er.mods.levelhead.commands.CommandUtils
 import club.sk1er.mods.levelhead.commands.LevelheadCommand
 import club.sk1er.mods.levelhead.config.LevelheadConfig
+import club.sk1er.mods.levelhead.core.DebugSession
 import club.sk1er.mods.levelhead.core.DisplayManager
 import club.sk1er.mods.levelhead.core.GameMode
 import club.sk1er.mods.levelhead.core.GameStats
@@ -273,6 +274,7 @@ object Levelhead {
 
     @SubscribeEvent
     fun joinServer(@Suppress("UNUSED_PARAMETER") event: FMLNetworkEvent.ClientConnectedToServerEvent) {
+        DebugSession.stop("server-connect")
         club.sk1er.mods.levelhead.core.StatsFetcher.resetWarnings()
         // Fires on the netty IO thread. Cancel the previous connection's work on the
         // client thread. The stats store survives connections; its TTL decides when
@@ -366,7 +368,7 @@ object Levelhead {
         synchronized(worldScopeLock) {
             worldJob.cancel()
             worldJob = SupervisorJob(modJob)
-            worldScope = CoroutineScope(worldJob + Dispatchers.IO)
+            worldScope = CoroutineScope(worldJob + Dispatchers.IO + coroutineExceptionHandler)
         }
     }
 

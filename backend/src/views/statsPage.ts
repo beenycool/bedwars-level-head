@@ -8,11 +8,13 @@ import {
   shortenUuid,
 } from '../util/html';
 import {
+  chartGranularity,
   LATENCY_METRICS,
   rangeLabel,
   STATS_LIMITS,
   STATS_RANGES,
   STATS_REFRESH,
+  statsWindow,
   type StatsQuery,
 } from '../util/statsQuery';
 import { HYPIXEL_HOURLY_QUOTA } from '../config';
@@ -80,12 +82,23 @@ export function statsHref(query: StatsQuery, overrides: Partial<StatsQuery> = {}
   return value ? `/stats?${value}` : '/stats';
 }
 
-function hiddenQuery(query: StatsQuery, exclude: (keyof StatsQuery)[] = []): string {
+/** Hidden inputs for every URL parameter except the ones the visible form controls own. */
+function hiddenQuery(query: StatsQuery, exclude: readonly string[] = []): string {
   const params = queryParams(query);
   return [...params.entries()]
-    .filter(([key]) => !exclude.includes(key as keyof StatsQuery))
+    .filter(([key]) => !exclude.includes(key))
     .map(([key, value]) => `<input type="hidden" name="${escapeHtml(key)}" value="${escapeHtml(value)}">`)
     .join('');
+}
+
+/** "Last 24 hours" or the explicit from/to window currently in effect. */
+function windowLabel(query: StatsQuery): string {
+  if (!query.from && !query.to) {
+    return rangeLabel(query.range);
+  }
+  const from = query.from ? datetimeValue(query.from) : 'start';
+  const to = query.to ? datetimeValue(query.to) : 'now';
+  return `${from} → ${to}`;
 }
 
 function renderFilters(query: StatsQuery, data: StatsPageData): string {
@@ -101,12 +114,11 @@ function renderFilters(query: StatsQuery, data: StatsPageData): string {
     (seconds) => `<option value="${seconds}"${seconds === query.refresh ? ' selected' : ''}>${REFRESH_LABELS[seconds]}</option>`,
   ).join('');
 
-  const windowText = query.from || query.to
-    ? `${query.from ? escapeHtml(datetimeValue(query.from)) : 'start'} → ${query.to ? escapeHtml(datetimeValue(query.to)) : 'now'}`
-    : rangeLabel(query.range);
+  const windowText = escapeHtml(windowLabel(query));
 
   return `<div class="filter-controls">
     <form id="filterForm" method="get" action="/stats" class="filter-form">
+      <input type="hidden" name="range" value="${escapeHtml(query.range)}">
       <input type="hidden" name="q" value="${escapeHtml(query.search)}">
       <input type="hidden" name="sort" value="${escapeHtml(query.sort)}">
       <input type="hidden" name="metric" value="${escapeHtml(query.metric)}">
@@ -159,7 +171,7 @@ function renderStats(query: StatsQuery, data: StatsPageData): string {
     <div class="card stat-card">
       <p class="stat-label">Total Lookups</p>
       <p class="stat-value">${formatNumber(summary.total)}</p>
-      <p class="stat-sub">${plural(summary.players, 'player', 'players')} · ${escapeHtml(rangeLabel(query.range).toLowerCase())}</p>
+      <p class="stat-sub">${plural(summary.players, 'player', 'players')} · ${escapeHtml(windowLabel(query).toLowerCase())}</p>
     </div>
     <div class="card stat-card">
       <p class="stat-label">Cache Hit Rate</p>
@@ -321,13 +333,34 @@ function timeAxis(query: StatsQuery, series: TimePoint[]): string {
   if (series.length === 0) {
     return '';
   }
+  // Mirror the SQL bucketing: hourly windows (including short custom windows) show
+  // clock labels; longer ranges show month/day.
+  const window = statsWindow(query);
+  const hourly = chartGranularity(window.since, window.until) === 'hour';
   const first = series[0].bucket;
   const last = series[series.length - 1].bucket;
-  const short = (date: Date) =>
-    query.range === '24h' && !query.from && !query.to
+  const label = (date: Date) =>
+    hourly
       ? `${String(date.getUTCHours()).padStart(2, '0')}:00`
       : `${date.getUTCMonth() + 1}/${date.getUTCDate()}`;
-  return `<div class="chart-axis"><span>${escapeHtml(short(first))}</span><span>${escapeHtml(short(last))}</span></div>`;
+  return `<div class="chart-axis"><span>${escapeHtml(label(first))}</span><span>${escapeHtml(label(last))}</span></div>`;
+}
+
+/** Full UTC timestamp for a chart hover tooltip. */
+function tooltipTime(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
+}
+
+/** Labels for the line-chart hover targets, matching the SQL bucket granularity. */
+function seriesLabels(query: StatsQuery, series: TimePoint[]): string[] {
+  const window = statsWindow(query);
+  const hourly = chartGranularity(window.since, window.until) === 'hour';
+  return series.map((point) => {
+    const date = point.bucket;
+    const key = tooltipTime(date);
+    return hourly ? key : key.slice(0, 10);
+  });
 }
 
 function renderTopPlayers(players: TopPlayer[]): string {
@@ -396,10 +429,22 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
       `avg ${formatLatency(lastBucket?.avgLatency)} · p95 ${formatLatency(lastBucket?.p95Latency)}`,
       lineChart(
         [
-          { values: series.map((point) => point.avgLatency), color: '#38bdf8', fill: true },
-          { values: series.map((point) => point.p95Latency), color: '#a78bfa' },
+          {
+            values: series.map((point) => point.avgLatency),
+            color: '#38bdf8',
+            fill: true,
+            name: 'Average',
+            format: (value) => formatLatency(value),
+          },
+          {
+            values: series.map((point) => point.p95Latency),
+            color: '#a78bfa',
+            name: 'p95',
+            format: (value) => formatLatency(value),
+          },
         ],
         'Average and p95 latency over time',
+        seriesLabels(query, series),
       ),
       `${timeAxis(query, series)}<p class="meta chart-foot">Blue: average · purple: p95</p>`,
     )}
@@ -418,7 +463,19 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
     ${chartCard(
       'Requests Over Time',
       `Latest ${formatNumber(lastBucket?.total ?? 0)}`,
-      lineChart([{ values: series.map((point) => point.total), color: '#38bdf8', fill: true }], 'Lookups over time'),
+      lineChart(
+        [
+          {
+            values: series.map((point) => point.total),
+            color: '#38bdf8',
+            fill: true,
+            name: 'Lookups',
+            format: (value) => `${formatNumber(value)} lookups`,
+          },
+        ],
+        'Lookups over time',
+        seriesLabels(query, series),
+      ),
       timeAxis(query, series),
     )}
     ${chartCard(
@@ -430,9 +487,12 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
             values: series.map((point) => (point.total > 0 ? (point.cacheHits / point.total) * 100 : 0)),
             color: '#22d3ee',
             fill: true,
+            name: 'Cache hit rate',
+            format: (value) => `${value.toFixed(1)}%`,
           },
         ],
         'Cache hit rate over time',
+        seriesLabels(query, series),
       ),
       timeAxis(query, series),
     )}
@@ -454,10 +514,22 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
       `${(lastMemory?.rssMb ?? 0).toFixed(0)} MB RSS`,
       lineChart(
         [
-          { values: memory.map((sample) => sample.rssMb), color: '#38bdf8', fill: true },
-          { values: memory.map((sample) => sample.heapMb), color: '#22d3ee' },
+          {
+            values: memory.map((sample) => sample.rssMb),
+            color: '#38bdf8',
+            fill: true,
+            name: 'RSS',
+            format: (value) => `${value.toFixed(0)} MB`,
+          },
+          {
+            values: memory.map((sample) => sample.heapMb),
+            color: '#22d3ee',
+            name: 'Heap',
+            format: (value) => `${value.toFixed(0)} MB`,
+          },
         ],
         'Process memory over time',
+        memory.map((sample) => tooltipTime(sample.at)),
       ),
       `<p class="meta chart-foot">Blue: RSS · cyan: heap · ${formatNumber(memory.length)} ${memory.length === 1 ? 'sample' : 'samples'}</p>`,
     )}
@@ -524,7 +596,7 @@ function renderTable(query: StatsQuery, data: StatsPageData): string {
   <p class="meta">${plural(data.matching, 'lookup', 'lookups')} · page ${formatNumber(data.page)} of ${formatNumber(totalPages)}</p>
   <div class="controls">
     <form class="search-box" method="get" action="/stats">
-      ${hiddenQuery(query, ['search', 'page'])}
+      ${hiddenQuery(query, ['q', 'sort', 'page'])}
       <input type="search" name="q" value="${escapeHtml(query.search)}" placeholder="Search by username or UUID" aria-label="Search players">
       <select name="sort" aria-label="Sort lookups">
         <option value="recent"${query.sort === 'recent' ? ' selected' : ''}>Recent first</option>

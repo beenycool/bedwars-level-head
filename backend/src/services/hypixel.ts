@@ -2,11 +2,15 @@ import axios, { type AxiosResponseHeaders, type RawAxiosResponseHeaders } from '
 import https from 'node:https';
 import { randomInt } from 'node:crypto';
 import CacheableLookup from 'cacheable-lookup';
+import pLimit from 'p-limit';
 import {
   CB_FAILURE_THRESHOLD,
   CB_RESET_TIMEOUT_MS,
   HYPIXEL_API_BASE_URL,
   HYPIXEL_API_KEY,
+  HYPIXEL_BURST_CAPACITY,
+  HYPIXEL_MAX_CONCURRENCY,
+  HYPIXEL_REQUESTS_PER_SECOND,
   HYPIXEL_RETRY_DELAY_MAX_MS,
   HYPIXEL_RETRY_DELAY_MIN_MS,
   HYPIXEL_TIMEOUT_MS,
@@ -35,6 +39,121 @@ const hypixelClient = axios.create({
     'User-Agent': OUTBOUND_USER_AGENT,
   },
 });
+
+/**
+ * One shared gate for individual GETs and batch warmups. The socket pool
+ * (maxSockets: 50) is only a backstop; this keeps a lobby join from opening a
+ * dozen cold connections at the same instant.
+ */
+const upstreamGate = pLimit(HYPIXEL_MAX_CONCURRENCY);
+
+/**
+ * Paces request arrivals, not just concurrency. Hypixel throttles same-second
+ * bursts even when the 5-minute quota is healthy, so a waiting room of players
+ * is fed through a small token bucket instead of all at once.
+ */
+class UpstreamPacer {
+  private tokens: number;
+  private lastRefillAt = Date.now();
+  private readonly queue: Array<() => void> = [];
+  private timer: NodeJS.Timeout | null = null;
+
+  constructor(
+    private readonly capacity: number,
+    private readonly refillPerMs: number,
+  ) {
+    this.tokens = capacity;
+  }
+
+  /** Resolves once a token is available; the result is the time spent waiting. */
+  async acquire(): Promise<number> {
+    const queuedAt = Date.now();
+    await new Promise<void>((resolve) => {
+      this.queue.push(resolve);
+      this.pump();
+    });
+    return Date.now() - queuedAt;
+  }
+
+  private pump(): void {
+    if (this.timer) {
+      return;
+    }
+    const now = Date.now();
+    const elapsed = now - this.lastRefillAt;
+    if (elapsed > 0) {
+      this.tokens = Math.min(this.capacity, this.tokens + elapsed * this.refillPerMs);
+      this.lastRefillAt = now;
+    }
+    while (this.queue.length > 0 && this.tokens >= 1) {
+      this.tokens -= 1;
+      this.queue.shift()?.();
+    }
+    if (this.queue.length > 0) {
+      const waitMs = Math.max(1, Math.ceil((1 - this.tokens) / this.refillPerMs));
+      this.timer = setTimeout(() => {
+        this.timer = null;
+        this.pump();
+      }, waitMs);
+      this.timer.unref?.();
+    }
+  }
+}
+
+const upstreamPacer = new UpstreamPacer(
+  HYPIXEL_BURST_CAPACITY,
+  HYPIXEL_REQUESTS_PER_SECOND / 1000,
+);
+
+/**
+ * Hypixel returns 429 with `Retry-After` (and `RateLimit-Reset`) when its
+ * limiter trips. Remember the window so queued lookups fail fast with a 429
+ * instead of burning requests against a key that is already being throttled.
+ */
+const MAX_COOLDOWN_MS = 5 * 60 * 1000;
+let upstreamCooldownUntil = 0;
+
+function headerNumber(
+  headers: RawAxiosResponseHeaders | AxiosResponseHeaders | undefined,
+  name: string,
+): number | null {
+  if (!headers) {
+    return null;
+  }
+  const raw = isNonArrayObject(headers) ? headers[name] : undefined;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (value === undefined || value === null) {
+    return null;
+  }
+  const parsed = Number.parseInt(String(value), 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function updateRateLimitState(
+  headers: RawAxiosResponseHeaders | AxiosResponseHeaders | undefined,
+  now: number,
+): void {
+  const remaining = headerNumber(headers, 'ratelimit-remaining');
+  const resetSeconds = headerNumber(headers, 'ratelimit-reset');
+  if (remaining === 0 && resetSeconds !== null) {
+    upstreamCooldownUntil = Math.max(
+      upstreamCooldownUntil,
+      now + Math.min(MAX_COOLDOWN_MS, resetSeconds * 1000),
+    );
+  }
+}
+
+function applyRateLimitCooldown(
+  headers: RawAxiosResponseHeaders | AxiosResponseHeaders | undefined,
+): void {
+  const retryAfter = headerNumber(headers, 'retry-after');
+  const resetSeconds = headerNumber(headers, 'ratelimit-reset');
+  const seconds = Math.max(retryAfter ?? 0, resetSeconds ?? 0, 1);
+  upstreamCooldownUntil = Math.max(
+    upstreamCooldownUntil,
+    Date.now() + Math.min(MAX_COOLDOWN_MS, seconds * 1000),
+  );
+}
 
 const CIRCUIT_BREAKER = {
   failureThreshold: CB_FAILURE_THRESHOLD,
@@ -188,16 +307,52 @@ function extractRetryAfterHeader(
 export async function fetchHypixelPlayer(uuid: string): Promise<HypixelFetchResult> {
   let attempt = 0;
   let lastError: unknown;
+
+  const cooldownMs = upstreamCooldownUntil - Date.now();
+  if (cooldownMs > 0) {
+    const retryAfter = Math.max(1, Math.ceil(cooldownMs / 1000));
+    logger.debug({ uuid, retryAfter }, '[hypixel] skipping during cooldown');
+    throw new HttpError(
+      429,
+      'HYPIXEL_RATE_LIMIT',
+      'Hypixel rate limited the backend.',
+      { 'Retry-After': String(retryAfter) },
+    );
+  }
+
   circuitBreakerCheck();
+  const requestStartedAt = Date.now();
 
   while (attempt < 2) {
     try {
-      const response = await hypixelClient.get<HypixelPlayerResponse>('/v2/player', {
-        params: { uuid },
-        headers: buildHeaders(),
-        timeout: HYPIXEL_TIMEOUT_MS,
+      const queuedAt = Date.now();
+      const queueDepth = upstreamGate.pendingCount;
+      logger.debug({ uuid, attempt: attempt + 1, queueDepth }, '[hypixel] fetch start');
+      let upstreamStartedAt = queuedAt;
+      let paceMs = 0;
+      const response = await upstreamGate(async () => {
+        paceMs = await upstreamPacer.acquire();
+        upstreamStartedAt = Date.now();
+        return hypixelClient.get<HypixelPlayerResponse>('/v2/player', {
+          params: { uuid },
+          headers: buildHeaders(),
+          timeout: HYPIXEL_TIMEOUT_MS,
+        });
       });
 
+      const rateLimitRemaining = headerNumber(response.headers, 'ratelimit-remaining');
+      const rateLimitReset = headerNumber(response.headers, 'ratelimit-reset');
+      updateRateLimitState(response.headers, Date.now());
+      logger.debug({
+        uuid,
+        attempt: attempt + 1,
+        status: response.status,
+        queueMs: upstreamStartedAt - queuedAt,
+        paceMs,
+        rateLimitRemaining,
+        rateLimitReset,
+        latencyMs: Date.now() - requestStartedAt,
+      }, '[hypixel] fetch response');
       circuitBreakerSuccess();
 
       const payload = response.data;
@@ -213,13 +368,40 @@ export async function fetchHypixelPlayer(uuid: string): Promise<HypixelFetchResu
       };
     } catch (error) {
       lastError = error;
+      const response = axios.isAxiosError(error) ? error.response : undefined;
+      const status = response?.status;
+      const code = axios.isAxiosError(error) ? error.code : undefined;
+      const message = error instanceof Error ? error.message : String(error);
+      const rateLimitRemaining = headerNumber(response?.headers, 'ratelimit-remaining');
+      const rateLimitReset = headerNumber(response?.headers, 'ratelimit-reset');
+      const retryAfter = headerNumber(response?.headers, 'retry-after');
+      if (status === 429) {
+        applyRateLimitCooldown(response?.headers);
+      }
+      logger.warn({
+        uuid,
+        attempt: attempt + 1,
+        status,
+        code,
+        message,
+        rateLimitRemaining,
+        rateLimitReset,
+        retryAfter,
+        cooldownMs: Math.max(0, upstreamCooldownUntil - Date.now()),
+        latencyMs: Date.now() - requestStartedAt,
+      }, '[hypixel] fetch failed');
       if (attempt === 0 && shouldRetry(error)) {
         attempt += 1;
+        logger.debug({ uuid, attempt: attempt + 1 }, '[hypixel] retrying');
         await wait(jitterDelay());
         continue;
       }
 
-      circuitBreakerFailure();
+      // A throttle is not an outage: keeping the breaker closed lets normal
+      // lookups resume as soon as the Retry-After window passes.
+      if (status !== 429) {
+        circuitBreakerFailure();
+      }
 
       if (axios.isAxiosError(error)) {
         if (error.response) {
@@ -228,12 +410,12 @@ export async function fetchHypixelPlayer(uuid: string): Promise<HypixelFetchResu
             throw new HttpError(502, 'HYPIXEL_FORBIDDEN', 'Hypixel rejected the backend API key.');
           }
           if (status === 429) {
-            const retryAfter = extractRetryAfterHeader(error.response.headers);
+            const retryAfterHeader = extractRetryAfterHeader(error.response.headers);
             throw new HttpError(
               429,
               'HYPIXEL_RATE_LIMIT',
               'Hypixel rate limited the backend.',
-              retryAfter ? { 'Retry-After': retryAfter } : undefined,
+              retryAfterHeader ? { 'Retry-After': retryAfterHeader } : undefined,
             );
           }
           throw new HttpError(502, 'HYPIXEL_ERROR', `Hypixel responded with status ${status}.`);
@@ -253,15 +435,38 @@ export async function fetchHypixelPlayer(uuid: string): Promise<HypixelFetchResu
   throw lastError instanceof Error ? lastError : new Error('Unknown Hypixel fetch failure');
 }
 
+let reachabilityCache: { value: boolean; checkedAt: number } | null = null;
+const REACHABILITY_CACHE_MS = 15_000;
+
 export async function checkHypixelReachability(): Promise<boolean> {
+  const now = Date.now();
+  if (reachabilityCache && now - reachabilityCache.checkedAt < REACHABILITY_CACHE_MS) {
+    return reachabilityCache.value;
+  }
+
+  const startedAt = now;
   try {
-    const response = await hypixelClient.get('/status', {
+    // `/v2/counts` is a cheap route. The old `/status` call was actually the
+    // player-status endpoint, so it always returned 400 ("missing uuid") while
+    // still being treated as healthy. This doesn't send the API key, so probes
+    // stay free; the short cache below keeps Render's 5-second checks from
+    // multiplying them.
+    const response = await hypixelClient.get('/v2/counts', {
       timeout: Math.min(HYPIXEL_TIMEOUT_MS, 2000),
       validateStatus: () => true,
     });
-    return response.status < 500;
+    const reachable = response.status < 500;
+    logger.debug({
+      status: response.status,
+      latencyMs: Date.now() - startedAt,
+      reachable,
+      cached: false,
+    }, '[hypixel] status check');
+    reachabilityCache = { value: reachable, checkedAt: Date.now() };
+    return reachable;
   } catch (error) {
     logger.error({ err: error }, 'Hypixel reachability check failed');
+    reachabilityCache = { value: false, checkedAt: Date.now() };
     return false;
   }
 }
@@ -375,6 +580,7 @@ export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPla
     // SkyWars
     skywars_experience: skywars.skywars_experience
                        ?? skywars.SkyWars_experience
+                       ?? skywars.experience
                        ?? skywars.Experience
                        ?? null,
     skywars_wins: skywarsAggregates.wins,

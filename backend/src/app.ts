@@ -16,13 +16,19 @@ import { sanitizeUrlForLogs, isIPInCIDR } from './util/requestUtils';
 import { requestId } from './middleware/requestId';
 import { logger } from './util/logger';
 
+function headerValue(value: string | string[] | undefined): string | undefined {
+  return Array.isArray(value) ? value[0] : value;
+}
+
 export function createApp(): express.Express {
   const app = express();
 
   app.use(requestId);
 
   // Browser CORS is not needed by the mod (no Origin header), so only same-origin
-  // and header-less requests are allowed.
+  // and header-less requests are allowed. A foreign Origin is served without CORS
+  // headers rather than failing the request: rejecting it here would turn an
+  // otherwise public GET into a 500 through the error middleware.
   app.use(cors((req, callback) => {
     const origin = req.headers.origin;
     const serverOrigin = `${req.protocol}://${req.get('host')}`;
@@ -30,7 +36,7 @@ export function createApp(): express.Express {
       callback(null, { origin: true });
       return;
     }
-    callback(new Error('Not allowed by CORS'));
+    callback(null, { origin: false });
   }));
 
   app.use(helmet({
@@ -47,6 +53,10 @@ export function createApp(): express.Express {
   app.use(pinoHttp({
     logger,
     genReqId: (req) => req.id,
+    customProps: (req) => ({
+      session: headerValue(req.headers['x-levelhead-session']),
+      install: headerValue(req.headers['x-levelhead-install']),
+    }),
     serializers: {
       req: (req) => ({ id: req.id, method: req.method, url: sanitizeUrlForLogs(req.url) }),
       res: (res: ServerResponse) => ({ statusCode: res.statusCode }),

@@ -1,6 +1,6 @@
 import ipaddr from 'ipaddr.js';
 import { isNonArrayObject } from './typeChecks';
-import { IDENTIFIER_PATTERN, IDENTIFIER_MAX_LENGTH } from './validationConstants';
+import { IDENTIFIER_MAX_LENGTH, normalizeUuid } from './validationConstants';
 
 /** Safely extracts the `uuids` array from a request body without inline casts. */
 export function extractBatchIdentifiersFromBody(body: unknown): unknown[] | undefined {
@@ -11,8 +11,10 @@ export function extractBatchIdentifiersFromBody(body: unknown): unknown[] | unde
 }
 
 /**
- * Trims, length-checks, dedupes and validates batch identifiers.
- * Non-strings, empty strings and over-length values set `hasInvalid`.
+ * Trims, length-checks, normalizes, dedupes and validates batch identifiers.
+ * The returned UUIDs are lowercase and undashed, so `ABC...` and the dashed
+ * equivalent collapse into one entry. Non-strings, empty strings, over-length
+ * values and non-UUIDs set `hasInvalid` and are omitted from the result.
  */
 export function parseAndValidateBatchIdentifiers(
   uuidsValue: unknown[],
@@ -28,20 +30,23 @@ export function parseAndValidateBatchIdentifiers(
     }
 
     const trimmed = value.trim();
-    if (trimmed.length === 0 || value.length > IDENTIFIER_MAX_LENGTH) {
+    if (trimmed.length === 0 || trimmed.length > IDENTIFIER_MAX_LENGTH) {
       hasInvalid = true;
       continue;
     }
 
-    if (seen.has(trimmed)) {
+    const uuid = normalizeUuid(trimmed);
+    if (!uuid) {
+      hasInvalid = true;
       continue;
     }
 
-    seen.add(trimmed);
-    uniqueUuids.push(trimmed);
-    if (!IDENTIFIER_PATTERN.test(trimmed)) {
-      hasInvalid = true;
+    if (seen.has(uuid)) {
+      continue;
     }
+
+    seen.add(uuid);
+    uniqueUuids.push(uuid);
   }
 
   return { uniqueUuids, hasInvalid };
