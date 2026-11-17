@@ -2,7 +2,6 @@ import { sql } from 'kysely';
 import { db, isDatabaseConfigured } from './database/db';
 import { logger } from '../util/logger';
 
-/** A cached player-stats row as the rest of the service sees it. */
 export interface CacheEntry<T> {
   value: T;
   expiresAt: number;
@@ -82,7 +81,6 @@ export async function ensureInitialized(): Promise<void> {
   await initialization;
 }
 
-/** Synchronous gate used before issuing SQL (failed/unconfigured DB means skip). */
 export function isDatabaseReady(): boolean {
   return dbReady;
 }
@@ -105,7 +103,6 @@ export async function checkDatabaseHealth(): Promise<boolean> {
   }
 }
 
-/** Deletes rows past their TTL. Called hourly by the scheduler. */
 export async function purgeExpiredEntries(now: number = Date.now()): Promise<void> {
   await ensureInitialized();
   if (!dbReady) {

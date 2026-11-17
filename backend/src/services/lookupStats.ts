@@ -117,7 +117,6 @@ interface CountRow {
 const STAR_ORDER = ['0-9', '10-49', '50-99', '100-199', '200-299', '300-499', '500-999', '1000+', 'Unknown'];
 const LATENCY_ORDER = ['0-50', '50-100', '100-250', '250-500', '500-1000', '1000+'];
 
-/** Upper bound on zero-filled chart buckets; older buckets are trimmed. */
 const MAX_SERIES_BUCKETS = 2_000;
 
 function toNumber(value: unknown): number {
@@ -145,8 +144,6 @@ function whereWindowAndSearch(window: Window, search: string) {
     parts.push(sql`looked_up_at <= ${window.until}`);
   }
   if (search) {
-    // Escape LIKE metacharacters so a literal `%`, `_` or `\` only matches itself.
-    // ILIKE on both columns keeps UUID searches case-insensitive, like usernames.
     const pattern = `%${search.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
     parts.push(sql`(username ILIKE ${pattern} OR identifier ILIKE ${pattern})`);
   }
@@ -164,7 +161,6 @@ function orderBy(sort: StatsQuery['sort']) {
   }
 }
 
-/** Zero-fills a distribution so every bucket is visible, not just populated ones. */
 function fillSlices(slices: Slice[], order: string[]): Slice[] {
   const byLabel = new Map(slices.map((slice) => [slice.label, slice.count]));
   return order.map((label) => ({ label, count: byLabel.get(label) ?? 0 }));
@@ -221,9 +217,6 @@ export async function loadStatsPage(query: StatsQuery): Promise<StatsPageData | 
         (SELECT pg_size_pretty(COALESCE(SUM(pg_relation_size(indexrelid)), 0))
            FROM pg_stat_user_indexes) AS index_size
     `.execute(db),
-    // Zero-filled time series: generate_series creates every hourly/daily bucket,
-    // then the scoped rows are left-joined onto it. Empty buckets come back with
-    // zero counts and null latency, which the caller renders as zeros.
     sql<BucketRow>`
       WITH raw_bounds AS (
         SELECT
@@ -377,7 +370,6 @@ export async function loadStatsPage(query: StatsQuery): Promise<StatsPageData | 
   };
 }
 
-/** CSV export shares the table's filters but ignores pagination. */
 export async function loadLookupRowsForExport(query: StatsQuery, limit = 50_000): Promise<LookupLogTable[] | null> {
   await ensureInitialized();
   if (!isDatabaseReady()) {

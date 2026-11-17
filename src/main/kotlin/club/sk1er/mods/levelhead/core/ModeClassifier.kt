@@ -2,10 +2,6 @@ package club.sk1er.mods.levelhead.core
 
 import java.util.Locale
 
-/**
- * Which context a supported game is in. `NONE` covers both "not this game" and
- * "the sidebar gives no evidence yet".
- */
 enum class ModeContext {
     NONE,
     LOBBY,
@@ -15,10 +11,6 @@ enum class ModeContext {
         get() = this != NONE
 }
 
-/**
- * The result of reading one sidebar. This is plain data: no Minecraft classes, no
- * config and no side effects, so it can be checked against captured fixtures.
- */
 data class SidebarEvidence(
     val title: String,
     val normalizedTitle: String,
@@ -34,11 +26,6 @@ data class SidebarEvidence(
         GameMode.SKYWARS -> skywars
     }
 
-    /**
-     * The game the sidebar proves, using the historical proof order: explicit
-     * match evidence first (Duels, SkyWars, BedWars), then lobbies in the same
-     * order.
-     */
     val resolvedGame: GameMode?
         get() = when {
             duels == ModeContext.MATCH -> GameMode.DUELS
@@ -54,24 +41,12 @@ data class SidebarEvidence(
         get() = resolvedGame?.let(::contextOf) ?: ModeContext.NONE
 }
 
-/** What a chat line says about one game. */
 sealed class ChatSignal {
     object None : ChatSignal()
     data class Detect(val context: ModeContext) : ChatSignal()
     object Clear : ChatSignal()
 }
 
-/**
- * Pure mode-detection rules.
- *
- * These are the rules the three old detectors (`BedwarsModeDetector`,
- * `DuelsModeDetector`, `SkyWarsModeDetector`) applied from inside side-effecting
- * getters. They take stripped sidebar text and return data, which is why they can
- * be unit-tested headlessly and why reading the mode can no longer trigger a fetch.
- *
- * The regexes and indicator lists are intentionally byte-for-byte the old ones.
- * Do not "improve" them here; behaviour changes belong in a separate review item.
- */
 object ModeClassifier {
     private val WHITESPACE = Regex("""\s+""")
     private val COLOR_CODE = Regex("""§[0-9a-fk-orA-FK-OR]""")
@@ -113,7 +88,6 @@ object ModeClassifier {
         "duels killer"
     )
 
-    /** Classify one sidebar. Title and lines are stripped defensively. */
     fun classify(title: String, lines: List<String>): SidebarEvidence {
         val strippedTitle = strip(title)
         val strippedLines = lines.map(::strip).filter { it.isNotBlank() }
@@ -134,7 +108,6 @@ object ModeClassifier {
         )
     }
 
-    /** Pure chat rule for one game. */
     fun chatSignal(
         gameMode: GameMode,
         normalizedChat: String,
@@ -177,9 +150,6 @@ object ModeClassifier {
                 normalizedLine.contains("CLICK TO PLAY")
         }
 
-        // Team colour lines are generic enough that other sidebars (and Duels
-        // scoreboards) can contain them, so a match requires a BedWars-specific
-        // title or score line on top. This keeps BedWars from shadowing Duels/SkyWars.
         return when {
             hasTeamLines && (hasBedwarsTitle || hasBedwarsIndicators) -> ModeContext.MATCH
             hasBedwarsIndicators && !hasHubLines -> ModeContext.LOBBY
@@ -244,7 +214,6 @@ object ModeClassifier {
             lines.any { it.contains("Duel", ignoreCase = true) }
         if (!isDuelScoreboard) return ModeContext.NONE
 
-        // Strong scoreboard evidence for another game suppresses Duels detection.
         if (bedwars == ModeContext.MATCH || skywars == ModeContext.MATCH) return ModeContext.NONE
 
         val matchIndicators = lines.any {

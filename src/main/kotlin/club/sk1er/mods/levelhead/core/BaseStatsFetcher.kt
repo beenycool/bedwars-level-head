@@ -7,11 +7,6 @@ import java.util.UUID
 import club.sk1er.mods.levelhead.core.DebugLogging
 import club.sk1er.mods.levelhead.core.DebugSession
 
-/**
- * Base for the per-game fetchers. All data comes from the proxy backend; the
- * direct Hypixel API mode was removed because developer keys expire after a few
- * days and the mode could never keep working (B44).
- */
 abstract class BaseStatsFetcher : GameModeFetcher {
 
     abstract override val gameMode: GameMode

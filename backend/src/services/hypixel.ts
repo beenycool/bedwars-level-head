@@ -22,11 +22,10 @@ import { logger } from '../util/logger';
 
 const dnsCache = new CacheableLookup({ maxTtl: 300, fallbackDuration: 0 });
 
-// Define a custom HTTPS agent to force IPv4 and enable Keep-Alive
 const agent = new https.Agent({
-  keepAlive: true,       // Reuse existing connections for batch requests
+  keepAlive: true,
   keepAliveMsecs: 15_000,
-  maxSockets: 50,        // Allow up to 50 parallel connections
+  maxSockets: 50,
   family: 4,             // STRICTLY force IPv4 to bypass the 2s IPv6 timeout
 });
 dnsCache.install(agent as unknown as https.Agent);
@@ -34,17 +33,12 @@ dnsCache.install(agent as unknown as https.Agent);
 const hypixelClient = axios.create({
   baseURL: HYPIXEL_API_BASE_URL,
   timeout: HYPIXEL_TIMEOUT_MS,
-  httpsAgent: agent,     // Attach the custom agent here
+  httpsAgent: agent,
   headers: {
     'User-Agent': OUTBOUND_USER_AGENT,
   },
 });
 
-/**
- * One shared gate for individual GETs and batch warmups. The socket pool
- * (maxSockets: 50) is only a backstop; this keeps a lobby join from opening a
- * dozen cold connections at the same instant.
- */
 const upstreamGate = pLimit(HYPIXEL_MAX_CONCURRENCY);
 
 /**
@@ -65,7 +59,6 @@ class UpstreamPacer {
     this.tokens = capacity;
   }
 
-  /** Resolves once a token is available; the result is the time spent waiting. */
   async acquire(): Promise<number> {
     const queuedAt = Date.now();
     await new Promise<void>((resolve) => {
@@ -250,7 +243,7 @@ function parseLastModified(value?: string): number | null {
 }
 
 function jitterDelay(): number {
-  const MAX_TIMEOUT_MS = 2_147_483_647; // setTimeout upper bound
+  const MAX_TIMEOUT_MS = 2_147_483_647;
   const toSafeDelay = (value: number): number => {
     if (!Number.isSafeInteger(value)) return 0;
     return Math.min(MAX_TIMEOUT_MS, Math.max(0, value));
@@ -474,19 +467,16 @@ export async function checkHypixelReachability(): Promise<boolean> {
 export interface MinimalPlayerStats {
   displayname: string | null;
 
-  // Bedwars-specific (for stars calculation, FKDR, star cosmetic)
   bedwars_experience: number | null;
   bedwars_active_star: string | null;
   bedwars_final_kills: number;
   bedwars_final_deaths: number;
 
-  // Duels-specific (for WLR, KDR)
   duels_wins: number;
   duels_losses: number;
   duels_kills: number;
   duels_deaths: number;
 
-  // SkyWars-specific (for level calculation, WLR, KDR)
   skywars_experience: number | null;
   skywars_wins: number;
   skywars_losses: number;
@@ -494,14 +484,12 @@ export interface MinimalPlayerStats {
   skywars_deaths: number;
 }
 
-// Bolt: Optimized aggregation to scan stats object only once
 function computeAggregates(stats: Record<string, unknown>) {
   let wins = 0;
   let losses = 0;
   let kills = 0;
   let deaths = 0;
 
-  // Optimization: Use for..in to avoid Object.keys() allocation
   for (const key in stats) {
     if (Object.prototype.hasOwnProperty.call(stats, key)) {
       const value = stats[key];
@@ -565,19 +553,16 @@ export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPla
   return {
     displayname: response.player?.displayname ?? null,
 
-    // Bedwars
     bedwars_experience: bedwars.bedwars_experience ?? bedwars.Experience ?? null,
     bedwars_active_star: activeStar,
     bedwars_final_kills: Number(bedwars.final_kills_bedwars ?? 0),
     bedwars_final_deaths: Number(bedwars.final_deaths_bedwars ?? 0),
 
-    // Duels
     duels_wins: duelsAggregates.wins,
     duels_losses: duelsAggregates.losses,
     duels_kills: duelsAggregates.kills,
     duels_deaths: duelsAggregates.deaths,
 
-    // SkyWars
     skywars_experience: skywars.skywars_experience
                        ?? skywars.SkyWars_experience
                        ?? skywars.experience

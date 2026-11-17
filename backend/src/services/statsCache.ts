@@ -41,7 +41,6 @@ function mapRow(row: { payload: unknown; expires_at: unknown; etag: string | nul
   };
 }
 
-/** Reads one fresh row from PostgreSQL. Returns null on miss, expiry or DB failure. */
 export async function getPlayerStats(key: string): Promise<CachedPlayerStats | null> {
   await ensureInitialized();
   if (!isDatabaseReady()) {
@@ -69,7 +68,6 @@ export async function getPlayerStats(key: string): Promise<CachedPlayerStats | n
   }
 }
 
-/** Batch read used to warm a whole lobby in one round-trip. */
 export async function getManyPlayerStats(keys: string[]): Promise<Map<string, CachedPlayerStats>> {
   const result = new Map<string, CachedPlayerStats>();
   if (keys.length === 0) {

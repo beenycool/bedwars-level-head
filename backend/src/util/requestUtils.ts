@@ -2,7 +2,6 @@ import ipaddr from 'ipaddr.js';
 import { isNonArrayObject } from './typeChecks';
 import { IDENTIFIER_MAX_LENGTH, normalizeUuid } from './validationConstants';
 
-/** Safely extracts the `uuids` array from a request body without inline casts. */
 export function extractBatchIdentifiersFromBody(body: unknown): unknown[] | undefined {
   if (isNonArrayObject(body) && Array.isArray(body.uuids)) {
     return body.uuids;
@@ -10,12 +9,6 @@ export function extractBatchIdentifiersFromBody(body: unknown): unknown[] | unde
   return undefined;
 }
 
-/**
- * Trims, length-checks, normalizes, dedupes and validates batch identifiers.
- * The returned UUIDs are lowercase and undashed, so `ABC...` and the dashed
- * equivalent collapse into one entry. Non-strings, empty strings, over-length
- * values and non-UUIDs set `hasInvalid` and are omitted from the result.
- */
 export function parseAndValidateBatchIdentifiers(
   uuidsValue: unknown[],
 ): { uniqueUuids: string[]; hasInvalid: boolean } {

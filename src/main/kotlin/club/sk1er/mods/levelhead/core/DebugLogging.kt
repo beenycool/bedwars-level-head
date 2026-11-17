@@ -6,42 +6,19 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 
-/**
- * Shared debug logging helpers for the Levelhead mod.
- * Provides allocation-light utilities for conditional logging, formatting, and redaction.
- */
 object DebugLogging {
 
-    /**
-     * Check if request debug logging is enabled.
-     * Use this before building any debug log strings.
-     */
     fun isRequestDebugEnabled(): Boolean = LevelheadConfig.debugRequests
 
-    /**
-     * Render diagnostics use the single debug flag as well.
-     */
     fun isRenderDebugEnabled(): Boolean = LevelheadConfig.debugRequests
 
-    /**
-     * Truncate a string safely, handling special characters like § and ✪.
-     * Will not split multi-byte characters in the middle.
-     * If the string is truncated, appends "..." to indicate truncation.
-     *
-     * @param maxLength Maximum length including the ellipsis
-     * @return The truncated string, or original if within limit
-     */
     fun String.truncateForLogs(maxLength: Int): String {
         if (maxLength <= 3) return ".".repeat(maxLength.coerceAtLeast(0))
         if (length <= maxLength) return this
 
-        // Find a safe cutoff point that doesn't split special characters
-        // § is 2 bytes in UTF-8, ✪ is 3 bytes, but in Kotlin String they're each 1 char
-        // We just need to ensure we don't cut in the middle of visible text
         val effectiveMax = maxLength - 3
         var cutoff = effectiveMax
 
-        // Avoid leaving a dangling color code character at the end of the truncated string.
         while (cutoff > 0 && (this[cutoff - 1] == '§' || this[cutoff - 1] == '✪')) {
             cutoff--
         }
@@ -67,11 +44,6 @@ object DebugLogging {
     internal val UUID_REGEX = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
     internal val TRIMMED_UUID_REGEX = Regex("^[0-9a-fA-F]{32}$")
 
-    /**
-     * Mask a string as UUID for privacy-safe logging.
-     * Useful when you have a string that might be a UUID.
-     * Returns original if not a valid UUID format.
-     */
     fun String.maskIfUuid(): String {
         if (UUID_REGEX.matches(this) || TRIMMED_UUID_REGEX.matches(this)) {
             val lastFour = takeLast(4)
@@ -80,32 +52,18 @@ object DebugLogging {
         return this
     }
 
-    /**
-     * Conditionally log a request debug message.
-     * Only builds the message string if debug is enabled.
-     * The message should already include the [LevelheadDebug] prefix.
-     */
     fun logRequestDebug(message: () -> String) {
         if (isRequestDebugEnabled()) {
             Levelhead.logger.info(message())
         }
     }
 
-    /**
-     * Conditionally log a tab debug message.
-     * Reuses the render debug toggle.
-     * Only builds the message string if debug is enabled.
-     * The message should already include the [LevelheadDebug] prefix.
-     */
     fun logTabDebug(message: () -> String) {
         if (isRenderDebugEnabled()) {
             Levelhead.logger.info(message())
         }
     }
 
-    /**
-     * Java-friendly overload for tab debug logging.
-     */
     @JvmStatic
     fun logTabDebug(message: String) {
         if (isRenderDebugEnabled()) {
@@ -114,13 +72,6 @@ object DebugLogging {
     }
 }
 
-/**
- * Per-game debug counters.
- *
- * A session starts on every world join and is summarised once a minute, so a
- * crash still leaves the counts behind. The id is also sent to the backend as
- * [SESSION_HEADER] to correlate one game across both logs.
- */
 object DebugSession {
     const val SESSION_HEADER = "X-Levelhead-Session"
 

@@ -12,10 +12,8 @@ import { computeResponseEtag } from '../util/etag';
 import { logger } from '../util/logger';
 
 interface PlayerLookupHandlerOptions {
-  /** Legacy `/api/player` route: exposes degradation hints. */
   private: boolean;
   cacheControl: string;
-  /** Label recorded in `lookup_events` for the tracking page. */
   route: LookupRoute;
 }
 
@@ -24,7 +22,6 @@ interface PlayerBatchHandlerOptions {
   cacheControl?: string;
 }
 
-/** Upstream failure = Hypixel refused/timed out or the breaker is open. */
 function isUpstreamFailure(error: unknown): boolean {
   if (error instanceof HttpError) {
     return error.status >= 500 || error.status === 429;
@@ -45,10 +42,6 @@ function failureStatus(error: unknown): number {
   return error instanceof HttpError ? error.status : 500;
 }
 
-/**
- * Shared implementation of GET /:identifier for the public and legacy routers.
- * The payload shape is unchanged: the flat minimal stats object plus `nicked`.
- */
 export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): RequestHandler {
   return async (req, res, next) => {
     const { identifier } = req.params;
@@ -58,8 +51,6 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
       return;
     }
 
-    // Dashed and undashed UUIDs are equivalent; tracking and the cache both use
-    // the lowercase, undashed form.
     const trackingKey = normalizeUuid(identifier);
     if (!trackingKey) {
       next(new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a UUID (dashes optional).'));
@@ -153,13 +144,6 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
   };
 }
 
-/**
- * Shared implementation of POST /batch.
- *
- * One bad identifier never fails the batch: identifiers that fail are omitted, which
- * the mod already treats as a temporary per-player error. The batch as a whole only
- * fails when the upstream is unusable for every identifier (breaker open / 5xx / 429).
- */
 export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): RequestHandler {
   const batchLimit = pLimit(6);
 
@@ -229,8 +213,6 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
               });
               return { ok: true as const, identifier, resolved };
             } catch (error) {
-              // Batch validation already normalized these, but keep the tracking
-              // table UUID-only if that ever changes: usernames are not loggable.
               const tracked = normalizeUuid(identifier);
               if (tracked) {
                 observations.push({
@@ -290,8 +272,6 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
 
       refundPublicTokens(req, cacheHits);
 
-      // Nothing worked and every failure came from upstream: fail the batch so the
-      // client backs off instead of interpreting an empty 200 as "no such players".
       if (successes === 0) {
         if (upstreamFailures === outcomes.length) {
           throw upstreamUnavailable(60);

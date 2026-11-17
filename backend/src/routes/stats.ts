@@ -10,11 +10,6 @@ import { loadLookupRowsForExport, loadStatsPage } from '../services/lookupStats'
 import { renderLookupCsv, renderStatsPage, renderUnavailablePage } from '../views/statsPage';
 import { logger } from '../util/logger';
 
-/**
- * Public analytics page. It reads only cached, already-public Hypixel data, so it
- * needs no auth — just a page-load budget of its own so a browser refresh loop cannot
- * hammer PostgreSQL.
- */
 const router = Router();
 
 const statsRateLimiter = new TokenBucketLimiter({ capacity: 60, windowMs: 60_000 });

@@ -1,4 +1,3 @@
-/** Parsing and clamping for the `/stats` query string. Kept free of Express types. */
 
 export const STATS_RANGES = ['24h', '7d', '30d', 'all'] as const;
 export type StatsRange = (typeof STATS_RANGES)[number];
@@ -67,10 +66,6 @@ function pickNumber<T extends number>(values: readonly T[], raw: string | undefi
   return (values as readonly number[]).includes(parsed) ? (parsed as T) : fallback;
 }
 
-/**
- * Unknown or repeated parameters fall back to the defaults rather than returning a
- * 400: the page is meant to be linkable and hand-editable.
- */
 export function parseStatsQuery(raw: Record<string, unknown>): StatsQuery {
   const range = firstValue(raw.range);
   const metric = firstValue(raw.metric);
@@ -99,7 +94,6 @@ export function rangeLabel(range: StatsRange): string {
   return RANGE_LABELS[range];
 }
 
-/** `from`/`to` win over the range preset when either is present. */
 export function statsWindow(query: StatsQuery, now: number = Date.now()): { since: Date | null; until: Date | null } {
   if (query.from || query.to) {
     return { since: query.from, until: query.to };
@@ -110,7 +104,6 @@ export function statsWindow(query: StatsQuery, now: number = Date.now()): { sinc
   return { since: new Date(now - RANGE_DURATIONS_MS[query.range]), until: null };
 }
 
-/** 24h and shorter is plotted hourly; anything longer is plotted daily. */
 export function chartGranularity(since: Date | null, until: Date | null, now: number = Date.now()): 'hour' | 'day' {
   if (!since) {
     return 'day';

@@ -68,7 +68,7 @@ class LevelheadMod {
 
 object Levelhead {
     val logger: Logger = LogManager.getLogger()
-    
+
     val okHttpClient: OkHttpClient = OkHttpClient.Builder()
         .connectionPool(ConnectionPool(10, 5, TimeUnit.MINUTES))
         .connectTimeout(5, TimeUnit.SECONDS)
@@ -117,11 +117,6 @@ object Levelhead {
 
     const val MODID = "bedwars_levelhead"
 
-    /**
-     * Read from the packaged `mcmod.info`, whose version is expanded from
-     * `gradle.properties`'s BUILD_ID at build time. That makes BUILD_ID the single
-     * version source instead of a third hard-coded string.
-     */
     val VERSION: String by lazy {
         runCatching {
             val stream = Levelhead::class.java.getResourceAsStream("/mcmod.info") ?: return@runCatching null
@@ -147,10 +142,6 @@ object Levelhead {
         CommandUtils.sendPrefixedChat(ChatComponentText(message))
     }
 
-    /**
-     * Run [block] on the Minecraft client thread. Client state (world, scoreboard,
-     * entity list) must only be touched there.
-     */
     fun runOnMain(block: () -> Unit) {
         val client = minecraft
         if (client.isCallingFromMinecraftThread) {
@@ -160,7 +151,6 @@ object Levelhead {
         }
     }
 
-    /** Launch per-world work that is cancelled on the next world change. */
     fun launchWorld(block: suspend CoroutineScope.() -> Unit): Job = worldScope.launch(block = block)
 
     /**
@@ -210,9 +200,6 @@ object Levelhead {
                         type == null || type == "release"
                     } ?: versions.firstOrNull() ?: return@use
                     val latestVersion = latest.get("version_number")?.asString ?: return@use
-                    // Modrinth's version_number and the packaged version use
-                    // different naming (e.g. "v8.3.0" vs "8.3.0"), so compare the
-                    // numeric segments instead of requiring an exact string.
                     if (!isRemoteVersionNewer(latestVersion, VERSION)) {
                         return@use
                     }
@@ -227,11 +214,6 @@ object Levelhead {
         }
     }
 
-    /**
-     * True only when [remote] is a strictly newer release than [local]. Missing or
-     * non-numeric segments are ignored, so "v8.3.0", "8.3.0" and "8.3.0+forge"
-     * compare equal and do not nag forever.
-     */
     internal fun isRemoteVersionNewer(remote: String, local: String): Boolean {
         val remoteParts = versionSegments(remote)
         val localParts = versionSegments(local)
@@ -267,9 +249,6 @@ object Levelhead {
         MinecraftForge.EVENT_BUS.register(ModeManager.tracker)
         MinecraftForge.EVENT_BUS.register(this)
         CommandManager.INSTANCE.registerCommand(LevelheadCommand())
-        // The update check needs a player and a world; doing it here
-        // (thePlayer == null) dropped the chat and still set the "checked"
-        // flag. It runs on the first world join instead.
     }
 
     @SubscribeEvent
@@ -297,7 +276,6 @@ object Levelhead {
             if (firstWorldJoined.compareAndSet(false, true)) {
                 scheduleUpdateCheck()
             }
-            // joinWorld resets the mode tracker (new world epoch) and samples it.
             displayManager.joinWorld(resetDetector = true)
         } else if (entity is EntityPlayer) {
             displayManager.playerJoin(entity)
@@ -408,11 +386,11 @@ object Levelhead {
     )
 
     enum class RequestReason {
-        PLAYER_JOIN,        // Individual player joined world
-        REQUEST_ALL_DISPLAYS,  // Initial fetch for all visible players
-        REFRESH_VISIBLE_DISPLAYS, // Config change refresh
-        TAB_LIST,           // Tab list stats fetch
-        UNKNOWN             // Fallback for backward compatibility
+        PLAYER_JOIN,
+        REQUEST_ALL_DISPLAYS,
+        REFRESH_VISIBLE_DISPLAYS,
+        TAB_LIST,
+        UNKNOWN
     }
 
     data class StatusSnapshot(

@@ -11,11 +11,6 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.random.Random
 
-/**
- * One player/mode pair that the coordinator decided must go to the network.
- * [cached] carries the stale value for a revalidation, so a failed refresh can
- * keep serving the last good stats.
- */
 data class FetchWork(
     val uuid: UUID,
     val gameMode: GameMode,
@@ -33,11 +28,6 @@ class FetchExecutor(
 ) {
     private val inFlightStatsRequests: ConcurrentHashMap<StatsKey, Deferred<GameStats?>> = ConcurrentHashMap()
 
-    /**
-     * Proxy work that has been claimed by a running batch. A second request for the
-     * same key joins this deferred instead of receiving a null placeholder, so a
-     * concurrent caller sees the real in-flight result.
-     */
     private val inFlightProxyRequests: ConcurrentHashMap<StatsKey, CompletableDeferred<GameStats?>> = ConcurrentHashMap()
     private val starFetchSemaphore: Semaphore = Semaphore(6)
     @Volatile
@@ -51,17 +41,6 @@ class FetchExecutor(
     val lastSuccessAgeMillis: Long?
         get() = lastFetchSuccessAt.takeIf { it > 0 }?.let { System.currentTimeMillis() - it }
 
-    /**
-     * Execute proxy batch fetching for the given work.
-     *
-     * Every entry that was claimed by a proxy batch is removed from the returned
-     * list regardless of the outcome. A failed batch must not fan out into one
-     * proxy call per identifier (and then into keyless Hypixel calls); the retry
-     * loop re-batches these entries once the exponential backoff expires.
-     *
-     * [onResult] receives the real value on success and `null` on failure. The
-     * coordinator writes that into [StatsStore]; nothing here touches displays.
-     */
     suspend fun executeProxyBatch(
         planned: List<FetchWork>,
         onResult: (StatsKey, GameStats?) -> Unit
@@ -81,8 +60,6 @@ class FetchExecutor(
             }
         }
 
-        // Entries we did not claim keep whatever path they already have (in-flight
-        // dedupe or a call that awaits an existing proxy result).
         val remaining = planned.filterNot { it.key in claims }
         DebugLogging.logRequestDebug {
             "[LevelheadDebug][batch] ${DebugSession.prefix()} claimed=${claims.size} remaining=${remaining.size} sample=${claims.keys.take(8).map { it.uuid.maskForLogs() + "/" + it.gameMode.name }}"
@@ -207,10 +184,6 @@ class FetchExecutor(
         return remaining
     }
 
-    /**
-     * Execute a direct (non-proxy) fetch for one work item.
-     * Uses in-flight deduplication and semaphore-based concurrency limiting.
-     */
     internal fun ensureStatsFetch(
         work: FetchWork,
         onResult: (StatsKey, GameStats?) -> Unit
@@ -295,8 +268,6 @@ class FetchExecutor(
                     // drop a concurrent successful fetch.
                     throw cancellation
                 } catch (throwable: Throwable) {
-                    // A user-visible failure, not a debug footnote: this is why a
-                    // fetch that failed used to be indistinguishable from "no data".
                     DebugSession.inc("direct_exception")
                     DebugLogging.logRequestDebug {
                         "[LevelheadDebug][direct] ${DebugSession.prefix()} exception uuid=${cacheKey.uuid.maskForLogs()} mode=${cacheKey.gameMode.name} error=${throwable.javaClass.simpleName}: ${throwable.message}"

@@ -1,7 +1,6 @@
-/** One table: player stats rows keyed by `player:v2:<uuid>`. */
 export interface PlayerStatsCacheTable {
   cache_key: string;
-  payload: string; // JSON-serialised MinimalPlayerStats
+  payload: string;
   expires_at: number;
   cached_at: number | null;
   etag: string | null;
@@ -9,9 +8,6 @@ export interface PlayerStatsCacheTable {
   source: string | null;
 }
 
-/**
- * One row per player lookup. Pruned on the retention window.
- */
 export interface LookupLogTable {
   id: string;
   looked_up_at: Date;

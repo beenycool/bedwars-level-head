@@ -55,9 +55,6 @@ object ProxyClient {
         return true
     }
 
-    /**
-     * Cheap configuration check (no warnings) shared with [club.sk1er.mods.levelhead.core.BaseStatsFetcher].
-     */
     fun isConfigured(): Boolean {
         return LevelheadConfig.proxyBaseUrl.isNotBlank()
     }
@@ -166,8 +163,6 @@ object ProxyClient {
     suspend fun fetchBatch(uuids: List<UUID>): Map<UUID, FetchResult> {
         if (uuids.isEmpty()) return emptyMap()
 
-        // We assume ensureConfigured() or similar was checked by caller or we check here.
-        // Since isAvailable handles warnings, we should use it.
         if (!isAvailable()) {
             DebugLogging.logRequestDebug {
                 "[LevelheadDebug][network] ${DebugSession.prefix()} batch unavailable: proxyBaseUrl is blank"

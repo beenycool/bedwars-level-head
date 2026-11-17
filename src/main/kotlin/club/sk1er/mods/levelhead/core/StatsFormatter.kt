@@ -9,20 +9,9 @@ import java.awt.Color
 import java.util.Locale
 import java.util.UUID
 
-/**
- * Formats game statistics into displayable tags.
- * Handles template substitution and color styling for all game modes.
- */
 object StatsFormatter {
     private val unresolvedTokenPattern = Regex("%[a-z0-9_]+%", RegexOption.IGNORE_CASE)
 
-    
-    /**
-     * Build a LevelheadTag from GameStats and DisplayConfig.
-     *
-     * The nametag and the tab list both read the same per-mode footer template, so
-     * there is no role-specific override here to drift from the displayed text.
-     */
     fun formatTag(
         uuid: UUID,
         stats: GameStats?,
@@ -30,7 +19,7 @@ object StatsFormatter {
         gameMode: GameMode
     ): LevelheadTag {
         val footerTemplate = LevelheadConfig.footerTemplateFor(gameMode)
-        
+
         val (footerValue, footerColor) = if (stats?.nicked == true) {
             Pair("NICKED", Color.GRAY)
         } else {
@@ -38,20 +27,16 @@ object StatsFormatter {
                 is GameStats.Bedwars -> formatBedwarsStats(stats, footerTemplate, config)
                 is GameStats.Duels -> formatDuelsStats(stats, footerTemplate, config)
                 is GameStats.SkyWars -> formatSkyWarsStats(stats, footerTemplate, config)
-                // "Not fetched" is absence, not the text "?". Callers normally skip
-                // null entirely; this keeps a defensive caller from rendering a
-                // failure as if it were an answer.
                 null -> Pair("", config.footerColor)
             }
         }
-        
-        // Staleness is derived from the fetch timestamp so an old cached tag renders grey.
+
         val fetchedAt = stats?.fetchedAt ?: System.currentTimeMillis()
         val age = System.currentTimeMillis() - fetchedAt
         val isStale = age > 3600 * 1000
-        
+
         val finalColor = if (isStale && stats != null) Color.GRAY else footerColor
-        
+
         val tag = LevelheadTag(uuid)
         tag.header.value = config.headerStringFor(gameMode).takeIf { it.isNotBlank() }?.let { "$it: " } ?: ""
         tag.header.color = config.headerColor
@@ -59,35 +44,27 @@ object StatsFormatter {
         tag.footer.color = finalColor
         return tag
     }
-    
-    /**
-     * Format BedWars stats.
-     */
+
     private fun formatBedwarsStats(
         stats: GameStats.Bedwars,
         template: String,
         config: DisplayConfig
     ): Pair<String, Color> {
         val starValue = stats.star
-        // Use the same prestige-aware tag as the tab fallback so the nametag, tab
-        // and formatter never disagree on the icon or colours (B26/B29).
         val starString = starValue?.let { BedwarsStar.formatStarTag(it, stats.starIcon) } ?: "?"
         val fkdrString = stats.fkdr?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "?"
-        
+
         var footerValue = template
         footerValue = footerValue.replace("%star%", starString, ignoreCase = true)
         footerValue = footerValue.replace("%fkdr%", fkdrString, ignoreCase = true)
         footerValue = sanitizeUnresolvedTokens(footerValue)
-        
+
         val style = starValue?.let { BedwarsStar.styleForStar(it) }
             ?: BedwarsStar.PrestigeStyle(config.footerColor, "")
-        
+
         return Pair(footerValue, style.color)
     }
-    
-    /**
-     * Format Duels stats.
-     */
+
     private fun formatDuelsStats(
         stats: GameStats.Duels,
         template: String,
@@ -108,7 +85,7 @@ object StatsFormatter {
         }
         val divisionLevel = divisionInfo?.romanLevel ?: "?"
         val divisionSymbol = divisionInfo?.let { DuelsStats.symbolForDivisionId(it.id) } ?: "?"
-        
+
         var footerValue = template
         footerValue = footerValue.replace("%wins%", winsString, ignoreCase = true)
         footerValue = footerValue.replace("%losses%", lossesString, ignoreCase = true)
@@ -118,7 +95,7 @@ object StatsFormatter {
         footerValue = footerValue.replace("%divlevel%", divisionLevel, ignoreCase = true)
         footerValue = footerValue.replace("%divsymbol%", divisionSymbol, ignoreCase = true)
         footerValue = sanitizeUnresolvedTokens(footerValue)
-        
+
         val duelsMode = LevelheadConfig.DuelsStatMode.entries.getOrNull(LevelheadConfig.duelsStatDisplayIndex)
             ?: LevelheadConfig.DuelsStatMode.DIVISION_TITLE
         val usesDivisionColor = when (duelsMode) {
@@ -132,11 +109,7 @@ object StatsFormatter {
         val color = if (usesDivisionColor) (divisionInfo?.color ?: config.footerColor) else config.footerColor
         return Pair(footerValue, color)
     }
-    
-    /**
-     * Format SkyWars stats.
-     * Displays the integer part of the level while preserving Double precision internally.
-     */
+
     private fun formatSkyWarsStats(
         stats: GameStats.SkyWars,
         template: String,

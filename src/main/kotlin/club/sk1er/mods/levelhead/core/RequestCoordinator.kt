@@ -6,14 +6,6 @@ import kotlinx.coroutines.*
 import org.apache.logging.log4j.Logger
 import java.util.UUID
 
-/**
- * Turns a batch of queued requests into at most one batch request plus direct
- * lookups for whatever the batch did not claim.
- *
- * This used to be three layers (`FetchPlanner` -> `CacheApplier` -> `FetchExecutor`)
- * around one map. Planning is now just "ask [StatsStore] what it has"; applying a
- * result is just "write it back". Nothing here touches a display.
- */
 class RequestCoordinator(
     private val worldScopeProvider: () -> CoroutineScope,
     private val store: StatsStore,
@@ -65,11 +57,6 @@ class RequestCoordinator(
         }
     }
 
-    /**
-     * Group requests by player/mode and keep only what the store cannot serve
-     * fresh. Stale entries are returned as well: they render while the refresh is
-     * in flight, exactly like the old expired-refresh plan.
-     */
     private fun plan(requests: List<Levelhead.LevelheadRequest>, now: Long): List<FetchWork> {
         val pending = mutableListOf<FetchWork>()
         val uniqueCount = requests.map { it.uuid }.toSet().size

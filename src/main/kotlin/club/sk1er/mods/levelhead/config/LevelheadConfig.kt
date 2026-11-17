@@ -31,20 +31,8 @@ private const val UPSTREAM_LEVELHEAD_URL = "https://github.com/Sk1erLLC/Levelhea
 private const val MODRINTH_URL = "https://modrinth.com/mod/bedwars-level-head"
 private const val CHANGELOG_URL = "https://github.com/beenycool/bedwars-level-head/releases"
 
-/**
- * The only settings store. OneConfig persists these fields and every runtime
- * component reads them directly (through the small [MasterConfig] / [DisplayConfig]
- * views), so there is no second file to drift out of sync.
- *
- * The screen is deliberately small: five categories, one control per real choice.
- * Anything derivable (the per-mode header, the tab footer) is derived at runtime
- * instead of being stored a second time.
- */
 object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedwars-levelhead.json") {
 
-    // ===============================
-    // General
-    // ===============================
     @Switch(
         name = "Enable Levelhead",
         description = "Enable or disable the levelhead display entirely.",
@@ -119,9 +107,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         }
     }
 
-    // ===============================
-    // Display
-    // ===============================
     @Dropdown(
         name = "Display Position",
         description = "Choose whether to display the levelhead above or below the player's nametag.",
@@ -206,9 +191,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             save()
         }
 
-    // ===============================
-    // Appearance
-    // ===============================
     @Slider(
         name = "Vertical Offset",
         description = "Fine-tune the vertical position. Negative values move it closer to the nametag.",
@@ -275,9 +257,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             save()
         }
 
-    // ===============================
-    // Advanced
-    // ===============================
     @Slider(
         name = "Render Distance",
         description = "Maximum distance (in blocks) to render levelheads. Lower = better performance.",
@@ -372,9 +351,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         Levelhead.sendChat("§aAll settings reset to defaults.")
     }
 
-    // ===============================
-    // About
-    // ===============================
     @Info(
         text = "BedWars Levelhead shows player stats above their heads on Hypixel.",
         type = InfoType.INFO,
@@ -439,9 +415,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     )
     fun openChangelog() = openUrl(CHANGELOG_URL)
 
-    // ===============================
-    // Internal state
-    // ===============================
     var installId: String = ""
 
     val starCacheTtl: Duration
@@ -459,10 +432,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         CUSTOM("");
     }
 
-    /**
-     * The last entry is kept for [club.sk1er.mods.levelhead.core.StatsFormatter]'s
-     * division-color decision but is not reachable from the footer dropdown.
-     */
     enum class DuelsStatMode(override val template: String) : StatMode {
         DIVISION_TITLE("%division%"),
         WINS("%wins%"),
@@ -487,11 +456,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     private val skywarsStatMode: SkyWarsStatMode
         get() = SkyWarsStatMode.entries.getOrNull(skywarsStatDisplayIndex) ?: SkyWarsStatMode.STAR
 
-    /**
-     * The header is a per-mode concept that needs no stored copy: it is the game
-     * mode's own label, or nothing while [showHeader] is off. Keeping the signature
-     * means [DisplayConfig.headerStringFor] and the formatter stay unchanged.
-     */
     fun headerTextFor(gameMode: GameMode): String = if (showHeader) gameMode.defaultHeader else ""
 
     private fun <T> resolveTemplateFor(
@@ -541,10 +505,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         )
     }
 
-    /**
-     * Set once OneConfig has finished loading so the save override cannot touch
-     * the display manager during construction.
-     */
     @Transient
     private var runtimeReady: Boolean = false
 

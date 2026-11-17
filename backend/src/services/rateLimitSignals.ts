@@ -8,7 +8,6 @@ import type { LookupObservation } from './lookupTracking';
  * fine: the limiter starts at a conservative budget and fills in as traffic arrives.
  */
 const WINDOW_MINUTES = 60;
-/** Cache warmth changes quickly; a five-minute ratio reacts without being jumpy. */
 const RECENT_CACHE_MINUTES = 5;
 
 interface MinuteBucket {
@@ -56,7 +55,6 @@ export interface LookupSignals {
   cacheHitsLastHour: number;
   networkLastHour: number;
   identifiersLastMinute: number;
-  /** `null` until at least one lookup has been observed. */
   cacheHitRate: number | null;
 }
 
@@ -96,7 +94,6 @@ export function lookupSignals(now: number = Date.now()): LookupSignals {
   };
 }
 
-/** Tests only: forget every observed lookup. */
 export function resetLookupSignals(): void {
   buckets.clear();
 }

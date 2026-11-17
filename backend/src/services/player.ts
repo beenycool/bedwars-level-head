@@ -11,7 +11,6 @@ import {
   setPlayerStats,
 } from './statsCache';
 
-/** Short-lived in-process cache in front of the SQL cache. */
 const MEMORY_TTL_MS = 10 * 60 * 1000;
 
 const memoizedResults = new LRUCache<string, ResolvedPlayer>({
@@ -118,16 +117,6 @@ async function loadFromUpstream(uuid: string): Promise<ResolvedPlayer> {
   };
 }
 
-/**
- * Resolves one player by UUID (dashed or undashed). Lookups are deduped in-process
- * (memoised results plus a single in-flight promise per UUID) and backed by the SQL
- * cache.
- *
- * `warmedMisses` is the per-request set returned by `warmupPlayerCache()`. When the
- * caller supplies it, a UUID the warmup already missed in SQL skips the duplicate
- * SELECT. The set is never shared between requests, so an overlapping resolve cannot
- * leave a stale miss behind for a later request.
- */
 export async function resolvePlayer(
   identifier: string,
   warmedMisses?: Set<string>,
@@ -175,11 +164,6 @@ export async function resolvePlayer(
   return promise;
 }
 
-/**
- * Pre-fills the in-process cache for a batch from a single SQL round-trip.
- * Returns the UUIDs that were absent from SQL so the caller can tell `resolvePlayer`
- * to skip one SELECT each. The set is scoped to that batch request only.
- */
 export async function warmupPlayerCache(identifiers: string[]): Promise<Set<string>> {
   const keys: { key: string; uuid: string }[] = [];
   const requested = new Set<string>();

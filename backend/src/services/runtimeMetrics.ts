@@ -2,11 +2,6 @@ import { PUBLIC_RATE_LIMIT_WINDOW_MS, PUBLIC_REQUEST_LIMIT_MAX } from '../config
 import { publicRateLimiter } from '../middleware/rateLimit';
 import { dynamicRateLimitSnapshot } from './dynamicRateLimit';
 
-/**
- * A tiny in-process ring buffer for the "Process Memory Over Time" chart. The old
- * page kept a much larger resource sampler; this keeps the same chart without a
- * second store.
- */
 export interface RuntimeSample {
   at: Date;
   rssMb: number;
@@ -46,7 +41,6 @@ let initialized = false;
 
 export function sampleRuntime(now: number = Date.now()): void {
   if (!initialized) {
-    // Skip the startup burst: the first call only establishes a CPU baseline.
     initialized = true;
     lastCpu = process.cpuUsage();
     lastSampleAt = now;
@@ -79,7 +73,6 @@ export function sampleRuntime(now: number = Date.now()): void {
   }
 }
 
-/** Samples at most once a minute, so page renders cannot flood the buffer. */
 export function ensureRuntimeSample(now: number = Date.now()): void {
   if (now - lastSampleAt >= SAMPLE_INTERVAL_MS) {
     sampleRuntime(now);

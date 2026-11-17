@@ -6,9 +6,6 @@ import club.sk1er.mods.levelhead.core.GameStats
 import club.sk1er.mods.levelhead.core.StatsPayloadParser
 import com.google.gson.JsonObject
 
-/**
- * Fetcher for SkyWars stats from Hypixel API or proxy.
- */
 object SkyWarsFetcher : BaseStatsFetcher() {
     override val gameMode = GameMode.SKYWARS
     override val modeName = "SkyWars"

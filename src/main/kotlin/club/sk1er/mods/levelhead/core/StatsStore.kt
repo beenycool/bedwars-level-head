@@ -5,45 +5,20 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
-/** Identity of one lookup: a player in one game mode. */
 data class StatsKey(val uuid: UUID, val gameMode: GameMode)
 
-/** Why a lookup had to go to the network. Used by `/levelhead status`. */
 enum class CacheMissReason { COLD, STALE }
 
 data class StatsCacheSnapshot(val cold: Long, val expired: Long)
 
-/** Result of asking the store whether a request can be served locally. */
 enum class StatsLookup {
-    /** Fresh stats are available; no request is needed. */
     HIT,
 
-    /** Stats are available but older than the configured TTL; render them and refresh. */
     STALE,
 
-    /** Nothing usable is stored; a request is needed. */
     MISS
 }
 
-/**
- * The single piece of player state in the mod.
- *
- * There used to be four copies of "what is this player's tag": `pendingRequests`,
- * `StatsRepository`, each display's tag cache and the listeners in `CacheApplier`.
- * Each copy was refreshed by a different caller on a different thread, and a failed
- * fetch was written into one of them as a "?" tag. This class replaces all of that
- * with one map keyed by (player, game mode).
- *
- * Threading: written by IO workers, read by the render thread. The map is concurrent
- * and entries are immutable snapshots. Reads are safe from any thread.
- *
- * TTL: entries are retained; [lookup] decides whether they are fresh. The TTL is the
- * only thing that makes a player refetch. There is deliberately no `onWorldJoin`
- * clear: a lobby hop must not throw away half an hour of good data (B11).
- *
- * LRU: a bounded map with access-order eviction. The cap is read once at
- * construction, exactly like the old Caffeine `maximumSize`.
- */
 class StatsStore(
     private val maxSizeProvider: () -> Int = { DEFAULT_MAX_ENTRIES },
     private val ttlProvider: () -> Duration = { Duration.ofMinutes(DEFAULT_TTL_MINUTES) },
@@ -60,30 +35,19 @@ class StatsStore(
     private val versionCounter = AtomicLong(0L)
     private val metrics = StatsCacheMetrics()
 
-    /** Raw state, including [StatsState.Failed] and [StatsState.Loading]. */
     fun state(uuid: UUID, gameMode: GameMode): StatsState? = entries[StatsKey(uuid, gameMode)]?.let {
         it.access = accessCounter.incrementAndGet()
         it.state
     }
 
-    /**
-     * Usable stats for rendering: [StatsState.Ok] or [StatsState.Nicked].
-     * Never returns anything for a failed or loading lookup, which is what keeps a
-     * failure from becoming a "?" tag.
-     */
     fun get(uuid: UUID, gameMode: GameMode): GameStats? = state(uuid, gameMode)?.statsOrNull
 
-    /** Monotonic version of the stored value, used to memoise formatted tags. */
     fun version(uuid: UUID, gameMode: GameMode): Long =
         entries[StatsKey(uuid, gameMode)]?.let {
             it.access = accessCounter.incrementAndGet()
             it.version
         } ?: 0L
 
-    /**
-     * Classify the entry for the request path. Records the same cold/expired miss
-     * counters the old planner exposed.
-     */
     fun lookup(uuid: UUID, gameMode: GameMode, now: Long = clock()): StatsLookup {
         val stats = get(uuid, gameMode)
         val result = when {
@@ -99,14 +63,6 @@ class StatsStore(
         return result
     }
 
-    /**
-     * True when the request loops should enqueue this player.
-     *
-     * This is a non-counting poll: it must not increment the cold/expired miss
-     * counters, because it runs every couple of seconds and [lookup] is the single
-     * place that records a real request decision. A key already in flight
-     * ([StatsState.Loading]) is not enqueued again.
-     */
     fun needsFetch(uuid: UUID, gameMode: GameMode, now: Long = clock()): Boolean {
         val state = state(uuid, gameMode) ?: return true
         if (state is StatsState.Loading) return false
@@ -114,7 +70,6 @@ class StatsStore(
         return stats.isExpired(ttlProvider(), now)
     }
 
-    /** Store a successful lookup. A success replaces a failure. */
     fun putSuccess(uuid: UUID, gameMode: GameMode, stats: GameStats, now: Long = clock()) {
         val fetchedAt = stats.fetchedAt.takeIf { it > 0L } ?: now
         val state = if (stats.nicked) {
@@ -141,7 +96,6 @@ class StatsStore(
         put(uuid, gameMode, StatsState.Failed(attempts, nextRetryAt))
     }
 
-    /** Mark a cold entry as in flight. Never hides stats that are already usable. */
     fun markLoading(uuid: UUID, gameMode: GameMode, now: Long = clock()) {
         val key = StatsKey(uuid, gameMode)
         val existing = entries[key]
@@ -205,28 +159,19 @@ class StatsStore(
     }
 }
 
-/**
- * One entry in [StatsStore]. A state either carries stats ([Ok], [Nicked]) or
- * explicitly says there is nothing to render ([Loading], [Failed]).
- */
 sealed class StatsState {
     abstract val fetchedAt: Long
 
-    /** A request is in flight. Renders nothing until it succeeds. */
     data class Loading(override val fetchedAt: Long) : StatsState()
 
-    /** The last lookup succeeded. */
     data class Ok(val stats: GameStats, override val fetchedAt: Long) : StatsState()
 
-    /** The last lookup failed; [nextRetryAt] comes from [FetchBackoff]. */
     data class Failed(val attempts: Int, val nextRetryAt: Long) : StatsState() {
         override val fetchedAt: Long get() = 0L
     }
 
-    /** The player is nicked. Kept distinct so callers never mistake it for a miss. */
     data class Nicked(val stats: GameStats, override val fetchedAt: Long) : StatsState()
 
-    /** Stats that may be rendered, or null when this state is absence. */
     val statsOrNull: GameStats?
         get() = when (this) {
             is Ok -> stats
@@ -235,7 +180,6 @@ sealed class StatsState {
         }
 }
 
-/** Counters shown by `/levelhead status`; retained from the old repository. */
 class StatsCacheMetrics {
     private val coldMisses = AtomicLong(0L)
     private val expiredMisses = AtomicLong(0L)

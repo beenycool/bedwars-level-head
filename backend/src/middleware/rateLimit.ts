@@ -22,28 +22,11 @@ interface Bucket {
 }
 
 export interface TokenBucketOptions {
-  /** Maximum tokens available in a full bucket (one token = one identifier). */
   capacity: number;
-  /** Time to refill an empty bucket. */
   windowMs: number;
-  /**
-   * Optional dynamic ceiling, recomputed from live demand. The callback receives a
-   * lazy client count so a cached limit does not walk the bucket map on every request.
-   */
   getCapacity?: (activeClients: () => number) => number;
 }
 
-/**
- * Single-instance in-memory token bucket.
- *
- * A bucket refills continuously at `capacity / windowMs`, so a whole batch of
- * identifiers is admitted immediately while a sustained client is still held to the
- * per-minute budget. No Redis, no database, no network calls.
- *
- * When `getCapacity` is supplied, the ceiling moves with server and upstream
- * pressure instead of staying fixed. Buckets retain their tokens; a smaller ceiling
- * clamps them, and a larger one lets them refill toward the new ceiling.
- */
 export class TokenBucketLimiter {
   private readonly buckets = new Map<string, Bucket>();
   private readonly maxCapacity: number;
@@ -119,7 +102,6 @@ export class TokenBucketLimiter {
     bucket.tokens = Math.min(capacity, bucket.tokens + tokens);
   }
 
-  /** Clients that made a request inside the current refill window. */
   activeClients(now: number = Date.now()): number {
     const cutoff = now - this.windowMs;
     let active = 0;
@@ -142,7 +124,6 @@ export class TokenBucketLimiter {
     return Math.min(this.maxCapacity, Math.max(1, Math.floor(dynamic)));
   }
 
-  /** Test/ops helper: drop all buckets. */
   reset(): void {
     this.buckets.clear();
   }
@@ -151,13 +132,11 @@ export class TokenBucketLimiter {
     return this.buckets.size;
   }
 
-  /** Prevents unbounded memory growth from one-off IPs. */
   private sweepIfNeeded(now: number): void {
     if (this.buckets.size <= 10_000) {
       return;
     }
     for (const [key, bucket] of this.buckets) {
-      // Idle for two windows: the bucket would be full again anyway.
       if (now - bucket.updatedAt > this.sweepAfter) {
         this.buckets.delete(key);
       }
@@ -171,7 +150,6 @@ export const publicRateLimiter = new TokenBucketLimiter({
   getCapacity: (activeClients) => getDynamicPublicLimit(activeClients),
 });
 
-/** High-ceiling guard for cached traffic; one token per HTTP request. */
 export const requestRateLimiter = new TokenBucketLimiter({
   capacity: Number.isFinite(PUBLIC_REQUEST_LIMIT_MAX) ? PUBLIC_REQUEST_LIMIT_MAX : 1_200,
   windowMs: PUBLIC_RATE_LIMIT_WINDOW_MS,
@@ -197,7 +175,6 @@ export function getClientIpAddress(req: Request): string {
   throw new HttpError(400, 'INVALID_REQUEST', 'Unable to identify client IP address');
 }
 
-/** Refunds identifier tokens for lookups that were served without touching Hypixel. */
 export function refundPublicTokens(req: Request, count: number): void {
   if (!Number.isFinite(count) || count <= 0) {
     return;
@@ -261,7 +238,6 @@ export const enforceRateLimit = createRateLimitMiddleware({
   label: 'legacy',
 });
 
-/** One request token for every API call, cache hit or miss. */
 export const enforceRequestRateLimit = createRateLimitMiddleware({
   limiter: requestRateLimiter,
   getBucketKey: (req) => `request:${getClientIpAddress(req)}`,
@@ -274,7 +250,6 @@ export const enforceAdminRateLimit = createRateLimitMiddleware({
   label: 'admin',
 });
 
-/** Each identifier in a batch costs one token. */
 export function resolveBatchCost(req: Request): number {
   const uuidsValue = extractBatchIdentifiersFromBody(req.body);
   if (!uuidsValue) {

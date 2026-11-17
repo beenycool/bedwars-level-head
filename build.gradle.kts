@@ -125,7 +125,6 @@ tasks.named<RemapJarTask>("remapJar") {
     archiveClassifier.set("")
 }
 
-// Expand version placeholders in mcmod.info (no-op for other resources).
 tasks.processResources {
     filesMatching("mcmod.info") {
         expand(

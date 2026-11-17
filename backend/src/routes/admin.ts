@@ -6,12 +6,6 @@ import { HttpError } from '../util/httpError';
 import { IDENTIFIER_MAX_LENGTH, normalizeUuid } from '../util/validationConstants';
 import { buildPlayerCacheKey, clearAllPlayerStatsCaches, deletePlayerStatsEntries } from '../services/statsCache';
 
-/**
- * Single operator endpoint, called by hand:
- *   curl -X POST $URL/api/admin/cache/purge -H "Authorization: Bearer $TOKEN" \
- *        -H 'content-type: application/json' -d '{"identifier":"<uuid>"}'
- * Omit `identifier` to clear every cached row.
- */
 const router = Router();
 
 router.post('/cache/purge', enforceAdminRateLimit, enforceAdminAuth, async (req, res, next) => {

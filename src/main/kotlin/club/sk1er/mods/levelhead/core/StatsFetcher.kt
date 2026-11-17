@@ -7,10 +7,6 @@ import club.sk1er.mods.levelhead.skywars.SkyWarsFetcher
 import com.google.gson.JsonObject
 import java.util.UUID
 
-/**
- * Routes stat fetching requests to the appropriate game mode fetcher.
- * Provides a unified interface for fetching stats regardless of game mode.
- */
 object StatsFetcher {
 
     private fun fetcher(gameMode: GameMode): GameModeFetcher = when (gameMode) {
@@ -19,24 +15,14 @@ object StatsFetcher {
         GameMode.SKYWARS -> SkyWarsFetcher
     }
 
-    /**
-     * Fetch stats for a player in the specified game mode.
-     */
     suspend fun fetchPlayer(uuid: UUID, gameMode: GameMode): FetchResult {
         return fetcher(gameMode).fetch(uuid)
     }
 
-    /**
-     * Build GameStats from a fetch result payload based on game mode.
-     * Returns null if the payload does not contain stats for the specified game mode.
-     */
     fun buildGameStats(payload: JsonObject, gameMode: GameMode): GameStats? {
         return fetcher(gameMode).buildStats(payload)
     }
 
-    /**
-     * Reset all fetcher warnings.
-     */
     fun resetWarnings() {
         BedwarsFetcher.resetWarnings()
         DuelsFetcher.resetWarnings()

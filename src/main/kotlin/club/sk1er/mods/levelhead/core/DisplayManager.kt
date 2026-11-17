@@ -15,29 +15,16 @@ import net.minecraft.client.Minecraft
 import net.minecraft.entity.player.EntityPlayer
 import kotlinx.coroutines.delay
 
-/**
- * Request queue and display lifecycle.
- *
- * The display tag caches are gone: renderers derive a tag from [StatsStore] through
- * [TagFormatter]. What remains here is "who should we ask about, and when", plus
- * the two display objects the renderer needs.
- */
 class DisplayManager {
     companion object {
         private const val TAB_FETCH_INTERVAL_MS = 2000L
         private const val MISSING_RETRY_INTERVAL_MS = 2000L
 
-        /** Backend batch size; draining more per tick overlaps the next tick's batch. */
         private const val MAX_REQUESTS_PER_TICK = 20
     }
 
-    /**
-     * A view over the OneConfig settings; there is no second persisted store.
-     * See [MasterConfig] and [DisplayConfig].
-     */
     var config = MasterConfig()
 
-    /** There is exactly one above-head display; nothing can create a second one. */
     val aboveHead: MutableList<AboveHeadDisplay> = ArrayList()
     lateinit var tab: TabDisplay
         private set
@@ -172,8 +159,6 @@ class DisplayManager {
             }
         }
 
-        // Periodically fetch stats for tab list players that aren't in the world
-        // entity list, and refresh visible players whose stats have gone stale.
         if (LevelheadConfig.showTabStats && now - lastTabFetchAt > TAB_FETCH_INTERVAL_MS) {
             DebugSession.inc("tab_trigger")
             requestTabListPlayers()
@@ -207,11 +192,6 @@ class DisplayManager {
         }
     }
 
-    /**
-     * Clear the store and cancel in-flight work. Kept under its old name because
-     * the config/command paths call it; display caches no longer exist, so this is
-     * either "clear stats too" or a no-op.
-     */
     fun clearCachesWithoutRefetch(clearStats: Boolean = true) {
         if (clearStats) {
             Levelhead.clearCachedStats()
@@ -347,10 +327,6 @@ class DisplayManager {
 
     fun primaryDisplay(): AboveHeadDisplay? = aboveHead.firstOrNull()
 
-    /**
-     * Sync the displays' game mode with the currently detected game mode.
-     * Headers are computed from the mode, so there is no header text to copy (B36).
-     */
     fun syncGameMode() {
         val detectedMode = ModeManager.getActiveGameMode() ?: run {
             Levelhead.logger.debug("syncGameMode: no active game mode, skipping")
@@ -364,9 +340,6 @@ class DisplayManager {
         tab.config.gameMode = detectedMode
     }
 
-    /**
-     * Build a list of all enabled displays (above-head and tab).
-     */
     private fun buildActiveDisplayList(): List<club.sk1er.mods.levelhead.display.LevelheadDisplay> {
         val list = mutableListOf<club.sk1er.mods.levelhead.display.LevelheadDisplay>()
         aboveHead.filter { it.config.enabled }.forEach { list.add(it) }
@@ -374,7 +347,6 @@ class DisplayManager {
         return list
     }
 
-    /** Snapshot the visible players on the calling (main) thread and request them. */
     fun requestAllDisplays() {
         val world = Minecraft.getMinecraft().theWorld ?: run {
             DebugLogging.logRequestDebug {
@@ -388,7 +360,6 @@ class DisplayManager {
         requestAllDisplays(world.playerEntities.map { it.uniqueID })
     }
 
-    /** Request a set of UUIDs that was snapshotted on the main thread. */
     fun requestAllDisplays(uuids: Collection<UUID>) {
         if (!config.enabled) {
             DebugSession.inc("world_skipped_disabled")
@@ -399,7 +370,6 @@ class DisplayManager {
             return
         }
 
-        // Sync game mode before requesting displays
         syncGameMode()
 
         if (buildActiveDisplayList().isEmpty()) {

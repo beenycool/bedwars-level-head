@@ -4,11 +4,6 @@ import com.google.gson.JsonObject
 
 object StatsPayloadParser {
 
-    /**
-     * Find a game mode stats object in a JSON payload.
-     * Handles both Hypixel API structure and Proxy structures (top-level or under 'data').
-     * Key is case-insensitive for proxy formats.
-     */
     fun findStatsObject(json: JsonObject, gameMode: GameMode): JsonObject? {
         val targetKeys = when (gameMode) {
             GameMode.BEDWARS -> listOf("bedwars", "Bedwars")
@@ -17,22 +12,19 @@ object StatsPayloadParser {
         }
         val targetKeySet = targetKeys.map { it.lowercase() }.toSet()
 
-        // 1. Check for 'data' wrapper (Proxy single-player response)
         val data = json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
         if (data != null) {
             findKeyIgnoreCase(data, targetKeySet)?.let { return it }
         }
 
-        // 2. Check for top-level keys (Proxy batch response or flat proxy response)
         findKeyIgnoreCase(json, targetKeySet)?.let { return it }
 
-        // 3. Check for Hypixel API structure: player -> stats -> Mode
         val playerContainer = when {
             json.get("player")?.isJsonObject == true -> json.getAsJsonObject("player")
             json.get("stats")?.isJsonObject == true -> json
             else -> null
         }
-        
+
         if (playerContainer != null) {
             val stats = playerContainer.get("stats")?.takeIf { it.isJsonObject }?.asJsonObject
             if (stats != null) {
@@ -40,7 +32,6 @@ object StatsPayloadParser {
             }
         }
 
-        // 4. Minimal flat schema fallback from community backend
         if (data != null) {
             buildMinimalStatsObject(data, gameMode)?.let { return it }
         }

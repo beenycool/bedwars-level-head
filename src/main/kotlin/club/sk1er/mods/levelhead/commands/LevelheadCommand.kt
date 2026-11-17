@@ -13,7 +13,6 @@ import net.minecraft.util.EnumChatFormatting as ChatColor
 @Command(value = "levelhead", aliases = ["lh"])
 class LevelheadCommand {
 
-    /** `/levelhead` opens the settings GUI; the GUI covers every option. */
     @Main
     fun handle() {
         Minecraft.getMinecraft().addScheduledTask {

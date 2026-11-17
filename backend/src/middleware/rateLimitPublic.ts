@@ -1,7 +1,6 @@
 import type { Request } from 'express';
 import { createRateLimitMiddleware, getClientIpAddress, publicRateLimiter, resolveBatchCost } from './rateLimit';
 
-/** All public surfaces share one per-IP bucket. */
 function getBucketKey(req: Request): string {
   return `public:${getClientIpAddress(req)}`;
 }

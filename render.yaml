@@ -3,8 +3,8 @@ services:
     name: bedwars-level-head
     runtime: image
     # Paid plan on purpose: free instances sleep after idle and the mod's HTTP
-    # timeout (15s) is shorter than a cold start. This replaces the deleted
-    # /api/cron/ping pinger; do not add a second keep-alive mechanism.
+    # timeout (15s) is shorter than a cold start. Do not add a second keep-alive
+    # mechanism.
     plan: starter
     region: ohio
     healthCheckPath: /healthz

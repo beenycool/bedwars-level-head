@@ -18,40 +18,14 @@ import net.minecraftforge.fml.common.eventhandler.SubscribeEvent
 import org.lwjgl.opengl.GL11
 import java.awt.Color
 
-/**
- * Draws the stats tag above (or below) a player's vanilla nametag.
- *
- * Everything here is plain vanilla 1.8.9 rendering: [GlStateManager], [Tessellator]
- * and [FontRenderer]. No Essential / UniversalCraft / Elementa classes are used, so
- * the jar renders on Forge alone (B27).
- *
- * State discipline follows `Render.renderLivingLabel` (see the end of [renderName]):
- * depth test, depth mask, texture2D, blend and lighting are always restored, whether
- * or not any optional branch ran (B22).
- */
 object AboveHeadRender {
 
-    /**
-     * Height of one line of nametag text in blocks at the scale used here.
-     *
-     * Derivation (1.8.9): vanilla renders nametags at
-     * `GlStateManager.scale(-0.02666667F, -0.02666667F, 0.02666667F)` (1/37.5) and
-     * draws the background quad from text-space y = -1 to y = 8, i.e. 9 px tall.
-     * Our tag uses the same scale (textScale = 0.016666668 * 1.6 = 0.02666667), so
-     * the tag block is 9 * 0.02666667 = 0.24 blocks tall.
-     */
     private const val TAG_LINE_HEIGHT_BLOCKS = 9f * 0.016666668f * 1.6f
 
-    /** Small gap between the vanilla nametag block and a BELOW-position tag. */
     private const val BELOW_NAMETAG_GAP = 0.03f
 
-    /**
-     * Distance from the vanilla nametag anchor to the BELOW-position translate point:
-     * clear the full vanilla nametag block (0.24) plus [BELOW_NAMETAG_GAP].
-     */
     private const val BELOW_NAMETAG_DROP = TAG_LINE_HEIGHT_BLOCKS + BELOW_NAMETAG_GAP
 
-    /** 1 / 37.5, the vanilla nametag scale. */
     private const val TEXT_SCALE = 0.016666668f * 1.6f
 
     @SubscribeEvent
@@ -71,10 +45,8 @@ object AboveHeadRender {
         val displays = displayManager.aboveHead
         if (displays.isEmpty()) return
 
-        // Per-entity invariants: resolved once for the whole display loop.
         if (!Levelhead.isOnHypixel()) return
         val activeMode = ModeManager.getActiveGameMode() ?: return
-        // No stats is absence: render nothing rather than a "?" tag.
         val stats = Levelhead.getCachedStats(entity.uniqueID, activeMode) ?: return
         val statsVersion = Levelhead.statsStore.version(entity.uniqueID, activeMode)
 
@@ -82,9 +54,6 @@ object AboveHeadRender {
         val localPlayer = mc.thePlayer
         val isSelf = localPlayer != null && localPlayer.uniqueID == player.uniqueID
 
-        // Vertical distance of this tag from the vanilla nametag anchor. It is passed
-        // to renderName separately from the entity's base Y so ABOVE adds it and
-        // BELOW subtracts it exactly once (B24).
         val anchoredOffset = if (isSelf) {
             config.offset
         } else {
@@ -101,8 +70,6 @@ object AboveHeadRender {
         var index = 0
         while (index < displays.size) {
             val display = displays[index]
-            // B25: a missing tag is the common case in a hub; resolve the boolean
-            // checks before loadOrRender builds display names.
             if (display.config.enabled &&
                 !(isSelf && !display.config.showSelf)
             ) {
@@ -115,8 +82,6 @@ object AboveHeadRender {
                 )
                 if (display.loadOrRender(player)) {
                     val offset = anchoredOffset + index * 0.3
-                    // Pass the entity's base Y and the offset separately: renderName
-                    // decides whether the offset grows up (ABOVE) or down (BELOW).
                     renderName(tag, player, event.x, event.y, event.z, offset)
                 }
             }
@@ -136,10 +101,6 @@ object AboveHeadRender {
         val fontRenderer = mc.fontRendererObj
         val config = displayManager.config
 
-        // `y` is the entity's base position; `verticalOffset` is applied once in
-        // the direction of the selected position. ABOVE grows upwards from the
-        // vanilla nametag anchor, BELOW clears the whole vanilla nametag block and
-        // then moves further down, so the slider and stacked displays both work.
         val vanillaAnchorY = y.toFloat() + entityIn.height + 0.5f
         val renderY = when (config.displayPosition) {
             MasterConfig.DisplayPosition.ABOVE -> vanillaAnchorY + verticalOffset.toFloat()
@@ -147,13 +108,9 @@ object AboveHeadRender {
                 vanillaAnchorY - BELOW_NAMETAG_DROP - verticalOffset.toFloat()
         }
 
-        // StatsFormatter already emits the prestige-aware star tag, including its
-        // inline `§` colour codes, so both components are drawn exactly as stored.
         val header = tag.header
         val footer = tag.footer
 
-        // Upstream Levelhead measures the concatenated components, not each one summed,
-        // so centring and the background quad agree with the drawn string exactly.
         val halfWidth = fontRenderer.getStringWidth(tag.getString()) shr 1
 
         GlStateManager.pushMatrix()
@@ -182,10 +139,6 @@ object AboveHeadRender {
             textX += fontRenderer.getStringWidth(header.value)
             renderComponent(fontRenderer, footer.value, footer.color, textX, config.textShadow)
         } finally {
-            // B22/B23: leave the GL state exactly as vanilla's Render.renderLivingLabel
-            // leaves it, on every path. Previously depth test and depth mask stayed
-            // disabled when "Text Shadow" was off, so every later entity drew through
-            // walls.
             GlStateManager.enableTexture2D()
             GlStateManager.enableDepth()
             GlStateManager.depthMask(true)
@@ -196,11 +149,6 @@ object AboveHeadRender {
         }
     }
 
-    /**
-     * Exact upstream geometry: a quad from `-halfWidth-2` to `halfWidth+1`, y -1 to 8,
-     * drawn untextured with the blending already enabled by the caller. Upstream draws
-     * it with depth disabled, which is why the background shows through walls too.
-     */
     private fun drawBackground(halfWidth: Int, alpha: Float) {
         GlStateManager.disableDepth()
         GlStateManager.depthMask(false)

@@ -6,9 +6,6 @@ import club.sk1er.mods.levelhead.core.GameStats
 import club.sk1er.mods.levelhead.core.StatsPayloadParser
 import com.google.gson.JsonObject
 
-/**
- * Fetcher for Duels stats from Hypixel API or proxy.
- */
 object DuelsFetcher : BaseStatsFetcher() {
     override val gameMode = GameMode.DUELS
     override val modeName = "Duels"

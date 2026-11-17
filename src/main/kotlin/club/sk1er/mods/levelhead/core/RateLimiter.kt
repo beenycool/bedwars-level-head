@@ -4,9 +4,6 @@ import java.time.Duration
 import java.util.concurrent.atomic.AtomicLong
 import java.util.concurrent.atomic.AtomicReference
 
-/**
- * Snapshot of rate limiter state.
- */
 data class RateLimiterMetrics(
     val remaining: Int,
     val resetIn: Duration,
@@ -15,16 +12,6 @@ data class RateLimiterMetrics(
 
 private data class RateState(val remaining: Int, val lastResetAt: Long)
 
-/**
- * Handles rate limiting for API requests to Hypixel and the proxy.
- * Tracks local token consumption and respects server-side cooldown hints.
- *
- * [tryAcquire] is the only way a caller may learn whether it is allowed to send a
- * request. It returns `false` while a server cooldown is active or once the local
- * token budget for the window is exhausted; callers must skip the request in that
- * case. This is what makes the limiter and Retry-After handling real instead of
- * decorative.
- */
 class RateLimiter(
     private val limit: Int,
     private val window: Duration,
@@ -36,12 +23,6 @@ class RateLimiter(
     private val serverCooldownUntil = AtomicLong(0L)
     private val silentCooldown = AtomicLong(0L)
 
-    /**
-     * Attempts to consume [tokens] from the budget.
-     *
-     * @return true when the caller may send the request; false when it must not.
-     * A batch costs one token per identifier, matching the backend contract.
-     */
     fun tryAcquire(tokens: Int = 1): Boolean {
         val cost = tokens.coerceAtLeast(1)
         val now = System.currentTimeMillis()
@@ -69,14 +50,8 @@ class RateLimiter(
         }
     }
 
-    /** True while a server-requested cooldown is active. */
     fun isCoolingDown(now: Long = System.currentTimeMillis()): Boolean = now < serverCooldownUntil.get()
 
-    /**
-     * Resets the rate limiter state, including tokens and cooldowns.
-     * Deliberately not called on world joins: lobby hops must not refill the token
-     * budget or forget a 60 s Retry-After.
-     */
     fun resetState() {
         state.set(RateState(limit, System.currentTimeMillis()))
         serverCooldownUntil.set(0L)
@@ -98,10 +73,6 @@ class RateLimiter(
         }
     }
 
-    /**
-     * Returns a snapshot of the current rate limiter metrics.
-     * This method is pure and does not trigger resets or notifications.
-     */
     fun metricsSnapshot(): RateLimiterMetrics {
         val now = System.currentTimeMillis()
         val current = state.get()
@@ -113,11 +84,6 @@ class RateLimiter(
         return RateLimiterMetrics(current.remaining, resetIn, serverCooldown)
     }
 
-    /**
-     * Registers a cooldown period requested by the server.
-     * @param duration The duration of the cooldown.
-     * @param silent If true, does not trigger a blocked notification callback.
-     */
     fun registerServerCooldown(duration: Duration, silent: Boolean = false) {
         val now = System.currentTimeMillis()
         val until = now + duration.toMillis()

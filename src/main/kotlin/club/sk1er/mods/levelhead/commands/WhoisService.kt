@@ -41,9 +41,9 @@ object WhoisService {
                     hoverTextOverride = "${ChatColor.GREEN}Click to fill whois command"
                 )
             )
-        
+
         val gameMode = ModeManager.getActiveGameMode() ?: GameMode.BEDWARS
-        
+
         return fetchWhois(resolved, gameMode)
     }
 
@@ -52,10 +52,6 @@ object WhoisService {
         return formatResultComponent(result)
     }
 
-    /**
-     * Shared /whois entry point used by both /whois and /levelhead whois.
-     * Sends progress, result and error feedback through [CommandUtils].
-     */
     suspend fun runWhoisCommand(
         identifier: String,
         hintCommand: String = "/whois <player|uuid>",
@@ -187,7 +183,6 @@ object WhoisService {
     }
 
     private fun formatResultComponent(result: WhoisResult): IChatComponent {
-        // The backend already names nicked players "(nicked)"; don't print it twice.
         val alreadySuffixed = result.displayName.trim().equals("(nicked)", ignoreCase = true)
         val nickedText = if (result.nicked && !alreadySuffixed) " ${ChatColor.GRAY}(nicked)" else ""
 

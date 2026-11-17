@@ -1,10 +1,3 @@
-/**
- * The HTML shell for the server-rendered pages.
- *
- * This is the pre-rewrite analytics look: slate canvas, Inter stack, blue/cyan
- * accents and glassy cards. Styles stay inline because Helmet's default CSP
- * permits `style-src 'unsafe-inline'` but forbids inline scripts.
- */
 
 export interface LayoutOptions {
   title: string;
@@ -43,7 +36,6 @@ code {
   border-radius: 4px; padding: 0 0.25em;
 }
 
-/* Cards and stats --------------------------------------------------------- */
 .card {
   background: rgba(30, 41, 59, 0.5);
   border: 1px solid rgba(148, 163, 184, 0.15);
@@ -75,7 +67,6 @@ code {
   background: linear-gradient(90deg, #22d3ee, #3b82f6);
 }
 
-/* Charts ------------------------------------------------------------------ */
 .dashboard-grid {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
   gap: 0.75rem; margin-bottom: 1rem;
@@ -95,7 +86,6 @@ code {
 .legend { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.3rem; font-size: 0.82rem; color: #cbd5f5; }
 .legend .dot { display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 999px; margin-right: 0.4rem; }
 
-/* Filters ----------------------------------------------------------------- */
 .filter-controls {
   background: rgba(30, 41, 59, 0.6);
   border: 1px solid rgba(148, 163, 184, 0.2);
@@ -132,7 +122,6 @@ code {
 .metric-form select { padding: 0.25rem 0.4rem; font-size: 0.72rem; }
 .metric-form button { padding: 0.25rem 0.55rem; font-size: 0.72rem; }
 
-/* Lookup table ------------------------------------------------------------ */
 .controls { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center; justify-content: space-between; margin-top: 0.5rem; }
 .search-box { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
 input[type="search"], input[type="datetime-local"], select {

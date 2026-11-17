@@ -1,17 +1,5 @@
 package club.sk1er.mods.levelhead.config
 
-/**
- * Runtime view over the OneConfig settings.
- *
- * The mod used to keep a second, serialized copy of these values in
- * `config/levelhead.json`; every writer had to remember to copy one into the
- * other, which is where the "settings revert on restart" bugs came from. These
- * properties now read and write [LevelheadConfig] directly, so there is exactly
- * one value and no sync step to forget.
- *
- * The class is kept because the render package addresses
- * `displayManager.config.<field>` and `MasterConfig.DisplayPosition`.
- */
 class MasterConfig {
     var enabled: Boolean
         get() = LevelheadConfig.levelheadEnabled

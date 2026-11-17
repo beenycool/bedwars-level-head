@@ -87,7 +87,6 @@ export function createApp(): express.Express {
     app.use('/api/admin', adminRouter);
   }
 
-  /** Liveness probe: no auth, no rate limiter, always reachable. */
   app.get('/healthz', async (_req, res) => {
     const [dbHealthy, hypixelHealthy] = await Promise.all([
       checkDatabaseHealth(),

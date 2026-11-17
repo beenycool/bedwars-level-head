@@ -3,8 +3,6 @@ import crypto from 'node:crypto';
 import { HttpError } from '../util/httpError';
 import { MAX_TOKEN_LENGTH } from './authConstants';
 
-// Generate a random salt per factory instance at startup to ensure these hashes are
-// unique to this process and cannot be pre-computed by an attacker.
 const HASH_OPTS = { N: 16, r: 1, p: 1 };
 const KEY_LEN = 32;
 
@@ -21,7 +19,6 @@ interface TokenAuth {
   init(): Promise<void>;
 }
 
-/** Promise wrapper around crypto.scrypt with explicit overload typing (promisify mishandles the options overload). */
 function scryptAsync(password: string, salt: crypto.BinaryLike, keylen: number, options: crypto.ScryptOptions): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     crypto.scrypt(password, salt, keylen, options, (err, derivedKey) => {
@@ -34,13 +31,6 @@ function scryptAsync(password: string, salt: crypto.BinaryLike, keylen: number, 
   });
 }
 
-/**
- * Shared token auth middleware factory.
- *
- * API keys are high-entropy and do not require the massive work factors of user passwords.
- * Scrypt with a low work factor (N=16) satisfies static analysis tools that flag simple
- * hashes as "insecure password hashing" while keeping the cost low (~0.03ms) to prevent CPU DoS.
- */
 export function createTokenAuth(config: TokenAuthConfig): TokenAuth {
   const salt = crypto.randomBytes(32);
 
@@ -80,9 +70,6 @@ export function createTokenAuth(config: TokenAuthConfig): TokenAuth {
     return null;
   }
 
-  /**
-   * Compares a provided token against the allowed keys in a timing-safe manner.
-   */
   async function validate(token: string): Promise<boolean> {
     if (!token) return false;
 
@@ -91,7 +78,6 @@ export function createTokenAuth(config: TokenAuthConfig): TokenAuth {
 
     await init();
 
-    // Hash the incoming token using Scrypt with the same low-cost parameters
     const tokenHash = await scryptAsync(token, salt, KEY_LEN, HASH_OPTS);
 
     // To prevent timing attacks, we must iterate through all keys and not short-circuit.

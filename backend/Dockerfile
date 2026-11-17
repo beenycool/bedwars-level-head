@@ -1,36 +1,29 @@
 # syntax=docker/dockerfile:1
 
-# ============================================================
-# Stage 1: builder – install deps + esbuild bundle
-# ============================================================
 FROM node:22-alpine AS builder
 
 WORKDIR /app
 
-# Copy package manifests first (cache-friendly: only re-install on dependency changes)
+# Copy manifests first so dependency layers cache.
 COPY package.json package-lock.json ./
 
-# Install ALL dependencies (including devDependencies for esbuild)
 RUN npm ci --no-audit --no-fund && npm cache clean --force
 
-# Copy source code
 COPY . .
 
-# Build the self-contained bundle (esbuild inlines all deps into dist/index.js)
+# esbuild inlines all dependencies into dist/index.js.
 RUN npm run build
 
-# ============================================================
-# Stage 2: runner – minimal production image
-# ============================================================
+
 FROM node:22-alpine AS runner
 
 WORKDIR /app
 
-# Copy only the esbuild bundle from builder (no node_modules needed)
+# The bundle needs no node_modules.
 COPY --from=builder /app/dist/index.js ./dist/index.js
 COPY --from=builder /app/package.json ./package.json
 
-# The bundle only reads its files and listens on a port; run unprivileged.
+# The bundle only reads files and listens on a port; run unprivileged.
 USER node
 
 ENV NODE_ENV=production

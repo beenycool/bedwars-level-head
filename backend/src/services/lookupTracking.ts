@@ -6,10 +6,8 @@ import { bedwarsStars } from '../util/bedwarsStars';
 import { logger } from '../util/logger';
 import { recordLookupSignals } from './rateLimitSignals';
 
-/** Where the lookup came from; kept coarse so the site can break traffic down. */
 export type LookupRoute = 'public' | 'legacy' | 'batch';
 
-/** Everything one resolved player contributes to the tracking tables. */
 export interface LookupObservation {
   identifier: string;
   username: string | null;
@@ -20,7 +18,6 @@ export interface LookupObservation {
   latencyMs: number;
 }
 
-/** One row in `lookup_log`, preserving every observation for the analytics page. */
 export interface LookupLogRow {
   lookedUpAt: Date;
   identifier: string;
@@ -33,10 +30,6 @@ export interface LookupLogRow {
   latencyMs: number;
 }
 
-/**
- * Pure: one log row per observation, including failures. The log is append-only
- * and pruned, so failures are cheap to keep.
- */
 export function buildLookupLogRows(
   observations: LookupObservation[],
   route: LookupRoute,
@@ -80,7 +73,6 @@ async function persistLookups(observations: LookupObservation[], route: LookupRo
   await buildLookupLogInsert(buildLookupLogRows(observations, route, lookedUpAt)).execute(db);
 }
 
-/** Multi-row insert for the append-only log. Exported so it can be compiled in tests. */
 export function buildLookupLogInsert(rows: LookupLogRow[]) {
   const values = rows.map(
     (row) => sql`(
@@ -98,7 +90,6 @@ export function buildLookupLogInsert(rows: LookupLogRow[]) {
   `;
 }
 
-/** Deletes log rows past the retention window. Called hourly by the scheduler. */
 export async function pruneLookupLogs(now: number = Date.now()): Promise<number> {
   await ensureInitialized();
   if (!isDatabaseReady()) {

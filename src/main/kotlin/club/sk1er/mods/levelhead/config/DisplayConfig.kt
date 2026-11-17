@@ -4,17 +4,6 @@ import club.sk1er.mods.levelhead.core.GameMode
 import cc.polyfrost.oneconfig.config.core.OneColor
 import java.awt.Color
 
-/**
- * Runtime view over the OneConfig settings for one display target.
- *
- * Header/footer text, colours and visibility are computed from [LevelheadConfig],
- * so a change in the GUI is visible immediately and survives a restart without a
- * second config file. Only [gameMode] is runtime state: it follows the detected
- * game and is intentionally not persisted.
- *
- * The nametag and the tab list intentionally share the same header, footer
- * template, fallback colour and self-visibility; only the on/off switch differs.
- */
 class DisplayConfig(private val role: DisplayRole = DisplayRole.ABOVE_HEAD) {
 
     var gameMode: GameMode = GameMode.BEDWARS
@@ -31,14 +20,12 @@ class DisplayConfig(private val role: DisplayRole = DisplayRole.ABOVE_HEAD) {
             }
         }
 
-    /** One switch for both renderers: a user never sees themselves twice by mistake. */
     var showSelf: Boolean
         get() = LevelheadConfig.showSelf
         set(value) {
             LevelheadConfig.showSelf = value
         }
 
-    /** The header for the mode the caller is formatting, independent of [gameMode]. */
     fun headerStringFor(gameMode: GameMode): String = LevelheadConfig.headerTextFor(gameMode)
 
     var headerColor: Color
@@ -47,7 +34,6 @@ class DisplayConfig(private val role: DisplayRole = DisplayRole.ABOVE_HEAD) {
             LevelheadConfig.headerColor = OneColor(value)
         }
 
-    /** The stat's own colour wins where it has one; this is only the fallback. */
     var footerColor: Color
         get() = LevelheadConfig.footerColor.toJavaColor()
         set(value) {

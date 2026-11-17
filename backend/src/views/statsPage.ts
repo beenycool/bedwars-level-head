@@ -61,7 +61,6 @@ function plural(count: number, singular: string, pluralForm: string): string {
   return `${formatNumber(count)} ${count === 1 ? singular : pluralForm}`;
 }
 
-/** Shared mapping from query state to URL parameters. */
 function queryParams(query: StatsQuery): URLSearchParams {
   const params = new URLSearchParams();
   if (query.range !== '24h') params.set('range', query.range);
@@ -82,7 +81,6 @@ export function statsHref(query: StatsQuery, overrides: Partial<StatsQuery> = {}
   return value ? `/stats?${value}` : '/stats';
 }
 
-/** Hidden inputs for every URL parameter except the ones the visible form controls own. */
 function hiddenQuery(query: StatsQuery, exclude: readonly string[] = []): string {
   const params = queryParams(query);
   return [...params.entries()]
@@ -91,7 +89,6 @@ function hiddenQuery(query: StatsQuery, exclude: readonly string[] = []): string
     .join('');
 }
 
-/** "Last 24 hours" or the explicit from/to window currently in effect. */
 function windowLabel(query: StatsQuery): string {
   if (!query.from && !query.to) {
     return rangeLabel(query.range);
@@ -333,8 +330,6 @@ function timeAxis(query: StatsQuery, series: TimePoint[]): string {
   if (series.length === 0) {
     return '';
   }
-  // Mirror the SQL bucketing: hourly windows (including short custom windows) show
-  // clock labels; longer ranges show month/day.
   const window = statsWindow(query);
   const hourly = chartGranularity(window.since, window.until) === 'hour';
   const first = series[0].bucket;
@@ -346,13 +341,11 @@ function timeAxis(query: StatsQuery, series: TimePoint[]): string {
   return `<div class="chart-axis"><span>${escapeHtml(label(first))}</span><span>${escapeHtml(label(last))}</span></div>`;
 }
 
-/** Full UTC timestamp for a chart hover tooltip. */
 function tooltipTime(date: Date): string {
   const pad = (value: number) => String(value).padStart(2, '0');
   return `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
 }
 
-/** Labels for the line-chart hover targets, matching the SQL bucket granularity. */
 function seriesLabels(query: StatsQuery, series: TimePoint[]): string[] {
   const window = statsWindow(query);
   const hourly = chartGranularity(window.since, window.until) === 'hour';
@@ -633,7 +626,6 @@ ${renderTable(query, data)}
   });
 }
 
-/** Shown when `CACHE_DB_URL` is unset or the database is unreachable. */
 export function renderUnavailablePage(reason: string): string {
   return renderLayout({
     title: 'Levelhead Player Stats',
@@ -647,7 +639,6 @@ export function renderUnavailablePage(reason: string): string {
   });
 }
 
-/** RFC 4180 rows for `/stats/export.csv`. */
 export function renderLookupCsv(rows: LookupLogTable[]): string {
   const header = [
     'looked_up_at',

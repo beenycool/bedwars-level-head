@@ -8,20 +8,6 @@ import {
 } from '../config';
 import { lookupSignals } from './rateLimitSignals';
 
-/**
- * Restores the pre-rewrite dynamic per-client budget without Redis or extra tables.
- *
- * The old implementation asked PostgreSQL for active users, request counts and
- * Hypixel calls every ten seconds. The current process already has all of that in
- * memory: the token-bucket map knows how many clients are active, and lookup
- * tracking sees whether each resolution was a cache hit or a network call.
- */
-
-/**
- * Until the first lookup arrives, assume the cache is warm enough to use the full
- * ceiling. That matches the old fixed budget; evidence from real traffic can only
- * tighten it from there.
- */
 const DEFAULT_CACHE_HIT_RATE = 0.8;
 /** Even a perfect cache still hits the network occasionally; never divide by zero. */
 const MIN_CACHE_MISS_RATE = 0.05;
@@ -39,8 +25,6 @@ export function calculateDynamicLimit(activeClients: number, now: number = Date.
   const cacheHitRate = signals.cacheHitRate ?? DEFAULT_CACHE_HIT_RATE;
   const cacheMissRate = Math.max(1 - cacheHitRate, MIN_CACHE_MISS_RATE);
 
-  // Cached lookups do not spend Hypixel quota, so the same remaining quota covers
-  // more lookups when the cache is warm.
   const remainingCalls = Math.max(0, HYPIXEL_HOURLY_QUOTA - signals.networkLastHour);
   const availablePerMinute = remainingCalls / 60 / cacheMissRate;
 
@@ -57,7 +41,6 @@ export function calculateDynamicLimit(activeClients: number, now: number = Date.
 
 let cached: { limit: number; computedAt: number } | null = null;
 
-/** Ten-second cache: the formula is cheap, but every request does not need to run it. */
 export function getDynamicPublicLimit(
   activeClients: number | (() => number),
   now: number = Date.now(),
@@ -105,7 +88,6 @@ export function dynamicRateLimitSnapshot(
   };
 }
 
-/** Tests only. */
 export function resetDynamicRateLimitCache(): void {
   cached = null;
 }

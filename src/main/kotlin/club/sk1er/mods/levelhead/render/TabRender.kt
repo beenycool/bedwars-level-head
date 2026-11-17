@@ -15,20 +15,6 @@ import net.minecraft.util.EnumChatFormatting
 import java.awt.Color
 import java.util.UUID
 
-/**
- * Tab list rendering.
- *
- * Semantics:
- * - Tags are derived from [club.sk1er.mods.levelhead.core.StatsStore] through the
- *   same memoised [TagFormatter] call the nametag uses. There is no separate tab
- *   tag cache and therefore no second format to drift (B29).
- * - [club.sk1er.mods.levelhead.display.TabDisplay.config] supplies the shared header
- *   and footer settings; the tab list uses exactly the same per-mode template as
- *   the nametag, so cached and fallback rows cannot disagree.
- * - Component colours come from the stat formatter: the BedWars prestige / SkyWars
- *   level colour, or the Duels division colour when the footer shows a division.
- * - A player with no stats renders nothing; that is the only "unknown" state.
- */
 object TabRender {
 
     private data class PreparedEntry(val text: String, val width: Int)
@@ -40,11 +26,6 @@ object TabRender {
 
     private var frameState: FrameState? = null
 
-    /**
-     * Cache of padding runs keyed by space count. [getMeasuredName] runs for every row
-     * of the tab list on every frame, so rebuilding an identical run of spaces for each
-     * player is pure allocation (B31). Bounded, and cleared when it fills up.
-     */
     private val paddingCache = HashMap<Int, String>()
     private const val PADDING_CACHE_LIMIT = 256
 
@@ -85,11 +66,8 @@ object TabRender {
             val uuid = info.gameProfile.id ?: continue
             if (uuid.version() == 2) continue
 
-            // Skip self if the shared "Show Self" switch is off
             if (uuid == localPlayerUuid && !tabDisplay.config.showSelf) continue
 
-            // The same formatter call as the nametag, so text and width are
-            // identical between the two renderers (B29).
             val stats = Levelhead.getCachedStats(uuid, mode) ?: continue
             val tag = TagFormatter.formatTag(
                 uuid,
@@ -167,20 +145,11 @@ object TabRender {
         font.drawStringWithShadow(entry.text, drawX.toFloat(), y.toFloat(), 0xFFFFFF)
     }
 
-    /**
-     * Colour a cached tag with its own component colours. A leading colour code is
-     * prepended per component; a component that already carries inline `§` codes
-     * keeps them (inline codes win over the prepended prefix).
-     */
     private fun colorizeTag(tag: LevelheadTag): String {
         return colorToChatFormatting(tag.header.color).toString() + tag.header.value +
             colorToChatFormatting(tag.footer.color).toString() + tag.footer.value
     }
 
-    /**
-     * Vanilla's 16 chat colours, built once: this is called twice per player per
-     * frame, so the table is not rebuilt per call (B31).
-     */
     private val CHAT_COLORS: Array<Pair<EnumChatFormatting, Color>> = arrayOf(
         EnumChatFormatting.BLACK to Color(0, 0, 0),
         EnumChatFormatting.DARK_BLUE to Color(0, 0, 170),
@@ -200,10 +169,6 @@ object TabRender {
         EnumChatFormatting.WHITE to Color(255, 255, 255)
     )
 
-    /**
-     * Map an AWT Color to the closest Minecraft chat formatting color code.
-     * Uses Euclidean distance in RGB space for best match.
-     */
     private fun colorToChatFormatting(color: Color): EnumChatFormatting {
         var best = EnumChatFormatting.WHITE
         var bestDist = Int.MAX_VALUE

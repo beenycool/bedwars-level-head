@@ -11,24 +11,6 @@ import org.apache.logging.log4j.Logger
 import java.util.Locale
 import java.util.UUID
 
-/**
- * Owns "what game am I in".
- *
- * The old detectors were read through getters that fetched stats and cleared
- * caches. That made every renderer, log line and IO coroutine an unknowing state
- * transition on whatever thread it happened to be on. This tracker is the only
- * writer of mode state, it samples on the client tick (main thread), and every
- * public read is a plain field access.
- *
- * Behaviour preserved from the detectors:
- *  - per-game contexts with the same scoreboard/chat/grace rules;
- *  - a 20 s chat window and a 10 s grace period for BedWars/SkyWars;
- *  - transitions hand the visible UUIDs to the request queue.
- *
- * New here (and deliberately so): a mode change must be seen twice before it is
- * committed. A sidebar that is briefly blank during a scoreboard packet update no
- * longer flips the mode, clears displays and starts a request round.
- */
 class ModeTracker(
     private val scoreboardProvider: () -> Scoreboard? = { ClientAccess.scoreboardProvider() },
     private val isOnHypixel: () -> Boolean = { ClientAccess.hypixelServerCheck() },
@@ -39,7 +21,6 @@ class ModeTracker(
     private val clock: () -> Long = System::currentTimeMillis
 ) {
     private class GameState {
-        /** null means UNKNOWN: nothing has been detected for this game yet. */
         var cachedContext: ModeContext? = null
         var chatContext: ModeContext = ModeContext.NONE
         var chatExpiry: Long = 0L
@@ -55,12 +36,10 @@ class ModeTracker(
 
     private val states: Map<GameMode, GameState> = GameMode.entries.associateWith { GameState() }
 
-    /** Read-only current game, or null when no supported game is proven. */
     @Volatile
     var mode: GameMode? = null
         private set
 
-    /** Read-only current context of [mode]. */
     @Volatile
     var context: ModeContext = ModeContext.NONE
         private set
@@ -94,19 +73,13 @@ class ModeTracker(
         tickCounter = 0
     }
 
-    /** Force an immediate, main-thread sample. Used by the world-join fallback. */
     fun refreshNow() {
         sample(clock(), force = true)
     }
 
-    /**
-     * One detection pass. Public so the hysteresis and epoch rules can be driven
-     * from a headless test with a fake clock.
-     */
     fun sample(now: Long = clock(), force: Boolean = false) {
         val evidence = readEvidence()
 
-        // Detection order matches the old resolver: Duels, SkyWars, BedWars.
         detectGame(GameMode.DUELS, evidence, now)
         detectGame(GameMode.SKYWARS, evidence, now)
         detectGame(GameMode.BEDWARS, evidence, now)
@@ -137,7 +110,6 @@ class ModeTracker(
         applyChat(GameMode.DUELS, normalized, now)
         applyChat(GameMode.SKYWARS, normalized, now)
 
-        // Chat is an explicit event, not a sample: commit the resolved mode now.
         updateResolved(resolveMode(readEvidence()), force = true)
     }
 
@@ -248,12 +220,6 @@ class ModeTracker(
         return detected
     }
 
-    /**
-     * Record the detected context for one game. This is deliberately a pure state
-     * update: [updateResolved] is the only place that commits the public
-     * `(mode, context)` pair and fires display callbacks, so a first sample (or a
-     * single blank one) cannot request or clear anything before hysteresis.
-     */
     private fun updateContext(gameMode: GameMode, detected: ModeContext) {
         states.getValue(gameMode).cachedContext = detected
     }
@@ -278,15 +244,12 @@ class ModeTracker(
         val bedwars = states.getValue(GameMode.BEDWARS).cachedContext
 
         return when {
-            // Step 1: explicit scoreboard evidence, most specific games first.
             evidence?.duels == ModeContext.MATCH -> GameMode.DUELS
             evidence?.skywars == ModeContext.MATCH -> GameMode.SKYWARS
             evidence?.bedwars == ModeContext.MATCH -> GameMode.BEDWARS
-            // Step 2: match contexts (chat/cached) take priority over lobby detection.
             duels == ModeContext.MATCH -> GameMode.DUELS
             skywars == ModeContext.MATCH -> GameMode.SKYWARS
             bedwars == ModeContext.MATCH -> GameMode.BEDWARS
-            // Step 3: fall back to lobby/general detection.
             duels?.isActive == true -> GameMode.DUELS
             skywars?.isActive == true -> GameMode.SKYWARS
             bedwars?.isActive == true -> GameMode.BEDWARS
@@ -303,9 +266,6 @@ class ModeTracker(
 
         if (resolved == mode) {
             resetPending()
-            // A context change inside the same game is safe to commit at once:
-            // it cannot be a stale sidebar sample because the mode itself still
-            // resolves to the same game.
             commit(resolved, contextFor(resolved))
             return
         }
@@ -324,11 +284,6 @@ class ModeTracker(
         commit(resolved, contextFor(resolved))
     }
 
-    /**
-     * Commit the resolved pair, then emit exactly the transition that the public
-     * state just went through. Both fields are written first so a callback that
-     * reads [mode] or [context] sees the new value.
-     */
     private fun commit(newMode: GameMode?, newContext: ModeContext) {
         val oldMode = mode
         val oldContext = context

@@ -4,14 +4,6 @@ import { readFileSync } from 'node:fs';
 
 loadEnv();
 
-/**
- * Minimal backend configuration.
- *
- * Only `HYPIXEL_API_KEY` is mandatory. Everything else has a working default so a
- * fresh clone (or a bare render.yaml) boots and serves player data. The database is
- * optional: without `CACHE_DB_URL` the service runs from its in-process LRU cache.
- */
-
 const isProduction = process.env.NODE_ENV === 'production';
 
 export const HYPIXEL_API_BASE_URL = process.env.HYPIXEL_API_BASE_URL ?? 'https://api.hypixel.net';
@@ -42,10 +34,8 @@ export const HYPIXEL_MAX_CONCURRENCY = Math.max(1, parseIntEnv('HYPIXEL_MAX_CONC
 export const HYPIXEL_REQUESTS_PER_SECOND = Math.max(1, parseFloatEnv('HYPIXEL_REQUESTS_PER_SECOND', 5));
 export const HYPIXEL_BURST_CAPACITY = Math.max(1, parseIntEnv('HYPIXEL_BURST_CAPACITY', 4));
 
-/** Optional PostgreSQL cache. Absent/blank means "in-memory cache only". */
 export const CACHE_DB_URL = (process.env.CACHE_DB_URL ?? process.env.DATABASE_URL ?? '').trim();
 
-/** Optional bearer tokens for the admin purge endpoint. Empty disables the endpoint. */
 export const ADMIN_API_KEYS = splitList(process.env.ADMIN_API_KEYS);
 
 /**
@@ -56,10 +46,6 @@ export const ADMIN_API_KEYS = splitList(process.env.ADMIN_API_KEYS);
 export const TRUST_PROXY_CIDRS = splitList(process.env.TRUST_PROXY_CIDRS);
 export const TRUST_SINGLE_PROXY_HOP = isProduction && TRUST_PROXY_CIDRS.length === 0;
 
-/**
- * Public per-IP budget: identifiers per minute. Sized for a full BedWars hub
- * (a 100-player lobby costs 100 identifiers, and players hop lobbies).
- */
 export const PUBLIC_RATE_LIMIT_MAX = Math.max(1, parseIntEnv('PUBLIC_RATE_LIMIT_MAX', 600));
 export const PUBLIC_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 
@@ -96,32 +82,20 @@ export const DYNAMIC_RATE_LIMIT_CACHE_TTL_MS = Math.max(
   parseIntEnv('DYNAMIC_RATE_LIMIT_CACHE_TTL_MS', 10_000),
 );
 
-/** Hypixel allows roughly 120 requests/minute; the limiter protects the hourly pool. */
 export const HYPIXEL_HOURLY_QUOTA = Math.max(60, parseIntEnv('HYPIXEL_HOURLY_QUOTA', 7_200));
 
-/**
- * Lookup tracking powers `/stats`. It can be switched off without touching the
- * database; the proxy then records nothing about who was looked up.
- */
 export const LOOKUP_TRACKING_ENABLED = process.env.LOOKUP_TRACKING_ENABLED !== 'false';
 
-/**
- * How long per-lookup rows survive before the hourly prune removes them. The old
- * page's per-lookup panels need real samples, but the log grows with traffic, so it
- * is kept short on purpose.
- */
 export const LOOKUP_LOG_RETENTION_DAYS = Math.max(
   1,
   parseIntEnv('LOOKUP_LOG_RETENTION_DAYS', 30),
 );
 
-/** SQL cache retention. The in-process LRU is much shorter (see services/player.ts). */
 export const PLAYER_CACHE_DB_TTL_MS = Math.max(
   60 * 60 * 1000,
   parseIntEnv('PLAYER_CACHE_DB_TTL_MS', 24 * 60 * 60 * 1000),
 );
 
-/** Hypixel circuit breaker. */
 export const CB_FAILURE_THRESHOLD = Math.max(1, parseIntEnv('CB_FAILURE_THRESHOLD', 5));
 export const CB_RESET_TIMEOUT_MS = Math.max(1000, parseIntEnv('CB_RESET_TIMEOUT_MS', 30000));
 
@@ -196,7 +170,6 @@ function readPackageVersion(): string {
       return parsed.version.trim();
     }
   } catch {
-    // Bundled builds may not ship package.json next to dist; the version is cosmetic.
   }
   return 'dev';
 }

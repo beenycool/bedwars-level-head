@@ -1,10 +1,3 @@
-/**
- * BedWars star level from raw `bedwars_experience`.
- *
- * This mirrors `core/BedwarsStar.kt` in the mod so the tracking page shows the same
- * number the tag does. Keep the two in sync: the first four levels cost less than
- * the flat 5,000 XP used afterwards, and every 487,000 XP is one prestige (100 levels).
- */
 
 const FIRST_LEVEL_EXPERIENCE = [500, 1000, 2000, 3500] as const;
 const EXPERIENCE_PER_LEVEL = 5000;

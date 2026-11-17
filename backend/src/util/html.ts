@@ -1,10 +1,3 @@
-/**
- * Small formatting helpers shared by the server-rendered pages.
- *
- * The pages are pure strings on purpose: no template engine, no client-side
- * JavaScript (Helmet's default CSP forbids inline scripts), and every value that
- * comes from the database goes through {@link escapeHtml}.
- */
 
 const HTML_ESCAPES: Record<string, string> = {
   '&': '&amp;',
@@ -24,7 +17,6 @@ export function escapeHtml(value: unknown): string {
   return String(value).replace(HTML_SPECIAL, (character) => HTML_ESCAPES[character] ?? character);
 }
 
-/** `12345` -> `12,345`. */
 export function formatNumber(value: number): string {
   if (!Number.isFinite(value)) {
     return '—';
@@ -32,7 +24,6 @@ export function formatNumber(value: number): string {
   return new Intl.NumberFormat('en-US').format(Math.round(value));
 }
 
-/** Sub-second values stay in milliseconds; anything else reads better in seconds. */
 export function formatLatency(milliseconds: number | null | undefined): string {
   if (milliseconds === null || milliseconds === undefined || !Number.isFinite(milliseconds)) {
     return '—';
@@ -43,7 +34,6 @@ export function formatLatency(milliseconds: number | null | undefined): string {
   return `${Math.round(milliseconds)} ms`;
 }
 
-/** Coarse "3m ago" label used in the lookup table. */
 export function formatRelativeTime(value: Date | null | undefined, now: number = Date.now()): string {
   if (!value) {
     return '—';
@@ -71,22 +61,16 @@ export function formatRelativeTime(value: Date | null | undefined, now: number =
   return value instanceof Date ? value.toISOString().slice(0, 10) : '—';
 }
 
-/** `2026-11-15 18:02 UTC`, used in the CSV export and chart tooltips. */
 export function formatIsoMinute(value: Date): string {
   return value.toISOString().slice(0, 16).replace('T', ' ') + ' UTC';
 }
 
-/**
- * Quotes one CSV field. Values starting with `=`, `+`, `-` or `@` are prefixed with
- * an apostrophe so spreadsheet software treats them as text instead of a formula.
- */
 export function csvCell(value: unknown): string {
   const raw = value === null || value === undefined ? '' : String(value);
   const guarded = /^[=+\-@\t\r]/.test(raw) ? `'${raw}` : raw;
   return `"${guarded.replace(/"/g, '""')}"`;
 }
 
-/** `530fa96a303d42199b5a329d493a5573` -> `530fa96a…5573`. */
 export function shortenUuid(identifier: string): string {
   if (identifier.length <= 12) {
     return identifier;
