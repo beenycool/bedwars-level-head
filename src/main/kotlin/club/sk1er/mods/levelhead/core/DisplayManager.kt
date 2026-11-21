@@ -128,6 +128,12 @@ class DisplayManager {
         }
     )
 
+    fun clearPendingRequests() {
+        synchronized(pendingRequests) {
+            pendingRequests.clear()
+        }
+    }
+
     private fun enqueueRequest(uuid: String, type: String, reason: Levelhead.RequestReason) {
         DebugSession.inc("enqueue_total")
         DebugSession.inc("enqueue_${reason.name.lowercase()}")

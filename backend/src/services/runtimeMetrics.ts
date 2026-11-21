@@ -1,5 +1,10 @@
-import { PUBLIC_RATE_LIMIT_WINDOW_MS, PUBLIC_REQUEST_LIMIT_MAX } from '../config';
-import { publicRateLimiter } from '../middleware/rateLimit';
+import {
+  PUBLIC_BATCH_RATE_LIMIT_MIN,
+  PUBLIC_RATE_LIMIT_WINDOW_MS,
+  PUBLIC_REQUEST_LIMIT_MAX,
+  PUBLIC_SINGLE_RATE_LIMIT_MIN,
+} from '../config';
+import { publicBatchRateLimiter, publicRateLimiter } from '../middleware/rateLimit';
 import { dynamicRateLimitSnapshot } from './dynamicRateLimit';
 
 export interface RuntimeSample {
@@ -27,6 +32,16 @@ export interface RuntimeSnapshot {
   rateLimitCacheHitRate: number | null;
   rateLimitHypixelRemaining: number;
   rateLimitRequestBudget: number;
+  rateLimitSingleBudget: number;
+  rateLimitSingleMin: number;
+  rateLimitSingleMax: number;
+  rateLimitSingleActiveClients: number;
+  rateLimitSingleKeys: number;
+  rateLimitBatchBudget: number;
+  rateLimitBatchMin: number;
+  rateLimitBatchMax: number;
+  rateLimitBatchActiveClients: number;
+  rateLimitBatchKeys: number;
 }
 
 const MAX_SAMPLES = 120;
@@ -81,7 +96,19 @@ export function ensureRuntimeSample(now: number = Date.now()): void {
 
 export function runtimeSnapshot(): RuntimeSnapshot {
   const memory = process.memoryUsage();
-  const rateLimits = dynamicRateLimitSnapshot(publicRateLimiter.activeClients());
+  const now = Date.now();
+  const rateLimits = dynamicRateLimitSnapshot(
+    'single',
+    publicRateLimiter.activeClients(now),
+    now,
+    PUBLIC_SINGLE_RATE_LIMIT_MIN,
+  );
+  const batchLimits = dynamicRateLimitSnapshot(
+    'batch',
+    publicBatchRateLimiter.activeClients(now),
+    now,
+    PUBLIC_BATCH_RATE_LIMIT_MIN,
+  );
   return {
     rssMb: memory.rss / 1024 / 1024,
     heapMb: memory.heapUsed / 1024 / 1024,
@@ -100,5 +127,15 @@ export function runtimeSnapshot(): RuntimeSnapshot {
     rateLimitCacheHitRate: rateLimits.cacheHitRate,
     rateLimitHypixelRemaining: rateLimits.hypixelRemaining,
     rateLimitRequestBudget: PUBLIC_REQUEST_LIMIT_MAX,
+    rateLimitSingleBudget: rateLimits.limit,
+    rateLimitSingleMin: rateLimits.min,
+    rateLimitSingleMax: rateLimits.max,
+    rateLimitSingleActiveClients: rateLimits.activeClients,
+    rateLimitSingleKeys: publicRateLimiter.size,
+    rateLimitBatchBudget: batchLimits.limit,
+    rateLimitBatchMin: batchLimits.min,
+    rateLimitBatchMax: batchLimits.max,
+    rateLimitBatchActiveClients: batchLimits.activeClients,
+    rateLimitBatchKeys: publicBatchRateLimiter.size,
   };
 }

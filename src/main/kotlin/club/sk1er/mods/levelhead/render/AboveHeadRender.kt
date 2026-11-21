@@ -48,27 +48,10 @@ object AboveHeadRender {
 
         if (!Levelhead.isOnHypixel()) return
         val activeMode = ModeManager.getActiveGameMode() ?: return
-        val stats = Levelhead.getCachedStats(entity.uniqueID, activeMode) ?: return
-        val statsVersion = Levelhead.statsStore.version(entity.uniqueID, activeMode)
 
         val player = entity
         val localPlayer = mc.thePlayer
         val isSelf = player.isSelf
-        val polyNametag = NametagShadowCompat.polyNametagActive
-        val textShadow = if (polyNametag) false else (NametagShadowCompat.patcherTextShadow() ?: config.textShadow)
-
-        val anchoredOffset = if (isSelf) {
-            config.offset
-        } else {
-            var offset = 0.3
-            if (localPlayer != null &&
-                player.worldScoreboard.getObjectiveInDisplaySlot(2) != null &&
-                player.getDistanceSqToEntity(localPlayer) < 100.0
-            ) {
-                offset *= 2
-            }
-            offset + config.offset
-        }
 
         var index = 0
         while (index < displays.size) {
@@ -76,19 +59,45 @@ object AboveHeadRender {
             // Keep the second isSelf call: PolyNametag redirects ordinal 1 to apply
             // its show-own-nametag setting.
             if (display.config.enabled &&
-                !(player.isSelf && !display.config.showSelf)
+                !(player.isSelf && !display.config.showSelf) &&
+                display.loadOrRender(player)
             ) {
+                val stats = Levelhead.getCachedStats(entity.uniqueID, activeMode) ?: return
+                val polyNametag = NametagShadowCompat.polyNametagActive
+                val textShadow = if (polyNametag) false else (NametagShadowCompat.patcherTextShadow() ?: config.textShadow)
+
+                val anchoredOffset = if (isSelf) {
+                    config.offset
+                } else {
+                    var offset = 0.3
+                    if (localPlayer != null &&
+                        player.worldScoreboard.getObjectiveInDisplaySlot(2) != null &&
+                        player.getDistanceSqToEntity(localPlayer) < 100.0
+                    ) {
+                        offset *= 2
+                    }
+                    offset + config.offset
+                }
+
                 val tag = TagFormatter.formatTag(
                     player.uniqueID,
                     stats,
                     display.config,
                     activeMode,
-                    statsVersion = statsVersion
+                    statsVersion = Levelhead.statsStore.version(entity.uniqueID, activeMode)
                 )
-                if (display.loadOrRender(player)) {
-                    val offset = anchoredOffset + index * 0.3
-                    renderName(tag, player, event.x, event.y, event.z, offset, textShadow, polyNametag)
-                }
+                val stacking = index * 0.3
+                renderName(
+                    tag,
+                    player,
+                    event.x,
+                    event.y,
+                    event.z,
+                    aboveHeadOffset = anchoredOffset + stacking,
+                    belowOffset = config.offset + stacking,
+                    textShadow = textShadow,
+                    polyNametag = polyNametag
+                )
             }
             index++
         }
@@ -100,19 +109,23 @@ object AboveHeadRender {
         x: Double,
         y: Double,
         z: Double,
-        verticalOffset: Double,
+        aboveHeadOffset: Double,
+        belowOffset: Double,
         textShadow: Boolean,
         polyNametag: Boolean
     ) {
+        // An empty tag with the background enabled would draw a bare 3x9 box.
+        if (tag.getString().isBlank()) return
+
         val mc = Minecraft.getMinecraft()
         val fontRenderer = mc.fontRendererObj
         val config = displayManager.config
 
         val vanillaAnchorY = y.toFloat() + entityIn.height + 0.5f
         val renderY = when (config.displayPosition) {
-            MasterConfig.DisplayPosition.ABOVE -> vanillaAnchorY + verticalOffset.toFloat()
+            MasterConfig.DisplayPosition.ABOVE -> vanillaAnchorY + aboveHeadOffset.toFloat()
             MasterConfig.DisplayPosition.BELOW ->
-                vanillaAnchorY - BELOW_NAMETAG_DROP - verticalOffset.toFloat()
+                vanillaAnchorY - BELOW_NAMETAG_DROP - belowOffset.toFloat()
         }
 
         val header = tag.header

@@ -260,14 +260,19 @@ function renderRateLimiting(data: StatsPageData): string {
       <p class="stat-sub">${dynamic ? 'API lookups · adapts to pressure' : 'Static per-IP API budget'}</p>
     </div>
     <div class="card stat-card">
-      <p class="stat-label">API Budget</p>
-      <p class="stat-value">${formatNumber(runtime.rateLimitBudget)}/min</p>
-      <p class="stat-sub">${dynamic ? `Identifiers per client · ${formatNumber(runtime.rateLimitMin)}–${formatNumber(runtime.rateLimitMax)}/min` : 'Identifiers per client IP'}</p>
+      <p class="stat-label">Single Budget</p>
+      <p class="stat-value">${formatNumber(runtime.rateLimitSingleBudget)}/min</p>
+      <p class="stat-sub">${dynamic ? `Single lookups · ${formatNumber(runtime.rateLimitSingleMin)}–${formatNumber(runtime.rateLimitSingleMax)}/min` : 'Identifiers per client IP'}</p>
+    </div>
+    <div class="card stat-card">
+      <p class="stat-label">Batch Budget</p>
+      <p class="stat-value">${formatNumber(runtime.rateLimitBatchBudget)}/min</p>
+      <p class="stat-sub">${dynamic ? `Batch lookups · ${formatNumber(runtime.rateLimitBatchMin)}–${formatNumber(runtime.rateLimitBatchMax)}/min` : 'Identifiers per client IP'}</p>
     </div>
     <div class="card stat-card">
       <p class="stat-label">Active Clients</p>
-      <p class="stat-value">${formatNumber(runtime.rateLimitActiveClients)}</p>
-      <p class="stat-sub">${formatNumber(runtime.rateLimitKeys)} tracked API buckets</p>
+      <p class="stat-value">${formatNumber(runtime.rateLimitSingleActiveClients + runtime.rateLimitBatchActiveClients)}</p>
+      <p class="stat-sub">${formatNumber(runtime.rateLimitSingleKeys + runtime.rateLimitBatchKeys)} buckets · ${formatNumber(runtime.rateLimitSingleKeys)} single · ${formatNumber(runtime.rateLimitBatchKeys)} batch</p>
     </div>
     <div class="card stat-card">
       <p class="stat-label">Upstream Signal</p>

@@ -192,11 +192,26 @@ function circuitBreakerFailure(): void {
   }
 }
 
+/**
+ * A 429 does not trip a closed breaker, but it still ends a half-open probe.
+ * Reopening and resetting `lastFailureAt` keeps the next probe behind the normal
+ * reset timeout instead of leaving the breaker half-open with a stuck flag.
+ */
+function releaseHalfOpenProbe(): void {
+  if (CIRCUIT_BREAKER.state !== 'half-open') {
+    return;
+  }
+  CIRCUIT_BREAKER.state = 'open';
+  CIRCUIT_BREAKER.halfOpenProbeInFlight = false;
+  CIRCUIT_BREAKER.lastFailureAt = Date.now();
+}
+
 interface CircuitBreakerState {
   state: 'closed' | 'open' | 'half-open';
   failureCount: number;
   lastFailureAt: number | null;
   nextRetryAt: number | null;
+  probeInFlight: boolean;
 }
 
 export function getCircuitBreakerState(): CircuitBreakerState {
@@ -210,6 +225,7 @@ export function getCircuitBreakerState(): CircuitBreakerState {
     failureCount: CIRCUIT_BREAKER.failures,
     lastFailureAt: CIRCUIT_BREAKER.lastFailureAt > 0 ? CIRCUIT_BREAKER.lastFailureAt : null,
     nextRetryAt,
+    probeInFlight: CIRCUIT_BREAKER.halfOpenProbeInFlight,
   };
 }
 
@@ -300,6 +316,9 @@ function extractRetryAfterHeader(
 export async function fetchHypixelPlayer(uuid: string): Promise<HypixelFetchResult> {
   let attempt = 0;
   let lastError: unknown;
+  // Set when the probe outcome was already recorded, so the catch block does not
+  // count the same probe failure twice.
+  let breakerSettled = false;
 
   const cooldownMs = upstreamCooldownUntil - Date.now();
   if (cooldownMs > 0) {
@@ -346,13 +365,20 @@ export async function fetchHypixelPlayer(uuid: string): Promise<HypixelFetchResu
         rateLimitReset,
         latencyMs: Date.now() - requestStartedAt,
       }, '[hypixel] fetch response');
-      circuitBreakerSuccess();
 
       const payload = response.data;
-      if (!payload.success) {
-        const cause = payload.cause ?? 'UNKNOWN_HYPIXEL_ERROR';
+      if (!isNonArrayObject(payload)) {
+        throw new HttpError(502, 'INVALID_HYPIXEL_RESPONSE', 'Hypixel returned a malformed response.');
+      }
+      if (payload.success !== true) {
+        const cause = typeof payload.cause === 'string' && payload.cause.length > 0
+          ? payload.cause
+          : 'UNKNOWN_HYPIXEL_ERROR';
+        circuitBreakerFailure();
+        breakerSettled = true;
         throw new HttpError(502, cause, 'Hypixel returned an error response.');
       }
+      circuitBreakerSuccess();
 
       return {
         payload,
@@ -391,9 +417,14 @@ export async function fetchHypixelPlayer(uuid: string): Promise<HypixelFetchResu
       }
 
       // A throttle is not an outage: keeping the breaker closed lets normal
-      // lookups resume as soon as the Retry-After window passes.
-      if (status !== 429) {
-        circuitBreakerFailure();
+      // lookups resume as soon as the Retry-After window passes. It must still
+      // end a half-open probe, or the probe flag would never clear.
+      if (!breakerSettled) {
+        if (status === 429) {
+          releaseHalfOpenProbe();
+        } else {
+          circuitBreakerFailure();
+        }
       }
 
       if (axios.isAxiosError(error)) {

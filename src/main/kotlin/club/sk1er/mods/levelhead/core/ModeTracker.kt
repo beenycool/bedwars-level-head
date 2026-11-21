@@ -98,6 +98,8 @@ class ModeTracker(
 
     @SubscribeEvent
     fun onChat(event: ClientChatReceivedEvent) {
+        if (event.type == 2.toByte()) return
+        if (event.isCanceled) return
         if (!isOnHypixel()) return
         val message = event.message ?: return
         val rawText = message.unformattedText
@@ -106,14 +108,20 @@ class ModeTracker(
         val now = clock()
         val normalized = StringUtils.stripControlCodes(rawText).lowercase(Locale.ROOT)
 
-        applyChat(GameMode.BEDWARS, normalized, now)
-        applyChat(GameMode.DUELS, normalized, now)
-        applyChat(GameMode.SKYWARS, normalized, now)
+        val signals = listOf(
+            applyChat(GameMode.BEDWARS, normalized, now),
+            applyChat(GameMode.DUELS, normalized, now),
+            applyChat(GameMode.SKYWARS, normalized, now)
+        )
 
-        updateResolved(resolveMode(readEvidence()), force = true)
+        // Ordinary chat (gamer tags, party messages, ...) must not reset the
+        // hysteresis and commit a mode straight away.
+        if (signals.any { it != ChatSignal.None }) {
+            updateResolved(resolveMode(readEvidence()), force = true)
+        }
     }
 
-    private fun applyChat(gameMode: GameMode, normalized: String, now: Long) {
+    private fun applyChat(gameMode: GameMode, normalized: String, now: Long): ChatSignal {
         val state = states.getValue(gameMode)
         val signal = ModeClassifier.chatSignal(
             gameMode,
@@ -125,6 +133,7 @@ class ModeTracker(
             ChatSignal.Clear -> clearCachedContext(gameMode, now)
             ChatSignal.None -> Unit
         }
+        return signal
     }
 
     private fun recordChatDetection(gameMode: GameMode, context: ModeContext, now: Long) {
@@ -160,7 +169,11 @@ class ModeTracker(
                     state.lastDetectedAt = now
                     scoreboardContext
                 } else {
-                    val chat = currentChatContext(state, now)
+                    val chat = if (evidence == null || evidence.titleGeneric) {
+                        currentChatContext(state, now)
+                    } else {
+                        ModeContext.NONE
+                    }
                     when {
                         chat != ModeContext.NONE -> {
                             state.lastDetectedAt = now
@@ -332,6 +345,14 @@ class ModeTracker(
             return cachedEvidence
         }
         val evidence = ModeClassifier.classify(title, lines)
+        logger?.debug(
+            "[LevelheadScoreboard] title='{}' lines={} -> bedwars={} duels={} skywars={}",
+            title,
+            lines,
+            evidence.bedwars,
+            evidence.duels,
+            evidence.skywars
+        )
         cachedTitle = title
         cachedLines = lines
         cachedEvidence = evidence

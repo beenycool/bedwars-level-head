@@ -7,6 +7,7 @@ import club.sk1er.mods.levelhead.core.TagFormatter
 import club.sk1er.mods.levelhead.display.LevelheadTag
 import net.minecraft.client.Minecraft
 import net.minecraft.client.network.NetworkPlayerInfo
+import net.minecraft.scoreboard.IScoreObjectiveCriteria
 import net.minecraft.scoreboard.ScoreObjective
 import net.minecraft.util.EnumChatFormatting
 import java.awt.Color
@@ -25,6 +26,10 @@ object TabRender {
 
     private val paddingCache = HashMap<Int, String>()
     private const val PADDING_CACHE_LIMIT = 256
+
+    // Vanilla reserves a fixed column for a HEARTS objective and does not measure
+    // the numeric score (GuiPlayerTabOverlay line ~90: l = HEARTS ? 90 : j).
+    private const val HEARTS_COLUMN_WIDTH = 90
 
     @JvmStatic
     fun beginFrame(objective: ScoreObjective?) {
@@ -125,12 +130,16 @@ object TabRender {
 
         val objective = state.objective
         if (objective != null) {
-            val score = Minecraft.getMinecraft().theWorld
-                ?.scoreboard
-                ?.getValueFromObjective(info.gameProfile.name, objective)
-            if (score != null) {
-                val scoreStr = " " + EnumChatFormatting.YELLOW.toString() + score.scorePoints
-                drawX -= font.getStringWidth(scoreStr)
+            if (objective.renderType == IScoreObjectiveCriteria.EnumRenderType.HEARTS) {
+                drawX -= HEARTS_COLUMN_WIDTH
+            } else {
+                val score = Minecraft.getMinecraft().theWorld
+                    ?.scoreboard
+                    ?.getValueFromObjective(info.gameProfile.name, objective)
+                if (score != null) {
+                    val scoreStr = " " + EnumChatFormatting.YELLOW.toString() + score.scorePoints
+                    drawX -= font.getStringWidth(scoreStr)
+                }
             }
         }
 

@@ -12,7 +12,8 @@ object TagFormatter {
         val statsVersion: Long,
         val configVersion: Long,
         val gameMode: GameMode,
-        val config: DisplayConfig
+        val config: DisplayConfig,
+        val stale: Boolean
     )
 
     private val memo = ConcurrentHashMap<Key, LevelheadTag>()
@@ -29,12 +30,14 @@ object TagFormatter {
         config: DisplayConfig,
         gameMode: GameMode,
         statsVersion: Long = stats.fetchedAt,
-        configVersion: Long = settingsVersion.get()
+        configVersion: Long = settingsVersion.get(),
+        now: Long = System.currentTimeMillis()
     ): LevelheadTag {
-        val key = Key(uuid, statsVersion, configVersion, gameMode, config)
+        // `stale` is part of the key so a memoised tag cannot stay fresh forever.
+        val key = Key(uuid, statsVersion, configVersion, gameMode, config, StatsFormatter.isStale(stats, now))
         memo[key]?.let { return it }
 
-        val tag = StatsFormatter.formatTag(uuid, stats, config, gameMode)
+        val tag = StatsFormatter.formatTag(uuid, stats, config, gameMode, now)
         if (memo.size >= MAX_ENTRIES) {
             memo.clear()
         }

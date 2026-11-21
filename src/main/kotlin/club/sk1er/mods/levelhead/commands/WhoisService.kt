@@ -7,6 +7,7 @@ import club.sk1er.mods.levelhead.core.StatsFetcher
 import club.sk1er.mods.levelhead.core.GameMode
 import club.sk1er.mods.levelhead.core.GameStats
 import club.sk1er.mods.levelhead.core.ModeManager
+import club.sk1er.mods.levelhead.core.StatsLookup
 import club.sk1er.mods.levelhead.core.await
 import club.sk1er.mods.levelhead.core.dashUUID
 import club.sk1er.mods.levelhead.skywars.SkyWarsStats
@@ -17,7 +18,6 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import net.minecraft.client.Minecraft
 import net.minecraft.util.ChatComponentText
-import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.util.IChatComponent
 import net.minecraft.util.EnumChatFormatting as ChatColor
 import okhttp3.HttpUrl
@@ -88,15 +88,18 @@ object WhoisService {
 
     private suspend fun fetchWhois(resolved: ResolvedIdentifier, gameMode: GameMode): WhoisResult = withContext(Dispatchers.IO) {
         // Whois shares the display cache: a tag already fetched for the same
-        // player/mode answers without spending a rate-limit token.
-        Levelhead.statsStore.get(resolved.uuid, gameMode)?.let { cached ->
-            return@withContext createWhoisResult(
-                uuid = resolved.uuid,
-                displayName = resolved.displayName ?: resolved.uuid.toString(),
-                stats = cached,
-                gameMode = gameMode,
-                nicked = cached.nicked
-            )
+        // player/mode answers without spending a rate-limit token. Only fresh
+        // entries qualify; stale data must go back to the backend.
+        if (Levelhead.statsStore.lookup(resolved.uuid, gameMode) == StatsLookup.HIT) {
+            Levelhead.statsStore.get(resolved.uuid, gameMode)?.let { cached ->
+                return@withContext createWhoisResult(
+                    uuid = resolved.uuid,
+                    displayName = resolved.displayName ?: resolved.uuid.toString(),
+                    stats = cached,
+                    gameMode = gameMode,
+                    nicked = cached.nicked
+                )
+            }
         }
 
         if (!Levelhead.rateLimiter.tryAcquire()) {
@@ -162,7 +165,7 @@ object WhoisService {
                 "$it${stats.starIcon ?: BedwarsStar.getPrestigeIcon(it)}"
             } ?: "?"
             is GameStats.Duels -> stats.wins?.toString() ?: "?"
-            is GameStats.SkyWars -> stats.level?.let { "$it${SkyWarsStats.getDefaultEmblem(it.toInt())}" } ?: "?"
+            is GameStats.SkyWars -> stats.level?.let { "${it.toInt()}${SkyWarsStats.getDefaultEmblem(it.toInt())}" } ?: "?"
             null -> "?"
         }
 
@@ -206,7 +209,7 @@ object WhoisService {
 
         val localMatch = resolveLocalPlayer(trimmed)
         if (localMatch != null) {
-            return ResolvedIdentifier(localMatch.uniqueID, localMatch.name)
+            return localMatch
         }
 
         when {
@@ -229,15 +232,26 @@ object WhoisService {
         return null
     }
 
-    private suspend fun resolveLocalPlayer(trimmed: String): EntityPlayer? = suspendCancellableCoroutine { continuation ->
+    private suspend fun resolveLocalPlayer(trimmed: String): ResolvedIdentifier? = suspendCancellableCoroutine { continuation ->
         val minecraft = Minecraft.getMinecraft()
 
         minecraft.addScheduledTask {
-            val match = Minecraft.getMinecraft().theWorld
+            val worldMatch = Minecraft.getMinecraft().theWorld
                 ?.playerEntities
                 ?.firstOrNull { player ->
                     player.name.equals(trimmed, true) || player.gameProfile?.name?.equals(trimmed, true) == true
                 }
+            val match = if (worldMatch != null) {
+                ResolvedIdentifier(worldMatch.uniqueID, worldMatch.name)
+            } else {
+                // Tab-list players outside entity range still have a known UUID.
+                Minecraft.getMinecraft().thePlayer
+                    ?.sendQueue
+                    ?.getPlayerInfoMap()
+                    ?.firstOrNull { info -> info.gameProfile?.name?.equals(trimmed, true) == true }
+                    ?.gameProfile
+                    ?.let { ResolvedIdentifier(it.id, it.name) }
+            }
             if (continuation.isActive) {
                 continuation.resume(match)
             }

@@ -42,6 +42,40 @@ function failureStatus(error: unknown): number {
   return error instanceof HttpError ? error.status : 500;
 }
 
+const BATCH_RETRY_AFTER_DEFAULT_SECONDS = 60;
+const RETRY_AFTER_MIN_SECONDS = 1;
+const RETRY_AFTER_MAX_SECONDS = 300;
+
+type BatchOutcome =
+  | { ok: true; identifier: string; resolved: ResolvedPlayer }
+  | { ok: false; identifier: string; error: unknown };
+
+/**
+ * Use the upstream's own Retry-After window when a failure carries one, instead
+ * of always guessing the default batch wait.
+ */
+function deriveRetryAfterSeconds(outcomes: BatchOutcome[]): number | null {
+  let derived: number | null = null;
+  for (const outcome of outcomes) {
+    if (outcome.ok || !(outcome.error instanceof HttpError)) {
+      continue;
+    }
+    const header = outcome.error.headers?.['Retry-After'];
+    const parsed = header === undefined ? Number.NaN : Number.parseInt(header, 10);
+    let seconds: number;
+    if (Number.isFinite(parsed)) {
+      seconds = parsed;
+    } else if (outcome.error.causeCode === 'HYPIXEL_RATE_LIMIT') {
+      seconds = BATCH_RETRY_AFTER_DEFAULT_SECONDS;
+    } else {
+      continue;
+    }
+    const clamped = Math.min(RETRY_AFTER_MAX_SECONDS, Math.max(RETRY_AFTER_MIN_SECONDS, Math.ceil(seconds)));
+    derived = derived === null ? clamped : Math.max(derived, clamped);
+  }
+  return derived;
+}
+
 export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): RequestHandler {
   return async (req, res, next) => {
     const { identifier } = req.params;
@@ -101,7 +135,7 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
       );
 
       if (resolved.source === 'cache') {
-        refundPublicTokens(req, 1);
+        refundPublicTokens(req, 1, 'single');
       }
 
       if (req.fresh) {
@@ -189,10 +223,6 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
     }, '[lookup] batch start');
 
     try {
-      if (getCircuitBreakerState().state === 'open') {
-        throw upstreamUnavailable(30);
-      }
-
       const warmedMisses = await warmupPlayerCache(uniqueUuids);
 
       const observations: LookupObservation[] = [];
@@ -270,11 +300,14 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
         }
       }
 
-      refundPublicTokens(req, cacheHits);
+      refundPublicTokens(req, cacheHits, 'batch');
 
       if (successes === 0) {
         if (upstreamFailures === outcomes.length) {
-          throw upstreamUnavailable(60);
+          // No data was delivered, so hand this request's identifier tokens back.
+          refundPublicTokens(req, uniqueUuids.length, 'batch');
+          const retryAfter = deriveRetryAfterSeconds(outcomes) ?? BATCH_RETRY_AFTER_DEFAULT_SECONDS;
+          throw upstreamUnavailable(retryAfter);
         }
         throw new HttpError(400, 'INVALID_IDENTIFIER', 'All identifiers were rejected.');
       }

@@ -82,6 +82,20 @@ export const DYNAMIC_RATE_LIMIT_CACHE_TTL_MS = Math.max(
   parseIntEnv('DYNAMIC_RATE_LIMIT_CACHE_TTL_MS', 10_000),
 );
 
+/**
+ * Single-request and batch clients get separate identifier buckets with the same
+ * floor. A lobby-sized batch can no longer drain the budget a legacy client is
+ * using, and neither style of client is treated as second class.
+ */
+export const PUBLIC_SINGLE_RATE_LIMIT_MIN = Math.min(
+  PUBLIC_RATE_LIMIT_MAX,
+  Math.max(1, parseIntEnv('PUBLIC_SINGLE_RATE_LIMIT_MIN', 40)),
+);
+export const PUBLIC_BATCH_RATE_LIMIT_MIN = Math.min(
+  PUBLIC_RATE_LIMIT_MAX,
+  Math.max(1, parseIntEnv('PUBLIC_BATCH_RATE_LIMIT_MIN', 40)),
+);
+
 export const HYPIXEL_HOURLY_QUOTA = Math.max(60, parseIntEnv('HYPIXEL_HOURLY_QUOTA', 7_200));
 
 export const LOOKUP_TRACKING_ENABLED = process.env.LOOKUP_TRACKING_ENABLED !== 'false';

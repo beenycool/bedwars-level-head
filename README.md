@@ -87,3 +87,12 @@ is rendered by the service itself.
 
 - **Mod:** GitHub Actions builds `build/libs/*.jar` on push and on release.
 - **Backend:** `deploy-backend.yml` typechecks, builds the Docker image, pushes it to GHCR, then triggers the Render deploy defined in `render.yaml`. It uses the starter plan so the instance does not sleep.
+
+## Credits
+
+This fork builds on [Sk1erLLC/Levelhead](https://github.com/Sk1erLLC/Levelhead), the
+original Levelhead mod by **Sk1er** (Mitchell Katz) and its contributors
+(`boomboompower`, `FalseHonesty`, `Sychic`). The BedWars, Duels and SkyWars stat
+handling and the companion backend are fork-specific additions.
+
+The mod metadata also credits HypixelAPI and Codename_B.

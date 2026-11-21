@@ -94,9 +94,14 @@ export function createApp(): express.Express {
     ]);
     const circuitBreaker = getCircuitBreakerState();
     const healthy = dbHealthy;
+    // Half-open with no probe in flight means a probe ended without clearing the
+    // flag, which would otherwise report `ok` forever.
+    const breakerStuck =
+      circuitBreaker.state === 'open'
+      || (circuitBreaker.state === 'half-open' && !circuitBreaker.probeInFlight);
     const status: 'ok' | 'degraded' | 'unhealthy' = !healthy
       ? 'unhealthy'
-      : hypixelHealthy && circuitBreaker.state !== 'open'
+      : hypixelHealthy && !breakerStuck
         ? 'ok'
         : 'degraded';
 
@@ -104,7 +109,10 @@ export function createApp(): express.Express {
       status,
       timestamp: new Date().toISOString(),
       checks: { database: dbHealthy, hypixel: hypixelHealthy },
-      circuitBreaker: { state: circuitBreaker.state },
+      circuitBreaker: {
+        state: circuitBreaker.state,
+        probeInFlight: circuitBreaker.probeInFlight,
+      },
     });
   });
 

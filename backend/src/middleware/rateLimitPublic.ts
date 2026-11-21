@@ -1,19 +1,21 @@
 import type { Request } from 'express';
-import { createRateLimitMiddleware, getClientIpAddress, publicRateLimiter, resolveBatchCost } from './rateLimit';
-
-function getBucketKey(req: Request): string {
-  return `public:${getClientIpAddress(req)}`;
-}
+import {
+  createRateLimitMiddleware,
+  getClientIpAddress,
+  publicBatchRateLimiter,
+  publicRateLimiter,
+  resolveBatchCost,
+} from './rateLimit';
 
 export const enforcePublicRateLimit = createRateLimitMiddleware({
   limiter: publicRateLimiter,
-  getBucketKey,
+  getBucketKey: (req) => `public:${getClientIpAddress(req)}`,
   label: 'public',
 });
 
 export const enforcePublicBatchRateLimit = createRateLimitMiddleware({
-  limiter: publicRateLimiter,
-  getBucketKey,
+  limiter: publicBatchRateLimiter,
+  getBucketKey: (req) => `batch:${getClientIpAddress(req)}`,
   getCost: resolveBatchCost,
   label: 'public_batch',
 });

@@ -2,7 +2,6 @@ import {
   DYNAMIC_RATE_LIMIT_CACHE_TTL_MS,
   DYNAMIC_RATE_LIMIT_ENABLED,
   DYNAMIC_RATE_LIMIT_MAX,
-  DYNAMIC_RATE_LIMIT_MIN,
   HYPIXEL_HOURLY_QUOTA,
   PUBLIC_RATE_LIMIT_MAX,
 } from '../config';
@@ -16,7 +15,11 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-export function calculateDynamicLimit(activeClients: number, now: number = Date.now()): number {
+export function calculateDynamicLimit(
+  activeClients: number,
+  now: number,
+  min: number,
+): number {
   if (!DYNAMIC_RATE_LIMIT_ENABLED) {
     return PUBLIC_RATE_LIMIT_MAX;
   }
@@ -36,25 +39,30 @@ export function calculateDynamicLimit(activeClients: number, now: number = Date.
   );
 
   const fairShare = availablePerMinute / Math.max(1, activeClients) / demandPressure;
-  return clamp(Math.round(fairShare), DYNAMIC_RATE_LIMIT_MIN, DYNAMIC_RATE_LIMIT_MAX);
+  return clamp(Math.round(fairShare), min, DYNAMIC_RATE_LIMIT_MAX);
 }
 
-let cached: { limit: number; computedAt: number } | null = null;
+// One cache entry per pool: single and batch limiters have their own active-client
+// counts, so they must not read each other's computed limit.
+const cached = new Map<string, { limit: number; computedAt: number }>();
 
 export function getDynamicPublicLimit(
+  pool: string,
   activeClients: number | (() => number),
-  now: number = Date.now(),
+  now: number,
+  min: number,
 ): number {
   if (!DYNAMIC_RATE_LIMIT_ENABLED) {
     return PUBLIC_RATE_LIMIT_MAX;
   }
-  if (cached && now - cached.computedAt < DYNAMIC_RATE_LIMIT_CACHE_TTL_MS) {
-    return cached.limit;
+  const hit = cached.get(pool);
+  if (hit && now - hit.computedAt < DYNAMIC_RATE_LIMIT_CACHE_TTL_MS) {
+    return hit.limit;
   }
 
   const clients = typeof activeClients === 'function' ? activeClients() : activeClients;
-  const limit = calculateDynamicLimit(clients, now);
-  cached = { limit, computedAt: now };
+  const limit = calculateDynamicLimit(clients, now, min);
+  cached.set(pool, { limit, computedAt: now });
   return limit;
 }
 
@@ -70,16 +78,18 @@ export interface DynamicRateLimitSnapshot {
 }
 
 export function dynamicRateLimitSnapshot(
+  pool: string,
   activeClients: number,
-  now: number = Date.now(),
+  now: number,
+  min: number,
 ): DynamicRateLimitSnapshot {
   const signals = lookupSignals(now);
-  const limit = getDynamicPublicLimit(activeClients, now);
+  const limit = getDynamicPublicLimit(pool, activeClients, now, min);
 
   return {
     enabled: DYNAMIC_RATE_LIMIT_ENABLED,
     limit,
-    min: DYNAMIC_RATE_LIMIT_MIN,
+    min,
     max: DYNAMIC_RATE_LIMIT_MAX,
     activeClients,
     networkCallsLastHour: signals.networkLastHour,
@@ -89,5 +99,5 @@ export function dynamicRateLimitSnapshot(
 }
 
 export function resetDynamicRateLimitCache(): void {
-  cached = null;
+  cached.clear();
 }

@@ -150,6 +150,18 @@ function whereWindowAndSearch(window: Window, search: string) {
   return parts.length > 0 ? sql`WHERE ${sql.join(parts, sql` AND `)}` : sql``;
 }
 
+function starScope(window: Window) {
+  const parts = [];
+  if (window.since) {
+    parts.push(sql`looked_up_at >= ${window.since}`);
+  }
+  if (window.until) {
+    parts.push(sql`looked_up_at <= ${window.until}`);
+  }
+  parts.push(sql`status < 400`, sql`nicked = false`);
+  return sql`WHERE ${sql.join(parts, sql` AND `)}`;
+}
+
 function orderBy(sort: StatsQuery['sort']) {
   switch (sort) {
     case 'slowest':
@@ -267,8 +279,12 @@ export async function loadStatsPage(query: StatsQuery): Promise<StatsPageData | 
                ELSE '1000+'
              END AS label,
              COUNT(*) AS count
-      FROM lookup_log
-      ${scope}
+      FROM (
+        SELECT DISTINCT ON (identifier) identifier, stars
+        FROM lookup_log
+        ${starScope(window)}
+        ORDER BY identifier, looked_up_at DESC
+      ) latest
       GROUP BY 1
     `.execute(db),
     sql<SliceRow>`

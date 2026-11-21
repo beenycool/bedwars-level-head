@@ -261,6 +261,19 @@ object Levelhead {
         runOnMain {
             resetWorldScope()
             requestCoordinator.reset()
+            displayManager.clearPendingRequests()
+        }
+    }
+
+    @SubscribeEvent
+    fun disconnectServer(@Suppress("UNUSED_PARAMETER") event: FMLNetworkEvent.ClientDisconnectionFromServerEvent) {
+        DebugSession.stop("server-disconnect")
+        // Fires on the netty IO thread; tear down the connection's work on the
+        // client thread. The stats store is intentionally left alone.
+        runOnMain {
+            resetWorldScope()
+            requestCoordinator.reset()
+            displayManager.clearPendingRequests()
         }
     }
 
@@ -273,6 +286,7 @@ object Levelhead {
             // token budget or forget a server Retry-After. TTL on the store
             // (not a world join) decides when stats are refetched.
             requestCoordinator.reset()
+            displayManager.clearPendingRequests()
             if (firstWorldJoined.compareAndSet(false, true)) {
                 scheduleUpdateCheck()
             }

@@ -1,8 +1,10 @@
 import type { Request, RequestHandler } from 'express';
 import {
+  PUBLIC_BATCH_RATE_LIMIT_MIN,
   PUBLIC_RATE_LIMIT_MAX,
   PUBLIC_RATE_LIMIT_WINDOW_MS,
   PUBLIC_REQUEST_LIMIT_MAX,
+  PUBLIC_SINGLE_RATE_LIMIT_MIN,
 } from '../config';
 import { getDynamicPublicLimit } from '../services/dynamicRateLimit';
 import { HttpError } from '../util/httpError';
@@ -144,10 +146,20 @@ export class TokenBucketLimiter {
   }
 }
 
+/** Single-identifier lookups (legacy clients, whois). */
 export const publicRateLimiter = new TokenBucketLimiter({
   capacity: PUBLIC_RATE_LIMIT_MAX,
   windowMs: PUBLIC_RATE_LIMIT_WINDOW_MS,
-  getCapacity: (activeClients) => getDynamicPublicLimit(activeClients),
+  getCapacity: (activeClients) =>
+    getDynamicPublicLimit('single', activeClients, Date.now(), PUBLIC_SINGLE_RATE_LIMIT_MIN),
+});
+
+/** Batched lookups. Separate bucket so a lobby-sized batch cannot starve singles. */
+export const publicBatchRateLimiter = new TokenBucketLimiter({
+  capacity: PUBLIC_RATE_LIMIT_MAX,
+  windowMs: PUBLIC_RATE_LIMIT_WINDOW_MS,
+  getCapacity: (activeClients) =>
+    getDynamicPublicLimit('batch', activeClients, Date.now(), PUBLIC_BATCH_RATE_LIMIT_MIN),
 });
 
 export const requestRateLimiter = new TokenBucketLimiter({
@@ -175,11 +187,19 @@ export function getClientIpAddress(req: Request): string {
   throw new HttpError(400, 'INVALID_REQUEST', 'Unable to identify client IP address');
 }
 
-export function refundPublicTokens(req: Request, count: number): void {
+export type PublicPool = 'single' | 'batch';
+
+export function refundPublicTokens(
+  req: Request,
+  count: number,
+  pool: PublicPool = 'single',
+): void {
   if (!Number.isFinite(count) || count <= 0) {
     return;
   }
-  publicRateLimiter.refund(`public:${getClientIpAddress(req)}`, Math.floor(count));
+  const ip = getClientIpAddress(req);
+  const limiter = pool === 'batch' ? publicBatchRateLimiter : publicRateLimiter;
+  limiter.refund(`${pool === 'batch' ? 'batch' : 'public'}:${ip}`, Math.floor(count));
 }
 
 interface RateLimitOptions {
@@ -270,8 +290,8 @@ export function resolveBatchCost(req: Request): number {
 }
 
 export const enforceBatchRateLimit = createRateLimitMiddleware({
-  limiter: publicRateLimiter,
-  getBucketKey: (req) => `public:${getClientIpAddress(req)}`,
+  limiter: publicBatchRateLimiter,
+  getBucketKey: (req) => `batch:${getClientIpAddress(req)}`,
   getCost: resolveBatchCost,
   label: 'legacy_batch',
 });

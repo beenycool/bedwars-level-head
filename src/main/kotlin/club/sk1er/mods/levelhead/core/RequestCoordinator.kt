@@ -13,7 +13,7 @@ class RequestCoordinator(
     private val isOnHypixel: () -> Boolean,
     private val logger: Logger
 ) {
-    private val executor = FetchExecutor(worldScopeProvider, rateLimiter, logger)
+    private val executor = FetchExecutor(worldScopeProvider, rateLimiter, store, logger)
 
     val lastAttemptAgeMillis: Long?
         get() = executor.lastAttemptAgeMillis
@@ -38,9 +38,11 @@ class RequestCoordinator(
                 "[LevelheadDebug][plan] ${DebugSession.prefix()} pending=${pending.size} epoch=$epoch"
             }
             if (pending.isEmpty()) return@launch
+            // Check the epoch before marking Loading: a world hop's sweep can run
+            // between here and markLoading and would then strand placeholders.
+            if (ModeManager.worldEpoch != epoch) return@launch
 
             pending.forEach { store.markLoading(it.uuid, it.gameMode) }
-            if (ModeManager.worldEpoch != epoch) return@launch
 
             // Try the proxy batch first; anything it does not claim falls through
             // to the direct path (which dedupes against in-flight work).
@@ -75,7 +77,7 @@ class RequestCoordinator(
                         // A slow request already owns this key. Skipping it before
                         // lookup() keeps the poll from enqueueing a duplicate (and
                         // from recording a miss that is really in-flight work).
-                        if (store.state(uuid, gameMode) is StatsState.Loading) {
+                        if (store.isLoading(uuid, gameMode, now)) {
                             loadingSkips++
                             return@modeLoop
                         }

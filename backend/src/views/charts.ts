@@ -58,7 +58,10 @@ function yAxis(max: number): string {
   return `<div class="chart-yaxis" aria-hidden="true"><span>${formatTick(max)}</span><span>${formatTick(max / 2)}</span><span>0</span></div>`;
 }
 
-export function lineChart(series: LineSeries[], ariaLabel: string, labels?: string[]): string {
+let chartSequence = 0;
+
+export function lineChart(series: LineSeries[], ariaLabel: string, labels?: string[], chartId?: string): string {
+  const idBase = chartId ?? `chart-${chartSequence++}`;
   const prepared = series.map((entry) => ({
     ...entry,
     values: entry.values.length === 1 ? [entry.values[0], entry.values[0]] : entry.values,
@@ -77,10 +80,10 @@ export function lineChart(series: LineSeries[], ariaLabel: string, labels?: stri
         .map((point, position) => `${position === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`)
         .join(' ');
       const area = entry.fill
-        ? `<path d="${line} L${(WIDTH - PAD).toFixed(1)},${HEIGHT - 1} L${PAD},${HEIGHT - 1} Z" fill="url(#chart-fill-${index})" />`
+        ? `<path d="${line} L${(WIDTH - PAD).toFixed(1)},${HEIGHT - 1} L${PAD},${HEIGHT - 1} Z" fill="url(#${idBase}-fill-${index})" />`
         : '';
       const gradient = entry.fill
-        ? `<defs><linearGradient id="chart-fill-${index}" x1="0" y1="0" x2="0" y2="1">
+        ? `<defs><linearGradient id="${idBase}-fill-${index}" x1="0" y1="0" x2="0" y2="1">
              <stop offset="0%" stop-color="${entry.color}" stop-opacity="0.20" />
              <stop offset="100%" stop-color="${entry.color}" stop-opacity="0.01" />
            </linearGradient></defs>`
@@ -139,7 +142,10 @@ export function barChart(bars: { label: string; value: number }[], ariaLabel: st
 
   const rendered = bars
     .map((bar, index) => {
-      const height = (Math.max(0, bar.value) / max) * (HEIGHT - 10);
+      if (!(bar.value > 0)) {
+        return '';
+      }
+      const height = (bar.value / max) * (HEIGHT - 10);
       const x = index * slot + (slot - barWidth) / 2;
       const y = HEIGHT - 4 - height;
       return `<rect class="chart-hit" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(1, height).toFixed(1)}" rx="2" fill="#3b82f6"><title>${escapeText(`${bar.label}: ${formatValue(bar.value)}`)}</title></rect>`;

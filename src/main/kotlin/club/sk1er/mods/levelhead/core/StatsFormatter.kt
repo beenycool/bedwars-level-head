@@ -8,15 +8,20 @@ import club.sk1er.mods.levelhead.skywars.SkyWarsStats
 import java.awt.Color
 import java.util.Locale
 import java.util.UUID
+import net.minecraft.util.EnumChatFormatting
 
 object StatsFormatter {
     private val unresolvedTokenPattern = Regex("%[a-z0-9_]+%", RegexOption.IGNORE_CASE)
+
+    fun isStale(stats: GameStats?, now: Long = System.currentTimeMillis()): Boolean =
+        stats?.isExpired(LevelheadConfig.starCacheTtl, now) ?: false
 
     fun formatTag(
         uuid: UUID,
         stats: GameStats?,
         config: DisplayConfig,
-        gameMode: GameMode
+        gameMode: GameMode,
+        now: Long = System.currentTimeMillis()
     ): LevelheadTag {
         val footerTemplate = LevelheadConfig.footerTemplateFor(gameMode)
 
@@ -31,11 +36,8 @@ object StatsFormatter {
             }
         }
 
-        val fetchedAt = stats?.fetchedAt ?: System.currentTimeMillis()
-        val age = System.currentTimeMillis() - fetchedAt
-        val isStale = age > 3600 * 1000
-
-        val finalColor = if (isStale && stats != null) Color.GRAY else footerColor
+        val stale = isStale(stats, now)
+        val finalColor = if (stale && stats != null) Color.GRAY else footerColor
 
         val tag = LevelheadTag(uuid)
         tag.header.value = config.headerStringFor(gameMode).takeIf { it.isNotBlank() }?.let { "$it: " } ?: ""
@@ -54,13 +56,13 @@ object StatsFormatter {
         val starString = starValue?.let { BedwarsStar.formatStarTag(it, stats.starIcon) } ?: "?"
         val fkdrString = stats.fkdr?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "?"
 
-        var footerValue = template
-        footerValue = footerValue.replace("%star%", starString, ignoreCase = true)
-        footerValue = footerValue.replace("%fkdr%", fkdrString, ignoreCase = true)
-        footerValue = sanitizeUnresolvedTokens(footerValue)
-
         val style = starValue?.let { BedwarsStar.styleForStar(it) }
             ?: BedwarsStar.PrestigeStyle(config.footerColor, "")
+
+        var footerValue = template
+        footerValue = replaceStyled(footerValue, "%star%", starString, style.color)
+        footerValue = footerValue.replace("%fkdr%", fkdrString, ignoreCase = true)
+        footerValue = sanitizeUnresolvedTokens(footerValue)
 
         return Pair(footerValue, style.color)
     }
@@ -86,16 +88,6 @@ object StatsFormatter {
         val divisionLevel = divisionInfo?.romanLevel ?: "?"
         val divisionSymbol = divisionInfo?.let { DuelsStats.symbolForDivisionId(it.id) } ?: "?"
 
-        var footerValue = template
-        footerValue = footerValue.replace("%wins%", winsString, ignoreCase = true)
-        footerValue = footerValue.replace("%losses%", lossesString, ignoreCase = true)
-        footerValue = footerValue.replace("%wlr%", wlrString, ignoreCase = true)
-        footerValue = footerValue.replace("%kdr%", kdrString, ignoreCase = true)
-        footerValue = footerValue.replace("%division%", styledDivisionTitle, ignoreCase = true)
-        footerValue = footerValue.replace("%divlevel%", divisionLevel, ignoreCase = true)
-        footerValue = footerValue.replace("%divsymbol%", divisionSymbol, ignoreCase = true)
-        footerValue = sanitizeUnresolvedTokens(footerValue)
-
         val duelsMode = LevelheadConfig.DuelsStatMode.entries.getOrNull(LevelheadConfig.duelsStatDisplayIndex)
             ?: LevelheadConfig.DuelsStatMode.DIVISION_TITLE
         val usesDivisionColor = when (duelsMode) {
@@ -107,6 +99,17 @@ object StatsFormatter {
             else -> false
         }
         val color = if (usesDivisionColor) (divisionInfo?.color ?: config.footerColor) else config.footerColor
+
+        var footerValue = template
+        footerValue = footerValue.replace("%wins%", winsString, ignoreCase = true)
+        footerValue = footerValue.replace("%losses%", lossesString, ignoreCase = true)
+        footerValue = footerValue.replace("%wlr%", wlrString, ignoreCase = true)
+        footerValue = footerValue.replace("%kdr%", kdrString, ignoreCase = true)
+        footerValue = replaceStyled(footerValue, "%division%", styledDivisionTitle, color)
+        footerValue = footerValue.replace("%divlevel%", divisionLevel, ignoreCase = true)
+        footerValue = footerValue.replace("%divsymbol%", divisionSymbol, ignoreCase = true)
+        footerValue = sanitizeUnresolvedTokens(footerValue)
+
         return Pair(footerValue, color)
     }
 
@@ -137,6 +140,59 @@ object StatsFormatter {
         val color = style?.color ?: config.footerColor
 
         return Pair(footerValue, color)
+    }
+
+    /**
+     * Replaces a placeholder whose substitution carries its own § codes. If any
+     * text follows it, a reset plus the footer colour is inserted so that text
+     * does not inherit the substitution's last colour (or its bold flag).
+     */
+    private fun replaceStyled(
+        template: String,
+        token: String,
+        replacement: String,
+        footerColor: Color
+    ): String {
+        if (!template.contains(token, ignoreCase = true)) return template
+        val suffix = "§r" + chatColorCode(footerColor)
+        return Regex(Regex.escape(token), RegexOption.IGNORE_CASE).replace(template) { match ->
+            if (template.substring(match.range.last + 1).isBlank()) replacement else replacement + suffix
+        }
+    }
+
+    private val CHAT_COLORS: List<Pair<EnumChatFormatting, Color>> = listOf(
+        EnumChatFormatting.BLACK to Color(0, 0, 0),
+        EnumChatFormatting.DARK_BLUE to Color(0, 0, 170),
+        EnumChatFormatting.DARK_GREEN to Color(0, 170, 0),
+        EnumChatFormatting.DARK_AQUA to Color(0, 170, 170),
+        EnumChatFormatting.DARK_RED to Color(170, 0, 0),
+        EnumChatFormatting.DARK_PURPLE to Color(170, 0, 170),
+        EnumChatFormatting.GOLD to Color(255, 170, 0),
+        EnumChatFormatting.GRAY to Color(170, 170, 170),
+        EnumChatFormatting.DARK_GRAY to Color(85, 85, 85),
+        EnumChatFormatting.BLUE to Color(85, 85, 255),
+        EnumChatFormatting.GREEN to Color(85, 255, 85),
+        EnumChatFormatting.AQUA to Color(85, 255, 255),
+        EnumChatFormatting.RED to Color(255, 85, 85),
+        EnumChatFormatting.LIGHT_PURPLE to Color(255, 85, 255),
+        EnumChatFormatting.YELLOW to Color(255, 255, 85),
+        EnumChatFormatting.WHITE to Color(255, 255, 255)
+    )
+
+    private fun chatColorCode(color: Color): String {
+        var best = EnumChatFormatting.WHITE
+        var bestDist = Int.MAX_VALUE
+        for ((fmt, c) in CHAT_COLORS) {
+            val dr = color.red - c.red
+            val dg = color.green - c.green
+            val db = color.blue - c.blue
+            val dist = dr * dr + dg * dg + db * db
+            if (dist < bestDist) {
+                bestDist = dist
+                best = fmt
+            }
+        }
+        return best.toString()
     }
 
     private fun sanitizeUnresolvedTokens(value: String): String {

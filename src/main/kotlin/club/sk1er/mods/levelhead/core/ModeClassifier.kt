@@ -165,14 +165,14 @@ object ModeClassifier {
             it.contains("Players Left:", ignoreCase = true) ||
                 it.contains("Kills:", ignoreCase = true) ||
                 it.contains("Next Event:", ignoreCase = true) ||
-                it.contains("Time Left:", ignoreCase = true) ||
-                it.contains("Cages Open in", ignoreCase = true)
+                it.contains("Time Left:", ignoreCase = true)
         }
         val preGameIndicators = lines.any {
             it.contains("Starting in", ignoreCase = true) ||
                 it.contains("Players:", ignoreCase = true) ||
                 it.contains("Map:", ignoreCase = true) ||
-                it.contains("Mode:", ignoreCase = true)
+                it.contains("Mode:", ignoreCase = true) ||
+                it.contains("Cages Open in", ignoreCase = true)
         }
         val mainLobbyIndicators = lines.any {
             it.contains("Coins:", ignoreCase = true) ||
@@ -180,7 +180,7 @@ object ModeClassifier {
                 it.contains("Soul Well", ignoreCase = true)
         }
 
-        return if (matchIndicators) {
+        return if (matchIndicators && !mainLobbyIndicators) {
             ModeContext.MATCH
         } else if (preGameIndicators && !mainLobbyIndicators) {
             ModeContext.LOBBY

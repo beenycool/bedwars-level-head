@@ -52,12 +52,14 @@ function includes<T extends string>(values: readonly T[], value: string | undefi
   return value !== undefined && (values as readonly string[]).includes(value);
 }
 
+const ZONE_LESS_DATETIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?$/;
+
 function parseDate(raw: unknown): Date | null {
   const value = firstValue(raw);
   if (!value) {
     return null;
   }
-  const date = new Date(value);
+  const date = new Date(ZONE_LESS_DATETIME.test(value) ? `${value}Z` : value);
   return Number.isNaN(date.getTime()) ? null : date;
 }
 

@@ -80,4 +80,4 @@ jobs:
     steps:
       - name: Trigger Render deploy
         run: |
-          curl -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"
+          curl -fsS -o /dev/null -X POST "${{ secrets.RENDER_DEPLOY_HOOK }}"

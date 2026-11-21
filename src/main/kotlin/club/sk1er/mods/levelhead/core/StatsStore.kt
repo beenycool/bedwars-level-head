@@ -65,9 +65,15 @@ class StatsStore(
 
     fun needsFetch(uuid: UUID, gameMode: GameMode, now: Long = clock()): Boolean {
         val state = state(uuid, gameMode) ?: return true
-        if (state is StatsState.Loading) return false
+        if (state is StatsState.Loading) return isStaleLoading(state, now)
         val stats = state.statsOrNull ?: return true
         return stats.isExpired(ttlProvider(), now)
+    }
+
+    /** True only for a [StatsState.Loading] placeholder young enough to describe real work. */
+    fun isLoading(uuid: UUID, gameMode: GameMode, now: Long = clock()): Boolean {
+        val state = state(uuid, gameMode) ?: return false
+        return state is StatsState.Loading && !isStaleLoading(state, now)
     }
 
     fun putSuccess(uuid: UUID, gameMode: GameMode, stats: GameStats, now: Long = clock()) {
@@ -101,6 +107,11 @@ class StatsStore(
         val existing = entries[key]
         if (existing != null) {
             existing.access = accessCounter.incrementAndGet()
+            // A stranded placeholder is re-armed by the owner that adopted it.
+            val state = existing.state
+            if (state is StatsState.Loading && isStaleLoading(state, now)) {
+                put(uuid, gameMode, StatsState.Loading(now))
+            }
             return
         }
         put(uuid, gameMode, StatsState.Loading(now))
@@ -143,6 +154,9 @@ class StatsStore(
         }
     }
 
+    private fun isStaleLoading(state: StatsState.Loading, now: Long): Boolean =
+        now - state.fetchedAt >= LOADING_STALE_MS
+
     private fun evictOldest(except: StatsKey) {
         val oldest = entries.entries
             .asSequence()
@@ -156,6 +170,7 @@ class StatsStore(
         const val DEFAULT_MAX_ENTRIES = 500
         const val HARD_MAX_ENTRIES = 10_000
         const val DEFAULT_TTL_MINUTES = 45L
+        const val LOADING_STALE_MS = 60_000L
     }
 }
 

@@ -147,7 +147,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         name = "Duels Footer",
         description = "Choose what Duels shows in the footer.",
         category = "Display",
-        options = ["Division Title", "Wins", "WLR", "Custom"]
+        options = ["Division Title", "Wins", "WLR", "Custom", "Division Symbol"]
     )
     var duelsStatDisplayIndex: Int = DuelsStatMode.DIVISION_TITLE.ordinal
         set(value) {
@@ -158,7 +158,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Text(
         name = "Duels Custom Format",
         placeholder = "%division%",
-        description = "Used when Duels Footer is set to Custom. Tokens: %division%, %divlevel%, %wins%, %losses%, %wlr%.",
+        description = "Used when Duels Footer is set to Custom. Tokens: %division%, %divlevel%, %divsymbol%, %wins%, %losses%, %wlr%, %kdr%.",
         category = "Display"
     )
     var duelsCustomFooterFormat: String = "%division%"
@@ -182,7 +182,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     @Text(
         name = "SkyWars Custom Format",
         placeholder = "%star%",
-        description = "Used when SkyWars Footer is set to Custom. Tokens: %star%, %level%, %wins%, %losses%, %wlr%.",
+        description = "Used when SkyWars Footer is set to Custom. Tokens: %star%, %level%, %wins%, %losses%, %wlr%, %kdr%.",
         category = "Display"
     )
     var skywarsCustomFooterFormat: String = "%star%"

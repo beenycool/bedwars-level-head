@@ -22,6 +22,7 @@ data class FetchWork(
 class FetchExecutor(
     private val worldScopeProvider: () -> CoroutineScope,
     private val rateLimiter: RateLimiter,
+    private val store: StatsStore,
     private val logger: Logger,
     private val batchFetcher: suspend (List<UUID>) -> Map<UUID, FetchResult> = { ProxyClient.fetchBatch(it) },
     private val backoff: FetchBackoff = FetchBackoff
@@ -204,6 +205,15 @@ class FetchExecutor(
                 "[LevelheadDebug][request] joining proxy batch: uuid=${cacheKey.uuid.maskForLogs()} mode=${cacheKey.gameMode.name}"
             }
             return proxyDeferred
+        }
+
+        // Another owner may have completed this key during the batch round-trip.
+        val fresh = store.get(cacheKey.uuid, cacheKey.gameMode)
+        if (fresh != null && !store.needsFetch(cacheKey.uuid, cacheKey.gameMode)) {
+            DebugLogging.logRequestDebug {
+                "[LevelheadDebug][request] fresh-skip: uuid=${cacheKey.uuid.maskForLogs()} mode=${cacheKey.gameMode.name}"
+            }
+            return CompletableDeferred(fresh)
         }
 
         val cached = work.cached
