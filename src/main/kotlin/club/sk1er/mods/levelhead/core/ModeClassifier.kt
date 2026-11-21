@@ -1,5 +1,6 @@
 package club.sk1er.mods.levelhead.core
 
+import club.sk1er.mods.levelhead.config.LevelheadConfig
 import java.util.Locale
 
 enum class ModeContext {
@@ -154,6 +155,8 @@ object ModeClassifier {
             hasTeamLines && (hasBedwarsTitle || hasBedwarsIndicators) -> ModeContext.MATCH
             hasBedwarsIndicators && !hasHubLines -> ModeContext.LOBBY
             hasBedwarsTitle && hasLobbyLines && !hasHubLines -> ModeContext.LOBBY
+            LevelheadConfig.showInHubs && hasHubLines && (hasBedwarsTitle || hasBedwarsIndicators) ->
+                ModeContext.LOBBY
             else -> ModeContext.NONE
         }
     }
@@ -183,6 +186,8 @@ object ModeClassifier {
         return if (matchIndicators && !mainLobbyIndicators) {
             ModeContext.MATCH
         } else if (preGameIndicators && !mainLobbyIndicators) {
+            ModeContext.LOBBY
+        } else if (LevelheadConfig.showInHubs && mainLobbyIndicators) {
             ModeContext.LOBBY
         } else {
             ModeContext.NONE

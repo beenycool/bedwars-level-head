@@ -129,11 +129,11 @@ function renderFilters(query: StatsQuery, data: StatsPageData): string {
       </div>
       <div class="filter-group">
         <label for="limitInput">Limit</label>
-        <select id="limitInput" name="limit">${limitOptions}</select>
+        <select id="limitInput" name="limit" onchange="this.form.submit()">${limitOptions}</select>
       </div>
       <div class="filter-group">
         <label for="refreshInput">Auto-refresh</label>
-        <select id="refreshInput" name="refresh">${refreshOptions}</select>
+        <select id="refreshInput" name="refresh" onchange="this.form.submit()">${refreshOptions}</select>
       </div>
       <div class="filter-presets">${presets}</div>
       <div class="filter-actions">
@@ -153,7 +153,7 @@ function renderMetricForm(query: StatsQuery): string {
 
   return `<form method="get" action="/stats" class="metric-form">
     ${hiddenQuery(query, ['metric'])}
-    <select name="metric" aria-label="Latency metric">${options}</select>
+    <select name="metric" aria-label="Latency metric" onchange="this.form.submit()">${options}</select>
     <button type="submit">Apply</button>
   </form>`;
 }
@@ -361,14 +361,15 @@ function seriesLabels(query: StatsQuery, series: TimePoint[]): string[] {
   });
 }
 
-function renderTopPlayers(players: TopPlayer[]): string {
+function renderTopPlayers(query: StatsQuery, players: TopPlayer[]): string {
   const max = Math.max(1, ...players.map((player) => player.count));
   const rows = players
     .map((player) => {
       const name = player.username ?? shortenUuid(player.identifier);
       const width = ((player.count / max) * 100).toFixed(1);
+      const href = statsHref(query, { search: player.username ?? player.identifier, page: 1 });
       return `<li>
-        <span class="bar-list__label" title="${escapeHtml(name)}">${escapeHtml(name)}</span>
+        <a class="bar-list__label" href="${escapeHtml(href)}" title="Filter lookups for ${escapeHtml(name)}">${escapeHtml(name)}</a>
         <span class="bar-list__track"><span style="width:${width}%"></span></span>
         <span class="bar-list__value">${formatNumber(player.count)}</span>
       </li>`;
@@ -515,7 +516,7 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
         charts.latencyHistogram.map((slice) => slice.count),
       ),
     )}
-    ${renderTopPlayers(charts.topPlayers)}
+    ${renderTopPlayers(query, charts.topPlayers)}
     ${chartCard(
       'Process Memory Over Time',
       `${(lastMemory?.rssMb ?? 0).toFixed(0)} MB RSS`,
@@ -554,7 +555,7 @@ function renderRow(row: LookupLogTable): string {
   const profileUrl = `https://namemc.com/profile/${encodeURIComponent(row.identifier)}`;
 
   return `<tr>
-    <td class="col-seen col-time" title="${escapeHtml(formatIsoMinute(row.looked_up_at))}">${escapeHtml(formatRelativeTime(row.looked_up_at))}</td>
+    <td class="col-seen col-time" title="UTC ${escapeHtml(formatIsoMinute(row.looked_up_at))}"><time datetime="${row.looked_up_at.toISOString()}" data-utc="${row.looked_up_at.toISOString()}">${escapeHtml(formatRelativeTime(row.looked_up_at))}</time></td>
     <td class="col-lookup"><a class="lookup-link" href="${profileUrl}" target="_blank" rel="noopener noreferrer">UUID: ${escapeHtml(shortenUuid(row.identifier))}</a></td>
     <td>${escapeHtml(resolved)}</td>
     <td class="stars">${escapeHtml(stars)}</td>
@@ -605,7 +606,7 @@ function renderTable(query: StatsQuery, data: StatsPageData): string {
     <form class="search-box" method="get" action="/stats">
       ${hiddenQuery(query, ['q', 'sort', 'page'])}
       <input type="search" name="q" value="${escapeHtml(query.search)}" placeholder="Search by username or UUID" aria-label="Search players">
-      <select name="sort" aria-label="Sort lookups">
+      <select name="sort" aria-label="Sort lookups" onchange="this.form.submit()">
         <option value="recent"${query.sort === 'recent' ? ' selected' : ''}>Recent first</option>
         <option value="slowest"${query.sort === 'slowest' ? ' selected' : ''}>Slowest first</option>
         <option value="stars"${query.sort === 'stars' ? ' selected' : ''}>Highest stars</option>
@@ -618,6 +619,12 @@ function renderTable(query: StatsQuery, data: StatsPageData): string {
   ${body}`;
 }
 
+const LOCAL_TIME_SCRIPT = `document.querySelectorAll('time[data-utc]').forEach(function (el) {
+  var date = new Date(el.getAttribute('data-utc'));
+  if (isNaN(date.getTime())) return;
+  el.textContent = date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+});`;
+
 export function renderStatsPage({ query, data, retentionDays }: StatsPageProps): string {
   const exportParams = queryParams(query);
   exportParams.delete('page');
@@ -626,8 +633,9 @@ export function renderStatsPage({ query, data, retentionDays }: StatsPageProps):
   return renderLayout({
     title: 'Levelhead Player Stats',
     heading: 'Levelhead Analytics',
-    subtitle: 'Live snapshot of BedWars lookups (rendered locally, no external dashboards).',
+    subtitle: 'Live snapshot of player lookups: BedWars stars, cache hit rate and upstream latency. Rendered locally, no external dashboards.',
     refreshSeconds: query.refresh,
+    script: LOCAL_TIME_SCRIPT,
     body: `${renderFilters(query, data)}
 ${renderStats(query, data)}
 ${renderInfrastructure(data)}
@@ -644,7 +652,7 @@ export function renderUnavailablePage(reason: string): string {
   return renderLayout({
     title: 'Levelhead Player Stats',
     heading: 'Levelhead Analytics',
-    subtitle: 'Live snapshot of BedWars lookups (rendered locally, no external dashboards).',
+    subtitle: 'Live snapshot of player lookups: BedWars stars, cache hit rate and upstream latency. Rendered locally, no external dashboards.',
     body: `<div class="card notice">
       <h2>Tracking database unavailable</h2>
       <p class="meta">${escapeHtml(reason)}</p>

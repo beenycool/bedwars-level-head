@@ -2,6 +2,7 @@ package club.sk1er.mods.levelhead.commands
 
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.config.LevelheadConfig
+import club.sk1er.mods.levelhead.core.ModeManager
 import cc.polyfrost.oneconfig.utils.commands.annotations.Command
 import cc.polyfrost.oneconfig.utils.commands.annotations.Greedy
 import cc.polyfrost.oneconfig.utils.commands.annotations.Main
@@ -27,9 +28,13 @@ class LevelheadCommand {
         val lastAttempt = formatAge(snapshot.lastAttemptAgeMillis)
         val lastSuccess = formatAge(snapshot.lastSuccessAgeMillis)
         val rateReset = formatAge(snapshot.rateLimitResetMillis)
+        val modeText = describeMode()
+        val hypixelText = describeHypixelCheck()
 
         sendMessage("${ChatColor.GREEN}Status snapshot:")
         sendMessage("${ChatColor.YELLOW}Backend: ${ChatColor.GOLD}$backend")
+        sendMessage("${ChatColor.YELLOW}Mode: $modeText")
+        sendMessage("${ChatColor.YELLOW}Hypixel check: $hypixelText")
         sendMessage("${ChatColor.YELLOW}Cache size: ${ChatColor.GOLD}${snapshot.cacheSize}")
         sendMessage(
             "${ChatColor.YELLOW}Star cache TTL: ${ChatColor.GOLD}${snapshot.starCacheTtlMinutes}m" +
@@ -57,9 +62,31 @@ class LevelheadCommand {
         Levelhead.scope.launch {
             WhoisService.runWhoisCommand(
                 identifier = identifier,
-                hintCommand = "/levelhead whois <player>",
+                hintCommand = "/levelhead whois <player|uuid> [bw|duels|sw]",
                 hintSuggestion = "/levelhead whois "
             )
+        }
+    }
+
+    private fun describeMode(): String {
+        val activeMode = ModeManager.getActiveGameMode()
+            ?: return "${ChatColor.GOLD}None ${ChatColor.GRAY}\u2014 not in a game"
+        val contextSuffix = if (ModeManager.tracker.mode == activeMode) {
+            val context = ModeManager.tracker.context
+            if (context.isActive) " ${ChatColor.GRAY}(${context.name})" else ""
+        } else {
+            ""
+        }
+        return "${ChatColor.GOLD}${activeMode.displayName}$contextSuffix"
+    }
+
+    private fun describeHypixelCheck(): String {
+        val serverIp = Minecraft.getMinecraft().currentServerData?.serverIP
+        return when {
+            LevelheadConfig.forceEnabled -> "${ChatColor.GREEN}Forced on"
+            Levelhead.isOnHypixel() -> "${ChatColor.GREEN}Active"
+            serverIp.isNullOrBlank() -> "${ChatColor.GRAY}Skipped \u2014 not connected to a server"
+            else -> "${ChatColor.GRAY}Skipped \u2014 server '$serverIp' does not match 'hypixel'"
         }
     }
 

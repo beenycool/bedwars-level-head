@@ -12,9 +12,11 @@ class LevelheadTag(val owner: UUID) {
     override fun toString(): String = "LevelheadTag{header=$header, footer=$footer, owner=$owner}"
 
     class LevelheadComponent {
+        private val legacyColorCode = Regex("&(?=[0-9a-fk-orA-FK-OR])")
+
         var value: String = ""
             set(v) {
-                field = v.replace("&", "\u00a7")
+                field = legacyColorCode.replace(v, "\u00a7")
             }
 
         var color: Color = Color.WHITE

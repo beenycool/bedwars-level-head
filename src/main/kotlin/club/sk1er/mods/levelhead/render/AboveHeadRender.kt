@@ -21,13 +21,23 @@ import java.awt.Color
 
 object AboveHeadRender {
 
-    private const val TAG_LINE_HEIGHT_BLOCKS = 9f * 0.016666668f * 1.6f
+    private const val TEXT_SCALE = 0.016666668f * 1.6f
+
+    private const val TAG_LINE_HEIGHT_PIXELS = 9f
 
     private const val BELOW_NAMETAG_GAP = 0.03f
 
-    private const val BELOW_NAMETAG_DROP = TAG_LINE_HEIGHT_BLOCKS + BELOW_NAMETAG_GAP
+    private const val ABOVE_HEAD_BASE_OFFSET = 0.3
 
-    private const val TEXT_SCALE = 0.016666668f * 1.6f
+    private const val STACK_SPACING = 0.3
+
+    private const val MIN_TAG_SCALE = 0.5f
+    private const val MAX_TAG_SCALE = 1.5f
+
+    private fun effectiveTagScale(config: MasterConfig): Float {
+        val scale = config.tagScale
+        return if (scale.isNaN() || scale < MIN_TAG_SCALE || scale > MAX_TAG_SCALE) 1.0f else scale
+    }
 
     @SubscribeEvent
     fun render(event: RenderLivingEvent.Specials.Post<EntityLivingBase>) {
@@ -53,53 +63,53 @@ object AboveHeadRender {
         val localPlayer = mc.thePlayer
         val isSelf = player.isSelf
 
-        var index = 0
-        while (index < displays.size) {
+        val tagScale = effectiveTagScale(config)
+
+        for (index in displays.indices) {
             val display = displays[index]
+            if (!display.config.enabled) continue
             // Keep the second isSelf call: PolyNametag redirects ordinal 1 to apply
             // its show-own-nametag setting.
-            if (display.config.enabled &&
-                !(player.isSelf && !display.config.showSelf) &&
-                display.loadOrRender(player)
-            ) {
-                val stats = Levelhead.getCachedStats(entity.uniqueID, activeMode) ?: return
-                val polyNametag = NametagShadowCompat.polyNametagActive
-                val textShadow = if (polyNametag) false else (NametagShadowCompat.patcherTextShadow() ?: config.textShadow)
+            if (player.isSelf && !display.config.showSelf) continue
+            if (!display.loadOrRender(player)) continue
 
-                val anchoredOffset = if (isSelf) {
-                    config.offset
-                } else {
-                    var offset = 0.3
-                    if (localPlayer != null &&
-                        player.worldScoreboard.getObjectiveInDisplaySlot(2) != null &&
-                        player.getDistanceSqToEntity(localPlayer) < 100.0
-                    ) {
-                        offset *= 2
-                    }
-                    offset + config.offset
+            val stats = Levelhead.getCachedStats(entity.uniqueID, activeMode) ?: continue
+            val polyNametag = NametagShadowCompat.polyNametagActive
+            val textShadow = if (polyNametag) false else (NametagShadowCompat.patcherTextShadow() ?: config.textShadow)
+
+            val anchoredOffset = if (isSelf) {
+                config.offset
+            } else {
+                var offset = ABOVE_HEAD_BASE_OFFSET * tagScale
+                if (localPlayer != null &&
+                    player.worldScoreboard.getObjectiveInDisplaySlot(2) != null &&
+                    player.getDistanceSqToEntity(localPlayer) < 100.0
+                ) {
+                    offset *= 2
                 }
-
-                val tag = TagFormatter.formatTag(
-                    player.uniqueID,
-                    stats,
-                    display.config,
-                    activeMode,
-                    statsVersion = Levelhead.statsStore.version(entity.uniqueID, activeMode)
-                )
-                val stacking = index * 0.3
-                renderName(
-                    tag,
-                    player,
-                    event.x,
-                    event.y,
-                    event.z,
-                    aboveHeadOffset = anchoredOffset + stacking,
-                    belowOffset = config.offset + stacking,
-                    textShadow = textShadow,
-                    polyNametag = polyNametag
-                )
+                offset + config.offset
             }
-            index++
+
+            val tag = TagFormatter.formatTag(
+                player.uniqueID,
+                stats,
+                display.config,
+                activeMode,
+                statsVersion = Levelhead.statsStore.version(entity.uniqueID, activeMode)
+            )
+            val stacking = index * STACK_SPACING * tagScale
+            renderName(
+                tag,
+                player,
+                event.x,
+                event.y,
+                event.z,
+                aboveHeadOffset = anchoredOffset + stacking,
+                belowOffset = config.offset + stacking,
+                textShadow = textShadow,
+                polyNametag = polyNametag,
+                tagScale = tagScale
+            )
         }
     }
 
@@ -112,7 +122,8 @@ object AboveHeadRender {
         aboveHeadOffset: Double,
         belowOffset: Double,
         textShadow: Boolean,
-        polyNametag: Boolean
+        polyNametag: Boolean,
+        tagScale: Float
     ) {
         // An empty tag with the background enabled would draw a bare 3x9 box.
         if (tag.getString().isBlank()) return
@@ -121,11 +132,17 @@ object AboveHeadRender {
         val fontRenderer = mc.fontRendererObj
         val config = displayManager.config
 
+        val textScale = TEXT_SCALE * tagScale
+        val lineHeightBlocks = TAG_LINE_HEIGHT_PIXELS * textScale
+        // The below drop already accounts for the vanilla below-name line lift, so
+        // the subtracted offset must not be doubled like the above-head slot anchor.
+        val belowNametagDrop = lineHeightBlocks + BELOW_NAMETAG_GAP
+
         val vanillaAnchorY = y.toFloat() + entityIn.height + 0.5f
         val renderY = when (config.displayPosition) {
             MasterConfig.DisplayPosition.ABOVE -> vanillaAnchorY + aboveHeadOffset.toFloat()
             MasterConfig.DisplayPosition.BELOW ->
-                vanillaAnchorY - BELOW_NAMETAG_DROP - belowOffset.toFloat()
+                vanillaAnchorY - belowNametagDrop - belowOffset.toFloat()
         }
 
         val header = tag.header
@@ -141,7 +158,7 @@ object AboveHeadRender {
             val viewXMultiplier = if (mc.gameSettings != null && mc.gameSettings.thirdPersonView == 2) -1f else 1f
             GlStateManager.rotate(-renderManager.playerViewY, 0.0f, 1.0f, 0.0f)
             GlStateManager.rotate(renderManager.playerViewX * viewXMultiplier, 1.0f, 0.0f, 0.0f)
-            GlStateManager.scale(-TEXT_SCALE, -TEXT_SCALE, TEXT_SCALE)
+            GlStateManager.scale(-textScale, -textScale, textScale)
 
             GlStateManager.disableLighting()
             GlStateManager.depthMask(false)

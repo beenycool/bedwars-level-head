@@ -10,6 +10,7 @@ import club.sk1er.mods.levelhead.core.ModeManager
 import club.sk1er.mods.levelhead.core.StatsLookup
 import club.sk1er.mods.levelhead.core.await
 import club.sk1er.mods.levelhead.core.dashUUID
+import club.sk1er.mods.levelhead.duels.DuelsStats
 import club.sk1er.mods.levelhead.skywars.SkyWarsStats
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
@@ -22,19 +23,21 @@ import net.minecraft.util.IChatComponent
 import net.minecraft.util.EnumChatFormatting as ChatColor
 import okhttp3.HttpUrl
 import okhttp3.Request
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 import java.util.Locale
 import java.util.UUID
 import kotlin.coroutines.resume
 
 object WhoisService {
 
-    suspend fun lookupWhois(identifier: String): WhoisResult {
+    suspend fun lookupWhois(identifier: String, gameMode: GameMode? = null): WhoisResult {
         val resolved = resolvePlayerIdentifier(identifier)
             ?: throw CommandException(
                 "Could not resolve '$identifier' to a player UUID.",
                 CommandUtils.buildInteractiveFeedback(
                     messagePrefix = "${ChatColor.RED}Could not resolve '$identifier'.${ChatColor.YELLOW} Try ",
-                    command = "/levelhead whois <player>",
+                    command = "/levelhead whois <player> [bw|duels|sw]",
                     run = false,
                     suggestedCommand = "/levelhead whois ",
                     suffix = "${ChatColor.YELLOW} with a valid name or UUID.",
@@ -42,19 +45,19 @@ object WhoisService {
                 )
             )
 
-        val gameMode = ModeManager.getActiveGameMode() ?: GameMode.BEDWARS
+        val resolvedMode = gameMode ?: ModeManager.getActiveGameMode() ?: GameMode.BEDWARS
 
-        return fetchWhois(resolved, gameMode)
+        return fetchWhois(resolved, resolvedMode)
     }
 
-    suspend fun lookupWhoisComponent(identifier: String): IChatComponent {
-        val result = lookupWhois(identifier)
-        return formatResultComponent(result)
+    suspend fun lookupWhoisComponent(identifier: String, gameMode: GameMode? = null): IChatComponent {
+        val result = lookupWhois(identifier, gameMode)
+        return formatSummaryLine(result)
     }
 
     suspend fun runWhoisCommand(
         identifier: String,
-        hintCommand: String = "/whois <player|uuid>",
+        hintCommand: String = "/whois <player|uuid> [bw|duels|sw]",
         hintSuggestion: String = "/whois "
     ) {
         val trimmed = identifier.trim()
@@ -72,11 +75,13 @@ object WhoisService {
             return
         }
 
+        val input = parseWhoisInput(trimmed)
         CommandUtils.sendPrefixedChat(
-            ChatComponentText("${ChatColor.YELLOW}Looking up stats for ${ChatColor.GOLD}$trimmed${ChatColor.YELLOW}...")
+            ChatComponentText("${ChatColor.YELLOW}Looking up stats for ${ChatColor.GOLD}${input.query}${ChatColor.YELLOW}...")
         )
         try {
-            CommandUtils.sendPrefixedChat(lookupWhoisComponent(trimmed))
+            val result = lookupWhois(input.query, input.gameMode)
+            formatResultLines(result).forEach { CommandUtils.sendPrefixedChat(it) }
         } catch (ex: CommandException) {
             CommandUtils.sendPrefixedChat(ex.component ?: ChatComponentText("${ChatColor.RED}${ex.message}"))
         } catch (throwable: Throwable) {
@@ -160,45 +165,141 @@ object WhoisService {
         gameMode: GameMode,
         nicked: Boolean
     ): WhoisResult {
-        val statValue = when (stats) {
-            is GameStats.Bedwars -> stats.star?.let {
-                "$it${stats.starIcon ?: BedwarsStar.getPrestigeIcon(it)}"
-            } ?: "?"
-            is GameStats.Duels -> stats.wins?.toString() ?: "?"
-            is GameStats.SkyWars -> stats.level?.let { "${it.toInt()}${SkyWarsStats.getDefaultEmblem(it.toInt())}" } ?: "?"
-            null -> "?"
-        }
-
-        val primaryStatName = when (gameMode) {
-            GameMode.BEDWARS -> "Star"
-            GameMode.DUELS -> "Wins"
-            GameMode.SKYWARS -> "Level"
-        }
-
         return WhoisResult(
             uuid = uuid,
             displayName = displayName,
-            statValue = statValue,
-            statName = primaryStatName,
+            stats = stats,
             nicked = nicked,
             gameMode = gameMode
         )
     }
 
-    private fun formatResultComponent(result: WhoisResult): IChatComponent {
+    private fun formatResultLines(result: WhoisResult): List<IChatComponent> {
+        return listOf(formatSummaryLine(result), formatLinkLine(result))
+    }
+
+    private fun formatSummaryLine(result: WhoisResult): IChatComponent {
+        val line = ChatComponentText("")
+        line.appendSibling(
+            CommandUtils.createClickableCommand(
+                "/levelhead whois ${result.displayName}",
+                run = false,
+                displayText = "${ChatColor.YELLOW}${result.displayName}",
+                hoverTextOverride = "${ChatColor.GREEN}Click to fill /levelhead whois ${result.displayName}"
+            )
+        )
+
         val alreadySuffixed = result.displayName.trim().equals("(nicked)", ignoreCase = true)
-        val nickedText = if (result.nicked && !alreadySuffixed) " ${ChatColor.GRAY}(nicked)" else ""
+        if (result.nicked && !alreadySuffixed) {
+            line.appendSibling(styled(" (nicked)", ChatColor.GRAY))
+        }
 
-        val nameComponent = CommandUtils.createClickableCommand(
-            result.uuid.toString(),
-            run = false,
-            displayText = "${ChatColor.YELLOW}${result.displayName}",
-            hoverTextOverride = "${ChatColor.GREEN}Click to fill UUID"
-        )
+        when (result.gameMode) {
+            GameMode.BEDWARS -> appendBedwarsSummary(line, result.stats as? GameStats.Bedwars)
+            GameMode.DUELS -> appendDuelsSummary(line, result.stats as? GameStats.Duels)
+            GameMode.SKYWARS -> appendSkyWarsSummary(line, result.stats as? GameStats.SkyWars)
+        }
+        return line
+    }
 
-        return nameComponent.appendSibling(
-            ChatComponentText("$nickedText ${ChatColor.YELLOW}is ${ChatColor.GOLD}${result.statValue} ${ChatColor.YELLOW}(${result.gameMode.displayName} ${result.statName})")
+    private fun appendBedwarsSummary(line: IChatComponent, stats: GameStats.Bedwars?) {
+        val star = stats?.star
+        val icon = stats?.starIcon ?: star?.let { BedwarsStar.getPrestigeIcon(it) }
+        val starText = if (star != null) "[$star${icon ?: ""}]" else "?"
+        line.appendSibling(styled(" $starText", ChatColor.LIGHT_PURPLE))
+        appendSeparator(line)
+        line.appendSibling(styled("FKDR ", ChatColor.GRAY))
+        line.appendSibling(styled(formatRatio(stats?.fkdr), ChatColor.GOLD))
+    }
+
+    private fun appendDuelsSummary(line: IChatComponent, stats: GameStats.Duels?) {
+        val wins = stats?.wins
+        val losses = stats?.losses
+        appendSeparator(line)
+        line.appendSibling(divisionComponent(wins?.let { DuelsStats.getOverallDivisionInfo(it) }))
+        appendSeparator(line)
+        line.appendSibling(styled("${wins ?: "?"}W / ${losses ?: "?"}L", ChatColor.WHITE))
+        line.appendSibling(styled(" (", ChatColor.GRAY))
+        line.appendSibling(styled(formatRatio(DuelsStats.calculateWLR(wins, losses)), ChatColor.GOLD))
+        line.appendSibling(styled(" WLR)", ChatColor.GRAY))
+        appendSeparator(line)
+        line.appendSibling(styled(formatRatio(DuelsStats.calculateKDR(stats?.kills, stats?.deaths)), ChatColor.GOLD))
+        line.appendSibling(styled(" KDR", ChatColor.GRAY))
+    }
+
+    private fun appendSkyWarsSummary(line: IChatComponent, stats: GameStats.SkyWars?) {
+        val level = stats?.level?.toInt()
+        val levelText = level?.let { "$it${SkyWarsStats.getDefaultEmblem(it)}" } ?: "?"
+        val wins = stats?.wins
+        val losses = stats?.losses
+        appendSeparator(line)
+        line.appendSibling(styled(levelText, ChatColor.AQUA))
+        appendSeparator(line)
+        line.appendSibling(styled("${wins ?: "?"}W / ${losses ?: "?"}L", ChatColor.WHITE))
+        line.appendSibling(styled(" (", ChatColor.GRAY))
+        line.appendSibling(styled(formatRatio(SkyWarsStats.calculateWLR(wins, losses)), ChatColor.GOLD))
+        line.appendSibling(styled(" WLR)", ChatColor.GRAY))
+        appendSeparator(line)
+        line.appendSibling(styled(formatRatio(SkyWarsStats.calculateKDR(stats?.kills, stats?.deaths)), ChatColor.GOLD))
+        line.appendSibling(styled(" KDR", ChatColor.GRAY))
+    }
+
+    private fun formatLinkLine(result: WhoisResult): IChatComponent {
+        val line = ChatComponentText("")
+        line.appendSibling(
+            CommandUtils.createClickableUrl(
+                "https://namemc.com/profile/${result.uuid}",
+                "${ChatColor.AQUA}NameMC",
+                hoverTextOverride = "${ChatColor.GREEN}Open NameMC profile for ${result.displayName}"
+            )
         )
+        appendSeparator(line)
+        line.appendSibling(
+            CommandUtils.createClickableUrl(
+                "https://plancke.io/hypixel/player/stats/${result.displayName.encodeForUrl()}",
+                "${ChatColor.AQUA}Plancke",
+                hoverTextOverride = "${ChatColor.GREEN}Open Plancke stats for ${result.displayName}"
+            )
+        )
+        return line
+    }
+
+    private fun divisionComponent(info: DuelsStats.OverallDivisionInfo?): IChatComponent {
+        return ChatComponentText(info?.displayName ?: "?").apply {
+            chatStyle.setColor(ChatColor.GOLD)
+            chatStyle.setBold(info?.bold == true)
+        }
+    }
+
+    private fun appendSeparator(line: IChatComponent) {
+        line.appendSibling(styled(" · ", ChatColor.DARK_GRAY))
+    }
+
+    private fun styled(text: String, color: ChatColor): ChatComponentText {
+        return ChatComponentText(text).apply { chatStyle.setColor(color) }
+    }
+
+    private fun formatRatio(value: Double?): String {
+        return value?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "?"
+    }
+
+    private fun String.encodeForUrl(): String {
+        return URLEncoder.encode(this, StandardCharsets.UTF_8.name())
+    }
+
+    private fun parseWhoisInput(input: String): WhoisInput {
+        val trimmed = input.trim()
+        val lastSpace = trimmed.lastIndexOf(' ')
+        if (lastSpace <= 0) {
+            return WhoisInput(trimmed, null)
+        }
+        val token = trimmed.substring(lastSpace + 1).lowercase(Locale.ROOT)
+        val mode = whoisModeTokens[token] ?: return WhoisInput(trimmed, null)
+        val query = trimmed.substring(0, lastSpace).trim()
+        if (query.isEmpty()) {
+            return WhoisInput(trimmed, null)
+        }
+        return WhoisInput(query, mode)
     }
 
     private suspend fun resolvePlayerIdentifier(input: String): ResolvedIdentifier? {
@@ -278,7 +379,7 @@ object WhoisService {
                     "$baseError.",
                     CommandUtils.buildInteractiveFeedback(
                         messagePrefix = "${ChatColor.RED}$baseError.${ChatColor.YELLOW} Check spelling or try ",
-                        command = "/levelhead whois <player>",
+                        command = "/levelhead whois <player> [bw|duels|sw]",
                         run = false,
                         suggestedCommand = "/levelhead whois ",
                         suffix = "${ChatColor.YELLOW} again.",
@@ -301,13 +402,22 @@ object WhoisService {
     data class WhoisResult(
         val uuid: UUID,
         val displayName: String,
-        val statValue: String,
-        val statName: String,
+        val stats: GameStats?,
         val nicked: Boolean,
         val gameMode: GameMode,
     )
 
     data class ResolvedIdentifier(val uuid: UUID, val displayName: String?)
+
+    private data class WhoisInput(val query: String, val gameMode: GameMode?)
+
+    private val whoisModeTokens: Map<String, GameMode> = mapOf(
+        "bw" to GameMode.BEDWARS,
+        "bedwars" to GameMode.BEDWARS,
+        "duels" to GameMode.DUELS,
+        "sw" to GameMode.SKYWARS,
+        "skywars" to GameMode.SKYWARS
+    )
 
     class CommandException(message: String, val component: IChatComponent? = null) : Exception(message)
 

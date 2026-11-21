@@ -10,6 +10,7 @@ import net.minecraft.client.network.NetworkPlayerInfo
 import net.minecraft.scoreboard.IScoreObjectiveCriteria
 import net.minecraft.scoreboard.ScoreObjective
 import net.minecraft.util.EnumChatFormatting
+import net.minecraft.world.WorldSettings
 import java.awt.Color
 import java.util.UUID
 
@@ -18,11 +19,17 @@ object TabRender {
     private data class PreparedEntry(val text: String, val width: Int)
 
     private class FrameState(
+        val id: Long,
         val objective: ScoreObjective?,
         val entries: Map<UUID, PreparedEntry>
     )
 
     private var frameState: FrameState? = null
+
+    // Bumped at the start of every renderPlayerlist pass. If that method throws,
+    // its RETURN hook never calls endFrame(), so state from the aborted pass must
+    // be invalidated by id mismatch rather than by relying on the caller.
+    private var frameId: Long = 0L
 
     private val paddingCache = HashMap<Int, String>()
     private const val PADDING_CACHE_LIMIT = 256
@@ -33,6 +40,7 @@ object TabRender {
 
     @JvmStatic
     fun beginFrame(objective: ScoreObjective?) {
+        val id = ++frameId
         if (!Levelhead.displayManager.config.enabled) {
             frameState = null
             return
@@ -87,7 +95,7 @@ object TabRender {
             )
         }
 
-        frameState = FrameState(objective, map)
+        frameState = FrameState(id, objective, map)
     }
 
     @JvmStatic
@@ -95,10 +103,15 @@ object TabRender {
         frameState = null
     }
 
+    private fun activeFrame(): FrameState? {
+        val state = frameState ?: return null
+        return if (state.id == frameId) state else null
+    }
+
     @JvmStatic
     fun getMeasuredName(original: String, info: NetworkPlayerInfo): String {
         val uuid = info.gameProfile.id ?: return original
-        val entry = frameState?.entries?.get(uuid) ?: return original
+        val entry = activeFrame()?.entries?.get(uuid) ?: return original
         if (entry.width <= 0) return original
 
         val spaceWidth = Minecraft.getMinecraft().fontRendererObj.getCharWidth(' ')
@@ -106,7 +119,7 @@ object TabRender {
 
         val extraSpaces = (entry.width + spaceWidth - 1) / spaceWidth
         if (extraSpaces <= 0) return original
-        return original + spaces(extraSpaces)
+        return original + EnumChatFormatting.RESET.toString() + spaces(extraSpaces)
     }
 
     private fun spaces(count: Int): String {
@@ -122,14 +135,14 @@ object TabRender {
     @JvmStatic
     fun drawPrepared(offset: Int, x: Int, y: Int, info: NetworkPlayerInfo) {
         val uuid = info.gameProfile.id ?: return
-        val state = frameState ?: return
+        val state = activeFrame() ?: return
         val entry = state.entries[uuid] ?: return
 
         val font = Minecraft.getMinecraft().fontRendererObj
         var drawX = offset + x - 12 - entry.width
 
         val objective = state.objective
-        if (objective != null) {
+        if (objective != null && info.gameType != WorldSettings.GameType.SPECTATOR) {
             if (objective.renderType == IScoreObjectiveCriteria.EnumRenderType.HEARTS) {
                 drawX -= HEARTS_COLUMN_WIDTH
             } else {
@@ -143,7 +156,11 @@ object TabRender {
             }
         }
 
-        font.drawStringWithShadow(entry.text, drawX.toFloat(), y.toFloat(), 0xFFFFFF)
+        if (Levelhead.displayManager.tab.config.textShadow) {
+            font.drawStringWithShadow(entry.text, drawX.toFloat(), y.toFloat(), 0xFFFFFF)
+        } else {
+            font.drawString(entry.text, drawX.toFloat(), y.toFloat(), 0xFFFFFF, false)
+        }
     }
 
     private fun colorizeTag(tag: LevelheadTag): String {

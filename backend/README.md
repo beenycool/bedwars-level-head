@@ -90,7 +90,7 @@ See `.env.example`. The short version:
 - `DYNAMIC_RATE_LIMIT_ENABLED` (default true)
 - `DYNAMIC_RATE_LIMIT_MIN` / `DYNAMIC_RATE_LIMIT_MAX` (default 20 / 600 per minute)
 - `DYNAMIC_RATE_LIMIT_CACHE_TTL_MS` (default 10s)
-- `HYPIXEL_HOURLY_QUOTA` (default 7200 calls/hour)
+- `HYPIXEL_HOURLY_QUOTA` (default 3600 calls/hour, i.e. 300 per 5 minutes)
 - `PLAYER_CACHE_DB_TTL_MS` (default 24h)
 - `LOOKUP_TRACKING_ENABLED` (default true; `false` disables `/stats` recording)
 - `LOOKUP_LOG_RETENTION_DAYS` (default 30)

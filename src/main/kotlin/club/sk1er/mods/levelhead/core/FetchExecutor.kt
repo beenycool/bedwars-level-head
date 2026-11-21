@@ -1,5 +1,7 @@
 package club.sk1er.mods.levelhead.core
 
+import club.sk1er.mods.levelhead.bedwars.BatchCacheStatus
+import club.sk1er.mods.levelhead.bedwars.BatchFetchResponse
 import club.sk1er.mods.levelhead.bedwars.FetchResult
 import club.sk1er.mods.levelhead.bedwars.ProxyClient
 import club.sk1er.mods.levelhead.core.DebugLogging.maskForLogs
@@ -24,7 +26,7 @@ class FetchExecutor(
     private val rateLimiter: RateLimiter,
     private val store: StatsStore,
     private val logger: Logger,
-    private val batchFetcher: suspend (List<UUID>) -> Map<UUID, FetchResult> = { ProxyClient.fetchBatch(it) },
+    private val batchFetcher: suspend (List<UUID>) -> BatchFetchResponse = { ProxyClient.fetchBatch(it) },
     private val backoff: FetchBackoff = FetchBackoff
 ) {
     private val inFlightStatsRequests: ConcurrentHashMap<StatsKey, Deferred<GameStats?>> = ConcurrentHashMap()
@@ -87,37 +89,54 @@ class FetchExecutor(
                 DebugLogging.logRequestDebug {
                     "[LevelheadDebug][batch] ${DebugSession.prefix()} chunk size=${chunk.size} rate=${rateLimiter.metricsSnapshot()}"
                 }
-                // One token per identifier, matching the public batch budget.
-                if (!rateLimiter.tryAcquire(chunk.size)) {
-                    // No token: this chunk is not sent. Back off so the retry loop
-                    // does not spin, and let the deferreds complete.
+                // One token per identifier, matching the public batch budget. A
+                // chunk larger than the window must not be dropped wholesale: send
+                // what the window can pay for and fail the remainder normally.
+                val available = rateLimiter.metricsSnapshot().remaining
+                if (available <= 0) {
                     DebugSession.inc("batch_rate_denied", chunk.size)
                     DebugLogging.logRequestDebug {
                         "[LevelheadDebug][batch] ${DebugSession.prefix()} rateDenied chunk=${chunk.size} rate=${rateLimiter.metricsSnapshot()}"
                     }
-                    chunk.forEach { uuid ->
-                        entriesByUuid[uuid].orEmpty().forEach { entry ->
-                            backoff.recordFailure(uuid)
-                            onResult(entry.key, null)
-                            claims[entry.key]?.complete(null)
-                        }
+                    failEntries(chunk, entriesByUuid, claims, onResult)
+                    continue
+                }
+
+                val sent = if (available >= chunk.size) chunk else chunk.take(available)
+                val unsent = chunk.drop(sent.size)
+                if (unsent.isNotEmpty()) {
+                    DebugSession.inc("batch_rate_partial", unsent.size)
+                    DebugLogging.logRequestDebug {
+                        "[LevelheadDebug][batch] ${DebugSession.prefix()} ratePartial chunk=${chunk.size} sent=${sent.size} deferred=${unsent.size} rate=${rateLimiter.metricsSnapshot()}"
                     }
+                    failEntries(unsent, entriesByUuid, claims, onResult)
+                }
+
+                if (!rateLimiter.tryAcquire(sent.size)) {
+                    // Another request can consume the window between the snapshot
+                    // and the acquire; never send work that was not paid for.
+                    DebugSession.inc("batch_rate_denied", sent.size)
+                    DebugLogging.logRequestDebug {
+                        "[LevelheadDebug][batch] ${DebugSession.prefix()} rateDenied chunk=${sent.size} rate=${rateLimiter.metricsSnapshot()}"
+                    }
+                    failEntries(sent, entriesByUuid, claims, onResult)
                     continue
                 }
 
                 lastFetchAttemptAt = System.currentTimeMillis()
                 val fetchStartedAt = System.currentTimeMillis()
-                val results = batchFetcher(chunk)
+                val response = batchFetcher(sent)
+                val results = response.results
                 val successCount = results.values.count { it is FetchResult.Success }
                 DebugSession.inc("batch_chunks")
-                DebugSession.inc("batch_entries", chunk.size)
+                DebugSession.inc("batch_entries", sent.size)
                 DebugSession.inc("batch_results", results.size)
                 DebugSession.inc("batch_success", successCount)
                 DebugLogging.logRequestDebug {
-                    "[LevelheadDebug][batch] ${DebugSession.prefix()} chunk=${chunk.size} results=${results.size} success=$successCount elapsedMs=${System.currentTimeMillis() - fetchStartedAt}"
+                    "[LevelheadDebug][batch] ${DebugSession.prefix()} chunk=${sent.size} results=${results.size} success=$successCount cache=${response.cacheStatus.name} elapsedMs=${System.currentTimeMillis() - fetchStartedAt}"
                 }
 
-                chunk.forEach { uuid ->
+                sent.forEach { uuid ->
                     val result = results[uuid]
                     val entries = entriesByUuid[uuid].orEmpty()
                     if (entries.isEmpty()) return@forEach
@@ -165,13 +184,27 @@ class FetchExecutor(
                     }
                 }
 
-                if (chunk.any { results[it] is FetchResult.Success }) {
+                if (sent.any { results[it] is FetchResult.Success }) {
+                    if (response.cacheStatus == BatchCacheStatus.HIT) {
+                        // Served entirely from the backend cache: no upstream quota
+                        // was spent, so return the identifiers to this window.
+                        rateLimiter.refund(sent.size)
+                        DebugSession.inc("batch_tokens_refunded", sent.size)
+                    }
                     backoff.recordProxySuccess()
                 } else {
                     // The whole chunk failed: stop before sending every remaining
-                    // chunk into a backend that is already refusing us. The retry
-                    // loop re-batches once the backoff expires.
+                    // chunk into a backend that is already refusing us. Complete the
+                    // claimed-but-unsent entries through the failure callback so they
+                    // do not stay Loading until the placeholder expires.
                     backoff.recordProxyFailure()
+                    claims.forEach { (key, deferred) ->
+                        if (!deferred.isCompleted) {
+                            backoff.recordFailure(key.uuid)
+                            onResult(key, null)
+                            deferred.complete(null)
+                        }
+                    }
                     break
                 }
             }
@@ -183,6 +216,25 @@ class FetchExecutor(
         }
 
         return remaining
+    }
+
+    /**
+     * Fail the given identifiers through the normal failure path: record the
+     * backoff, notify the store, and complete the shared deferred.
+     */
+    private fun failEntries(
+        uuids: List<UUID>,
+        entriesByUuid: Map<UUID, List<FetchWork>>,
+        claims: Map<StatsKey, CompletableDeferred<GameStats?>>,
+        onResult: (StatsKey, GameStats?) -> Unit
+    ) {
+        uuids.forEach { uuid ->
+            entriesByUuid[uuid].orEmpty().forEach { entry ->
+                backoff.recordFailure(uuid)
+                onResult(entry.key, null)
+                claims[entry.key]?.complete(null)
+            }
+        }
     }
 
     internal fun ensureStatsFetch(

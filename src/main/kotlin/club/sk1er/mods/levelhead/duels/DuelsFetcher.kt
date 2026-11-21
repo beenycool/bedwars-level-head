@@ -17,9 +17,11 @@ object DuelsFetcher : BaseStatsFetcher() {
         val losses = DuelsStats.parseLosses(payload)
         val kills = DuelsStats.parseKills(payload)
         val deaths = DuelsStats.parseDeaths(payload)
+        val winstreak = DuelsStats.parseWinstreak(payload)
         return GameStats.Duels(
             wins = wins, losses = losses, kills = kills, deaths = deaths,
-            nicked = nicked, fetchedAt = System.currentTimeMillis()
+            nicked = nicked, fetchedAt = System.currentTimeMillis(),
+            winstreak = winstreak
         )
     }
 }

@@ -86,12 +86,18 @@ object StatsPayloadParser {
                     ?.let { minimal.add("active_star", it) }
                 source.get("bedwars_final_kills")?.let { minimal.add("final_kills_bedwars", it) }
                 source.get("bedwars_final_deaths")?.let { minimal.add("final_deaths_bedwars", it) }
+                source.get("bedwars_wins")?.let { minimal.add("wins_bedwars", it) }
+                source.get("bedwars_losses")?.let { minimal.add("losses_bedwars", it) }
+                source.get("bedwars_beds_broken")?.let { minimal.add("beds_broken_bedwars", it) }
+                source.get("bedwars_beds_lost")?.let { minimal.add("beds_lost_bedwars", it) }
+                source.get("bedwars_winstreak")?.let { minimal.add("winstreak", it) }
             }
             GameMode.DUELS -> {
                 source.get("duels_wins")?.let { minimal.add("wins", it) }
                 source.get("duels_losses")?.let { minimal.add("losses", it) }
                 source.get("duels_kills")?.let { minimal.add("kills", it) }
                 source.get("duels_deaths")?.let { minimal.add("deaths", it) }
+                source.get("duels_winstreak")?.let { minimal.add("winstreak", it) }
             }
             GameMode.SKYWARS -> {
                 source.get("skywars_experience")?.let { minimal.add("skywars_experience", it) }

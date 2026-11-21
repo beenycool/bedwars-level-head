@@ -1,5 +1,6 @@
 package club.sk1er.mods.levelhead.skywars
 
+import club.sk1er.mods.levelhead.core.ratioOf
 import com.google.gson.JsonObject
 import java.awt.Color
 
@@ -38,7 +39,8 @@ object SkyWarsStats {
 
     data class PrestigeStyle(
         val minLevel: Int,
-        val color: Color
+        val color: Color,
+        val colormap: String = ""
     )
 
     private val prestigeStyles = listOf(
@@ -52,7 +54,7 @@ object SkyWarsStats {
         PrestigeStyle(35, Color(255, 85, 255)),   // crystal
         PrestigeStyle(40, Color(0, 170, 170)),    // opal
         PrestigeStyle(45, Color(170, 0, 170)),    // amethyst
-        PrestigeStyle(50, Color(255, 85, 255)),   // rainbow (single-colour placeholder)
+        PrestigeStyle(50, Color(255, 85, 255), "c6eabd"),   // rainbow
         PrestigeStyle(60, Color(170, 0, 0))       // mythic
     )
 
@@ -102,6 +104,22 @@ object SkyWarsStats {
         return defaultEmblems.lastOrNull { level >= it.minLevel }?.emblem ?: "✯"
     }
 
+    fun formatLevelTag(level: Int, style: PrestigeStyle = getPrestigeStyle(level)): String {
+        return applyColormap("$level${getDefaultEmblem(level)}", style.colormap)
+    }
+
+    private fun applyColormap(text: String, colormap: String): String {
+        if (colormap.isEmpty()) return text
+
+        val result = StringBuilder()
+        val chars = text.toCharArray()
+        for (i in chars.indices) {
+            val color = colormap[i % colormap.length]
+            result.append('§').append(color).append(chars[i])
+        }
+        return result.toString()
+    }
+
     fun parseExperience(json: JsonObject): Long? {
         val skywars = findSkyWarsStats(json) ?: return null
         return skywars.get("skywars_experience")?.takeIf { !it.isJsonNull }
@@ -136,17 +154,9 @@ object SkyWarsStats {
             ?.let { runCatching { it.asInt }.getOrNull() }
     }
 
-    fun calculateKDR(kills: Int?, deaths: Int?): Double? {
-        if (kills == null || deaths == null) return null
-        if (kills == 0 && deaths == 0) return null
-        return if (deaths <= 0) kills.toDouble() else kills.toDouble() / deaths.toDouble()
-    }
+    fun calculateKDR(kills: Int?, deaths: Int?): Double? = ratioOf(kills, deaths)
 
-    fun calculateWLR(wins: Int?, losses: Int?): Double? {
-        if (wins == null || losses == null) return null
-        if (wins == 0 && losses == 0) return null
-        return if (losses <= 0) wins.toDouble() else wins.toDouble() / losses.toDouble()
-    }
+    fun calculateWLR(wins: Int?, losses: Int?): Double? = ratioOf(wins, losses)
 
     private fun findSkyWarsStats(json: JsonObject): JsonObject? {
         return club.sk1er.mods.levelhead.core.StatsPayloadParser.findStatsObject(json, club.sk1er.mods.levelhead.core.GameMode.SKYWARS)

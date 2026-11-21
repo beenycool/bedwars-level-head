@@ -130,6 +130,10 @@ object BedwarsStar {
         return applyColormap(tag, style.colormap)
     }
 
+    fun formatStarNumber(star: Int): String {
+        return applyColormap(star.toString(), styleForStar(star).colormap)
+    }
+
     private fun applyColormap(tag: String, colormap: String): String {
         if (colormap.isEmpty()) return tag
 

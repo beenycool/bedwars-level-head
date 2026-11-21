@@ -204,9 +204,16 @@ object Levelhead {
                         return@use
                     }
                     val downloadUrl = "$MODRINTH_MOD_PAGE/versions"
-                    sendChat(
-                        "${ChatColor.YELLOW}A new update is available: ${ChatColor.GOLD}$latestVersion${ChatColor.YELLOW} (current ${ChatColor.GOLD}$VERSION${ChatColor.YELLOW}). ${ChatColor.GREEN}Download: ${ChatColor.AQUA}$downloadUrl"
+                    val notice = ChatComponentText(
+                        "${ChatColor.YELLOW}A new update is available: ${ChatColor.GOLD}$latestVersion${ChatColor.YELLOW} (current ${ChatColor.GOLD}$VERSION${ChatColor.YELLOW}). ${ChatColor.GREEN}Download: "
                     )
+                    notice.appendSibling(
+                        CommandUtils.createClickableUrl(
+                            downloadUrl,
+                            "${ChatColor.AQUA}${ChatColor.UNDERLINE}$downloadUrl"
+                        )
+                    )
+                    CommandUtils.sendPrefixedChat(notice)
                 }
             } catch (throwable: Throwable) {
                 logger.debug("Failed to check for updates on Modrinth", throwable)
@@ -324,7 +331,7 @@ object Levelhead {
         if (rateLimiterNotified.compareAndSet(false, true)) {
             val resetText = formatCooldownDuration(metrics.resetIn)
             sendChat(
-                "${ChatColor.YELLOW}Stats rate limit reached. ${ChatColor.GOLD}${metrics.remaining} requests remaining${ChatColor.YELLOW}. Window resets in $resetText."
+                "${ChatColor.YELLOW}Stats rate limit reached — ${ChatColor.GOLD}${metrics.remaining} identifiers available${ChatColor.YELLOW}, window resets in ${ChatColor.GOLD}$resetText${ChatColor.YELLOW}. ${ChatColor.GRAY}Large batches will wait."
             )
         }
     }

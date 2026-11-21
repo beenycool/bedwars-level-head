@@ -96,7 +96,7 @@ export const PUBLIC_BATCH_RATE_LIMIT_MIN = Math.min(
   Math.max(1, parseIntEnv('PUBLIC_BATCH_RATE_LIMIT_MIN', 40)),
 );
 
-export const HYPIXEL_HOURLY_QUOTA = Math.max(60, parseIntEnv('HYPIXEL_HOURLY_QUOTA', 7_200));
+export const HYPIXEL_HOURLY_QUOTA = Math.max(60, parseIntEnv('HYPIXEL_HOURLY_QUOTA', 3_600));
 
 export const LOOKUP_TRACKING_ENABLED = process.env.LOOKUP_TRACKING_ENABLED !== 'false';
 

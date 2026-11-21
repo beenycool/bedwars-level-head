@@ -43,6 +43,12 @@ public class MixinGuiPlayerTabOverlay {
     private static boolean loggedPadding;
     private static boolean loggedDraw;
 
+    /**
+     * Starts a new {@code TabRender} pass. That call bumps a pass id, so if
+     * {@code renderPlayerlist} throws and the RETURN hook below never runs, the
+     * aborted pass's frame state invalidates itself instead of leaving stale
+     * padding applied to a later frame.
+     */
     @Inject(method = "renderPlayerlist", at = @At("HEAD"))
     private void levelhead$beginFrame(int width, Scoreboard scoreboard, ScoreObjective objective, CallbackInfo ci) {
         try {

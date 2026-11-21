@@ -52,6 +52,21 @@ class RateLimiter(
 
     fun isCoolingDown(now: Long = System.currentTimeMillis()): Boolean = now < serverCooldownUntil.get()
 
+    /**
+     * Return unused tokens to the current window. Used when the backend serves a
+     * request entirely from its own cache, which costs no upstream quota.
+     */
+    fun refund(tokens: Int) {
+        if (tokens <= 0) return
+        val now = System.currentTimeMillis()
+        while (true) {
+            val current = ensureReset(now)
+            if (current.remaining >= limit) return
+            val newState = current.copy(remaining = (current.remaining + tokens).coerceAtMost(limit))
+            if (state.compareAndSet(current, newState)) return
+        }
+    }
+
     fun resetState() {
         state.set(RateState(limit, System.currentTimeMillis()))
         serverCooldownUntil.set(0L)
@@ -75,7 +90,9 @@ class RateLimiter(
 
     fun metricsSnapshot(): RateLimiterMetrics {
         val now = System.currentTimeMillis()
-        val current = state.get()
+        // Apply the same window roll-over as tryAcquire so an idle window never
+        // reports "0 remaining, resets in 0s".
+        val current = ensureReset(now)
 
         val resetAt = current.lastResetAt
         val resetIn = Duration.ofMillis((resetAt + window.toMillis() - now).coerceAtLeast(0))

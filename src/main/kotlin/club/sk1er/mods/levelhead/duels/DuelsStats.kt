@@ -1,5 +1,6 @@
 package club.sk1er.mods.levelhead.duels
 
+import club.sk1er.mods.levelhead.core.ratioOf
 import com.google.gson.JsonObject
 import java.awt.Color
 
@@ -48,7 +49,7 @@ object DuelsStats {
 
         if (active.id == "none") {
             return OverallDivisionInfo(
-                displayName = "-",
+                displayName = "Unranked",
                 romanLevel = "-",
                 color = active.color,
                 bold = active.bold,
@@ -98,17 +99,17 @@ object DuelsStats {
             ?.let { runCatching { it.asInt }.getOrNull() }
     }
 
-    fun calculateWLR(wins: Int?, losses: Int?): Double? {
-        if (wins == null || losses == null) return null
-        if (wins == 0 && losses == 0) return null
-        return if (losses <= 0) wins.toDouble() else wins.toDouble() / losses.toDouble()
+    fun parseWinstreak(json: JsonObject): Int? {
+        val duels = findDuelsStats(json) ?: return null
+        return duels.get("winstreak")?.takeIf { !it.isJsonNull }
+            ?.let { runCatching { it.asInt }.getOrNull() }
+            ?: duels.get("current_winstreak")?.takeIf { !it.isJsonNull }
+                ?.let { runCatching { it.asInt }.getOrNull() }
     }
 
-    fun calculateKDR(kills: Int?, deaths: Int?): Double? {
-        if (kills == null || deaths == null) return null
-        if (kills == 0 && deaths == 0) return null
-        return if (deaths <= 0) kills.toDouble() else kills.toDouble() / deaths.toDouble()
-    }
+    fun calculateWLR(wins: Int?, losses: Int?): Double? = ratioOf(wins, losses)
+
+    fun calculateKDR(kills: Int?, deaths: Int?): Double? = ratioOf(kills, deaths)
 
     private fun findDuelsStats(json: JsonObject): JsonObject? {
         return club.sk1er.mods.levelhead.core.StatsPayloadParser.findStatsObject(json, club.sk1er.mods.levelhead.core.GameMode.DUELS)

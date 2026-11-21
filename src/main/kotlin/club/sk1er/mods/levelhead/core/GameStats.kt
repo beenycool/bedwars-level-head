@@ -13,7 +13,14 @@ sealed class GameStats {
         val fkdr: Double?,
         override val nicked: Boolean,
         override val fetchedAt: Long,
-        val starIcon: String? = null
+        val starIcon: String? = null,
+        val wins: Int? = null,
+        val losses: Int? = null,
+        val finalKills: Int? = null,
+        val finalDeaths: Int? = null,
+        val bedsBroken: Int? = null,
+        val bedsLost: Int? = null,
+        val winstreak: Int? = null
     ) : GameStats() {
         override fun isExpired(ttl: Duration, now: Long): Boolean {
             return now - fetchedAt >= ttl.toMillis()
@@ -26,7 +33,8 @@ sealed class GameStats {
         val kills: Int?,
         val deaths: Int?,
         override val nicked: Boolean,
-        override val fetchedAt: Long
+        override val fetchedAt: Long,
+        val winstreak: Int? = null
     ) : GameStats() {
         override fun isExpired(ttl: Duration, now: Long): Boolean {
             return now - fetchedAt >= ttl.toMillis()
@@ -46,4 +54,10 @@ sealed class GameStats {
             return now - fetchedAt >= ttl.toMillis()
         }
     }
+}
+
+internal fun ratioOf(numerator: Int?, denominator: Int?): Double? {
+    if (numerator == null || denominator == null) return null
+    if (denominator <= 0) return numerator.toDouble()
+    return numerator.toDouble() / denominator.toDouble()
 }

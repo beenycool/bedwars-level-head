@@ -55,6 +55,7 @@ export interface LookupSignals {
   cacheHitsLastHour: number;
   networkLastHour: number;
   identifiersLastMinute: number;
+  identifiersLastMinutePartial: boolean;
   cacheHitRate: number | null;
 }
 
@@ -65,7 +66,8 @@ export function lookupSignals(now: number = Date.now()): LookupSignals {
   let totalLastHour = 0;
   let cacheHitsLastHour = 0;
   let networkLastHour = 0;
-  let identifiersLastMinute = 0;
+  let currentNetwork = 0;
+  let previousNetwork = 0;
   let recentTotal = 0;
   let recentCacheHits = 0;
 
@@ -77,7 +79,10 @@ export function lookupSignals(now: number = Date.now()): LookupSignals {
     cacheHitsLastHour += bucket.cacheHits;
     networkLastHour += bucket.network;
     if (minute === currentMinute) {
-      identifiersLastMinute += bucket.total;
+      currentNetwork += bucket.network;
+    }
+    if (minute === currentMinute - 1) {
+      previousNetwork += bucket.network;
     }
     if (minute >= currentMinute - RECENT_CACHE_MINUTES + 1) {
       recentTotal += bucket.total;
@@ -85,11 +90,20 @@ export function lookupSignals(now: number = Date.now()): LookupSignals {
     }
   }
 
+  // Cache hits are free upstream, so only non-cached identifiers add demand
+  // pressure. Blending the in-progress minute with the previous one gives a
+  // trailing 60s estimate instead of a count that drops to zero at every :00.
+  const elapsedFraction = (now - currentMinute * 60_000) / 60_000;
+  const identifiersLastMinute = Math.round(
+    currentNetwork + previousNetwork * (1 - elapsedFraction),
+  );
+
   return {
     totalLastHour,
     cacheHitsLastHour,
     networkLastHour,
     identifiersLastMinute,
+    identifiersLastMinutePartial: elapsedFraction > 0,
     cacheHitRate: recentTotal > 0 ? recentCacheHits / recentTotal : null,
   };
 }

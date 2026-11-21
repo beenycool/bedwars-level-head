@@ -12,6 +12,7 @@ import net.minecraft.util.EnumChatFormatting
 
 object StatsFormatter {
     private val unresolvedTokenPattern = Regex("%[a-z0-9_]+%", RegexOption.IGNORE_CASE)
+    private val singleTokenPattern = Regex("^%[a-z0-9_]+%$", RegexOption.IGNORE_CASE)
 
     fun isStale(stats: GameStats?, now: Long = System.currentTimeMillis()): Boolean =
         stats?.isExpired(LevelheadConfig.starCacheTtl, now) ?: false
@@ -23,9 +24,10 @@ object StatsFormatter {
         gameMode: GameMode,
         now: Long = System.currentTimeMillis()
     ): LevelheadTag {
-        val footerTemplate = LevelheadConfig.footerTemplateFor(gameMode)
+        val footerTemplate = config.footerTemplateFor(gameMode)
+        val nicked = stats?.nicked == true
 
-        val (footerValue, footerColor) = if (stats?.nicked == true) {
+        val (footerValue, footerColor) = if (nicked) {
             Pair("NICKED", Color.GRAY)
         } else {
             when (stats) {
@@ -40,7 +42,11 @@ object StatsFormatter {
         val finalColor = if (stale && stats != null) Color.GRAY else footerColor
 
         val tag = LevelheadTag(uuid)
-        tag.header.value = config.headerStringFor(gameMode).takeIf { it.isNotBlank() }?.let { "$it: " } ?: ""
+        tag.header.value = if (nicked) {
+            ""
+        } else {
+            config.headerStringFor(gameMode).takeIf { it.isNotBlank() }?.let { "$it: " } ?: ""
+        }
         tag.header.color = config.headerColor
         tag.footer.value = footerValue
         tag.footer.color = finalColor
@@ -54,17 +60,29 @@ object StatsFormatter {
     ): Pair<String, Color> {
         val starValue = stats.star
         val starString = starValue?.let { BedwarsStar.formatStarTag(it, stats.starIcon) } ?: "?"
-        val fkdrString = stats.fkdr?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "?"
+        val starNumberString = starValue?.let { BedwarsStar.formatStarNumber(it) } ?: "?"
+        val fkdrString = formatRatio(stats.fkdr)
+        val wlrString = formatRatio(ratioOf(stats.wins, stats.losses))
+        val bblrString = formatRatio(ratioOf(stats.bedsBroken, stats.bedsLost))
 
         val style = starValue?.let { BedwarsStar.styleForStar(it) }
             ?: BedwarsStar.PrestigeStyle(config.footerColor, "")
 
         var footerValue = template
         footerValue = replaceStyled(footerValue, "%star%", starString, style.color)
+        footerValue = replaceStyled(footerValue, "%starnum%", starNumberString, style.color)
         footerValue = footerValue.replace("%fkdr%", fkdrString, ignoreCase = true)
+        footerValue = footerValue.replace("%wins%", stats.wins?.toString() ?: "?", ignoreCase = true)
+        footerValue = footerValue.replace("%losses%", stats.losses?.toString() ?: "?", ignoreCase = true)
+        footerValue = footerValue.replace("%wlr%", wlrString, ignoreCase = true)
+        footerValue = footerValue.replace("%finals%", stats.finalKills?.toString() ?: "?", ignoreCase = true)
+        footerValue = footerValue.replace("%beds%", stats.bedsBroken?.toString() ?: "?", ignoreCase = true)
+        footerValue = footerValue.replace("%bblr%", bblrString, ignoreCase = true)
+        footerValue = footerValue.replace("%ws%", stats.winstreak?.toString() ?: "?", ignoreCase = true)
         footerValue = sanitizeUnresolvedTokens(footerValue)
 
-        return Pair(footerValue, style.color)
+        val color = tierColorOr(template, style.color, "%fkdr%" to stats.fkdr)
+        return Pair(footerValue, color)
     }
 
     private fun formatDuelsStats(
@@ -74,10 +92,9 @@ object StatsFormatter {
     ): Pair<String, Color> {
         val winsString = stats.wins?.toString() ?: "?"
         val lossesString = stats.losses?.toString() ?: "?"
-        val wlrString = DuelsStats.calculateWLR(stats.wins, stats.losses)
-            ?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "?"
-        val kdrString = DuelsStats.calculateKDR(stats.kills, stats.deaths)
-            ?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "?"
+        val wlrValue = DuelsStats.calculateWLR(stats.wins, stats.losses)
+        val wlrString = formatRatio(wlrValue)
+        val kdrString = formatRatio(DuelsStats.calculateKDR(stats.kills, stats.deaths))
         val divisionInfo = stats.wins?.let { DuelsStats.getOverallDivisionInfo(it) }
         val divisionTitle = divisionInfo?.displayName ?: "?"
         val styledDivisionTitle = when {
@@ -98,18 +115,20 @@ object StatsFormatter {
                     template.contains("%divsymbol%", ignoreCase = true)
             else -> false
         }
-        val color = if (usesDivisionColor) (divisionInfo?.color ?: config.footerColor) else config.footerColor
+        val baseColor = if (usesDivisionColor) (divisionInfo?.color ?: config.footerColor) else config.footerColor
 
         var footerValue = template
         footerValue = footerValue.replace("%wins%", winsString, ignoreCase = true)
         footerValue = footerValue.replace("%losses%", lossesString, ignoreCase = true)
         footerValue = footerValue.replace("%wlr%", wlrString, ignoreCase = true)
         footerValue = footerValue.replace("%kdr%", kdrString, ignoreCase = true)
-        footerValue = replaceStyled(footerValue, "%division%", styledDivisionTitle, color)
+        footerValue = footerValue.replace("%ws%", stats.winstreak?.toString() ?: "?", ignoreCase = true)
+        footerValue = replaceStyled(footerValue, "%division%", styledDivisionTitle, baseColor)
         footerValue = footerValue.replace("%divlevel%", divisionLevel, ignoreCase = true)
         footerValue = footerValue.replace("%divsymbol%", divisionSymbol, ignoreCase = true)
         footerValue = sanitizeUnresolvedTokens(footerValue)
 
+        val color = tierColorOr(template, baseColor, "%wlr%" to wlrValue)
         return Pair(footerValue, color)
     }
 
@@ -119,16 +138,26 @@ object StatsFormatter {
         config: DisplayConfig
     ): Pair<String, Color> {
         val levelValue: Int? = stats.level?.toInt()
-        val starString = levelValue?.let { "$it${SkyWarsStats.getDefaultEmblem(it)}" } ?: "?"
+        val prestige = levelValue?.let { SkyWarsStats.getPrestigeStyle(it) }
+        val starString = if (levelValue != null && prestige != null) {
+            SkyWarsStats.formatLevelTag(levelValue, prestige)
+        } else {
+            "?"
+        }
         val winsString = stats.wins?.toString() ?: "?"
         val lossesString = stats.losses?.toString() ?: "?"
-        val wlrString = SkyWarsStats.calculateWLR(stats.wins, stats.losses)
-            ?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "?"
-        val kdrString = SkyWarsStats.calculateKDR(stats.kills, stats.deaths)
-            ?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "?"
+        val wlrValue = SkyWarsStats.calculateWLR(stats.wins, stats.losses)
+        val wlrString = formatRatio(wlrValue)
+        val kdrValue = SkyWarsStats.calculateKDR(stats.kills, stats.deaths)
+        val kdrString = formatRatio(kdrValue)
+        val prestigeColor = prestige?.color ?: config.footerColor
 
         var footerValue = template
-        footerValue = footerValue.replace("%star%", starString, ignoreCase = true)
+        footerValue = if (prestige != null && prestige.colormap.isNotEmpty()) {
+            replaceStyled(footerValue, "%star%", starString, prestigeColor)
+        } else {
+            footerValue.replace("%star%", starString, ignoreCase = true)
+        }
         footerValue = footerValue.replace("%level%", levelValue?.toString() ?: "?", ignoreCase = true)
         footerValue = footerValue.replace("%wins%", winsString, ignoreCase = true)
         footerValue = footerValue.replace("%losses%", lossesString, ignoreCase = true)
@@ -136,10 +165,35 @@ object StatsFormatter {
         footerValue = footerValue.replace("%kdr%", kdrString, ignoreCase = true)
         footerValue = sanitizeUnresolvedTokens(footerValue)
 
-        val style = levelValue?.let { SkyWarsStats.getPrestigeStyle(it) }
-        val color = style?.color ?: config.footerColor
-
+        val color = tierColorOr(
+            template,
+            prestigeColor,
+            "%wlr%" to wlrValue,
+            "%kdr%" to kdrValue
+        )
         return Pair(footerValue, color)
+    }
+
+    private fun formatRatio(value: Double?): String =
+        value?.let { String.format(Locale.ROOT, "%.2f", it) } ?: "?"
+
+    private fun tierColorOr(template: String, fallback: Color, vararg ratios: Pair<String, Double?>): Color {
+        if (!LevelheadConfig.tierColorsEnabled) return fallback
+
+        val token = template.trim()
+        if (!singleTokenPattern.matches(token)) return fallback
+
+        val value = ratios.firstOrNull { it.first.equals(token, ignoreCase = true) }?.second ?: return fallback
+        return tierColor(value)
+    }
+
+    private fun tierColor(value: Double): Color = when {
+        value < 1.0 -> Color(170, 170, 170)
+        value < 2.0 -> Color(255, 255, 255)
+        value < 3.0 -> Color(255, 170, 0)
+        value < 5.0 -> Color(85, 255, 255)
+        value < 10.0 -> Color(255, 85, 85)
+        else -> Color(255, 85, 255)
     }
 
     /**

@@ -58,7 +58,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     @Switch(
         name = "Show Self",
-        description = "Display your own levelhead above your head and in the Tab list.",
+        description = "Display your own levelhead above your head and in the Tab list. Above-head works in third person; first person cannot render your own head.",
         category = "General"
     )
     var showSelf: Boolean = true
@@ -204,6 +204,19 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             save()
         }
 
+    @Slider(
+        name = "Tag Scale",
+        description = "Scales the above-head tag text. 1.0 keeps the vanilla size.",
+        category = "Appearance",
+        min = 0.5f,
+        max = 1.5f
+    )
+    var tagScale: Float = 1.0f
+        set(value) {
+            field = value.coerceIn(0.5f, 1.5f)
+            save()
+        }
+
     @Switch(
         name = "Show Background",
         description = "Display a semi-transparent background behind the levelhead text.",
@@ -257,17 +270,80 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             save()
         }
 
+    @Switch(
+        name = "Tier Colours",
+        description = "Colour FKDR/WLR/KDR by skill tier instead of a flat colour.",
+        category = "Appearance"
+    )
+    var tierColorsEnabled: Boolean = true
+        set(value) {
+            field = value
+            save()
+        }
+
+    @Switch(
+        name = "Show Tab Header",
+        description = "Show the label (for example \"BedWars Star\") in the Tab list.",
+        category = "Tab List"
+    )
+    var tabShowHeader: Boolean = true
+        set(value) {
+            field = value
+            save()
+        }
+
+    @Color(name = "Tab header colour", description = "Colour of the label shown in the Tab list.", category = "Tab List")
+    var tabHeaderColor: OneColor = OneColor(85, 255, 255)
+        set(value) {
+            field = value
+            save()
+        }
+
+    @Color(
+        name = "Tab fallback colour",
+        description = "Colour of Tab values that have no colour of their own (for example FKDR or Win/Loss).",
+        category = "Tab List"
+    )
+    var tabFooterColor: OneColor = OneColor(255, 255, 85)
+        set(value) {
+            field = value
+            save()
+        }
+
+    @Switch(
+        name = "Tab Text Shadow",
+        description = "Render the Tab list tag with a shadow.",
+        category = "Tab List"
+    )
+    var tabTextShadow: Boolean = true
+        set(value) {
+            field = value
+            save()
+        }
+
+    @Text(
+        name = "Tab Custom Format",
+        placeholder = "%star%",
+        description = "Overrides the footer format in the Tab list. Leave blank to inherit the above-head format.",
+        category = "Tab List"
+    )
+    var tabCustomFormat: String = ""
+        set(value) {
+            field = value.trim()
+            save()
+        }
+
     @Slider(
         name = "Render Distance",
-        description = "Maximum distance (in blocks) to render levelheads. Lower = better performance.",
+        description = "Maximum distance (in blocks) to render levelheads. Vanilla 1.8.9 culls player entities beyond 64 blocks, so higher values have no effect.",
         category = "Advanced",
         min = 16f,
-        max = 128f,
+        max = 64f,
         step = 8
     )
     var renderDistance: Int = 64
         set(value) {
-            field = value
+            field = value.coerceIn(16, 64)
             save()
         }
 
@@ -324,6 +400,29 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         category = "Advanced"
     )
     var forceEnabled: Boolean = false
+        set(value) {
+            field = value
+            save()
+        }
+
+    @Dropdown(
+        name = "Game Mode Override",
+        description = "Force a game mode when scoreboard detection fails. Auto-Detect uses the scoreboard.",
+        category = "Advanced",
+        options = ["Auto-Detect", "BedWars", "Duels", "SkyWars"]
+    )
+    var modeOverrideIndex: Int = 0
+        set(value) {
+            field = value.coerceIn(0, 3)
+            save()
+        }
+
+    @Switch(
+        name = "Show in Game Hubs",
+        description = "Also fetch and display stats in BedWars and SkyWars lobbies. Uses far more requests than normal play.",
+        category = "Advanced"
+    )
+    var showInHubs: Boolean = false
         set(value) {
             field = value
             save()
@@ -424,27 +523,28 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     private interface StatMode {
         val template: String
+        val headerLabel: String
     }
 
-    enum class BedwarsStatMode(override val template: String) : StatMode {
-        STAR("%star%"),
-        FKDR("%fkdr%"),
-        CUSTOM("");
+    enum class BedwarsStatMode(override val template: String, override val headerLabel: String) : StatMode {
+        STAR("%star%", "BedWars Star"),
+        FKDR("%fkdr%", "BedWars FKDR"),
+        CUSTOM("", "");
     }
 
-    enum class DuelsStatMode(override val template: String) : StatMode {
-        DIVISION_TITLE("%division%"),
-        WINS("%wins%"),
-        WLR("%wlr%"),
-        CUSTOM(""),
-        DIVISION_SYMBOL("%divsymbol%");
+    enum class DuelsStatMode(override val template: String, override val headerLabel: String) : StatMode {
+        DIVISION_TITLE("%division%", "Duels Division"),
+        WINS("%wins%", "Duels Wins"),
+        WLR("%wlr%", "Duels WLR"),
+        CUSTOM("", ""),
+        DIVISION_SYMBOL("%divsymbol%", "Duels Division");
     }
 
-    enum class SkyWarsStatMode(override val template: String) : StatMode {
-        STAR("%star%"),
-        WINS("%wins%"),
-        WLR("%wlr%"),
-        CUSTOM("");
+    enum class SkyWarsStatMode(override val template: String, override val headerLabel: String) : StatMode {
+        STAR("%star%", "SkyWars Star"),
+        WINS("%wins%", "SkyWars Wins"),
+        WLR("%wlr%", "SkyWars WLR"),
+        CUSTOM("", "");
     }
 
     private val bedwarsStatMode: BedwarsStatMode
@@ -456,7 +556,51 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
     private val skywarsStatMode: SkyWarsStatMode
         get() = SkyWarsStatMode.entries.getOrNull(skywarsStatDisplayIndex) ?: SkyWarsStatMode.STAR
 
-    fun headerTextFor(gameMode: GameMode): String = if (showHeader) gameMode.defaultHeader else ""
+    fun headerTextFor(gameMode: GameMode): String = if (showHeader) headerLabelFor(gameMode) else ""
+
+    fun headerLabelFor(gameMode: GameMode): String = when (gameMode) {
+        GameMode.BEDWARS -> headerLabelForMode(bedwarsStatMode, bedwarsCustomFooterFormat, gameMode)
+        GameMode.DUELS -> headerLabelForMode(duelsStatMode, duelsCustomFooterFormat, gameMode)
+        GameMode.SKYWARS -> headerLabelForMode(skywarsStatMode, skywarsCustomFooterFormat, gameMode)
+    }
+
+    fun tabFooterTemplateFor(gameMode: GameMode): String =
+        tabCustomFormat.ifBlank { footerTemplateFor(gameMode) }
+
+    private fun <T> headerLabelForMode(mode: T, customFormat: String, gameMode: GameMode): String
+        where T : Enum<*>, T : StatMode {
+        if (mode.headerLabel.isNotBlank()) return mode.headerLabel
+        return headerLabelForToken(gameMode, customFormat.trim()) ?: gameMode.defaultHeader
+    }
+
+    private fun headerLabelForToken(gameMode: GameMode, token: String): String? {
+        val normalized = token.lowercase(Locale.ROOT)
+        return when (gameMode) {
+            GameMode.BEDWARS -> when (normalized) {
+                "%star%" -> "BedWars Star"
+                "%fkdr%" -> "BedWars FKDR"
+                else -> null
+            }
+
+            GameMode.DUELS -> when (normalized) {
+                "%division%", "%divlevel%", "%divsymbol%" -> "Duels Division"
+                "%wins%" -> "Duels Wins"
+                "%losses%" -> "Duels Losses"
+                "%wlr%" -> "Duels WLR"
+                "%kdr%" -> "Duels KDR"
+                else -> null
+            }
+
+            GameMode.SKYWARS -> when (normalized) {
+                "%star%", "%level%" -> "SkyWars Star"
+                "%wins%" -> "SkyWars Wins"
+                "%losses%" -> "SkyWars Losses"
+                "%wlr%" -> "SkyWars WLR"
+                "%kdr%" -> "SkyWars KDR"
+                else -> null
+            }
+        }
+    }
 
     private fun <T> resolveTemplateFor(
         modeIndex: Int,
@@ -530,6 +674,12 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         hideIf("backgroundOpacity") { !showBackground }
         hideIf("headerColor") { !showHeader }
 
+        hideIf("tabShowHeader") { !showTabStats }
+        hideIf("tabHeaderColor") { !showTabStats || !tabShowHeader }
+        hideIf("tabFooterColor") { !showTabStats }
+        hideIf("tabTextShadow") { !showTabStats }
+        hideIf("tabCustomFormat") { !showTabStats }
+
         hideIf("bedwarsCustomFooterFormat") { bedwarsStatMode != BedwarsStatMode.CUSTOM }
         hideIf("duelsCustomFooterFormat") { duelsStatMode != DuelsStatMode.CUSTOM }
         hideIf("skywarsCustomFooterFormat") { skywarsStatMode != SkyWarsStatMode.CUSTOM }
@@ -551,9 +701,16 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         showHeader = true
         displayPositionIndex = 0
         verticalOffset = 0.0f
+        tagScale = 1.0f
         showBackground = true
         backgroundOpacity = 0.25f
         textShadow = true
+        tierColorsEnabled = true
+        tabShowHeader = true
+        tabHeaderColor = OneColor(85, 255, 255)
+        tabFooterColor = OneColor(255, 255, 85)
+        tabTextShadow = true
+        tabCustomFormat = ""
         renderDistance = 64
         starCacheTtlMinutes = _DEFAULT_STAR_CACHE_TTL_MINUTES
         bedwarsStatDisplayIndex = BedwarsStatMode.STAR.ordinal
@@ -565,6 +722,8 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         debugRequests = false
         proxyBaseUrl = DEFAULT_PROXY_URL
         forceEnabled = false
+        modeOverrideIndex = 0
+        showInHubs = false
         save()
         BedwarsFetcher.resetWarnings()
         Levelhead.displayManager.clearCache()

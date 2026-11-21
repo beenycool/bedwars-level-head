@@ -104,6 +104,7 @@ export async function setPlayerStats(
   key: string,
   stats: MinimalPlayerStats,
   metadata: CacheMetadata = {},
+  ttlMs?: number,
 ): Promise<void> {
   await ensureInitialized();
   if (!isDatabaseReady()) {
@@ -111,7 +112,10 @@ export async function setPlayerStats(
   }
 
   const now = Date.now();
-  const expiresAt = now + PLAYER_CACHE_DB_TTL_MS;
+  const ttl = typeof ttlMs === 'number' && Number.isFinite(ttlMs) && ttlMs > 0
+    ? ttlMs
+    : PLAYER_CACHE_DB_TTL_MS;
+  const expiresAt = now + ttl;
   const payload = JSON.stringify(stats);
   const etag = metadata.etag ?? null;
   const lastModified = metadata.lastModified ?? null;

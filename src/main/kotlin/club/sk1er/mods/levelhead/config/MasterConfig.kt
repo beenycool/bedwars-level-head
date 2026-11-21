@@ -43,6 +43,12 @@ class MasterConfig {
             LevelheadConfig.renderDistance = value
         }
 
+    var tagScale: Float
+        get() = LevelheadConfig.tagScale
+        set(value) {
+            LevelheadConfig.tagScale = value
+        }
+
     enum class DisplayPosition {
         ABOVE,
         BELOW

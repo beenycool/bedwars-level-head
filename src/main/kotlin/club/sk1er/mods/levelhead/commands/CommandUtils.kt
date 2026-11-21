@@ -34,10 +34,17 @@ object CommandUtils {
         }
     }
 
-    fun createClickableUrl(url: String, text: String = url): IChatComponent {
+    fun createClickableUrl(
+        url: String,
+        text: String = url,
+        hoverTextOverride: String? = null
+    ): IChatComponent {
         return ChatComponentText(text).apply {
             chatStyle.chatClickEvent = ClickEvent(ClickEvent.Action.OPEN_URL, url)
-            chatStyle.chatHoverEvent = HoverEvent(HoverEvent.Action.SHOW_TEXT, ChatComponentText("${ChatColor.GREEN}Click to open link"))
+            chatStyle.chatHoverEvent = HoverEvent(
+                HoverEvent.Action.SHOW_TEXT,
+                ChatComponentText(hoverTextOverride ?: "${ChatColor.GREEN}Click to open link")
+            )
         }
     }
 

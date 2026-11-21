@@ -5,6 +5,7 @@ import club.sk1er.mods.levelhead.core.BedwarsStar
 import club.sk1er.mods.levelhead.core.GameMode
 import club.sk1er.mods.levelhead.core.GameStats
 import club.sk1er.mods.levelhead.core.StatsPayloadParser
+import club.sk1er.mods.levelhead.core.ratioOf
 import com.google.gson.JsonObject
 
 object BedwarsFetcher : BaseStatsFetcher() {
@@ -22,13 +23,22 @@ object BedwarsFetcher : BaseStatsFetcher() {
         val experience = parseBedwarsExperience(payload)
         val star = experience?.let { BedwarsStar.calculateStar(it) }
         val fkdr = parseBedwarsFkdr(payload)
-        val starIcon = BedwarsStar.iconForCosmetic(bedwars.stringValue("active_star"))
+        val starIcon = BedwarsStar.iconForCosmetic(
+            bedwars.stringValue("active_star") ?: bedwars.stringValue("bedwars_active_star")
+        )
         return GameStats.Bedwars(
             star = star,
             fkdr = fkdr,
             nicked = nicked,
             fetchedAt = System.currentTimeMillis(),
-            starIcon = starIcon
+            starIcon = starIcon,
+            wins = bedwars.intValue("wins_bedwars") ?: bedwars.intValue("wins"),
+            losses = bedwars.intValue("losses_bedwars") ?: bedwars.intValue("losses"),
+            finalKills = bedwars.intValue("final_kills_bedwars") ?: bedwars.intValue("final_kills"),
+            finalDeaths = bedwars.intValue("final_deaths_bedwars") ?: bedwars.intValue("final_deaths"),
+            bedsBroken = bedwars.intValue("beds_broken_bedwars") ?: bedwars.intValue("beds_broken"),
+            bedsLost = bedwars.intValue("beds_lost_bedwars") ?: bedwars.intValue("beds_lost"),
+            winstreak = bedwars.intValue("winstreak") ?: bedwars.intValue("bedwars_winstreak")
         )
     }
 
@@ -44,12 +54,9 @@ object BedwarsFetcher : BaseStatsFetcher() {
             return kotlin.runCatching { fkdrElement.asDouble }.getOrNull()
         }
 
-        val finalKills = bedwars.numberValue("final_kills_bedwars") ?: 0.0
-        val finalDeaths = bedwars.numberValue("final_deaths_bedwars") ?: 0.0
-        if (finalKills == 0.0 && finalDeaths == 0.0) {
-            return null
-        }
-        return if (finalDeaths <= 0) finalKills else finalKills / finalDeaths
+        val finalKills = bedwars.intValue("final_kills_bedwars") ?: bedwars.intValue("final_kills") ?: return null
+        val finalDeaths = bedwars.intValue("final_deaths_bedwars") ?: bedwars.intValue("final_deaths") ?: return null
+        return ratioOf(finalKills, finalDeaths)
     }
 
     private fun parseExperienceFromBedwars(bedwars: JsonObject): Long? {
@@ -66,10 +73,10 @@ object BedwarsFetcher : BaseStatsFetcher() {
         return StatsPayloadParser.findStatsObject(json, GameMode.BEDWARS)
     }
 
-    private fun JsonObject.numberValue(key: String): Double? {
+    private fun JsonObject.intValue(key: String): Int? {
         val element = get(key) ?: return null
         if (element.isJsonNull) return null
-        return kotlin.runCatching { element.asDouble }.getOrNull()
+        return kotlin.runCatching { element.asInt }.getOrNull()
     }
 
     private fun JsonObject.stringValue(key: String): String? {

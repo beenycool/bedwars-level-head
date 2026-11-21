@@ -5,6 +5,7 @@ export interface LayoutOptions {
   subtitle: string;
   body: string;
   refreshSeconds?: number;
+  script?: string;
 }
 
 const STYLES = `
@@ -172,7 +173,7 @@ tbody tr:nth-child(even) td { background: rgba(148, 163, 184, 0.05); }
 .bar-labels small { font-size: 0.62rem; }
 .bar-list { list-style: none; margin: 0.4rem 0 0; padding: 0; display: grid; gap: 0.3rem; }
 .bar-list li { display: grid; grid-template-columns: minmax(4.5rem, 32%) 1fr auto; gap: 0.4rem; align-items: center; font-size: 0.72rem; color: #cbd5f5; }
-.bar-list__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-list__label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: inherit; }
 .bar-list__track { height: 6px; background: rgba(148, 163, 184, 0.18); border-radius: 999px; overflow: hidden; }
 .bar-list__track span { display: block; height: 100%; background: linear-gradient(90deg, #22d3ee, #3b82f6); }
 .bar-list__value { color: #94a3b8; font-variant-numeric: tabular-nums; }
@@ -208,7 +209,7 @@ tbody tr:nth-child(even) td { background: rgba(148, 163, 184, 0.05); }
 }
 `;
 
-export function renderLayout({ title, heading, subtitle, body, refreshSeconds }: LayoutOptions): string {
+export function renderLayout({ title, heading, subtitle, body, refreshSeconds, script }: LayoutOptions): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -224,6 +225,7 @@ ${refreshSeconds ? `<meta http-equiv="refresh" content="${refreshSeconds}">` : '
   <p class="meta hero">${subtitle}</p>
   ${body}
 </div>
+${script ? `<script>${script}</script>` : ''}
 </body>
 </html>`;
 }

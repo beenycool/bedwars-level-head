@@ -502,17 +502,30 @@ export interface MinimalPlayerStats {
   bedwars_active_star: string | null;
   bedwars_final_kills: number;
   bedwars_final_deaths: number;
+  bedwars_wins: number;
+  bedwars_losses: number;
+  bedwars_beds_broken: number;
+  bedwars_beds_lost: number;
+  bedwars_winstreak: number | null;
 
   duels_wins: number;
   duels_losses: number;
   duels_kills: number;
   duels_deaths: number;
+  duels_winstreak: number | null;
 
   skywars_experience: number | null;
   skywars_wins: number;
   skywars_losses: number;
   skywars_kills: number;
   skywars_deaths: number;
+}
+
+function toFiniteNumber(value: unknown): number | null {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return null;
+  }
+  return value;
 }
 
 function computeAggregates(stats: Record<string, unknown>) {
@@ -524,7 +537,7 @@ function computeAggregates(stats: Record<string, unknown>) {
   for (const key in stats) {
     if (Object.prototype.hasOwnProperty.call(stats, key)) {
       const value = stats[key];
-      if (typeof value !== 'number') continue;
+      if (typeof value !== 'number' || !Number.isFinite(value)) continue;
 
       if (key.startsWith('wins_')) {
         wins += value;
@@ -543,27 +556,18 @@ function computeAggregates(stats: Record<string, unknown>) {
 function extractModeStats(
   stats: Record<string, unknown>,
 ): { wins: number; losses: number; kills: number; deaths: number } {
-  const hasWins = stats.wins != null;
-  const hasLosses = stats.losses != null;
-  const hasKills = stats.kills != null;
-  const hasDeaths = stats.deaths != null;
+  const wins = toFiniteNumber(stats.wins);
+  const losses = toFiniteNumber(stats.losses);
+  const kills = toFiniteNumber(stats.kills);
+  const deaths = toFiniteNumber(stats.deaths);
 
-  if (hasWins && hasLosses && hasKills && hasDeaths) {
-    return {
-      wins: Number(stats.wins),
-      losses: Number(stats.losses),
-      kills: Number(stats.kills),
-      deaths: Number(stats.deaths),
-    };
+  // Hypixel omits zero-valued totals. A missing total therefore means zero, and summing
+  // per-mode keys instead would double-count nested ones (wins_solo vs wins_solo_normal).
+  if (wins != null || losses != null || kills != null || deaths != null) {
+    return { wins: wins ?? 0, losses: losses ?? 0, kills: kills ?? 0, deaths: deaths ?? 0 };
   }
 
-  const aggregates = computeAggregates(stats);
-  return {
-    wins: hasWins ? Number(stats.wins) : aggregates.wins,
-    losses: hasLosses ? Number(stats.losses) : aggregates.losses,
-    kills: hasKills ? Number(stats.kills) : aggregates.kills,
-    deaths: hasDeaths ? Number(stats.deaths) : aggregates.deaths,
-  };
+  return computeAggregates(stats);
 }
 
 export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPlayerStats {
@@ -584,21 +588,28 @@ export function extractMinimalStats(response: HypixelPlayerResponse): MinimalPla
   return {
     displayname: response.player?.displayname ?? null,
 
-    bedwars_experience: bedwars.bedwars_experience ?? bedwars.Experience ?? null,
+    bedwars_experience: toFiniteNumber(bedwars.bedwars_experience ?? bedwars.Experience),
     bedwars_active_star: activeStar,
-    bedwars_final_kills: Number(bedwars.final_kills_bedwars ?? 0),
-    bedwars_final_deaths: Number(bedwars.final_deaths_bedwars ?? 0),
+    bedwars_final_kills: toFiniteNumber(bedwars.final_kills_bedwars) ?? 0,
+    bedwars_final_deaths: toFiniteNumber(bedwars.final_deaths_bedwars) ?? 0,
+    bedwars_wins: toFiniteNumber(bedwars.wins_bedwars) ?? 0,
+    bedwars_losses: toFiniteNumber(bedwars.losses_bedwars) ?? 0,
+    bedwars_beds_broken: toFiniteNumber(bedwars.beds_broken_bedwars) ?? 0,
+    bedwars_beds_lost: toFiniteNumber(bedwars.beds_lost_bedwars) ?? 0,
+    bedwars_winstreak: null,
 
     duels_wins: duelsAggregates.wins,
     duels_losses: duelsAggregates.losses,
     duels_kills: duelsAggregates.kills,
     duels_deaths: duelsAggregates.deaths,
+    duels_winstreak: toFiniteNumber(duelsStats.current_winstreak),
 
-    skywars_experience: skywars.skywars_experience
-                       ?? skywars.SkyWars_experience
-                       ?? skywars.experience
-                       ?? skywars.Experience
-                       ?? null,
+    skywars_experience: toFiniteNumber(
+      skywars.skywars_experience
+      ?? skywars.SkyWars_experience
+      ?? skywars.experience
+      ?? skywars.Experience,
+    ),
     skywars_wins: skywarsAggregates.wins,
     skywars_losses: skywarsAggregates.losses,
     skywars_kills: skywarsAggregates.kills,

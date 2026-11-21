@@ -217,6 +217,9 @@ class DisplayManager {
      * HTTP work stays on the IO scope. [FetchBackoff] enforces the retry delay.
      */
     private fun refreshMissingVisibleDisplays() {
+        if (!FetchBackoff.proxyReady(System.currentTimeMillis()) || Levelhead.rateLimiter.isCoolingDown()) {
+            return
+        }
         if (!config.enabled) {
             DebugSession.inc("visible_skipped_disabled")
             return
@@ -275,6 +278,9 @@ class DisplayManager {
      * Tab list players may not be world entities, so requestAllDisplays() misses them.
      */
     private fun requestTabListPlayers() {
+        if (!FetchBackoff.proxyReady(System.currentTimeMillis()) || Levelhead.rateLimiter.isCoolingDown()) {
+            return
+        }
         if (!config.enabled) {
             DebugSession.inc("tab_skipped_disabled")
             return

@@ -1,6 +1,7 @@
 package club.sk1er.mods.levelhead.core
 
 import club.sk1er.mods.levelhead.Levelhead
+import club.sk1er.mods.levelhead.config.LevelheadConfig
 import org.apache.logging.log4j.LogManager
 
 object ModeManager {
@@ -20,11 +21,21 @@ object ModeManager {
     val worldEpoch: Long
         get() = tracker.worldEpoch
 
-    fun detectActiveMode(): ActiveMode = when (tracker.mode) {
-        GameMode.BEDWARS -> ActiveMode.BEDWARS
-        GameMode.DUELS -> ActiveMode.DUELS
-        GameMode.SKYWARS -> ActiveMode.SKYWARS
-        null -> ActiveMode.NONE
+    fun detectActiveMode(): ActiveMode {
+        val forced = forcedGameMode()
+        if (forced != null) {
+            return when (forced) {
+                GameMode.BEDWARS -> ActiveMode.BEDWARS
+                GameMode.DUELS -> ActiveMode.DUELS
+                GameMode.SKYWARS -> ActiveMode.SKYWARS
+            }
+        }
+        return when (tracker.mode) {
+            GameMode.BEDWARS -> ActiveMode.BEDWARS
+            GameMode.DUELS -> ActiveMode.DUELS
+            GameMode.SKYWARS -> ActiveMode.SKYWARS
+            null -> ActiveMode.NONE
+        }
     }
 
     fun shouldRequestData(): Boolean {
@@ -40,5 +51,12 @@ object ModeManager {
         tracker.refreshNow()
     }
 
-    fun getActiveGameMode(): GameMode? = tracker.mode
+    fun getActiveGameMode(): GameMode? = forcedGameMode() ?: tracker.mode
+
+    private fun forcedGameMode(): GameMode? = when (LevelheadConfig.modeOverrideIndex) {
+        1 -> GameMode.BEDWARS
+        2 -> GameMode.DUELS
+        3 -> GameMode.SKYWARS
+        else -> null
+    }
 }

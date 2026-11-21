@@ -105,16 +105,26 @@ class StatsStore(
     fun markLoading(uuid: UUID, gameMode: GameMode, now: Long = clock()) {
         val key = StatsKey(uuid, gameMode)
         val existing = entries[key]
-        if (existing != null) {
-            existing.access = accessCounter.incrementAndGet()
-            // A stranded placeholder is re-armed by the owner that adopted it.
-            val state = existing.state
-            if (state is StatsState.Loading && isStaleLoading(state, now)) {
-                put(uuid, gameMode, StatsState.Loading(now))
-            }
+        if (existing == null) {
+            put(uuid, gameMode, StatsState.Loading(now))
             return
         }
-        put(uuid, gameMode, StatsState.Loading(now))
+        existing.access = accessCounter.incrementAndGet()
+        // A Failed retry or a stale entry must actually enter Loading, otherwise
+        // isLoading() stays false and the 2 s refresh loops keep re-enqueueing it.
+        // Fresh Ok entries and live placeholders are left alone.
+        when (val state = existing.state) {
+            is StatsState.Loading -> if (isStaleLoading(state, now)) {
+                put(uuid, gameMode, StatsState.Loading(now))
+            }
+            is StatsState.Failed -> put(uuid, gameMode, StatsState.Loading(now))
+            is StatsState.Ok -> if (state.stats.isExpired(ttlProvider(), now)) {
+                put(uuid, gameMode, StatsState.Loading(now))
+            }
+            is StatsState.Nicked -> if (state.stats.isExpired(ttlProvider(), now)) {
+                put(uuid, gameMode, StatsState.Loading(now))
+            }
+        }
     }
 
     /** Explicit refresh only; world joins must not call this. */

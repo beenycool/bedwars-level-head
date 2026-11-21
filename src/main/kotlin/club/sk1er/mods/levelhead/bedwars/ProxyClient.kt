@@ -27,6 +27,14 @@ import java.util.UUID
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
+/** Backend cache outcome for one batch call (`X-Cache`). */
+enum class BatchCacheStatus { HIT, PARTIAL, MISS, UNKNOWN }
+
+data class BatchFetchResponse(
+    val results: Map<UUID, FetchResult>,
+    val cacheStatus: BatchCacheStatus = BatchCacheStatus.UNKNOWN
+)
+
 object ProxyClient {
     private val invalidProxyTokenWarned = AtomicBoolean(false)
     private val networkIssueWarned = AtomicBoolean(false)
@@ -160,14 +168,14 @@ object ProxyClient {
         }
     }
 
-    suspend fun fetchBatch(uuids: List<UUID>): Map<UUID, FetchResult> {
-        if (uuids.isEmpty()) return emptyMap()
+    suspend fun fetchBatch(uuids: List<UUID>): BatchFetchResponse {
+        if (uuids.isEmpty()) return BatchFetchResponse(emptyMap())
 
         if (!isAvailable()) {
             DebugLogging.logRequestDebug {
                 "[LevelheadDebug][network] ${DebugSession.prefix()} batch unavailable: proxyBaseUrl is blank"
             }
-            return emptyMap()
+            return BatchFetchResponse(emptyMap())
         }
 
         val identifierToUuid = uuids.associateBy { it.toString().replace("-", "").lowercase(Locale.ROOT) }
@@ -193,7 +201,9 @@ object ProxyClient {
                 "Failed to build proxy BedWars batch endpoint URL from base '{}'",
                 LevelheadConfig.proxyBaseUrl.sanitizeForLogs()
             )
-            return identifierToUuid.values.associateWith { FetchResult.PermanentError("INVALID_PROXY_URL") }
+            return BatchFetchResponse(
+                identifierToUuid.values.associateWith { FetchResult.PermanentError("INVALID_PROXY_URL") }
+            )
         }
 
         val request = Request.Builder()
@@ -215,8 +225,8 @@ object ProxyClient {
                 val body = response.body()?.string().orEmpty()
                 val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
                 val cacheHeader = response.header("X-Cache")
-                val isCacheHit = cacheHeader?.equals("HIT", ignoreCase = true) == true ||
-                        cacheHeader?.equals("PARTIAL", ignoreCase = true) == true
+                val cacheStatus = parseBatchCacheStatus(cacheHeader)
+                val isCacheHit = cacheStatus == BatchCacheStatus.HIT || cacheStatus == BatchCacheStatus.PARTIAL
 
                 DebugLogging.logRequestDebug {
                     val etag = response.header("ETag")
@@ -229,7 +239,9 @@ object ProxyClient {
                     return when (response.code()) {
                         401, 403 -> {
                             notifyInvalidProxyToken(response.code(), body)
-                            identifierToUuid.values.associateWith { FetchResult.PermanentError("PROXY_AUTH") }
+                            BatchFetchResponse(
+                                identifierToUuid.values.associateWith { FetchResult.PermanentError("PROXY_AUTH") }
+                            )
                         }
                         429 -> {
                             handleRetryAfterHint("proxy", retryAfterMillis)
@@ -237,7 +249,9 @@ object ProxyClient {
                                 "Proxy rate limited BedWars batch requests. Retry after {} ms.",
                                 retryAfterMillis ?: -1
                             )
-                            identifierToUuid.values.associateWith { FetchResult.TemporaryError("PROXY_RATE_LIMIT") }
+                            BatchFetchResponse(
+                                identifierToUuid.values.associateWith { FetchResult.TemporaryError("PROXY_RATE_LIMIT") }
+                            )
                         }
                         else -> {
                             handleRetryAfterHint("proxy", retryAfterMillis)
@@ -246,7 +260,9 @@ object ProxyClient {
                                 response.code(),
                                 body.length
                             )
-                            identifierToUuid.values.associateWith { FetchResult.TemporaryError("HTTP_${response.code()}") }
+                            BatchFetchResponse(
+                                identifierToUuid.values.associateWith { FetchResult.TemporaryError("HTTP_${response.code()}") }
+                            )
                         }
                     }
                 }
@@ -255,18 +271,24 @@ object ProxyClient {
 
                 val json = kotlin.runCatching { JsonParser.parseString(body).asJsonObject }.getOrElse {
                     Levelhead.logger.error("Failed to parse proxy batch response body", it)
-                    return identifierToUuid.values.associateWith { FetchResult.TemporaryError("PARSE_ERROR") }
+                    return BatchFetchResponse(
+                        identifierToUuid.values.associateWith { FetchResult.TemporaryError("PARSE_ERROR") }
+                    )
                 }
 
                 if (json.get("success")?.asBoolean == false) {
                     Levelhead.logger.warn("Proxy batch response reported success=false (bodyLen={})", body.length)
-                    return identifierToUuid.values.associateWith { FetchResult.TemporaryError("PROXY_ERROR") }
+                    return BatchFetchResponse(
+                        identifierToUuid.values.associateWith { FetchResult.TemporaryError("PROXY_ERROR") }
+                    )
                 }
 
                 val data = json.get("data")?.takeIf { it.isJsonObject }?.asJsonObject
                 if (data == null) {
                     Levelhead.logger.warn("Proxy batch response missing data object (bodyLen={})", body.length)
-                    return identifierToUuid.values.associateWith { FetchResult.TemporaryError("MISSING_DATA") }
+                    return BatchFetchResponse(
+                        identifierToUuid.values.associateWith { FetchResult.TemporaryError("MISSING_DATA") }
+                    )
                 }
 
                 networkIssueWarned.set(false)
@@ -284,21 +306,30 @@ object ProxyClient {
 
                 DebugLogging.logRequestDebug {
                     val successCount = results.values.count { it is FetchResult.Success }
-                    "[LevelheadDebug][network] ${DebugSession.prefix()} proxy batch processed chunkSize=${uuids.size} resultsReturned=${results.size} successCount=$successCount elapsedMs=${System.currentTimeMillis() - requestStartedAt}"
+                    "[LevelheadDebug][network] ${DebugSession.prefix()} proxy batch processed chunkSize=${uuids.size} resultsReturned=${results.size} successCount=$successCount cache=${cacheStatus.name} elapsedMs=${System.currentTimeMillis() - requestStartedAt}"
                 }
 
-                results
+                BatchFetchResponse(results, cacheStatus)
             }
         } catch (ex: IOException) {
             notifyNetworkIssue(ex)
             val sanitized = ex.message?.sanitizeForLogs()
-            identifierToUuid.values.associateWith { FetchResult.TemporaryError(sanitized) }
+            BatchFetchResponse(identifierToUuid.values.associateWith { FetchResult.TemporaryError(sanitized) })
         } catch (ex: kotlin.coroutines.cancellation.CancellationException) {
             throw ex
         } catch (ex: Exception) {
             Levelhead.logger.error("Failed to fetch proxy BedWars batch data", ex)
             val sanitized = ex.message?.sanitizeForLogs()
-            identifierToUuid.values.associateWith { FetchResult.TemporaryError(sanitized) }
+            BatchFetchResponse(identifierToUuid.values.associateWith { FetchResult.TemporaryError(sanitized) })
+        }
+    }
+
+    private fun parseBatchCacheStatus(header: String?): BatchCacheStatus {
+        return when (header?.trim()?.uppercase(Locale.ROOT)) {
+            "HIT" -> BatchCacheStatus.HIT
+            "PARTIAL" -> BatchCacheStatus.PARTIAL
+            "MISS" -> BatchCacheStatus.MISS
+            else -> BatchCacheStatus.UNKNOWN
         }
     }
 

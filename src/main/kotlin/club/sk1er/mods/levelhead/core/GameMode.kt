@@ -3,26 +3,22 @@ package club.sk1er.mods.levelhead.core
 enum class GameMode(
     val typeId: String,
     val displayName: String,
-    val defaultHeader: String,
-    val statFormat: String
+    val defaultHeader: String
 ) {
     BEDWARS(
         typeId = "BEDWARS_STAR",
         displayName = "BedWars",
-        defaultHeader = "BedWars Star",
-        statFormat = "%star%"
+        defaultHeader = "BedWars Star"
     ),
     DUELS(
         typeId = "DUELS_WINS",
         displayName = "Duels",
-        defaultHeader = "Duels Division",
-        statFormat = "%division%"
+        defaultHeader = "Duels Division"
     ),
     SKYWARS(
         typeId = "SKYWARS_STAR",
         displayName = "SkyWars",
-        defaultHeader = "SkyWars Star",
-        statFormat = "%star%"
+        defaultHeader = "SkyWars Star"
     );
 
     companion object {

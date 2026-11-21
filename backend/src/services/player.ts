@@ -3,6 +3,7 @@ import { HttpError } from '../util/httpError';
 import { IDENTIFIER_MAX_LENGTH, normalizeUuid } from '../util/validationConstants';
 import { fetchHypixelPlayer, extractMinimalStats, MinimalPlayerStats } from './hypixel';
 import { logger } from '../util/logger';
+import { PLAYER_CACHE_DB_TTL_MS } from '../config';
 import {
   buildPlayerCacheKey,
   CachedPlayerStats,
@@ -12,6 +13,7 @@ import {
 } from './statsCache';
 
 const MEMORY_TTL_MS = 10 * 60 * 1000;
+const NICKED_DB_TTL_MS = Math.min(5 * 60 * 1000, PLAYER_CACHE_DB_TTL_MS);
 
 const memoizedResults = new LRUCache<string, ResolvedPlayer>({
   max: 5000,
@@ -20,9 +22,18 @@ const memoizedResults = new LRUCache<string, ResolvedPlayer>({
 
 const inFlightRequests = new Map<string, Promise<ResolvedPlayer>>();
 
+let cacheGeneration = 0;
+
 export function clearInMemoryPlayerCache(): void {
+  cacheGeneration += 1;
   memoizedResults.clear();
   inFlightRequests.clear();
+}
+
+export function evictPlayerFromMemory(cacheKey: string): void {
+  cacheGeneration += 1;
+  memoizedResults.delete(cacheKey);
+  inFlightRequests.delete(cacheKey);
 }
 
 export interface ResolvedPlayer {
@@ -41,10 +52,16 @@ function buildNickedStats(): MinimalPlayerStats {
     bedwars_active_star: null,
     bedwars_final_kills: 0,
     bedwars_final_deaths: 0,
+    bedwars_wins: 0,
+    bedwars_losses: 0,
+    bedwars_beds_broken: 0,
+    bedwars_beds_lost: 0,
+    bedwars_winstreak: null,
     duels_wins: 0,
     duels_losses: 0,
     duels_kills: 0,
     duels_deaths: 0,
+    duels_winstreak: null,
     skywars_experience: null,
     skywars_wins: 0,
     skywars_losses: 0,
@@ -89,16 +106,20 @@ function fromCacheEntry(entry: CachedPlayerStats): ResolvedPlayer {
   };
 }
 
-async function loadFromUpstream(uuid: string): Promise<ResolvedPlayer> {
+async function loadFromUpstream(uuid: string, generation: number): Promise<ResolvedPlayer> {
   const startedAt = Date.now();
   logger.debug({ uuid }, '[player] upstream fetch start');
   const response = await fetchHypixelPlayer(uuid);
   const { payload, nicked } = normalizeUuidLookupStats(extractMinimalStats(response.payload));
 
-  void setPlayerStats(buildPlayerCacheKey(uuid), payload, {
-    etag: response.etag,
-    lastModified: response.lastModified,
-  }).catch((error) => logger.warn({ err: error }, '[player] cache write failed'));
+  if (generation === cacheGeneration) {
+    void setPlayerStats(
+      buildPlayerCacheKey(uuid),
+      payload,
+      { etag: response.etag, lastModified: response.lastModified },
+      nicked ? NICKED_DB_TTL_MS : undefined,
+    ).catch((error) => logger.warn({ err: error }, '[player] cache write failed'));
+  }
 
   logger.debug({
     uuid,
@@ -130,37 +151,45 @@ export async function resolvePlayer(
     throw new HttpError(400, 'INVALID_IDENTIFIER', 'Identifier must be a 32-character UUID (dashes optional).');
   }
   const startedAt = Date.now();
+  const cacheKey = buildPlayerCacheKey(uuid);
 
-  const memoized = memoizedResults.get(uuid);
+  const memoized = memoizedResults.get(cacheKey);
   if (memoized) {
     logger.debug({ uuid, source: 'memory', latencyMs: Date.now() - startedAt }, '[player] resolved');
     return { ...memoized, source: 'cache' };
   }
 
-  const pending = inFlightRequests.get(uuid);
+  const pending = inFlightRequests.get(cacheKey);
   if (pending) {
     const result = await pending;
     logger.debug({ uuid, source: 'inflight', latencyMs: Date.now() - startedAt }, '[player] resolved');
     return { ...result, source: 'cache' };
   }
 
-  const promise = (async (): Promise<ResolvedPlayer> => {
+  const generation = cacheGeneration;
+
+  let promise!: Promise<ResolvedPlayer>;
+  promise = (async (): Promise<ResolvedPlayer> => {
     // A batch warmup that already missed in SQL does not need a second SELECT.
     const warmedMiss = warmedMisses?.delete(uuid) ?? false;
-    const cached = warmedMiss ? null : await getPlayerStats(buildPlayerCacheKey(uuid));
-    const resolved = cached ? fromCacheEntry(cached) : await loadFromUpstream(uuid);
+    const cached = warmedMiss ? null : await getPlayerStats(cacheKey);
+    const resolved = cached ? fromCacheEntry(cached) : await loadFromUpstream(uuid, generation);
     logger.debug({
       uuid,
       source: cached ? 'sql' : 'network',
       latencyMs: Date.now() - startedAt,
     }, '[player] resolved');
-    memoizedResults.set(uuid, resolved);
+    if (generation === cacheGeneration) {
+      memoizedResults.set(cacheKey, resolved);
+    }
     return resolved;
   })().finally(() => {
-    inFlightRequests.delete(uuid);
+    if (inFlightRequests.get(cacheKey) === promise) {
+      inFlightRequests.delete(cacheKey);
+    }
   });
 
-  inFlightRequests.set(uuid, promise);
+  inFlightRequests.set(cacheKey, promise);
   return promise;
 }
 
@@ -179,14 +208,17 @@ export async function warmupPlayerCache(identifiers: string[]): Promise<Set<stri
   }
 
   const entries = await getManyPlayerStats(keys.map((entry) => entry.key));
+  const generation = cacheGeneration;
   const misses = new Set<string>();
   for (const { key, uuid } of keys) {
-    if (memoizedResults.has(uuid)) {
+    if (memoizedResults.has(key)) {
       continue;
     }
     const entry = entries.get(key);
     if (entry) {
-      memoizedResults.set(uuid, fromCacheEntry(entry));
+      if (generation === cacheGeneration) {
+        memoizedResults.set(key, fromCacheEntry(entry));
+      }
     } else {
       misses.add(uuid);
     }

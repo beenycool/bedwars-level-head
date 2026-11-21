@@ -6,7 +6,7 @@ import {
   PUBLIC_REQUEST_LIMIT_MAX,
   PUBLIC_SINGLE_RATE_LIMIT_MIN,
 } from '../config';
-import { getDynamicPublicLimit } from '../services/dynamicRateLimit';
+import { getDynamicPublicLimit, registerActiveClientSource } from '../services/dynamicRateLimit';
 import { HttpError } from '../util/httpError';
 import { logger } from '../util/logger';
 import { MAX_BATCH_SIZE, normalizeIdentifier } from '../util/validationConstants';
@@ -20,21 +20,32 @@ export interface ConsumeResult {
 
 interface Bucket {
   tokens: number;
+  /** Last allowed request. Drives the sweep and the active-client count. */
   updatedAt: number;
+  /** Last token refill. A rejected request refreshes this but never `updatedAt`. */
+  refilledAt: number;
 }
+
+const MAX_BUCKETS = 20_000;
+/** Drain this far below the cap so the eviction sort is amortised, not per-request. */
+const EVICTION_TARGET_RATIO = 0.9;
+const SWEEP_INTERVAL_MS = 5_000;
+const ACTIVE_CLIENTS_TTL_MS = 1_000;
 
 export interface TokenBucketOptions {
   capacity: number;
   windowMs: number;
-  getCapacity?: (activeClients: () => number) => number;
+  getCapacity?: (activeClients: () => number, now: number) => number;
 }
 
 export class TokenBucketLimiter {
   private readonly buckets = new Map<string, Bucket>();
   private readonly maxCapacity: number;
   private readonly windowMs: number;
-  private readonly getCapacity: ((activeClients: () => number) => number) | undefined;
+  private readonly getCapacity: TokenBucketOptions['getCapacity'];
   private readonly sweepAfter: number;
+  private lastSweepAt = 0;
+  private activeCache: { at: number; count: number } | null = null;
 
   constructor(options: TokenBucketOptions) {
     this.maxCapacity = Math.max(1, Math.floor(options.capacity));
@@ -47,26 +58,28 @@ export class TokenBucketLimiter {
     const capacity = this.resolveCapacity(now);
     const refillPerMs = capacity / this.windowMs;
     const amount = Number.isFinite(cost) && cost > 0 ? Math.ceil(cost) : 1;
-    const bucket = this.buckets.get(key) ?? { tokens: capacity, updatedAt: now };
+    const bucket = this.buckets.get(key) ?? { tokens: capacity, updatedAt: now, refilledAt: now };
 
-    if (now > bucket.updatedAt) {
+    if (now > bucket.refilledAt) {
       bucket.tokens = Math.min(
         capacity,
-        bucket.tokens + (now - bucket.updatedAt) * refillPerMs,
+        bucket.tokens + (now - bucket.refilledAt) * refillPerMs,
       );
-      bucket.updatedAt = now;
+      bucket.refilledAt = now;
     } else if (bucket.tokens > capacity) {
       bucket.tokens = capacity;
     }
 
     if (bucket.tokens >= amount) {
       bucket.tokens -= amount;
+      bucket.updatedAt = now;
       this.buckets.set(key, bucket);
-      this.sweepIfNeeded(now);
+      this.maintain(now);
       return { allowed: true, remaining: Math.floor(bucket.tokens), retryAfterMs: 0 };
     }
 
     this.buckets.set(key, bucket);
+    this.maintain(now);
     const deficit = amount - bucket.tokens;
     return {
       allowed: false,
@@ -91,12 +104,12 @@ export class TokenBucketLimiter {
       return;
     }
 
-    if (now > bucket.updatedAt) {
+    if (now > bucket.refilledAt) {
       bucket.tokens = Math.min(
         capacity,
-        bucket.tokens + (now - bucket.updatedAt) * (capacity / this.windowMs),
+        bucket.tokens + (now - bucket.refilledAt) * (capacity / this.windowMs),
       );
-      bucket.updatedAt = now;
+      bucket.refilledAt = now;
     } else if (bucket.tokens > capacity) {
       bucket.tokens = capacity;
     }
@@ -105,6 +118,10 @@ export class TokenBucketLimiter {
   }
 
   activeClients(now: number = Date.now()): number {
+    const cache = this.activeCache;
+    if (cache && now >= cache.at && now - cache.at < ACTIVE_CLIENTS_TTL_MS) {
+      return cache.count;
+    }
     const cutoff = now - this.windowMs;
     let active = 0;
     for (const bucket of this.buckets.values()) {
@@ -112,6 +129,7 @@ export class TokenBucketLimiter {
         active += 1;
       }
     }
+    this.activeCache = { at: now, count: active };
     return active;
   }
 
@@ -119,7 +137,7 @@ export class TokenBucketLimiter {
     if (!this.getCapacity) {
       return this.maxCapacity;
     }
-    const dynamic = this.getCapacity(() => this.activeClients(now));
+    const dynamic = this.getCapacity(() => this.activeClients(now), now);
     if (!Number.isFinite(dynamic)) {
       return this.maxCapacity;
     }
@@ -128,39 +146,78 @@ export class TokenBucketLimiter {
 
   reset(): void {
     this.buckets.clear();
+    this.activeCache = null;
   }
 
   get size(): number {
     return this.buckets.size;
   }
 
-  private sweepIfNeeded(now: number): void {
-    if (this.buckets.size <= 10_000) {
-      return;
+  private maintain(now: number): void {
+    if (now < this.lastSweepAt || now - this.lastSweepAt >= SWEEP_INTERVAL_MS) {
+      this.lastSweepAt = now;
+      this.sweep(now);
     }
+    if (this.buckets.size > MAX_BUCKETS) {
+      this.evictOverflow();
+    }
+  }
+
+  private sweep(now: number): void {
     for (const [key, bucket] of this.buckets) {
       if (now - bucket.updatedAt > this.sweepAfter) {
         this.buckets.delete(key);
       }
     }
+    this.activeCache = null;
   }
+
+  private evictOverflow(): void {
+    const target = Math.floor(MAX_BUCKETS * EVICTION_TARGET_RATIO);
+    const entries = Array.from(this.buckets.entries()).sort(
+      (a, b) => a[1].updatedAt - b[1].updatedAt,
+    );
+    for (let index = 0; index < entries.length && this.buckets.size > target; index += 1) {
+      this.buckets.delete(entries[index][0]);
+    }
+    this.activeCache = null;
+  }
+}
+
+function totalPublicActiveClients(now: number): number {
+  return publicRateLimiter.activeClients(now) + publicBatchRateLimiter.activeClients(now);
 }
 
 /** Single-identifier lookups (legacy clients, whois). */
 export const publicRateLimiter = new TokenBucketLimiter({
   capacity: PUBLIC_RATE_LIMIT_MAX,
   windowMs: PUBLIC_RATE_LIMIT_WINDOW_MS,
-  getCapacity: (activeClients) =>
-    getDynamicPublicLimit('single', activeClients, Date.now(), PUBLIC_SINGLE_RATE_LIMIT_MIN),
+  getCapacity: (activeClients, now) =>
+    getDynamicPublicLimit(
+      'single',
+      activeClients,
+      now,
+      PUBLIC_SINGLE_RATE_LIMIT_MIN,
+      () => totalPublicActiveClients(now),
+    ),
 });
 
 /** Batched lookups. Separate bucket so a lobby-sized batch cannot starve singles. */
 export const publicBatchRateLimiter = new TokenBucketLimiter({
   capacity: PUBLIC_RATE_LIMIT_MAX,
   windowMs: PUBLIC_RATE_LIMIT_WINDOW_MS,
-  getCapacity: (activeClients) =>
-    getDynamicPublicLimit('batch', activeClients, Date.now(), PUBLIC_BATCH_RATE_LIMIT_MIN),
+  getCapacity: (activeClients, now) =>
+    getDynamicPublicLimit(
+      'batch',
+      activeClients,
+      now,
+      PUBLIC_BATCH_RATE_LIMIT_MIN,
+      () => totalPublicActiveClients(now),
+    ),
 });
+
+registerActiveClientSource('single', () => publicRateLimiter.activeClients());
+registerActiveClientSource('batch', () => publicBatchRateLimiter.activeClients());
 
 export const requestRateLimiter = new TokenBucketLimiter({
   capacity: Number.isFinite(PUBLIC_REQUEST_LIMIT_MAX) ? PUBLIC_REQUEST_LIMIT_MAX : 1_200,
