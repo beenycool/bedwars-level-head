@@ -44,6 +44,10 @@ class ModeTracker(
     var context: ModeContext = ModeContext.NONE
         private set
 
+    @Volatile
+    var isHub: Boolean = false
+        private set
+
     /** Incremented once per world join; queued work from an older epoch is stale. */
     @Volatile
     var worldEpoch: Long = 0L
@@ -67,6 +71,7 @@ class ModeTracker(
         cachedEvidence = null
         mode = null
         context = ModeContext.NONE
+        isHub = false
         pendingResolved = null
         hasPending = false
         pendingCount = 0
@@ -84,7 +89,9 @@ class ModeTracker(
         detectGame(GameMode.SKYWARS, evidence, now)
         detectGame(GameMode.BEDWARS, evidence, now)
 
-        updateResolved(resolveMode(evidence), force)
+        val resolved = resolveMode(evidence)
+        updateHub(evidence, resolved)
+        updateResolved(resolved, force)
     }
 
     @SubscribeEvent
@@ -117,7 +124,10 @@ class ModeTracker(
         // Ordinary chat (gamer tags, party messages, ...) must not reset the
         // hysteresis and commit a mode straight away.
         if (signals.any { it != ChatSignal.None }) {
-            updateResolved(resolveMode(readEvidence()), force = true)
+            val evidence = readEvidence()
+            val resolved = resolveMode(evidence)
+            updateHub(evidence, resolved)
+            updateResolved(resolved, force = true)
         }
     }
 
@@ -268,6 +278,15 @@ class ModeTracker(
             bedwars?.isActive == true -> GameMode.BEDWARS
             else -> null
         }
+    }
+
+    /** A hub claim needs current scoreboard evidence: chat and cached-context grace do not qualify. */
+    private fun updateHub(evidence: SidebarEvidence?, resolved: GameMode?) {
+        val next = resolved != null && evidence != null && evidence.hub && evidence.resolvedGame == resolved
+        if (next != isHub) {
+            logger?.debug("hub transition: {} -> {} (mode={})", isHub, next, resolved)
+        }
+        isHub = next
     }
 
     private fun updateResolved(resolved: GameMode?, force: Boolean) {

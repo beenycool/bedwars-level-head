@@ -1,5 +1,5 @@
 import { PLAYER_CACHE_DB_TTL_MS } from '../config';
-import { CacheEntry, CacheMetadata, ensureInitialized, isDatabaseReady } from './cache';
+import { CacheEntry, ensureInitialized, isDatabaseReady } from './cache';
 import { isNonArrayObject } from '../util/typeChecks';
 import { MinimalPlayerStats } from './hypixel';
 import { logger } from '../util/logger';
@@ -15,7 +15,7 @@ export function buildPlayerCacheKey(uuid: string): string {
   return `${PLAYER_KEY_PREFIX}${uuid.toLowerCase()}`;
 }
 
-function mapRow(row: { payload: unknown; expires_at: unknown; etag: string | null; last_modified: unknown }): CachedPlayerStats | null {
+function mapRow(row: { payload: unknown; expires_at: unknown }): CachedPlayerStats | null {
   let payload: unknown = row.payload;
   if (typeof payload === 'string') {
     try {
@@ -36,8 +36,6 @@ function mapRow(row: { payload: unknown; expires_at: unknown; etag: string | nul
   return {
     value: payload as unknown as MinimalPlayerStats,
     expiresAt,
-    etag: row.etag,
-    lastModified: row.last_modified === null ? null : Number(row.last_modified),
   };
 }
 
@@ -103,7 +101,6 @@ export async function getManyPlayerStats(keys: string[]): Promise<Map<string, Ca
 export async function setPlayerStats(
   key: string,
   stats: MinimalPlayerStats,
-  metadata: CacheMetadata = {},
   ttlMs?: number,
 ): Promise<void> {
   await ensureInitialized();
@@ -117,8 +114,6 @@ export async function setPlayerStats(
     : PLAYER_CACHE_DB_TTL_MS;
   const expiresAt = now + ttl;
   const payload = JSON.stringify(stats);
-  const etag = metadata.etag ?? null;
-  const lastModified = metadata.lastModified ?? null;
 
   try {
     await db.insertInto('player_stats_cache')
@@ -126,14 +121,10 @@ export async function setPlayerStats(
         cache_key: key,
         payload,
         expires_at: expiresAt,
-        etag,
-        last_modified: lastModified,
       })
       .onConflict((oc) => oc.column('cache_key').doUpdateSet({
         payload,
         expires_at: expiresAt,
-        etag,
-        last_modified: lastModified,
       }))
       .execute();
   } catch (error) {

@@ -32,7 +32,9 @@ enum class BatchCacheStatus { HIT, PARTIAL, MISS, UNKNOWN }
 
 data class BatchFetchResponse(
     val results: Map<UUID, FetchResult>,
-    val cacheStatus: BatchCacheStatus = BatchCacheStatus.UNKNOWN
+    val cacheStatus: BatchCacheStatus = BatchCacheStatus.UNKNOWN,
+    val cacheHits: Int? = null,
+    val transportFailure: Boolean = false
 )
 
 object ProxyClient {
@@ -143,7 +145,7 @@ object ProxyClient {
 
                 invalidProxyTokenWarned.set(false)
 
-                val json = kotlin.runCatching { JsonParser.parseString(body).asJsonObject }.getOrElse {
+                val json = kotlin.runCatching { JsonParser().parse(body).asJsonObject }.getOrElse {
                     Levelhead.logger.error("Failed to parse proxy response body", it)
                     return FetchResult.TemporaryError("PARSE_ERROR")
                 }
@@ -168,14 +170,14 @@ object ProxyClient {
         }
     }
 
-    suspend fun fetchBatch(uuids: List<UUID>): BatchFetchResponse {
+    suspend fun fetchBatch(uuids: List<UUID>, cacheOnly: Boolean = false): BatchFetchResponse {
         if (uuids.isEmpty()) return BatchFetchResponse(emptyMap())
 
         if (!isAvailable()) {
             DebugLogging.logRequestDebug {
                 "[LevelheadDebug][network] ${DebugSession.prefix()} batch unavailable: proxyBaseUrl is blank"
             }
-            return BatchFetchResponse(emptyMap())
+            return BatchFetchResponse(emptyMap(), transportFailure = true)
         }
 
         val identifierToUuid = uuids.associateBy { it.toString().replace("-", "").lowercase(Locale.ROOT) }
@@ -186,6 +188,9 @@ object ProxyClient {
                 uuidArray.add(JsonPrimitive(identifier))
             }
             add("uuids", uuidArray)
+            if (cacheOnly) {
+                addProperty("cacheOnly", true)
+            }
         }
 
         val url = HttpUrl.parse(LevelheadConfig.proxyBaseUrl)
@@ -202,7 +207,8 @@ object ProxyClient {
                 LevelheadConfig.proxyBaseUrl.sanitizeForLogs()
             )
             return BatchFetchResponse(
-                identifierToUuid.values.associateWith { FetchResult.PermanentError("INVALID_PROXY_URL") }
+                identifierToUuid.values.associateWith { FetchResult.PermanentError("INVALID_PROXY_URL") },
+                transportFailure = true
             )
         }
 
@@ -216,7 +222,7 @@ object ProxyClient {
             .build()
 
         DebugLogging.logRequestDebug {
-            "[LevelheadDebug][network] ${DebugSession.prefix()} proxy batch request: ${url.toString().sanitizeForLogs()} count=${uuids.size}"
+            "[LevelheadDebug][network] ${DebugSession.prefix()} proxy batch request: ${url.toString().sanitizeForLogs()} count=${uuids.size} cacheOnly=$cacheOnly"
         }
 
         val requestStartedAt = System.currentTimeMillis()
@@ -226,13 +232,14 @@ object ProxyClient {
                 val retryAfterMillis = parseRetryAfterMillis(response.header("Retry-After"))
                 val cacheHeader = response.header("X-Cache")
                 val cacheStatus = parseBatchCacheStatus(cacheHeader)
+                val cacheHits = response.header("X-Cache-Hits")?.trim()?.toIntOrNull()?.coerceAtLeast(0)
                 val isCacheHit = cacheStatus == BatchCacheStatus.HIT || cacheStatus == BatchCacheStatus.PARTIAL
 
                 DebugLogging.logRequestDebug {
                     val etag = response.header("ETag")
                     val cacheDisplay = cacheHeader ?: "<absent>"
                     val hasEtag = etag != null
-                    "[LevelheadDebug][network] ${DebugSession.prefix()} proxy batch response status=${response.code()} elapsedMs=${System.currentTimeMillis() - requestStartedAt} etagPresent=$hasEtag cache=$cacheDisplay bodyLen=${body.length}"
+                    "[LevelheadDebug][network] ${DebugSession.prefix()} proxy batch response status=${response.code()} elapsedMs=${System.currentTimeMillis() - requestStartedAt} etagPresent=$hasEtag cache=$cacheDisplay cacheHits=${cacheHits ?: "<absent>"} bodyLen=${body.length}"
                 }
 
                 if (!response.isSuccessful) {
@@ -240,7 +247,8 @@ object ProxyClient {
                         401, 403 -> {
                             notifyInvalidProxyToken(response.code(), body)
                             BatchFetchResponse(
-                                identifierToUuid.values.associateWith { FetchResult.PermanentError("PROXY_AUTH") }
+                                identifierToUuid.values.associateWith { FetchResult.PermanentError("PROXY_AUTH") },
+                                transportFailure = true
                             )
                         }
                         429 -> {
@@ -250,7 +258,8 @@ object ProxyClient {
                                 retryAfterMillis ?: -1
                             )
                             BatchFetchResponse(
-                                identifierToUuid.values.associateWith { FetchResult.TemporaryError("PROXY_RATE_LIMIT") }
+                                identifierToUuid.values.associateWith { FetchResult.TemporaryError("PROXY_RATE_LIMIT") },
+                                transportFailure = true
                             )
                         }
                         else -> {
@@ -261,7 +270,8 @@ object ProxyClient {
                                 body.length
                             )
                             BatchFetchResponse(
-                                identifierToUuid.values.associateWith { FetchResult.TemporaryError("HTTP_${response.code()}") }
+                                identifierToUuid.values.associateWith { FetchResult.TemporaryError("HTTP_${response.code()}") },
+                                transportFailure = true
                             )
                         }
                     }
@@ -269,17 +279,19 @@ object ProxyClient {
 
                 invalidProxyTokenWarned.set(false)
 
-                val json = kotlin.runCatching { JsonParser.parseString(body).asJsonObject }.getOrElse {
+                val json = kotlin.runCatching { JsonParser().parse(body).asJsonObject }.getOrElse {
                     Levelhead.logger.error("Failed to parse proxy batch response body", it)
                     return BatchFetchResponse(
-                        identifierToUuid.values.associateWith { FetchResult.TemporaryError("PARSE_ERROR") }
+                        identifierToUuid.values.associateWith { FetchResult.TemporaryError("PARSE_ERROR") },
+                        transportFailure = true
                     )
                 }
 
                 if (json.get("success")?.asBoolean == false) {
                     Levelhead.logger.warn("Proxy batch response reported success=false (bodyLen={})", body.length)
                     return BatchFetchResponse(
-                        identifierToUuid.values.associateWith { FetchResult.TemporaryError("PROXY_ERROR") }
+                        identifierToUuid.values.associateWith { FetchResult.TemporaryError("PROXY_ERROR") },
+                        transportFailure = true
                     )
                 }
 
@@ -287,7 +299,8 @@ object ProxyClient {
                 if (data == null) {
                     Levelhead.logger.warn("Proxy batch response missing data object (bodyLen={})", body.length)
                     return BatchFetchResponse(
-                        identifierToUuid.values.associateWith { FetchResult.TemporaryError("MISSING_DATA") }
+                        identifierToUuid.values.associateWith { FetchResult.TemporaryError("MISSING_DATA") },
+                        transportFailure = true
                     )
                 }
 
@@ -299,6 +312,8 @@ object ProxyClient {
                     val payloadElement = data.get(identifier)
                     if (payloadElement != null && payloadElement.isJsonObject) {
                         results[uuid] = FetchResult.Success(payloadElement.asJsonObject)
+                    } else if (cacheOnly) {
+                        results[uuid] = FetchResult.Absent
                     } else {
                         results[uuid] = FetchResult.TemporaryError("NOT_FOUND")
                     }
@@ -306,21 +321,28 @@ object ProxyClient {
 
                 DebugLogging.logRequestDebug {
                     val successCount = results.values.count { it is FetchResult.Success }
-                    "[LevelheadDebug][network] ${DebugSession.prefix()} proxy batch processed chunkSize=${uuids.size} resultsReturned=${results.size} successCount=$successCount cache=${cacheStatus.name} elapsedMs=${System.currentTimeMillis() - requestStartedAt}"
+                    val absentCount = results.values.count { it === FetchResult.Absent }
+                    "[LevelheadDebug][network] ${DebugSession.prefix()} proxy batch processed chunkSize=${uuids.size} resultsReturned=${results.size} successCount=$successCount absentCount=$absentCount cache=${cacheStatus.name} cacheOnly=$cacheOnly elapsedMs=${System.currentTimeMillis() - requestStartedAt}"
                 }
 
-                BatchFetchResponse(results, cacheStatus)
+                BatchFetchResponse(results, cacheStatus, cacheHits)
             }
         } catch (ex: IOException) {
             notifyNetworkIssue(ex)
             val sanitized = ex.message?.sanitizeForLogs()
-            BatchFetchResponse(identifierToUuid.values.associateWith { FetchResult.TemporaryError(sanitized) })
+            BatchFetchResponse(
+                identifierToUuid.values.associateWith { FetchResult.TemporaryError(sanitized) },
+                transportFailure = true
+            )
         } catch (ex: kotlin.coroutines.cancellation.CancellationException) {
             throw ex
         } catch (ex: Exception) {
             Levelhead.logger.error("Failed to fetch proxy BedWars batch data", ex)
             val sanitized = ex.message?.sanitizeForLogs()
-            BatchFetchResponse(identifierToUuid.values.associateWith { FetchResult.TemporaryError(sanitized) })
+            BatchFetchResponse(
+                identifierToUuid.values.associateWith { FetchResult.TemporaryError(sanitized) },
+                transportFailure = true
+            )
         }
     }
 
@@ -382,7 +404,7 @@ object ProxyClient {
             shortTimeoutClient.newCall(request).await().use { response ->
                 if (!response.isSuccessful) return@use false
                 val body = response.body()?.string() ?: return@use false
-                val json = kotlin.runCatching { JsonParser.parseString(body).asJsonObject }.getOrNull() ?: return@use false
+                val json = kotlin.runCatching { JsonParser().parse(body).asJsonObject }.getOrNull() ?: return@use false
                 val status = json.get("status")
                 status?.isJsonPrimitive == true && status.asString == "ok"
             }

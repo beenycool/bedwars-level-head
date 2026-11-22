@@ -5,13 +5,6 @@ import { logger } from '../util/logger';
 export interface CacheEntry<T> {
   value: T;
   expiresAt: number;
-  etag: string | null;
-  lastModified: number | null;
-}
-
-export interface CacheMetadata {
-  etag?: string | null;
-  lastModified?: number | null;
 }
 
 let dbReady = false;
@@ -25,8 +18,6 @@ async function createTables(): Promise<void> {
       payload JSONB NOT NULL,
       expires_at BIGINT NOT NULL,
       cached_at BIGINT,
-      etag TEXT,
-      last_modified BIGINT,
       source TEXT DEFAULT 'hypixel',
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`.execute(db);

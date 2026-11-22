@@ -21,9 +21,6 @@ val String.dashUUID: UUID?
         return UUID.fromString(arr.joinToString(""))
     }
 
-val UUID.trimmed: String
-    get() = this.toString().replace("-", "")
-
 val EntityPlayer.isNPC: Boolean
     get() = this.uniqueID.version() == 2
 

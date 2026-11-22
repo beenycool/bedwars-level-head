@@ -19,7 +19,9 @@ data class SidebarEvidence(
     val titleGeneric: Boolean,
     val bedwars: ModeContext,
     val duels: ModeContext,
-    val skywars: ModeContext
+    val skywars: ModeContext,
+    /** Main game hub (large tab list), not a pre-game lobby. Independent of [LevelheadConfig.showInHubs]. */
+    val hub: Boolean
 ) {
     fun contextOf(gameMode: GameMode): ModeContext = when (gameMode) {
         GameMode.BEDWARS -> bedwars
@@ -49,6 +51,14 @@ sealed class ChatSignal {
 }
 
 object ModeClassifier {
+    private data class GameClassification(val context: ModeContext, val hub: Boolean) {
+        companion object {
+            val NONE = GameClassification(ModeContext.NONE, false)
+            val MATCH = GameClassification(ModeContext.MATCH, false)
+            val LOBBY = GameClassification(ModeContext.LOBBY, false)
+        }
+    }
+
     private val WHITESPACE = Regex("""\s+""")
     private val COLOR_CODE = Regex("""§[0-9a-fk-orA-FK-OR]""")
 
@@ -96,16 +106,23 @@ object ModeClassifier {
 
         val bedwars = classifyBedwars(normalizedTitle, strippedLines)
         val skywars = classifySkywars(normalizedTitle, strippedLines)
-        val duels = classifyDuels(normalizedTitle, strippedLines, bedwars, skywars)
+        val duels = classifyDuels(normalizedTitle, strippedLines, bedwars.context, skywars.context)
+
+        // Same precedence as [SidebarEvidence.resolvedGame]: a match outranks every
+        // lobby-tier result, including hubs that showInHubs gated to NONE.
+        val ordered = listOf(duels, skywars, bedwars)
+        val winner = ordered.firstOrNull { it.context == ModeContext.MATCH }
+            ?: ordered.firstOrNull { it.context != ModeContext.NONE || it.hub }
 
         return SidebarEvidence(
             title = strippedTitle,
             normalizedTitle = normalizedTitle,
             lines = strippedLines,
             titleGeneric = isTitleGeneric(normalizedTitle),
-            bedwars = bedwars,
-            duels = duels,
-            skywars = skywars
+            bedwars = bedwars.context,
+            duels = duels.context,
+            skywars = skywars.context,
+            hub = winner?.hub == true
         )
     }
 
@@ -119,7 +136,7 @@ object ModeClassifier {
         GameMode.SKYWARS -> classifySkywarsChat(normalizedChat)
     }
 
-    private fun classifyBedwars(normalizedTitle: String, lines: List<String>): ModeContext {
+    private fun classifyBedwars(normalizedTitle: String, lines: List<String>): GameClassification {
         val hasBedwarsTitle = normalizedTitle.contains("BEDWARS")
         val hasTeamLines = lines.any { bedwarsTeamPattern.containsMatchIn(it) }
         val hasBedwarsIndicators = lines.any { line ->
@@ -152,17 +169,17 @@ object ModeClassifier {
         }
 
         return when {
-            hasTeamLines && (hasBedwarsTitle || hasBedwarsIndicators) -> ModeContext.MATCH
-            hasBedwarsIndicators && !hasHubLines -> ModeContext.LOBBY
-            hasBedwarsTitle && hasLobbyLines && !hasHubLines -> ModeContext.LOBBY
-            LevelheadConfig.showInHubs && hasHubLines && (hasBedwarsTitle || hasBedwarsIndicators) ->
-                ModeContext.LOBBY
-            else -> ModeContext.NONE
+            hasTeamLines && (hasBedwarsTitle || hasBedwarsIndicators) -> GameClassification.MATCH
+            hasBedwarsIndicators && !hasHubLines -> GameClassification.LOBBY
+            hasBedwarsTitle && hasLobbyLines && !hasHubLines -> GameClassification.LOBBY
+            hasHubLines && (hasBedwarsTitle || hasBedwarsIndicators) ->
+                GameClassification(if (LevelheadConfig.showInHubs) ModeContext.LOBBY else ModeContext.NONE, true)
+            else -> GameClassification.NONE
         }
     }
 
-    private fun classifySkywars(normalizedTitle: String, lines: List<String>): ModeContext {
-        if (!normalizedTitle.contains("SKYWARS")) return ModeContext.NONE
+    private fun classifySkywars(normalizedTitle: String, lines: List<String>): GameClassification {
+        if (!normalizedTitle.contains("SKYWARS")) return GameClassification.NONE
 
         val matchIndicators = lines.any {
             it.contains("Players Left:", ignoreCase = true) ||
@@ -183,14 +200,12 @@ object ModeClassifier {
                 it.contains("Soul Well", ignoreCase = true)
         }
 
-        return if (matchIndicators && !mainLobbyIndicators) {
-            ModeContext.MATCH
-        } else if (preGameIndicators && !mainLobbyIndicators) {
-            ModeContext.LOBBY
-        } else if (LevelheadConfig.showInHubs && mainLobbyIndicators) {
-            ModeContext.LOBBY
-        } else {
-            ModeContext.NONE
+        return when {
+            matchIndicators && !mainLobbyIndicators -> GameClassification.MATCH
+            preGameIndicators && !mainLobbyIndicators -> GameClassification.LOBBY
+            mainLobbyIndicators ->
+                GameClassification(if (LevelheadConfig.showInHubs) ModeContext.LOBBY else ModeContext.NONE, true)
+            else -> GameClassification.NONE
         }
     }
 
@@ -199,9 +214,9 @@ object ModeClassifier {
         lines: List<String>,
         bedwars: ModeContext,
         skywars: ModeContext
-    ): ModeContext {
+    ): GameClassification {
         if (normalizedTitle.contains("BEDWARS") || normalizedTitle.contains("SKYWARS")) {
-            return ModeContext.NONE
+            return GameClassification.NONE
         }
 
         val isBedwarsDuels = lines.any { line ->
@@ -213,13 +228,13 @@ object ModeClassifier {
                 normalizedLine.contains("EMERALDS IN") ||
                 normalizedLine.contains("DIAMONDS IN")
         }
-        if (isBedwarsDuels) return ModeContext.NONE
+        if (isBedwarsDuels) return GameClassification.NONE
 
         val isDuelScoreboard = normalizedTitle.contains("DUELS") ||
             lines.any { it.contains("Duel", ignoreCase = true) }
-        if (!isDuelScoreboard) return ModeContext.NONE
+        if (!isDuelScoreboard) return GameClassification.NONE
 
-        if (bedwars == ModeContext.MATCH || skywars == ModeContext.MATCH) return ModeContext.NONE
+        if (bedwars == ModeContext.MATCH || skywars == ModeContext.MATCH) return GameClassification.NONE
 
         val matchIndicators = lines.any {
             it.contains("Opponent:", ignoreCase = true) ||
@@ -241,9 +256,10 @@ object ModeClassifier {
         }
 
         return when {
-            matchIndicators -> ModeContext.MATCH
-            preGameIndicators || mainLobbyIndicators -> ModeContext.LOBBY
-            else -> ModeContext.NONE
+            matchIndicators -> GameClassification.MATCH
+            preGameIndicators -> GameClassification.LOBBY
+            mainLobbyIndicators -> GameClassification(ModeContext.LOBBY, true)
+            else -> GameClassification.NONE
         }
     }
 

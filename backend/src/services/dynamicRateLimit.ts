@@ -6,6 +6,7 @@ import {
   PUBLIC_RATE_LIMIT_MAX,
 } from '../config';
 import { lookupSignals } from './rateLimitSignals';
+import { getUpstreamQuota } from './hypixel';
 
 const DEFAULT_CACHE_HIT_RATE = 0.8;
 /** Even a perfect cache still hits the network occasionally; never divide by zero. */
@@ -47,7 +48,17 @@ export function calculateDynamicLimit(
   const cacheMissRate = Math.max(1 - cacheHitRate, MIN_CACHE_MISS_RATE);
 
   const remainingCalls = Math.max(0, HYPIXEL_HOURLY_QUOTA - signals.networkLastHour);
-  const availablePerMinute = remainingCalls / 60 / cacheMissRate;
+  let availablePerMinute = remainingCalls / 60 / cacheMissRate;
+
+  // Hypixel enforces a 5-minute window; the hourly figure above is only an
+  // average. When a header reading is available, never hand out more than the
+  // remaining window can absorb.
+  const quota = getUpstreamQuota();
+  if (quota && quota.resetAt > now) {
+    const secondsLeft = Math.max(1, (quota.resetAt - now) / 1000);
+    const upstreamPerMinute = quota.remaining / (secondsLeft / 60);
+    availablePerMinute = Math.min(availablePerMinute, upstreamPerMinute / cacheMissRate);
+  }
 
   // If the last minute already asked for more than the quota can absorb, shrink the
   // per-client budget further instead of waiting for the hourly window to drain.

@@ -7,9 +7,9 @@ import net.minecraft.entity.player.EntityPlayer
 import net.minecraft.potion.Potion
 import net.minecraft.scoreboard.Team.EnumVisible
 
-class AboveHeadDisplay(config: DisplayConfig) : LevelheadDisplay(config) {
+class AboveHeadDisplay(val config: DisplayConfig) {
 
-    override fun loadOrRender(player: EntityPlayer?): Boolean {
+    fun loadOrRender(player: EntityPlayer?): Boolean {
         if (player == null) return false
         if (player.isPotionActive(Potion.invisibility)) return false
         if (!renderFromTeam(player)) return false
@@ -19,7 +19,7 @@ class AboveHeadDisplay(config: DisplayConfig) : LevelheadDisplay(config) {
         return player.getDistanceSqToEntity(localPlayer) <= maxDistanceSq
                 && (!player.hasCustomName() || player.customNameTag.isNotEmpty())
                 && player.displayNameString.isNotEmpty()
-                && super.loadOrRender(player)
+                && !player.displayName.formattedText.contains("§k", true)
                 && !player.isInvisible
                 && !player.isInvisibleToPlayer(localPlayer)
                 && !player.isSneaking

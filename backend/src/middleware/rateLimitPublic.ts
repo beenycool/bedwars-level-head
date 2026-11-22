@@ -4,7 +4,6 @@ import {
   getClientIpAddress,
   publicBatchRateLimiter,
   publicRateLimiter,
-  resolveBatchCost,
 } from './rateLimit';
 
 export const enforcePublicRateLimit = createRateLimitMiddleware({
@@ -16,6 +15,5 @@ export const enforcePublicRateLimit = createRateLimitMiddleware({
 export const enforcePublicBatchRateLimit = createRateLimitMiddleware({
   limiter: publicBatchRateLimiter,
   getBucketKey: (req) => `batch:${getClientIpAddress(req)}`,
-  getCost: resolveBatchCost,
   label: 'public_batch',
 });

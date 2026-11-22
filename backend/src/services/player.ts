@@ -11,7 +11,6 @@ import {
   getPlayerStats,
   setPlayerStats,
 } from './statsCache';
-
 const MEMORY_TTL_MS = 10 * 60 * 1000;
 const NICKED_DB_TTL_MS = Math.min(5 * 60 * 1000, PLAYER_CACHE_DB_TTL_MS);
 
@@ -38,8 +37,6 @@ export function evictPlayerFromMemory(cacheKey: string): void {
 
 export interface ResolvedPlayer {
   payload: MinimalPlayerStats;
-  etag: string | null;
-  lastModified: number | null;
   source: 'cache' | 'network';
   username: string | null;
   nicked: boolean;
@@ -98,8 +95,6 @@ function fromCacheEntry(entry: CachedPlayerStats): ResolvedPlayer {
   const { payload, nicked } = normalizeUuidLookupStats(entry.value);
   return {
     payload,
-    etag: entry.etag,
-    lastModified: entry.lastModified,
     source: 'cache',
     username: normalizeDisplayName(payload.displayname),
     nicked,
@@ -116,7 +111,6 @@ async function loadFromUpstream(uuid: string, generation: number): Promise<Resol
     void setPlayerStats(
       buildPlayerCacheKey(uuid),
       payload,
-      { etag: response.etag, lastModified: response.lastModified },
       nicked ? NICKED_DB_TTL_MS : undefined,
     ).catch((error) => logger.warn({ err: error }, '[player] cache write failed'));
   }
@@ -130,12 +124,29 @@ async function loadFromUpstream(uuid: string, generation: number): Promise<Resol
 
   return {
     payload,
-    etag: response.etag,
-    lastModified: response.lastModified,
     source: 'network',
     username: normalizeDisplayName(payload.displayname),
     nicked,
   };
+}
+
+/**
+ * Read a player from memory or SQL without ever calling upstream. Cache-only
+ * batches must not be able to spend Hypixel quota even if an entry expires
+ * between the warmup read and the per-entry lookup.
+ */
+export async function readCachedPlayer(identifier: string): Promise<ResolvedPlayer | null> {
+  const uuid = normalizeUuid(identifier);
+  if (!uuid) {
+    return null;
+  }
+  const cacheKey = buildPlayerCacheKey(uuid);
+  const memoized = memoizedResults.get(cacheKey);
+  if (memoized) {
+    return { ...memoized, source: 'cache' };
+  }
+  const entry = await getPlayerStats(cacheKey);
+  return entry ? fromCacheEntry(entry) : null;
 }
 
 export async function resolvePlayer(

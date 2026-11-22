@@ -6,8 +6,6 @@ import java.awt.Color
 
 class DisplayConfig(private val role: DisplayRole = DisplayRole.ABOVE_HEAD) {
 
-    var gameMode: GameMode = GameMode.BEDWARS
-
     val displayRole: DisplayRole
         get() = role
 
@@ -36,15 +34,9 @@ class DisplayConfig(private val role: DisplayRole = DisplayRole.ABOVE_HEAD) {
         }
 
     var textShadow: Boolean
-        get() = when (role) {
-            DisplayRole.ABOVE_HEAD -> LevelheadConfig.textShadow
-            DisplayRole.TAB -> LevelheadConfig.tabTextShadow
-        }
+        get() = LevelheadConfig.tabTextShadow
         set(value) {
-            when (role) {
-                DisplayRole.ABOVE_HEAD -> LevelheadConfig.textShadow = value
-                DisplayRole.TAB -> LevelheadConfig.tabTextShadow = value
-            }
+            LevelheadConfig.tabTextShadow = value
         }
 
     fun headerStringFor(gameMode: GameMode): String =

@@ -60,11 +60,7 @@ class LevelheadCommand {
     @SubCommand
     fun whois(@Greedy identifier: String) {
         Levelhead.scope.launch {
-            WhoisService.runWhoisCommand(
-                identifier = identifier,
-                hintCommand = "/levelhead whois <player|uuid> [bw|duels|sw]",
-                hintSuggestion = "/levelhead whois "
-            )
+            WhoisService.runWhoisCommand(identifier)
         }
     }
 

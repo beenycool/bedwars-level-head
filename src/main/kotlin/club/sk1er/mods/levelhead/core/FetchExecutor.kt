@@ -26,7 +26,9 @@ class FetchExecutor(
     private val rateLimiter: RateLimiter,
     private val store: StatsStore,
     private val logger: Logger,
-    private val batchFetcher: suspend (List<UUID>) -> BatchFetchResponse = { ProxyClient.fetchBatch(it) },
+    private val batchFetcher: suspend (List<UUID>, Boolean) -> BatchFetchResponse = { uuids, cacheOnly ->
+        ProxyClient.fetchBatch(uuids, cacheOnly)
+    },
     private val backoff: FetchBackoff = FetchBackoff
 ) {
     private val inFlightStatsRequests: ConcurrentHashMap<StatsKey, Deferred<GameStats?>> = ConcurrentHashMap()
@@ -46,7 +48,8 @@ class FetchExecutor(
 
     suspend fun executeProxyBatch(
         planned: List<FetchWork>,
-        onResult: (StatsKey, GameStats?) -> Unit
+        onResult: (StatsKey, GameStats?) -> Unit,
+        cacheOnly: Boolean = false
     ): List<FetchWork> {
         if (planned.isEmpty()) return emptyList()
         DebugLogging.logRequestDebug {
@@ -125,7 +128,7 @@ class FetchExecutor(
 
                 lastFetchAttemptAt = System.currentTimeMillis()
                 val fetchStartedAt = System.currentTimeMillis()
-                val response = batchFetcher(sent)
+                val response = batchFetcher(sent, cacheOnly)
                 val results = response.results
                 val successCount = results.values.count { it is FetchResult.Success }
                 DebugSession.inc("batch_chunks")
@@ -133,7 +136,7 @@ class FetchExecutor(
                 DebugSession.inc("batch_results", results.size)
                 DebugSession.inc("batch_success", successCount)
                 DebugLogging.logRequestDebug {
-                    "[LevelheadDebug][batch] ${DebugSession.prefix()} chunk=${sent.size} results=${results.size} success=$successCount cache=${response.cacheStatus.name} elapsedMs=${System.currentTimeMillis() - fetchStartedAt}"
+                    "[LevelheadDebug][batch] ${DebugSession.prefix()} chunk=${sent.size} results=${results.size} success=$successCount cache=${response.cacheStatus.name} cacheOnly=$cacheOnly transportFailure=${response.transportFailure} elapsedMs=${System.currentTimeMillis() - fetchStartedAt}"
                 }
 
                 sent.forEach { uuid ->
@@ -174,6 +177,15 @@ class FetchExecutor(
                                 lastFetchSuccessAt = System.currentTimeMillis()
                             }
                         }
+                        FetchResult.Absent -> {
+                            // Cache-only miss: benign, so it must not feed the
+                            // failure counter or the global proxy backoff.
+                            backoff.recordCacheOnlyMiss(uuid)
+                            entries.forEach { entry ->
+                                onResult(entry.key, null)
+                                claims[entry.key]?.complete(null)
+                            }
+                        }
                         else -> {
                             entries.forEach { entry ->
                                 backoff.recordFailure(uuid)
@@ -184,19 +196,10 @@ class FetchExecutor(
                     }
                 }
 
-                if (sent.any { results[it] is FetchResult.Success }) {
-                    if (response.cacheStatus == BatchCacheStatus.HIT) {
-                        // Served entirely from the backend cache: no upstream quota
-                        // was spent, so return the identifiers to this window.
-                        rateLimiter.refund(sent.size)
-                        DebugSession.inc("batch_tokens_refunded", sent.size)
-                    }
-                    backoff.recordProxySuccess()
-                } else {
-                    // The whole chunk failed: stop before sending every remaining
-                    // chunk into a backend that is already refusing us. Complete the
-                    // claimed-but-unsent entries through the failure callback so they
-                    // do not stay Loading until the placeholder expires.
+                if (response.transportFailure) {
+                    // The backend itself is unhealthy: stop before sending every
+                    // remaining chunk into it. Per-player data problems (including
+                    // a chunk with zero successes) no longer land here.
                     backoff.recordProxyFailure()
                     claims.forEach { (key, deferred) ->
                         if (!deferred.isCompleted) {
@@ -207,6 +210,18 @@ class FetchExecutor(
                     }
                     break
                 }
+
+                // Served from the backend cache: no upstream quota was spent, so
+                // return the identifiers to this window. Feature-detected, because
+                // older backends only expose X-Cache.
+                val refundable = response.cacheHits
+                    ?: (if (response.cacheStatus == BatchCacheStatus.HIT) sent.size else 0)
+                val refund = refundable.coerceAtMost(sent.size)
+                if (refund > 0) {
+                    rateLimiter.refund(refund)
+                    DebugSession.inc("batch_tokens_refunded", refund)
+                }
+                backoff.recordProxySuccess()
             }
         } finally {
             claims.forEach { (key, deferred) ->

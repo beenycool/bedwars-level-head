@@ -19,8 +19,7 @@ sealed class GameStats {
         val finalKills: Int? = null,
         val finalDeaths: Int? = null,
         val bedsBroken: Int? = null,
-        val bedsLost: Int? = null,
-        val winstreak: Int? = null
+        val bedsLost: Int? = null
     ) : GameStats() {
         override fun isExpired(ttl: Duration, now: Long): Boolean {
             return now - fetchedAt >= ttl.toMillis()

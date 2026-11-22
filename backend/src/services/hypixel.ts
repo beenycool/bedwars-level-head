@@ -105,6 +105,7 @@ const upstreamPacer = new UpstreamPacer(
  */
 const MAX_COOLDOWN_MS = 5 * 60 * 1000;
 let upstreamCooldownUntil = 0;
+let quotaSnapshot: UpstreamQuota | null = null;
 
 function headerNumber(
   headers: RawAxiosResponseHeaders | AxiosResponseHeaders | undefined,
@@ -128,12 +129,25 @@ function updateRateLimitState(
 ): void {
   const remaining = headerNumber(headers, 'ratelimit-remaining');
   const resetSeconds = headerNumber(headers, 'ratelimit-reset');
+  if (remaining !== null && resetSeconds !== null) {
+    quotaSnapshot = { remaining, resetAt: now + resetSeconds * 1000 };
+  }
   if (remaining === 0 && resetSeconds !== null) {
     upstreamCooldownUntil = Math.max(
       upstreamCooldownUntil,
       now + Math.min(MAX_COOLDOWN_MS, resetSeconds * 1000),
     );
   }
+}
+
+export interface UpstreamQuota {
+  remaining: number;
+  resetAt: number;
+}
+
+/** Last `RateLimit-*` reading from Hypixel, or null if we have not seen one. */
+export function getUpstreamQuota(): UpstreamQuota | null {
+  return quotaSnapshot;
 }
 
 function applyRateLimitCooldown(
@@ -245,17 +259,6 @@ export interface HypixelPlayerResponse {
 
 export interface HypixelFetchResult {
   payload: HypixelPlayerResponse;
-  etag: string | null;
-  lastModified: number | null;
-}
-
-function parseLastModified(value?: string): number | null {
-  if (!value) {
-    return null;
-  }
-
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? null : parsed;
 }
 
 function jitterDelay(): number {
@@ -380,11 +383,7 @@ export async function fetchHypixelPlayer(uuid: string): Promise<HypixelFetchResu
       }
       circuitBreakerSuccess();
 
-      return {
-        payload,
-        etag: response.headers['etag'] ?? null,
-        lastModified: parseLastModified(response.headers['last-modified']),
-      };
+      return { payload };
     } catch (error) {
       lastError = error;
       const response = axios.isAxiosError(error) ? error.response : undefined;
@@ -459,42 +458,6 @@ export async function fetchHypixelPlayer(uuid: string): Promise<HypixelFetchResu
   throw lastError instanceof Error ? lastError : new Error('Unknown Hypixel fetch failure');
 }
 
-let reachabilityCache: { value: boolean; checkedAt: number } | null = null;
-const REACHABILITY_CACHE_MS = 15_000;
-
-export async function checkHypixelReachability(): Promise<boolean> {
-  const now = Date.now();
-  if (reachabilityCache && now - reachabilityCache.checkedAt < REACHABILITY_CACHE_MS) {
-    return reachabilityCache.value;
-  }
-
-  const startedAt = now;
-  try {
-    // `/v2/counts` is a cheap route. The old `/status` call was actually the
-    // player-status endpoint, so it always returned 400 ("missing uuid") while
-    // still being treated as healthy. This doesn't send the API key, so probes
-    // stay free; the short cache below keeps Render's 5-second checks from
-    // multiplying them.
-    const response = await hypixelClient.get('/v2/counts', {
-      timeout: Math.min(HYPIXEL_TIMEOUT_MS, 2000),
-      validateStatus: () => true,
-    });
-    const reachable = response.status < 500;
-    logger.debug({
-      status: response.status,
-      latencyMs: Date.now() - startedAt,
-      reachable,
-      cached: false,
-    }, '[hypixel] status check');
-    reachabilityCache = { value: reachable, checkedAt: Date.now() };
-    return reachable;
-  } catch (error) {
-    logger.error({ err: error }, 'Hypixel reachability check failed');
-    reachabilityCache = { value: false, checkedAt: Date.now() };
-    return false;
-  }
-}
-
 export interface MinimalPlayerStats {
   displayname: string | null;
 
@@ -534,10 +497,16 @@ function computeAggregates(stats: Record<string, unknown>) {
   let kills = 0;
   let deaths = 0;
 
+  // Treat `wins_solo` as a total only when there is no more specific `wins_solo_*`.
+  // Summing both would double-count the same games.
+  const keys = Object.keys(stats);
+  const hasNested = (key: string) => keys.some((other) => other.startsWith(`${key}_`));
+
   for (const key in stats) {
     if (Object.prototype.hasOwnProperty.call(stats, key)) {
       const value = stats[key];
       if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+      if (hasNested(key)) continue;
 
       if (key.startsWith('wins_')) {
         wins += value;

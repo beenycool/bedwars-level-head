@@ -13,6 +13,7 @@ import net.minecraft.util.EnumChatFormatting
 object StatsFormatter {
     private val unresolvedTokenPattern = Regex("%[a-z0-9_]+%", RegexOption.IGNORE_CASE)
     private val singleTokenPattern = Regex("^%[a-z0-9_]+%$", RegexOption.IGNORE_CASE)
+    private val FORMAT_CODE = Regex("§[0-9a-fk-orA-FK-OR]")
 
     fun isStale(stats: GameStats?, now: Long = System.currentTimeMillis()): Boolean =
         stats?.isExpired(LevelheadConfig.starCacheTtl, now) ?: false
@@ -48,7 +49,9 @@ object StatsFormatter {
             config.headerStringFor(gameMode).takeIf { it.isNotBlank() }?.let { "$it: " } ?: ""
         }
         tag.header.color = config.headerColor
-        tag.footer.value = footerValue
+        // Inline colours (prestige stars, division titles, `§r§<colour>` suffixes) would
+        // otherwise override the grey, so the stale marker has to remove them.
+        tag.footer.value = if (stale && stats != null) footerValue.replace(FORMAT_CODE, "") else footerValue
         tag.footer.color = finalColor
         return tag
     }
@@ -78,7 +81,6 @@ object StatsFormatter {
         footerValue = footerValue.replace("%finals%", stats.finalKills?.toString() ?: "?", ignoreCase = true)
         footerValue = footerValue.replace("%beds%", stats.bedsBroken?.toString() ?: "?", ignoreCase = true)
         footerValue = footerValue.replace("%bblr%", bblrString, ignoreCase = true)
-        footerValue = footerValue.replace("%ws%", stats.winstreak?.toString() ?: "?", ignoreCase = true)
         footerValue = sanitizeUnresolvedTokens(footerValue)
 
         val color = tierColorOr(template, style.color, "%fkdr%" to stats.fkdr)

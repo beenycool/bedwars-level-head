@@ -1,6 +1,4 @@
 import { config as loadEnv } from 'dotenv';
-import path from 'node:path';
-import { readFileSync } from 'node:fs';
 
 loadEnv();
 
@@ -173,17 +171,5 @@ function parseBooleanEnv(name: string, defaultValue: boolean): boolean {
 }
 
 function readPackageVersion(): string {
-  const override = process.env.BACKEND_VERSION?.trim();
-  if (override) {
-    return override;
-  }
-  try {
-    const packageJsonPath = path.resolve(__dirname, '..', 'package.json');
-    const parsed = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { version?: string };
-    if (typeof parsed.version === 'string' && parsed.version.trim().length > 0) {
-      return parsed.version.trim();
-    }
-  } catch {
-  }
-  return 'dev';
+  return process.env.BACKEND_VERSION?.trim() || '0.1.0';
 }

@@ -14,13 +14,16 @@ import club.sk1er.mods.levelhead.display.TabDisplay
 import net.minecraft.client.Minecraft
 import net.minecraft.entity.player.EntityPlayer
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 class DisplayManager {
     companion object {
         private const val TAB_FETCH_INTERVAL_MS = 2000L
         private const val MISSING_RETRY_INTERVAL_MS = 2000L
 
-        private const val MAX_REQUESTS_PER_TICK = 20
+        private const val MAX_BATCH_ENTRIES = 100
+        private const val DISK_SAVE_INTERVAL_MS = 60_000L
+        private const val FLUSH_INTERVAL_MS = 250L
     }
 
     var config = MasterConfig()
@@ -31,6 +34,12 @@ class DisplayManager {
     private var lastTabFetchAt: Long = 0L
     private var lastMissingRefreshAt: Long = 0L
     private var lastDebugSummaryAt: Long = 0L
+    private var lastFlushAt: Long = 0L
+    private var lastDiskSaveAt: Long = 0L
+    private var lastSavedSize: Int = -1
+
+    @Volatile
+    private var flushing = false
 
     init {
         aboveHead.add(AboveHeadDisplay(DisplayConfig(DisplayRole.ABOVE_HEAD)))
@@ -91,7 +100,6 @@ class DisplayManager {
             }
             return
         }
-        syncGameMode()
         val activeMode = ModeManager.getActiveGameMode() ?: run {
             DebugLogging.logRequestDebug {
                 "[LevelheadDebug][join] ${DebugSession.prefix()} skip no-mode uuid=$uuid name=$name"
@@ -116,13 +124,12 @@ class DisplayManager {
         DebugLogging.logRequestDebug {
             "[LevelheadDebug][join] ${DebugSession.prefix()} enqueue uuid=$uuid name=$name mode=${activeMode.name}"
         }
-        enqueueRequest(uuid.trimmed, activeMode.typeId, Levelhead.RequestReason.PLAYER_JOIN)
+        enqueueRequest(uuid, activeMode, Levelhead.RequestReason.PLAYER_JOIN)
     }
 
-    private data class RequestKey(val uuid: String, val type: String)
-    private val pendingRequests: MutableMap<RequestKey, Levelhead.LevelheadRequest> = Collections.synchronizedMap(
-        object : LinkedHashMap<RequestKey, Levelhead.LevelheadRequest>(128, 0.75f, false) {
-            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<RequestKey, Levelhead.LevelheadRequest>): Boolean {
+    private val pendingRequests: MutableMap<StatsKey, Levelhead.LevelheadRequest> = Collections.synchronizedMap(
+        object : LinkedHashMap<StatsKey, Levelhead.LevelheadRequest>(128, 0.75f, false) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<StatsKey, Levelhead.LevelheadRequest>): Boolean {
                 return size > 1000
             }
         }
@@ -134,13 +141,13 @@ class DisplayManager {
         }
     }
 
-    private fun enqueueRequest(uuid: String, type: String, reason: Levelhead.RequestReason) {
+    private fun enqueueRequest(uuid: UUID, gameMode: GameMode, reason: Levelhead.RequestReason) {
         DebugSession.inc("enqueue_total")
         DebugSession.inc("enqueue_${reason.name.lowercase()}")
         DebugLogging.logRequestDebug {
-            "[LevelheadDebug][enqueue] ${DebugSession.prefix()} uuid=$uuid type=$type reason=$reason pending=${pendingRequests.size}"
+            "[LevelheadDebug][enqueue] ${DebugSession.prefix()} uuid=$uuid mode=${gameMode.name} reason=$reason pending=${pendingRequests.size}"
         }
-        val key = RequestKey(uuid, type)
+        val key = StatsKey(uuid, gameMode)
         synchronized(pendingRequests) {
             val existing = pendingRequests[key]
             pendingRequests[key] = if (existing != null) {
@@ -148,7 +155,7 @@ class DisplayManager {
                     reason = if (existing.reason == reason) existing.reason else Levelhead.RequestReason.UNKNOWN
                 )
             } else {
-                Levelhead.LevelheadRequest(uuid, type, reason)
+                Levelhead.LevelheadRequest(uuid, gameMode, reason)
             }
         }
     }
@@ -177,14 +184,25 @@ class DisplayManager {
             lastMissingRefreshAt = now
         }
 
+        if (now - lastDiskSaveAt >= DISK_SAVE_INTERVAL_MS) {
+            lastDiskSaveAt = now
+            val size = Levelhead.statsStore.size()
+            if (size != lastSavedSize) {
+                lastSavedSize = size
+                Levelhead.scope.launch { StatsDiskCache.save(Levelhead.statsStore) }
+            }
+        }
+
         if (pendingRequests.isEmpty()) return
+        if (flushing) return
+        if (now - lastFlushAt < FLUSH_INTERVAL_MS) return
         DebugSession.inc("drain_ticks")
         val pendingBefore = pendingRequests.size
         val batch = ArrayList<Levelhead.LevelheadRequest>()
         synchronized(pendingRequests) {
             val it = pendingRequests.values.iterator()
             var count = 0
-            while (it.hasNext() && count < MAX_REQUESTS_PER_TICK) {
+            while (it.hasNext() && count < MAX_BATCH_ENTRIES) {
                 batch.add(it.next())
                 it.remove()
                 count++
@@ -194,7 +212,10 @@ class DisplayManager {
             DebugLogging.logRequestDebug {
                 "[LevelheadDebug][drain] ${DebugSession.prefix()} pendingBefore=$pendingBefore batch=${batch.size} remaining=${pendingRequests.size} reasons=${batch.groupingBy { it.reason }.eachCount()}"
             }
-            Levelhead.requestCoordinator.fetchBatch(batch)
+            flushing = true
+            lastFlushAt = now
+            Levelhead.requestCoordinator.fetchBatch(batch, ModeManager.isHub())
+                .invokeOnCompletion { flushing = false }
         }
     }
 
@@ -232,7 +253,7 @@ class DisplayManager {
             DebugSession.inc("visible_skipped_no_mode")
             return
         }
-        if (buildActiveDisplayList().isEmpty()) {
+        if (!hasActiveDisplay()) {
             DebugSession.inc("visible_skipped_no_display")
             return
         }
@@ -257,8 +278,8 @@ class DisplayManager {
             }
             enqueued++
             enqueueRequest(
-                player.uniqueID.trimmed,
-                activeMode.typeId,
+                player.uniqueID,
+                activeMode,
                 Levelhead.RequestReason.REFRESH_VISIBLE_DISPLAYS
             )
         }
@@ -324,7 +345,7 @@ class DisplayManager {
                 sample.add(info.gameProfile.name ?: uuid.toString().take(8))
             }
             enqueued++
-            enqueueRequest(uuid.trimmed, activeMode.typeId, Levelhead.RequestReason.TAB_LIST)
+            enqueueRequest(uuid, activeMode, Levelhead.RequestReason.TAB_LIST)
         }
         DebugSession.inc("tab_scan")
         DebugSession.inc("tab_tab_size", tabSize)
@@ -337,27 +358,8 @@ class DisplayManager {
         }
     }
 
-    fun primaryDisplay(): AboveHeadDisplay? = aboveHead.firstOrNull()
-
-    fun syncGameMode() {
-        val detectedMode = ModeManager.getActiveGameMode() ?: run {
-            Levelhead.logger.debug("syncGameMode: no active game mode, skipping")
-            return
-        }
-
-        Levelhead.logger.debug("syncGameMode: detectedMode={} currentConfigGameMode={}",
-            detectedMode, primaryDisplay()?.config?.gameMode)
-
-        primaryDisplay()?.config?.gameMode = detectedMode
-        tab.config.gameMode = detectedMode
-    }
-
-    private fun buildActiveDisplayList(): List<club.sk1er.mods.levelhead.display.LevelheadDisplay> {
-        val list = mutableListOf<club.sk1er.mods.levelhead.display.LevelheadDisplay>()
-        aboveHead.filter { it.config.enabled }.forEach { list.add(it) }
-        if (tab.config.enabled && LevelheadConfig.showTabStats) list.add(tab)
-        return list
-    }
+    private fun hasActiveDisplay(): Boolean =
+        aboveHead.any { it.config.enabled } || (tab.config.enabled && LevelheadConfig.showTabStats)
 
     fun requestAllDisplays() {
         val world = Minecraft.getMinecraft().theWorld ?: run {
@@ -382,9 +384,7 @@ class DisplayManager {
             return
         }
 
-        syncGameMode()
-
-        if (buildActiveDisplayList().isEmpty()) {
+        if (!hasActiveDisplay()) {
             DebugSession.inc("world_skipped_no_display")
             return
         }
@@ -411,7 +411,7 @@ class DisplayManager {
                 continue
             }
             enqueued++
-            enqueueRequest(uuid.trimmed, activeMode.typeId, Levelhead.RequestReason.REQUEST_ALL_DISPLAYS)
+            enqueueRequest(uuid, activeMode, Levelhead.RequestReason.REQUEST_ALL_DISPLAYS)
         }
         DebugSession.inc("world_requested", uuids.size)
         DebugSession.inc("world_enqueued", enqueued)

@@ -3,8 +3,6 @@ export interface PlayerStatsCacheTable {
   payload: string;
   expires_at: number;
   cached_at: number | null;
-  etag: string | null;
-  last_modified: number | null;
   source: string | null;
 }
 

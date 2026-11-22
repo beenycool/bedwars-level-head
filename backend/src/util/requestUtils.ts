@@ -9,6 +9,15 @@ export function extractBatchIdentifiersFromBody(body: unknown): unknown[] | unde
   return undefined;
 }
 
+/**
+ * Cache-only batch requests may only be answered from the local cache. They are
+ * opt-in per request and must be a literal `true`; a string "true" or a truthy
+ * value is rejected so an old client cannot accidentally disable its own lookups.
+ */
+export function extractCacheOnlyFromBody(body: unknown): boolean {
+  return isNonArrayObject(body) && body.cacheOnly === true;
+}
+
 export function parseAndValidateBatchIdentifiers(
   uuidsValue: unknown[],
 ): { uniqueUuids: string[]; hasInvalid: boolean } {

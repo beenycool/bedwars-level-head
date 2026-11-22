@@ -25,12 +25,6 @@ class MasterConfig {
             LevelheadConfig.backgroundOpacity = value
         }
 
-    var textShadow: Boolean
-        get() = LevelheadConfig.textShadow
-        set(value) {
-            LevelheadConfig.textShadow = value
-        }
-
     var displayPosition: DisplayPosition
         get() = DisplayPosition.entries.getOrNull(LevelheadConfig.displayPositionIndex) ?: DisplayPosition.ABOVE
         set(value) {

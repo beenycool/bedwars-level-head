@@ -397,7 +397,7 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
   const routeSlices = charts.routes.map((slice, index) => ({
     label: slice.label,
     value: slice.count,
-    color: ['#3b82f6', '#22d3ee', '#a78bfa'][index % 3],
+    color: ['#3b82f6', '#22d3ee', '#a78bfa', '#f59e0b'][index % 4],
   }));
   const cacheRate = summary.total > 0 ? (summary.cacheHits / summary.total) * 100 : 0;
   const successRate = summary.total > 0 ? (summary.success / summary.total) * 100 : 0;

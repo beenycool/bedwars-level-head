@@ -6,7 +6,7 @@ import { bedwarsStars } from '../util/bedwarsStars';
 import { logger } from '../util/logger';
 import { recordLookupSignals } from './rateLimitSignals';
 
-export type LookupRoute = 'public' | 'legacy' | 'batch';
+export type LookupRoute = 'public' | 'legacy' | 'batch' | 'batch-cache';
 
 export interface LookupObservation {
   identifier: string;
@@ -53,6 +53,8 @@ export function buildLookupLogRows(
  * write is detached and every failure is downgraded to a warning.
  */
 export function recordLookups(observations: LookupObservation[], route: LookupRoute): void {
+  // Signals feed the dynamic limiter's cache-hit rate, so cache-only hits must land
+  // there even when persistence is disabled or fails.
   recordLookupSignals(observations);
   if (!LOOKUP_TRACKING_ENABLED || observations.length === 0) {
     return;

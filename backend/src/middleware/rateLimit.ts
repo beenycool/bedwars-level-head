@@ -9,8 +9,6 @@ import {
 import { getDynamicPublicLimit, registerActiveClientSource } from '../services/dynamicRateLimit';
 import { HttpError } from '../util/httpError';
 import { logger } from '../util/logger';
-import { MAX_BATCH_SIZE, normalizeIdentifier } from '../util/validationConstants';
-import { extractBatchIdentifiersFromBody } from '../util/requestUtils';
 
 export interface ConsumeResult {
   allowed: boolean;
@@ -259,6 +257,35 @@ export function refundPublicTokens(
   limiter.refund(`${pool === 'batch' ? 'batch' : 'public'}:${ip}`, Math.floor(count));
 }
 
+/**
+ * Charge up to `count` identifiers, returning how many the bucket could actually
+ * afford. Batch lookups use this after the cache warmup so cached players cost
+ * nothing and a nearly-empty bucket still serves the hits it can.
+ */
+export function consumePublicTokens(
+  req: Request,
+  count: number,
+  pool: PublicPool = 'single',
+): number {
+  if (!Number.isFinite(count) || count <= 0) {
+    return 0;
+  }
+  const ip = getClientIpAddress(req);
+  const limiter = pool === 'batch' ? publicBatchRateLimiter : publicRateLimiter;
+  const key = `${pool === 'batch' ? 'batch' : 'public'}:${ip}`;
+
+  const first = limiter.consume(key, count);
+  if (first.allowed) {
+    return count;
+  }
+  const available = Math.max(0, first.remaining);
+  if (available === 0) {
+    return 0;
+  }
+  const second = limiter.consume(key, available);
+  return second.allowed ? available : 0;
+}
+
 interface RateLimitOptions {
   limiter: TokenBucketLimiter;
   getBucketKey(req: Request): string;
@@ -327,28 +354,8 @@ export const enforceAdminRateLimit = createRateLimitMiddleware({
   label: 'admin',
 });
 
-export function resolveBatchCost(req: Request): number {
-  const uuidsValue = extractBatchIdentifiersFromBody(req.body);
-  if (!uuidsValue) {
-    return 1;
-  }
-  const unique = new Set<string>();
-  for (const value of uuidsValue) {
-    if (typeof value === 'string') {
-      const trimmed = value.trim();
-      if (trimmed.length > 0) {
-        // Case and dash variants of the same UUID are one identifier, matching
-        // the batch handler's deduplication.
-        unique.add(normalizeIdentifier(trimmed));
-      }
-    }
-  }
-  return Math.min(MAX_BATCH_SIZE, Math.max(1, unique.size));
-}
-
 export const enforceBatchRateLimit = createRateLimitMiddleware({
   limiter: publicBatchRateLimiter,
   getBucketKey: (req) => `batch:${getClientIpAddress(req)}`,
-  getCost: resolveBatchCost,
   label: 'legacy_batch',
 });

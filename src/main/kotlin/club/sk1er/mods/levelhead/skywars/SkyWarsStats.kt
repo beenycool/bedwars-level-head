@@ -1,7 +1,6 @@
 package club.sk1er.mods.levelhead.skywars
 
 import club.sk1er.mods.levelhead.core.ratioOf
-import com.google.gson.JsonObject
 import java.awt.Color
 
 object SkyWarsStats {
@@ -120,45 +119,7 @@ object SkyWarsStats {
         return result.toString()
     }
 
-    fun parseExperience(json: JsonObject): Long? {
-        val skywars = findSkyWarsStats(json) ?: return null
-        return skywars.get("skywars_experience")?.takeIf { !it.isJsonNull }
-            ?.let { runCatching { it.asLong }.getOrNull() }
-            ?: skywars.get("experience")?.takeIf { !it.isJsonNull }
-                ?.let { runCatching { it.asLong }.getOrNull() }
-            ?: skywars.get("Experience")?.takeIf { !it.isJsonNull }
-                ?.let { runCatching { it.asLong }.getOrNull() }
-    }
-
-    fun parseWins(json: JsonObject): Int? {
-        val skywars = findSkyWarsStats(json) ?: return null
-        return skywars.get("wins")?.takeIf { !it.isJsonNull }
-            ?.let { runCatching { it.asInt }.getOrNull() }
-    }
-
-    fun parseLosses(json: JsonObject): Int? {
-        val skywars = findSkyWarsStats(json) ?: return null
-        return skywars.get("losses")?.takeIf { !it.isJsonNull }
-            ?.let { runCatching { it.asInt }.getOrNull() }
-    }
-
-    fun parseKills(json: JsonObject): Int? {
-        val skywars = findSkyWarsStats(json) ?: return null
-        return skywars.get("kills")?.takeIf { !it.isJsonNull }
-            ?.let { runCatching { it.asInt }.getOrNull() }
-    }
-
-    fun parseDeaths(json: JsonObject): Int? {
-        val skywars = findSkyWarsStats(json) ?: return null
-        return skywars.get("deaths")?.takeIf { !it.isJsonNull }
-            ?.let { runCatching { it.asInt }.getOrNull() }
-    }
-
     fun calculateKDR(kills: Int?, deaths: Int?): Double? = ratioOf(kills, deaths)
 
     fun calculateWLR(wins: Int?, losses: Int?): Double? = ratioOf(wins, losses)
-
-    private fun findSkyWarsStats(json: JsonObject): JsonObject? {
-        return club.sk1er.mods.levelhead.core.StatsPayloadParser.findStatsObject(json, club.sk1er.mods.levelhead.core.GameMode.SKYWARS)
-    }
 }

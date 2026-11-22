@@ -1,14 +1,17 @@
 import type { RequestHandler } from 'express';
 import pLimit from 'p-limit';
-import { resolvePlayer, ResolvedPlayer, warmupPlayerCache } from '../services/player';
+import { readCachedPlayer, resolvePlayer, ResolvedPlayer, warmupPlayerCache } from '../services/player';
 import type { LookupObservation, LookupRoute } from '../services/lookupTracking';
 import { recordLookups } from '../services/lookupTracking';
 import { HttpError } from '../util/httpError';
-import { extractBatchIdentifiersFromBody, parseAndValidateBatchIdentifiers } from '../util/requestUtils';
+import {
+  extractBatchIdentifiersFromBody,
+  extractCacheOnlyFromBody,
+  parseAndValidateBatchIdentifiers,
+} from '../util/requestUtils';
 import { getCircuitBreakerState } from '../services/hypixel';
-import { refundPublicTokens } from '../middleware/rateLimit';
+import { consumePublicTokens, refundPublicTokens } from '../middleware/rateLimit';
 import { IDENTIFIER_MAX_LENGTH, normalizeUuid } from '../util/validationConstants';
-import { computeResponseEtag } from '../util/etag';
 import { logger } from '../util/logger';
 
 interface PlayerLookupHandlerOptions {
@@ -20,6 +23,7 @@ interface PlayerLookupHandlerOptions {
 interface PlayerBatchHandlerOptions {
   batchSize: number;
   cacheControl?: string;
+  route?: LookupRoute;
 }
 
 function isUpstreamFailure(error: unknown): boolean {
@@ -48,7 +52,7 @@ const RETRY_AFTER_MAX_SECONDS = 300;
 
 type BatchOutcome =
   | { ok: true; identifier: string; resolved: ResolvedPlayer }
-  | { ok: false; identifier: string; error: unknown };
+  | { ok: false; identifier: string; error: unknown; rateLimited?: boolean };
 
 /**
  * Use the upstream's own Retry-After window when a failure carries one, instead
@@ -106,19 +110,10 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
         nicked: resolved.nicked,
         latencyMs: Date.now() - startedAt,
       }, '[lookup] individual');
-      const responseEtag = computeResponseEtag(resolved.etag, resolved.nicked);
-      if (responseEtag) {
-        res.set('ETag', responseEtag);
-      }
-
-      if (resolved.lastModified) {
-        res.set('Last-Modified', new Date(resolved.lastModified).toUTCString());
-      }
 
       res.set('X-Cache', resolved.source === 'cache' ? 'HIT' : 'MISS');
       res.set('Cache-Control', options.cacheControl);
 
-      const status = req.fresh ? 304 : 200;
       recordLookups(
         [
           {
@@ -127,7 +122,7 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
             bedwarsExperience: resolved.payload.bedwars_experience,
             nicked: resolved.nicked,
             source: resolved.source,
-            status,
+            status: 200,
             latencyMs: Date.now() - startedAt,
           },
         ],
@@ -136,11 +131,6 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
 
       if (resolved.source === 'cache') {
         refundPublicTokens(req, 1, 'single');
-      }
-
-      if (req.fresh) {
-        res.status(304).end();
-        return;
       }
 
       const isCircuitOpen = getCircuitBreakerState().state === 'open';
@@ -180,6 +170,7 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
 
 export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): RequestHandler {
   const batchLimit = pLimit(6);
+  const route = options.route ?? 'batch';
 
   return async (req, res, next) => {
     const uuidsValue = extractBatchIdentifiersFromBody(req.body);
@@ -206,7 +197,12 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
       return;
     }
 
+    const cacheOnly = extractCacheOnlyFromBody(req.body);
+
     if (uniqueUuids.length === 0) {
+      if (cacheOnly) {
+        refundPublicTokens(req, 1, 'batch');
+      }
       res.json({ success: true, data: {} });
       return;
     }
@@ -217,18 +213,78 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
     logger.info({
       session,
       install,
-      route: 'batch',
+      route,
       requested: uuidsValue.length,
       unique: uniqueUuids.length,
     }, '[lookup] batch start');
 
     try {
+      if (cacheOnly) {
+        const misses = await warmupPlayerCache(uniqueUuids);
+        const hits = uniqueUuids.filter((identifier) => !misses.has(identifier));
+
+        const observations: LookupObservation[] = [];
+        const data: Record<string, ResolvedPlayer['payload'] & { nicked: boolean }> = {};
+        for (const identifier of hits) {
+          const itemStartedAt = Date.now();
+          const resolved = await readCachedPlayer(identifier);
+          // The entry can expire between warmup and this read; omit it rather than
+          // fall through to an upstream fetch.
+          if (!resolved) {
+            continue;
+          }
+          data[identifier] = { ...resolved.payload, nicked: resolved.nicked };
+          observations.push({
+            identifier,
+            username: resolved.username,
+            bedwarsExperience: resolved.payload.bedwars_experience,
+            nicked: resolved.nicked,
+            source: 'cache',
+            status: 200,
+            latencyMs: Date.now() - itemStartedAt,
+          });
+        }
+
+        logger.info({
+          session,
+          install,
+          route,
+          requested: uniqueUuids.length,
+          cacheHits: observations.length,
+          networkMisses: 0,
+          errors: 0,
+          latencyMs: Date.now() - startedAt,
+          cacheOnly: true,
+        }, '[lookup] batch done');
+
+        recordLookups(observations, 'batch-cache');
+        refundPublicTokens(req, 1, 'batch');
+
+        res.set('X-Cache', observations.length > 0 ? 'HIT' : 'MISS');
+        res.set('X-Cache-Hits', String(observations.length));
+        if (options.cacheControl) {
+          res.set('Cache-Control', options.cacheControl);
+        }
+
+        res.json({ success: true, data });
+        return;
+      }
+
       const warmedMisses = await warmupPlayerCache(uniqueUuids);
+      const missList = uniqueUuids.filter((identifier) => warmedMisses.has(identifier));
+      const granted = consumePublicTokens(req, missList.length, 'batch');
+      const skipped = new Set(missList.slice(granted));
+      // The middleware's single reservation has done its job: request accounting is
+      // finished and only the upstream misses above are charged.
+      refundPublicTokens(req, 1, 'batch');
 
       const observations: LookupObservation[] = [];
       const outcomes = await Promise.all(
         uniqueUuids.map((identifier) =>
           batchLimit(async () => {
+            if (skipped.has(identifier)) {
+              return { ok: false as const, identifier, error: null, rateLimited: true };
+            }
             const startedAt = Date.now();
             try {
               const resolved = await resolvePlayer(identifier, warmedMisses);
@@ -267,21 +323,22 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
       logger.info({
         session,
         install,
-        route: 'batch',
+        route,
         requested: uniqueUuids.length,
         cacheHits: cacheHitCount,
         networkMisses: networkMissCount,
         errors: errorCount,
+        rateLimited: skipped.size,
         latencyMs: Date.now() - startedAt,
       }, '[lookup] batch done');
       outcomes
-        .filter((outcome) => !outcome.ok)
+        .filter((outcome) => !outcome.ok && outcome.error)
         .slice(0, 5)
         .forEach((outcome) => {
           logger.debug({ session, identifier: outcome.identifier, err: outcome.error }, '[lookup] batch item failed');
         });
 
-      recordLookups(observations, 'batch');
+      recordLookups(observations, route);
 
       const data: Record<string, ResolvedPlayer['payload'] & { nicked: boolean }> = {};
       let cacheHits = 0;
@@ -295,17 +352,19 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
           if (outcome.resolved.source === 'cache') {
             cacheHits += 1;
           }
-        } else if (isUpstreamFailure(outcome.error)) {
+        } else if (!outcome.rateLimited && isUpstreamFailure(outcome.error)) {
           upstreamFailures += 1;
         }
       }
 
-      refundPublicTokens(req, cacheHits, 'batch');
-
       if (successes === 0) {
+        if (skipped.size === outcomes.length) {
+          throw new HttpError(429, 'RATE_LIMIT', 'Identifier budget exhausted. Try again shortly.', {
+            'Retry-After': '5',
+          });
+        }
         if (upstreamFailures === outcomes.length) {
-          // No data was delivered, so hand this request's identifier tokens back.
-          refundPublicTokens(req, uniqueUuids.length, 'batch');
+          refundPublicTokens(req, granted, 'batch');
           const retryAfter = deriveRetryAfterSeconds(outcomes) ?? BATCH_RETRY_AFTER_DEFAULT_SECONDS;
           throw upstreamUnavailable(retryAfter);
         }
@@ -313,6 +372,7 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
       }
 
       res.set('X-Cache', cacheHits === successes ? 'HIT' : cacheHits > 0 ? 'PARTIAL' : 'MISS');
+      res.set('X-Cache-Hits', String(cacheHits));
 
       if (options.cacheControl) {
         res.set('Cache-Control', options.cacheControl);

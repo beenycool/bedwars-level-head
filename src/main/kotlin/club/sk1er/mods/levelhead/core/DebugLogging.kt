@@ -20,7 +20,7 @@ object DebugLogging {
         return "****-$lastFour"
     }
 
-    /** Canonical UUID patterns shared with PlayerIdentifiers and ProxyClient. */
+    /** Canonical UUID patterns shared with ProxyClient. */
     internal val UUID_REGEX = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
     internal val TRIMMED_UUID_REGEX = Regex("^[0-9a-fA-F]{32}$")
 

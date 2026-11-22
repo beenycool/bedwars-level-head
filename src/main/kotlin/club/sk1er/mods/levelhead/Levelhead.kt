@@ -12,6 +12,8 @@ import club.sk1er.mods.levelhead.core.ModeManager
 import club.sk1er.mods.levelhead.core.RateLimiter
 import club.sk1er.mods.levelhead.core.RateLimiterMetrics
 import club.sk1er.mods.levelhead.core.RequestCoordinator
+import club.sk1er.mods.levelhead.core.StatsKey
+import club.sk1er.mods.levelhead.core.StatsDiskCache
 import club.sk1er.mods.levelhead.core.StatsStore
 import club.sk1er.mods.levelhead.render.AboveHeadRender
 import com.google.gson.Gson
@@ -122,7 +124,7 @@ object Levelhead {
             val stream = Levelhead::class.java.getResourceAsStream("/mcmod.info") ?: return@runCatching null
             stream.use { input ->
                 val text = input.reader(StandardCharsets.UTF_8).readText()
-                val json = JsonParser.parseString(text)
+                val json = JsonParser().parse(text)
                 json.asJsonArray.firstOrNull()?.asJsonObject?.get("version")?.asString
             }
         }.getOrNull()?.takeIf { it.isNotBlank() && !it.contains("\${") } ?: "local"
@@ -256,6 +258,7 @@ object Levelhead {
         MinecraftForge.EVENT_BUS.register(ModeManager.tracker)
         MinecraftForge.EVENT_BUS.register(this)
         CommandManager.INSTANCE.registerCommand(LevelheadCommand())
+        scope.launch { StatsDiskCache.load(statsStore) }
     }
 
     @SubscribeEvent
@@ -282,6 +285,7 @@ object Levelhead {
             requestCoordinator.reset()
             displayManager.clearPendingRequests()
         }
+        scope.launch { StatsDiskCache.save(statsStore) }
     }
 
     @SubscribeEvent
@@ -314,6 +318,7 @@ object Levelhead {
     }
 
     fun clearCachedStats() {
+        StatsDiskCache.clear()
         statsStore.clear()
         statsStore.resetMetrics()
         requestCoordinator.reset()
@@ -401,10 +406,12 @@ object Levelhead {
     }
 
     data class LevelheadRequest(
-        val uuid: String,
-        val type: String,
+        val uuid: UUID,
+        val gameMode: GameMode,
         val reason: RequestReason = RequestReason.UNKNOWN
-    )
+    ) {
+        val key: StatsKey get() = StatsKey(uuid, gameMode)
+    }
 
     enum class RequestReason {
         PLAYER_JOIN,

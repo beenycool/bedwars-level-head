@@ -1,7 +1,6 @@
 package club.sk1er.mods.levelhead.duels
 
 import club.sk1er.mods.levelhead.core.ratioOf
-import com.google.gson.JsonObject
 import java.awt.Color
 
 object DuelsStats {
@@ -75,45 +74,9 @@ object DuelsStats {
         )
     }
 
-    fun parseWins(json: JsonObject): Int? {
-        val duels = findDuelsStats(json) ?: return null
-        return duels.get("wins")?.takeIf { !it.isJsonNull }
-            ?.let { runCatching { it.asInt }.getOrNull() }
-    }
-
-    fun parseLosses(json: JsonObject): Int? {
-        val duels = findDuelsStats(json) ?: return null
-        return duels.get("losses")?.takeIf { !it.isJsonNull }
-            ?.let { runCatching { it.asInt }.getOrNull() }
-    }
-
-    fun parseKills(json: JsonObject): Int? {
-        val duels = findDuelsStats(json) ?: return null
-        return duels.get("kills")?.takeIf { !it.isJsonNull }
-            ?.let { runCatching { it.asInt }.getOrNull() }
-    }
-
-    fun parseDeaths(json: JsonObject): Int? {
-        val duels = findDuelsStats(json) ?: return null
-        return duels.get("deaths")?.takeIf { !it.isJsonNull }
-            ?.let { runCatching { it.asInt }.getOrNull() }
-    }
-
-    fun parseWinstreak(json: JsonObject): Int? {
-        val duels = findDuelsStats(json) ?: return null
-        return duels.get("winstreak")?.takeIf { !it.isJsonNull }
-            ?.let { runCatching { it.asInt }.getOrNull() }
-            ?: duels.get("current_winstreak")?.takeIf { !it.isJsonNull }
-                ?.let { runCatching { it.asInt }.getOrNull() }
-    }
-
     fun calculateWLR(wins: Int?, losses: Int?): Double? = ratioOf(wins, losses)
 
     fun calculateKDR(kills: Int?, deaths: Int?): Double? = ratioOf(kills, deaths)
-
-    private fun findDuelsStats(json: JsonObject): JsonObject? {
-        return club.sk1er.mods.levelhead.core.StatsPayloadParser.findStatsObject(json, club.sk1er.mods.levelhead.core.GameMode.DUELS)
-    }
 
     fun symbolForDivisionId(id: String): String {
         return when (id) {

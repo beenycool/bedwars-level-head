@@ -2,10 +2,8 @@ import { createApp } from './app';
 import { SERVER_HOST, SERVER_PORT } from './config';
 import { logger } from './util/logger';
 import { startBackgroundServices, stopBackgroundServices, safeCloseCache } from './scheduler';
-import { initAllowedKeyHashes as initAdminKeyHashes } from './middleware/adminAuth';
 
 async function main(): Promise<void> {
-  await initAdminKeyHashes();
 
   const app = createApp();
   startBackgroundServices();

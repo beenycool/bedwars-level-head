@@ -21,7 +21,6 @@ WORKDIR /app
 
 # The bundle needs no node_modules.
 COPY --from=builder /app/dist/index.js ./dist/index.js
-COPY --from=builder /app/package.json ./package.json
 
 # The bundle only reads files and listens on a port; run unprivileged.
 USER node

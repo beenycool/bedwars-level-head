@@ -53,6 +53,8 @@ object ModeManager {
 
     fun getActiveGameMode(): GameMode? = forcedGameMode() ?: tracker.mode
 
+    fun isHub(): Boolean = tracker.isHub
+
     private fun forcedGameMode(): GameMode? = when (LevelheadConfig.modeOverrideIndex) {
         1 -> GameMode.BEDWARS
         2 -> GameMode.DUELS

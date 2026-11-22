@@ -88,18 +88,17 @@ class StatsStore(
 
     /**
      * Record a failed lookup. Existing usable stats are kept: a failed refresh must
-     * not throw away the last good tag. When there is nothing to keep, the entry
-     * becomes [StatsState.Failed], which renders nothing.
+     * not throw away the last good tag. When there is nothing to keep, the placeholder
+     * is dropped, which renders nothing and lets [FetchBackoff] decide the retry.
      */
-    fun putFailure(uuid: UUID, gameMode: GameMode, nextRetryAt: Long) {
+    fun putFailure(uuid: UUID, gameMode: GameMode) {
         val key = StatsKey(uuid, gameMode)
-        val existing = entries[key]
-        if (existing?.state?.statsOrNull != null) {
+        val existing = entries[key] ?: return
+        if (existing.state.statsOrNull != null) {
             existing.access = accessCounter.incrementAndGet()
             return
         }
-        val attempts = ((existing?.state as? StatsState.Failed)?.attempts ?: 0) + 1
-        put(uuid, gameMode, StatsState.Failed(attempts, nextRetryAt))
+        entries.remove(key, existing)
     }
 
     fun markLoading(uuid: UUID, gameMode: GameMode, now: Long = clock()) {
@@ -117,7 +116,6 @@ class StatsStore(
             is StatsState.Loading -> if (isStaleLoading(state, now)) {
                 put(uuid, gameMode, StatsState.Loading(now))
             }
-            is StatsState.Failed -> put(uuid, gameMode, StatsState.Loading(now))
             is StatsState.Ok -> if (state.stats.isExpired(ttlProvider(), now)) {
                 put(uuid, gameMode, StatsState.Loading(now))
             }
@@ -148,6 +146,20 @@ class StatsStore(
     }
 
     fun size(): Int = entries.size
+
+    /** Point-in-time copy for persistence. Entries without usable stats are skipped. */
+    fun snapshot(): Map<StatsKey, GameStats> {
+        val copy = LinkedHashMap<StatsKey, GameStats>()
+        for ((key, entry) in entries) {
+            entry.state.statsOrNull?.let { copy[key] = it }
+        }
+        return copy
+    }
+
+    /** Restore a persisted entry; its original fetch time decides staleness. */
+    fun restore(uuid: UUID, gameMode: GameMode, stats: GameStats) {
+        putSuccess(uuid, gameMode, stats)
+    }
 
     fun metricsSnapshot(): StatsCacheSnapshot = metrics.snapshot()
 
@@ -191,17 +203,13 @@ sealed class StatsState {
 
     data class Ok(val stats: GameStats, override val fetchedAt: Long) : StatsState()
 
-    data class Failed(val attempts: Int, val nextRetryAt: Long) : StatsState() {
-        override val fetchedAt: Long get() = 0L
-    }
-
     data class Nicked(val stats: GameStats, override val fetchedAt: Long) : StatsState()
 
     val statsOrNull: GameStats?
         get() = when (this) {
             is Ok -> stats
             is Nicked -> stats
-            is Loading, is Failed -> null
+            is Loading -> null
         }
 }
 

@@ -1,6 +1,5 @@
 import express from 'express';
 import compression from 'compression';
-import cors from 'cors';
 import helmet from 'helmet';
 import pinoHttp from 'pino-http';
 import type { ServerResponse } from 'node:http';
@@ -11,7 +10,7 @@ import statsRouter from './routes/stats';
 import { HttpError } from './util/httpError';
 import { ADMIN_API_KEYS, TRUST_PROXY_CIDRS, TRUST_SINGLE_PROXY_HOP } from './config';
 import { checkDatabaseHealth } from './services/cache';
-import { checkHypixelReachability, getCircuitBreakerState } from './services/hypixel';
+import { getCircuitBreakerState } from './services/hypixel';
 import { sanitizeUrlForLogs, isIPInCIDR } from './util/requestUtils';
 import { requestId } from './middleware/requestId';
 import { logger } from './util/logger';
@@ -24,20 +23,6 @@ export function createApp(): express.Express {
   const app = express();
 
   app.use(requestId);
-
-  // Browser CORS is not needed by the mod (no Origin header), so only same-origin
-  // and header-less requests are allowed. A foreign Origin is served without CORS
-  // headers rather than failing the request: rejecting it here would turn an
-  // otherwise public GET into a 500 through the error middleware.
-  app.use(cors((req, callback) => {
-    const origin = req.headers.origin;
-    const serverOrigin = `${req.protocol}://${req.get('host')}`;
-    if (!origin || origin === serverOrigin) {
-      callback(null, { origin: true });
-      return;
-    }
-    callback(null, { origin: false });
-  }));
 
   app.use(helmet({
     frameguard: { action: 'deny' },
@@ -88,24 +73,21 @@ export function createApp(): express.Express {
   }
 
   app.get('/healthz', async (_req, res) => {
-    const [dbHealthy, hypixelHealthy] = await Promise.all([
-      checkDatabaseHealth(),
-      checkHypixelReachability(),
-    ]);
+    const dbHealthy = await checkDatabaseHealth();
     const circuitBreaker = getCircuitBreakerState();
-    const healthy = dbHealthy;
     // Half-open with no probe in flight means a probe ended without clearing the
     // flag, which would otherwise report `ok` forever.
     const breakerStuck =
       circuitBreaker.state === 'open'
       || (circuitBreaker.state === 'half-open' && !circuitBreaker.probeInFlight);
-    const status: 'ok' | 'degraded' | 'unhealthy' = !healthy
+    const hypixelHealthy = circuitBreaker.state === 'closed';
+    const status: 'ok' | 'degraded' | 'unhealthy' = !dbHealthy
       ? 'unhealthy'
       : hypixelHealthy && !breakerStuck
         ? 'ok'
         : 'degraded';
 
-    res.status(healthy ? 200 : 503).json({
+    res.status(dbHealthy ? 200 : 503).json({
       status,
       timestamp: new Date().toISOString(),
       checks: { database: dbHealthy, hypixel: hypixelHealthy },

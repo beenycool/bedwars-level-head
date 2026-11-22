@@ -3,6 +3,7 @@ package club.sk1er.mods.levelhead.commands
 import club.sk1er.mods.levelhead.Levelhead
 import club.sk1er.mods.levelhead.bedwars.FetchResult
 import club.sk1er.mods.levelhead.core.BedwarsStar
+import club.sk1er.mods.levelhead.core.DebugLogging
 import club.sk1er.mods.levelhead.core.StatsFetcher
 import club.sk1er.mods.levelhead.core.GameMode
 import club.sk1er.mods.levelhead.core.GameStats
@@ -31,6 +32,8 @@ import kotlin.coroutines.resume
 
 object WhoisService {
 
+    private val IGN_PATTERN = Regex("^[a-zA-Z0-9_]{1,16}$")
+
     suspend fun lookupWhois(identifier: String, gameMode: GameMode? = null): WhoisResult {
         val resolved = resolvePlayerIdentifier(identifier)
             ?: throw CommandException(
@@ -55,18 +58,14 @@ object WhoisService {
         return formatSummaryLine(result)
     }
 
-    suspend fun runWhoisCommand(
-        identifier: String,
-        hintCommand: String = "/whois <player|uuid> [bw|duels|sw]",
-        hintSuggestion: String = "/whois "
-    ) {
+    suspend fun runWhoisCommand(identifier: String) {
         val trimmed = identifier.trim()
         if (trimmed.isEmpty()) {
             CommandUtils.sendPrefixedChat(
                 CommandUtils.buildInteractiveFeedback(
                     messagePrefix = "${ChatColor.RED}Tell me who to inspect.${ChatColor.YELLOW} Try ",
-                    command = hintCommand,
-                    suggestedCommand = hintSuggestion,
+                    command = "/levelhead whois <player|uuid> [bw|duels|sw]",
+                    suggestedCommand = "/levelhead whois ",
                     run = false,
                     suffix = "${ChatColor.YELLOW} using an in-game name, UUID, or someone nearby.",
                     hoverTextOverride = "${ChatColor.GREEN}Click to fill whois command"
@@ -143,6 +142,12 @@ object WhoisService {
                     FetchFeedback.permanentErrorFeedback(result.reason, gameMode.displayName)
                 )
             }
+            FetchResult.Absent -> {
+                throw CommandException(
+                    "${gameMode.displayName} stats are not cached yet.",
+                    FetchFeedback.temporaryErrorFeedback("NOT_CACHED", gameMode.displayName)
+                )
+            }
         }
     }
 
@@ -175,7 +180,12 @@ object WhoisService {
     }
 
     private fun formatResultLines(result: WhoisResult): List<IChatComponent> {
-        return listOf(formatSummaryLine(result), formatLinkLine(result))
+        return if (result.nicked) {
+            // The UUID is the disguised one, so NameMC/Plancke would point at nothing.
+            listOf(formatSummaryLine(result))
+        } else {
+            listOf(formatSummaryLine(result), formatLinkLine(result))
+        }
     }
 
     private fun formatSummaryLine(result: WhoisResult): IChatComponent {
@@ -314,16 +324,16 @@ object WhoisService {
         }
 
         when {
-            PlayerIdentifiers.UUID_WITH_DASH_PATTERN.matches(trimmed) -> {
+            DebugLogging.UUID_REGEX.matches(trimmed) -> {
                 return runCatching { UUID.fromString(trimmed) }.map { ResolvedIdentifier(it, null) }.getOrNull()
             }
-            PlayerIdentifiers.UUID_NO_DASH_PATTERN.matches(trimmed) -> {
+            DebugLogging.TRIMMED_UUID_REGEX.matches(trimmed) -> {
                 val uuid = trimmed.lowercase(Locale.ROOT).dashUUID
                 if (uuid != null) {
                     return ResolvedIdentifier(uuid, null)
                 }
             }
-            PlayerIdentifiers.IGN_PATTERN.matches(trimmed) -> {
+            IGN_PATTERN.matches(trimmed) -> {
                 val resolved = lookupUuidForIgn(trimmed)
                 if (resolved != null) {
                     return ResolvedIdentifier(resolved.first, resolved.second)
@@ -391,7 +401,7 @@ object WhoisService {
             if (body.isEmpty()) {
                 return@withContext null
             }
-            val json = runCatching { JsonParser.parseString(body).asJsonObject }.getOrNull() ?: return@withContext null
+            val json = runCatching { JsonParser().parse(body).asJsonObject }.getOrNull() ?: return@withContext null
             val id = json.get("id")?.asString ?: return@withContext null
             val uuid = id.dashUUID ?: return@withContext null
             val name = json.get("name")?.asString ?: ign

@@ -21,7 +21,8 @@ object TabRender {
     private class FrameState(
         val id: Long,
         val objective: ScoreObjective?,
-        val entries: Map<UUID, PreparedEntry>
+        val entries: Map<UUID, PreparedEntry>,
+        val reservedWidth: Int
     )
 
     private var frameState: FrameState? = null
@@ -33,6 +34,10 @@ object TabRender {
 
     private val paddingCache = HashMap<Int, String>()
     private const val PADDING_CACHE_LIMIT = 256
+
+    // Widest tag seen this session. Every row is padded to it so a tag arriving
+    // later cannot widen the whole tab column mid-game.
+    private var reservedWidth = 0
 
     // Vanilla reserves a fixed column for a HEARTS objective and does not measure
     // the numeric score (GuiPlayerTabOverlay line ~90: l = HEARTS ? 90 : j).
@@ -95,7 +100,11 @@ object TabRender {
             )
         }
 
-        frameState = FrameState(id, objective, map)
+        val widest = map.values.maxOfOrNull { it.width } ?: 0
+        if (widest > reservedWidth) {
+            reservedWidth = widest
+        }
+        frameState = FrameState(id, objective, map, reservedWidth)
     }
 
     @JvmStatic
@@ -110,14 +119,14 @@ object TabRender {
 
     @JvmStatic
     fun getMeasuredName(original: String, info: NetworkPlayerInfo): String {
-        val uuid = info.gameProfile.id ?: return original
-        val entry = activeFrame()?.entries?.get(uuid) ?: return original
-        if (entry.width <= 0) return original
+        val state = activeFrame() ?: return original
+        val width = state.reservedWidth
+        if (width <= 0) return original
 
         val spaceWidth = Minecraft.getMinecraft().fontRendererObj.getCharWidth(' ')
         if (spaceWidth <= 0) return original
 
-        val extraSpaces = (entry.width + spaceWidth - 1) / spaceWidth
+        val extraSpaces = (width + spaceWidth - 1) / spaceWidth
         if (extraSpaces <= 0) return original
         return original + EnumChatFormatting.RESET.toString() + spaces(extraSpaces)
     }

@@ -1,7 +1,7 @@
 package club.sk1er.mods.levelhead.config
 
 import club.sk1er.mods.levelhead.Levelhead
-import club.sk1er.mods.levelhead.bedwars.BedwarsFetcher
+import club.sk1er.mods.levelhead.core.StatsFetcher
 import club.sk1er.mods.levelhead.core.GameMode
 import club.sk1er.mods.levelhead.core.TagFormatter
 import cc.polyfrost.oneconfig.config.Config
@@ -53,7 +53,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         set(value) {
             field = value
             save()
-            BedwarsFetcher.resetWarnings()
+            StatsFetcher.resetWarnings()
         }
 
     @Switch(
@@ -241,17 +241,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
             save()
         }
 
-    @Switch(
-        name = "Text Shadow",
-        description = "Render text with a shadow. Ignored when PolyNametag or Patcher is installed (their nametag text shadow setting is used).",
-        category = "Appearance"
-    )
-    var textShadow: Boolean = true
-        set(value) {
-            field = value
-            save()
-        }
-
     @Color(name = "Header colour", description = "Colour of the label shown before the stat.", category = "Appearance")
     var headerColor: OneColor = OneColor(85, 255, 255)
         set(value) {
@@ -359,7 +348,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         set(value) {
             field = value.coerceIn(_MIN_STAR_CACHE_TTL_MINUTES, _MAX_STAR_CACHE_TTL_MINUTES)
             save()
-            BedwarsFetcher.resetWarnings()
+            StatsFetcher.resetWarnings()
         }
 
     @Info(
@@ -380,7 +369,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         set(value) {
             field = value.trim()
             save()
-            BedwarsFetcher.resetWarnings()
+            StatsFetcher.resetWarnings()
         }
 
     @Switch(
@@ -704,7 +693,6 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         tagScale = 1.0f
         showBackground = true
         backgroundOpacity = 0.25f
-        textShadow = true
         tierColorsEnabled = true
         tabShowHeader = true
         tabHeaderColor = OneColor(85, 255, 255)
@@ -725,7 +713,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
         modeOverrideIndex = 0
         showInHubs = false
         save()
-        BedwarsFetcher.resetWarnings()
+        StatsFetcher.resetWarnings()
         Levelhead.displayManager.clearCache()
     }
 

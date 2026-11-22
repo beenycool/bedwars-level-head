@@ -5,6 +5,7 @@ import club.sk1er.mods.levelhead.core.DebugLogging.maskForLogs
 import kotlinx.coroutines.*
 import org.apache.logging.log4j.Logger
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 class RequestCoordinator(
     private val worldScopeProvider: () -> CoroutineScope,
@@ -21,42 +22,59 @@ class RequestCoordinator(
     val lastSuccessAgeMillis: Long?
         get() = executor.lastSuccessAgeMillis
 
-    fun fetchBatch(requests: List<Levelhead.LevelheadRequest>): Job {
-        return worldScopeProvider().launch {
-            // Mode reads are now side-effect free, but the Hypixel check still has
-            // to run on the client thread. Keep the gate where it always was.
-            if (!Levelhead.onMainResult { isOnHypixel() && ModeManager.shouldRequestData() }) return@launch
-            if (requests.isEmpty()) return@launch
+    private val claimedKeys: MutableSet<StatsKey> = ConcurrentHashMap.newKeySet()
 
-            val epoch = ModeManager.worldEpoch
-            val now = System.currentTimeMillis()
-            DebugLogging.logRequestDebug {
-                "[LevelheadDebug][plan] ${DebugSession.prefix()} incoming=${requests.size} epoch=$epoch"
+    fun fetchBatch(requests: List<Levelhead.LevelheadRequest>, cacheOnly: Boolean = false): Job {
+        // Claim synchronously, before the first suspension. World-join, tab-scan and
+        // visible-scan triggers all run on the client tick; without this they can each
+        // plan the same player before any of them marks it Loading.
+        val owned = requests.filter { claimedKeys.add(it.key) }
+        if (owned.isEmpty()) return Job()
+        val job = worldScopeProvider().launch {
+            try {
+                // Mode reads are now side-effect free, but the Hypixel check still has
+                // to run on the client thread. Keep the gate where it always was.
+                if (!Levelhead.onMainResult { isOnHypixel() && ModeManager.shouldRequestData() }) return@launch
+
+                val epoch = ModeManager.worldEpoch
+                val now = System.currentTimeMillis()
+                DebugLogging.logRequestDebug {
+                    "[LevelheadDebug][plan] ${DebugSession.prefix()} incoming=${owned.size} cacheOnly=$cacheOnly epoch=$epoch"
+                }
+                val pending = plan(owned, now)
+                DebugLogging.logRequestDebug {
+                    "[LevelheadDebug][plan] ${DebugSession.prefix()} pending=${pending.size} epoch=$epoch"
+                }
+                if (pending.isEmpty()) return@launch
+                // Check the epoch before marking Loading: a world hop's sweep can run
+                // between here and markLoading and would then strand placeholders.
+                if (ModeManager.worldEpoch != epoch) return@launch
+
+                pending.forEach { store.markLoading(it.uuid, it.gameMode) }
+
+                // Try the proxy batch first; anything it does not claim falls through
+                // to the direct path (which dedupes against in-flight work).
+                val remaining = executor.executeProxyBatch(pending, ::recordResult, cacheOnly)
+                DebugLogging.logRequestDebug {
+                    "[LevelheadDebug][plan] ${DebugSession.prefix()} proxyRemaining=${remaining.size} pending=${pending.size}"
+                }
+                if (remaining.isEmpty()) return@launch
+                // Cache-only must never spend upstream quota, including for entries a
+                // concurrent request already owns. That request will deliver them.
+                if (cacheOnly) return@launch
+                if (ModeManager.worldEpoch != epoch) return@launch
+
+                remaining
+                    .map { executor.ensureStatsFetch(it, ::recordResult) }
+                    .awaitAll()
+            } finally {
+                owned.forEach { claimedKeys.remove(it.key) }
             }
-            val pending = plan(requests, now)
-            DebugLogging.logRequestDebug {
-                "[LevelheadDebug][plan] ${DebugSession.prefix()} pending=${pending.size} epoch=$epoch"
-            }
-            if (pending.isEmpty()) return@launch
-            // Check the epoch before marking Loading: a world hop's sweep can run
-            // between here and markLoading and would then strand placeholders.
-            if (ModeManager.worldEpoch != epoch) return@launch
-
-            pending.forEach { store.markLoading(it.uuid, it.gameMode) }
-
-            // Try the proxy batch first; anything it does not claim falls through
-            // to the direct path (which dedupes against in-flight work).
-            val remaining = executor.executeProxyBatch(pending, ::recordResult)
-            DebugLogging.logRequestDebug {
-                "[LevelheadDebug][plan] ${DebugSession.prefix()} proxyRemaining=${remaining.size} pending=${pending.size}"
-            }
-            if (remaining.isEmpty()) return@launch
-            if (ModeManager.worldEpoch != epoch) return@launch
-
-            remaining
-                .map { executor.ensureStatsFetch(it, ::recordResult) }
-                .awaitAll()
         }
+        // A launch on an already-cancelled scope never runs the body, so its claims
+        // would leak. Completion fires either way.
+        job.invokeOnCompletion { owned.forEach { claimedKeys.remove(it.key) } }
+        return job
     }
 
     private fun plan(requests: List<Levelhead.LevelheadRequest>, now: Long): List<FetchWork> {
@@ -68,47 +86,44 @@ class RequestCoordinator(
         var misses = 0
         var loadingSkips = 0
         requests
-            .groupBy { it.uuid }
-            .forEach { (trimmedUuid, groupedRequests) ->
-                val uuid = trimmedUuid.dashUUID ?: return@forEach
-                groupedRequests
-                    .groupBy { GameMode.resolve(it.type, logger) }
-                    .forEach modeLoop@ { (gameMode, modeRequests) ->
-                        // A slow request already owns this key. Skipping it before
-                        // lookup() keeps the poll from enqueueing a duplicate (and
-                        // from recording a miss that is really in-flight work).
-                        if (store.isLoading(uuid, gameMode, now)) {
-                            loadingSkips++
-                            return@modeLoop
-                        }
-                        val lookup = store.lookup(uuid, gameMode, now)
-                        val debug = DebugLogging.isRequestDebugEnabled()
-                        val maskedUuid = if (debug) uuid.maskForLogs() else null
-                        val reasons = if (debug) modeRequests.map { it.reason }.toSet() else null
+            .groupBy { it.key }
+            .forEach { (key, modeRequests) ->
+                val uuid = key.uuid
+                val gameMode = key.gameMode
+                // A slow request already owns this key. Skipping it before
+                // lookup() keeps the poll from enqueueing a duplicate (and
+                // from recording a miss that is really in-flight work).
+                if (store.isLoading(uuid, gameMode, now)) {
+                    loadingSkips++
+                } else {
+                    val lookup = store.lookup(uuid, gameMode, now)
+                    val debug = DebugLogging.isRequestDebugEnabled()
+                    val maskedUuid = if (debug) uuid.maskForLogs() else null
+                    val reasons = if (debug) modeRequests.map { it.reason }.toSet() else null
 
-                        when (lookup) {
-                            StatsLookup.HIT -> {
-                                hits++
-                                DebugLogging.logRequestDebug {
-                                    "[LevelheadDebug][store] HIT: uuid=$maskedUuid mode=${gameMode.name} reasons=$reasons"
-                                }
+                    when (lookup) {
+                        StatsLookup.HIT -> {
+                            hits++
+                            DebugLogging.logRequestDebug {
+                                "[LevelheadDebug][store] HIT: uuid=$maskedUuid mode=${gameMode.name} reasons=$reasons"
                             }
-                            StatsLookup.STALE -> {
-                                stale++
-                                DebugLogging.logRequestDebug {
-                                    "[LevelheadDebug][store] STALE refresh: uuid=$maskedUuid mode=${gameMode.name} reasons=$reasons"
-                                }
-                                pending += FetchWork(uuid, gameMode, store.get(uuid, gameMode))
+                        }
+                        StatsLookup.STALE -> {
+                            stale++
+                            DebugLogging.logRequestDebug {
+                                "[LevelheadDebug][store] STALE refresh: uuid=$maskedUuid mode=${gameMode.name} reasons=$reasons"
                             }
-                            StatsLookup.MISS -> {
-                                misses++
-                                DebugLogging.logRequestDebug {
-                                    "[LevelheadDebug][store] MISS: uuid=$maskedUuid mode=${gameMode.name} reasons=$reasons"
-                                }
-                                pending += FetchWork(uuid, gameMode, null)
+                            pending += FetchWork(uuid, gameMode, store.get(uuid, gameMode))
+                        }
+                        StatsLookup.MISS -> {
+                            misses++
+                            DebugLogging.logRequestDebug {
+                                "[LevelheadDebug][store] MISS: uuid=$maskedUuid mode=${gameMode.name} reasons=$reasons"
                             }
+                            pending += FetchWork(uuid, gameMode, null)
                         }
                     }
+                }
             }
         DebugSession.inc("plan_requests", requests.size)
         DebugSession.inc("plan_unique", uniqueCount)
@@ -127,15 +142,12 @@ class RequestCoordinator(
         if (stats != null) {
             store.putSuccess(key.uuid, key.gameMode, stats)
         } else {
-            store.putFailure(
-                key.uuid,
-                key.gameMode,
-                FetchBackoff.nextAttemptAt(key.uuid) ?: System.currentTimeMillis()
-            )
+            store.putFailure(key.uuid, key.gameMode)
         }
     }
 
     fun reset() {
+        claimedKeys.clear()
         executor.reset()
         // executor.reset() cancels the coroutines that owned any in-flight keys, so
         // their Loading placeholders no longer describe real work.
