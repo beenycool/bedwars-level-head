@@ -131,6 +131,18 @@ export class TokenBucketLimiter {
     return active;
   }
 
+  activeClientIds(now: number = Date.now()): string[] {
+    const cutoff = now - this.windowMs;
+    const ids: string[] = [];
+    for (const [key, bucket] of this.buckets) {
+      if (bucket.updatedAt >= cutoff) {
+        const separator = key.indexOf(':');
+        ids.push(separator >= 0 ? key.slice(separator + 1) : key);
+      }
+    }
+    return ids;
+  }
+
   private resolveCapacity(now: number): number {
     if (!this.getCapacity) {
       return this.maxCapacity;

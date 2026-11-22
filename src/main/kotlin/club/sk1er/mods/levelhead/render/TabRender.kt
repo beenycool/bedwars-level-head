@@ -112,6 +112,12 @@ object TabRender {
         frameState = null
     }
 
+    @JvmStatic
+    fun reset() {
+        frameState = null
+        reservedWidth = 0
+    }
+
     private fun activeFrame(): FrameState? {
         val state = frameState ?: return null
         return if (state.id == frameId) state else null

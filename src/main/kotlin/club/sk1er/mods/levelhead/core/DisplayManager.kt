@@ -36,7 +36,7 @@ class DisplayManager {
     private var lastDebugSummaryAt: Long = 0L
     private var lastFlushAt: Long = 0L
     private var lastDiskSaveAt: Long = 0L
-    private var lastSavedSize: Int = -1
+    private var lastSavedRevision: Long = -1L
 
     @Volatile
     private var flushing = false
@@ -106,7 +106,7 @@ class DisplayManager {
             }
             return
         }
-        if (!FetchBackoff.canAttempt(uuid)) {
+        if (!FetchBackoff.canAttempt(uuid, cacheOnly = ModeManager.isHub())) {
             DebugSession.inc("join_skipped_backoff")
             DebugLogging.logRequestDebug {
                 "[LevelheadDebug][join] ${DebugSession.prefix()} skip backoff uuid=$uuid name=$name mode=${activeMode.name}"
@@ -186,9 +186,9 @@ class DisplayManager {
 
         if (now - lastDiskSaveAt >= DISK_SAVE_INTERVAL_MS) {
             lastDiskSaveAt = now
-            val size = Levelhead.statsStore.size()
-            if (size != lastSavedSize) {
-                lastSavedSize = size
+            val revision = Levelhead.statsStore.revision()
+            if (revision != lastSavedRevision) {
+                lastSavedRevision = revision
                 Levelhead.scope.launch { StatsDiskCache.save(Levelhead.statsStore) }
             }
         }
@@ -259,6 +259,7 @@ class DisplayManager {
         }
         val players = Minecraft.getMinecraft().theWorld?.playerEntities ?: return
         val now = System.currentTimeMillis()
+        val cacheOnly = ModeManager.isHub()
         var enqueued = 0
         var npc = 0
         var backoff = 0
@@ -268,7 +269,7 @@ class DisplayManager {
                 npc++
                 continue
             }
-            if (!FetchBackoff.canAttempt(player.uniqueID, now)) {
+            if (!FetchBackoff.canAttempt(player.uniqueID, now, cacheOnly)) {
                 backoff++
                 continue
             }
@@ -322,6 +323,7 @@ class DisplayManager {
         val netHandler = Minecraft.getMinecraft().thePlayer?.sendQueue ?: return
         val tabSize = netHandler.playerInfoMap.size
         val now = System.currentTimeMillis()
+        val cacheOnly = ModeManager.isHub()
         var enqueued = 0
         var skippedVersion = 0
         var skippedBackoff = 0
@@ -333,7 +335,7 @@ class DisplayManager {
                 skippedVersion++
                 continue
             }
-            if (!FetchBackoff.canAttempt(uuid, now)) {
+            if (!FetchBackoff.canAttempt(uuid, now, cacheOnly)) {
                 skippedBackoff++
                 continue
             }
@@ -393,6 +395,7 @@ class DisplayManager {
             return
         }
         val now = System.currentTimeMillis()
+        val cacheOnly = ModeManager.isHub()
         var enqueued = 0
         var skippedVersion = 0
         var skippedBackoff = 0
@@ -402,7 +405,7 @@ class DisplayManager {
                 skippedVersion++
                 continue
             }
-            if (!FetchBackoff.canAttempt(uuid, now)) {
+            if (!FetchBackoff.canAttempt(uuid, now, cacheOnly)) {
                 skippedBackoff++
                 continue
             }

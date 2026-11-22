@@ -408,7 +408,7 @@ object LevelheadConfig : Config(Mod("BedWars Levelhead", ModType.HYPIXEL), "bedw
 
     @Switch(
         name = "Show in Game Hubs",
-        description = "Also fetch and display stats in BedWars and SkyWars lobbies. Uses far more requests than normal play.",
+        description = "Also display stats in BedWars and SkyWars hubs. Hub requests only use players already cached on the proxy, so they spend no extra lookups.",
         category = "Advanced"
     )
     var showInHubs: Boolean = false

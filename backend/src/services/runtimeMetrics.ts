@@ -6,6 +6,7 @@ import {
 } from '../config';
 import { publicBatchRateLimiter, publicRateLimiter } from '../middleware/rateLimit';
 import { dynamicRateLimitSnapshot } from './dynamicRateLimit';
+import { getCircuitBreakerState, getUpstreamQuota, getUpstreamStatus } from './hypixel';
 
 export interface RuntimeSample {
   at: Date;
@@ -42,6 +43,15 @@ export interface RuntimeSnapshot {
   rateLimitBatchMax: number;
   rateLimitBatchActiveClients: number;
   rateLimitBatchKeys: number;
+  rateLimitActiveClientUnion: number;
+  upstreamState: 'closed' | 'open' | 'half-open';
+  upstreamFailureCount: number;
+  upstreamNextRetryAt: number | null;
+  upstreamQuotaRemaining: number | null;
+  upstreamQuotaResetAt: number | null;
+  upstreamCooldownUntil: number | null;
+  upstreamQueued: number;
+  upstreamWindowLimit: number;
 }
 
 const MAX_SAMPLES = 120;
@@ -109,6 +119,14 @@ export function runtimeSnapshot(): RuntimeSnapshot {
     now,
     PUBLIC_BATCH_RATE_LIMIT_MIN,
   );
+  const breaker = getCircuitBreakerState();
+  const quota = getUpstreamQuota();
+  const upstream = getUpstreamStatus();
+  const activeUnion = new Set([
+    ...publicRateLimiter.activeClientIds(now),
+    ...publicBatchRateLimiter.activeClientIds(now),
+  ]).size;
+
   return {
     rssMb: memory.rss / 1024 / 1024,
     heapMb: memory.heapUsed / 1024 / 1024,
@@ -137,5 +155,14 @@ export function runtimeSnapshot(): RuntimeSnapshot {
     rateLimitBatchMax: batchLimits.max,
     rateLimitBatchActiveClients: batchLimits.activeClients,
     rateLimitBatchKeys: publicBatchRateLimiter.size,
+    rateLimitActiveClientUnion: activeUnion,
+    upstreamState: breaker.state,
+    upstreamFailureCount: breaker.failureCount,
+    upstreamNextRetryAt: breaker.nextRetryAt,
+    upstreamQuotaRemaining: quota ? quota.remaining : null,
+    upstreamQuotaResetAt: quota ? quota.resetAt : null,
+    upstreamCooldownUntil: upstream.cooldownUntil,
+    upstreamQueued: upstream.queuedRequests,
+    upstreamWindowLimit: upstream.windowLimit,
   };
 }

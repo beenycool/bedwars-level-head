@@ -150,6 +150,24 @@ export function getUpstreamQuota(): UpstreamQuota | null {
   return quotaSnapshot;
 }
 
+export const HYPIXEL_WINDOW_LIMIT = 300;
+export const HYPIXEL_WINDOW_MS = 5 * 60 * 1000;
+
+export interface UpstreamStatus {
+  cooldownUntil: number | null;
+  queuedRequests: number;
+  windowLimit: number;
+}
+
+export function getUpstreamStatus(): UpstreamStatus {
+  const now = Date.now();
+  return {
+    cooldownUntil: upstreamCooldownUntil > now ? upstreamCooldownUntil : null,
+    queuedRequests: upstreamGate.pendingCount,
+    windowLimit: HYPIXEL_WINDOW_LIMIT,
+  };
+}
+
 function applyRateLimitCooldown(
   headers: RawAxiosResponseHeaders | AxiosResponseHeaders | undefined,
 ): void {

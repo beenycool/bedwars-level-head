@@ -14,8 +14,10 @@ import {
 const MEMORY_TTL_MS = 10 * 60 * 1000;
 const NICKED_DB_TTL_MS = Math.min(5 * 60 * 1000, PLAYER_CACHE_DB_TTL_MS);
 
+const MEMORY_CACHE_MAX = 5000;
+
 const memoizedResults = new LRUCache<string, ResolvedPlayer>({
-  max: 5000,
+  max: MEMORY_CACHE_MAX,
   ttl: MEMORY_TTL_MS,
 });
 
@@ -33,6 +35,14 @@ export function evictPlayerFromMemory(cacheKey: string): void {
   cacheGeneration += 1;
   memoizedResults.delete(cacheKey);
   inFlightRequests.delete(cacheKey);
+}
+
+export function getMemoryCacheSize(): number {
+  return memoizedResults.size;
+}
+
+export function getMemoryCacheCapacity(): number {
+  return MEMORY_CACHE_MAX;
 }
 
 export interface ResolvedPlayer {

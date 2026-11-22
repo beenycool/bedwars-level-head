@@ -23,9 +23,14 @@ object FetchBackoff {
     @Volatile
     private var proxyNextAttemptAt: Long = 0L
 
-    fun canAttempt(uuid: UUID, now: Long = System.currentTimeMillis()): Boolean {
+    fun canAttempt(
+        uuid: UUID,
+        now: Long = System.currentTimeMillis(),
+        cacheOnly: Boolean = false
+    ): Boolean {
         val state = players[uuid] ?: return true
-        return now >= state.nextAttemptAt && now >= state.cacheOnlyUntil
+        if (now < state.nextAttemptAt) return false
+        return !cacheOnly || now >= state.cacheOnlyUntil
     }
 
     fun recordSuccess(uuid: UUID) {

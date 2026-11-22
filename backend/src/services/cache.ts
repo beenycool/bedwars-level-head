@@ -42,6 +42,26 @@ async function createTables(): Promise<void> {
       ON lookup_log (identifier, looked_up_at DESC)`.execute(db);
   await sql`CREATE INDEX IF NOT EXISTS idx_lookup_log_username
       ON lookup_log (LOWER(username))`.execute(db);
+
+  await ensureSearchIndexes();
+}
+
+async function ensureSearchIndexes(): Promise<void> {
+  try {
+    await sql`CREATE EXTENSION IF NOT EXISTS pg_trgm`.execute(db);
+  } catch (error) {
+    logger.warn({ err: error }, '[cache] pg_trgm unavailable; lookup search will scan');
+    return;
+  }
+
+  await sql`CREATE INDEX IF NOT EXISTS idx_lookup_log_username_trgm
+      ON lookup_log USING GIN (username gin_trgm_ops)`.execute(db).catch((error) => {
+    logger.warn({ err: error }, '[cache] failed to create the username trigram index');
+  });
+  await sql`CREATE INDEX IF NOT EXISTS idx_lookup_log_identifier_trgm
+      ON lookup_log USING GIN (identifier gin_trgm_ops)`.execute(db).catch((error) => {
+    logger.warn({ err: error }, '[cache] failed to create the identifier trigram index');
+  });
 }
 
 /**

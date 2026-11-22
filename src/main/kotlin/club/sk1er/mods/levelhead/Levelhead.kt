@@ -16,6 +16,7 @@ import club.sk1er.mods.levelhead.core.StatsKey
 import club.sk1er.mods.levelhead.core.StatsDiskCache
 import club.sk1er.mods.levelhead.core.StatsStore
 import club.sk1er.mods.levelhead.render.AboveHeadRender
+import club.sk1er.mods.levelhead.render.TabRender
 import com.google.gson.Gson
 import com.google.gson.JsonParser
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -284,6 +285,7 @@ object Levelhead {
             resetWorldScope()
             requestCoordinator.reset()
             displayManager.clearPendingRequests()
+            TabRender.reset()
         }
         scope.launch { StatsDiskCache.save(statsStore) }
     }
@@ -298,6 +300,7 @@ object Levelhead {
             // (not a world join) decides when stats are refetched.
             requestCoordinator.reset()
             displayManager.clearPendingRequests()
+            TabRender.reset()
             if (firstWorldJoined.compareAndSet(false, true)) {
                 scheduleUpdateCheck()
             }

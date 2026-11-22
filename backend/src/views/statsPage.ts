@@ -17,7 +17,6 @@ import {
   statsWindow,
   type StatsQuery,
 } from '../util/statsQuery';
-import { HYPIXEL_HOURLY_QUOTA } from '../config';
 import type { Slice, StatsPageData, TimePoint, TopPlayer } from '../services/lookupStats';
 import type { LookupLogTable } from '../services/database/schema';
 import { renderLayout } from './layout';
@@ -53,6 +52,42 @@ const REFRESH_LABELS: Record<number, string> = {
   300: '5m',
 };
 
+const STATUS_OPTIONS = [
+  { value: 'all', label: 'All statuses' },
+  { value: '2xx', label: '2xx success' },
+  { value: '4xx', label: '4xx client' },
+  { value: '5xx', label: '5xx server' },
+];
+
+const ROUTE_OPTIONS = [
+  { value: 'all', label: 'All routes' },
+  { value: 'public', label: 'public' },
+  { value: 'legacy', label: 'legacy' },
+  { value: 'batch', label: 'batch' },
+  { value: 'batch-cache', label: 'batch (cache-only)' },
+];
+
+const SOURCE_OPTIONS = [
+  { value: 'all', label: 'All sources' },
+  { value: 'cache', label: 'cache' },
+  { value: 'network', label: 'network' },
+];
+
+function filterSelect(
+  name: string,
+  label: string,
+  options: { value: string; label: string }[],
+  current: string,
+): string {
+  const rendered = options
+    .map(
+      (option) =>
+        `<option value="${escapeHtml(option.value)}"${option.value === current ? ' selected' : ''}>${escapeHtml(option.label)}</option>`,
+    )
+    .join('');
+  return `<select name="${escapeHtml(name)}" aria-label="${escapeHtml(label)}" onchange="this.form.submit()">${rendered}</select>`;
+}
+
 function datetimeValue(date: Date): string {
   return date.toISOString().slice(0, 16);
 }
@@ -70,6 +105,9 @@ function queryParams(query: StatsQuery): URLSearchParams {
   if (query.metric !== 'p95') params.set('metric', query.metric);
   if (query.sort !== 'recent') params.set('sort', query.sort);
   if (query.search) params.set('q', query.search);
+  if (query.status !== 'all') params.set('status', query.status);
+  if (query.route !== 'all') params.set('route', query.route);
+  if (query.source !== 'all') params.set('source', query.source);
   if (query.page > 1) params.set('page', String(query.page));
   if (query.refresh) params.set('refresh', String(query.refresh));
   return params;
@@ -119,6 +157,9 @@ function renderFilters(query: StatsQuery, data: StatsPageData): string {
       <input type="hidden" name="q" value="${escapeHtml(query.search)}">
       <input type="hidden" name="sort" value="${escapeHtml(query.sort)}">
       <input type="hidden" name="metric" value="${escapeHtml(query.metric)}">
+      <input type="hidden" name="status" value="${escapeHtml(query.status)}">
+      <input type="hidden" name="route" value="${escapeHtml(query.route)}">
+      <input type="hidden" name="source" value="${escapeHtml(query.source)}">
       <div class="filter-group">
         <label for="fromDate">From (UTC)</label>
         <input type="datetime-local" id="fromDate" name="from" value="${query.from ? datetimeValue(query.from) : ''}">
@@ -174,13 +215,13 @@ function renderStats(query: StatsQuery, data: StatsPageData): string {
       <p class="stat-label">Cache Hit Rate</p>
       <p class="stat-value">${cacheRate.toFixed(1)}%</p>
       <div class="progress" role="progressbar" aria-label="Cache Hit Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(cacheRate)}"><span style="width:${cacheRate.toFixed(1)}%"></span></div>
-      <p class="stat-sub">${formatNumber(summary.cacheHits)} served from cache</p>
+      <p class="stat-sub">${formatNumber(summary.cacheHits)} served from cache · excludes ${plural(summary.cacheOnly.hits, 'hub hit', 'hub hits')}</p>
     </div>
     <div class="card stat-card">
       <p class="stat-label">Success Rate</p>
       <p class="stat-value">${successRate.toFixed(1)}%</p>
       <div class="progress" role="progressbar" aria-label="Success Rate" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(successRate)}"><span style="width:${successRate.toFixed(1)}%"></span></div>
-      <p class="stat-sub">${formatNumber(summary.errors)} failed lookups</p>
+      <p class="stat-sub">${formatNumber(summary.errors)} failed · ${formatNumber(summary.nicked)} nicked</p>
     </div>
     <div class="card stat-card">
       <p class="stat-label">Latency (${escapeHtml(query.metric)})</p>
@@ -192,8 +233,17 @@ function renderStats(query: StatsQuery, data: StatsPageData): string {
 }
 
 function renderInfrastructure(data: StatsPageData): string {
-  const { summary } = data;
-  const quota = Math.min(100, (summary.apiCallsLastHour / HYPIXEL_HOURLY_QUOTA) * 100);
+  const { summary, runtime } = data;
+  const windowLimit = runtime.upstreamWindowLimit;
+  const remaining = runtime.upstreamQuotaRemaining;
+  const used = remaining === null ? null : Math.max(0, windowLimit - remaining);
+  const usedPercent = used === null ? 0 : Math.min(100, (used / windowLimit) * 100);
+  const resetIn = runtime.upstreamQuotaResetAt === null
+    ? null
+    : Math.max(0, Math.round((runtime.upstreamQuotaResetAt - Date.now()) / 1000));
+  const quotaSub = resetIn === null
+    ? `No window reading yet · ${formatNumber(summary.apiCallsLastHour)} network/h`
+    : `Resets in ${formatNumber(resetIn)}s · ${formatNumber(summary.apiCallsLastHour)} network/h`;
 
   return `<h2>Infrastructure Health</h2>
   <div class="stat-grid">
@@ -203,15 +253,21 @@ function renderInfrastructure(data: StatsPageData): string {
       <p class="stat-sub">Index: ${escapeHtml(summary.indexSize)}</p>
     </div>
     <div class="card stat-card">
-      <p class="stat-label">Hypixel API (1h)</p>
-      <p class="stat-value">${formatNumber(summary.apiCallsLastHour)}</p>
-      <div class="progress" role="progressbar" aria-label="Hypixel API quota usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(quota)}"><span style="width:${quota.toFixed(1)}%"></span></div>
-      <p class="stat-sub">Network lookups, last hour</p>
+      <p class="stat-label">Hypixel Quota (5 min)</p>
+      <p class="stat-value">${remaining === null ? '—' : formatNumber(remaining)} / ${formatNumber(windowLimit)}</p>
+      <div class="progress" role="progressbar" aria-label="Hypixel window quota usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(usedPercent)}"><span style="width:${usedPercent.toFixed(1)}%"></span></div>
+      <p class="stat-sub">${escapeHtml(quotaSub)}</p>
     </div>
     <div class="card stat-card">
       <p class="stat-label">Cached Profiles</p>
       <p class="stat-value">${formatNumber(summary.cacheEntries)}</p>
-      <p class="stat-sub">Rows ready to serve</p>
+      <p class="stat-sub">PostgreSQL rows ready to serve</p>
+    </div>
+    <div class="card stat-card">
+      <p class="stat-label">Memory LRU</p>
+      <p class="stat-value">${formatNumber(summary.memoryCacheEntries)} / ${formatNumber(summary.memoryCacheCapacity)}</p>
+      <div class="progress" role="progressbar" aria-label="Memory cache usage" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round((summary.memoryCacheEntries / Math.max(1, summary.memoryCacheCapacity)) * 100)}"><span style="width:${((summary.memoryCacheEntries / Math.max(1, summary.memoryCacheCapacity)) * 100).toFixed(1)}%"></span></div>
+      <p class="stat-sub">Process-local before PostgreSQL</p>
     </div>
   </div>`;
 }
@@ -244,6 +300,24 @@ function renderProcess(data: StatsPageData): string {
   </div>`;
 }
 
+function upstreamSub(runtime: StatsPageData['runtime']): string {
+  const parts = [`${formatNumber(runtime.upstreamFailureCount)} failures`];
+  if (runtime.upstreamQueued > 0) {
+    parts.push(`${formatNumber(runtime.upstreamQueued)} queued`);
+  }
+  if (runtime.upstreamCooldownUntil !== null) {
+    const seconds = Math.max(0, Math.round((runtime.upstreamCooldownUntil - Date.now()) / 1000));
+    parts.push(`cooldown ${formatNumber(seconds)}s`);
+  } else {
+    parts.push('no cooldown');
+  }
+  if (runtime.upstreamNextRetryAt !== null) {
+    const seconds = Math.max(0, Math.round((runtime.upstreamNextRetryAt - Date.now()) / 1000));
+    parts.push(`probe in ${formatNumber(seconds)}s`);
+  }
+  return parts.join(' · ');
+}
+
 function renderRateLimiting(data: StatsPageData): string {
   const { runtime } = data;
   const cacheHit =
@@ -271,7 +345,7 @@ function renderRateLimiting(data: StatsPageData): string {
     </div>
     <div class="card stat-card">
       <p class="stat-label">Active Clients</p>
-      <p class="stat-value">${formatNumber(runtime.rateLimitSingleActiveClients + runtime.rateLimitBatchActiveClients)}</p>
+      <p class="stat-value">${formatNumber(runtime.rateLimitActiveClientUnion)}</p>
       <p class="stat-sub">${formatNumber(runtime.rateLimitSingleKeys + runtime.rateLimitBatchKeys)} buckets · ${formatNumber(runtime.rateLimitSingleKeys)} single · ${formatNumber(runtime.rateLimitBatchKeys)} batch</p>
     </div>
     <div class="card stat-card">
@@ -279,8 +353,13 @@ function renderRateLimiting(data: StatsPageData): string {
       <p class="stat-value">${formatNumber(runtime.rateLimitNetworkCalls)}/h</p>
       <p class="stat-sub">${cacheHit} · ${formatNumber(runtime.rateLimitHypixelRemaining)} quota left</p>
     </div>
+    <div class="card stat-card">
+      <p class="stat-label">Hypixel Upstream</p>
+      <p class="stat-value${runtime.upstreamState === 'closed' ? ' status-connected' : ''}">● ${escapeHtml(runtime.upstreamState)}</p>
+      <p class="stat-sub">${upstreamSub(runtime)}</p>
+    </div>
   </div>
-  <p class="meta">Cache hits refund their identifier cost; every request still counts against the ${formatNumber(runtime.rateLimitRequestBudget)}/min request guard.</p>`;
+  <p class="meta">Cache hits refund their identifier cost; every request still counts against the ${formatNumber(runtime.rateLimitRequestBudget)}/min request guard. Distinct clients are counted once even when an IP used both pools.</p>`;
 }
 
 function legend(slices: { label: string; value: number; color: string }[], total: number): string {
@@ -316,6 +395,8 @@ function shortStarLabel(label: string): string {
       return '500s';
     case '1000+':
       return '1k+';
+    case 'No BW XP':
+      return 'No XP';
     case 'Unknown':
       return '?';
     default:
@@ -336,14 +417,28 @@ function timeAxis(query: StatsQuery, series: TimePoint[]): string {
     return '';
   }
   const window = statsWindow(query);
-  const hourly = chartGranularity(window.since, window.until) === 'hour';
-  const first = series[0].bucket;
-  const last = series[series.length - 1].bucket;
+  const unit = chartGranularity(window.since, window.until);
+  const pad = (value: number) => String(value).padStart(2, '0');
   const label = (date: Date) =>
-    hourly
-      ? `${String(date.getUTCHours()).padStart(2, '0')}:00`
-      : `${date.getUTCMonth() + 1}/${date.getUTCDate()}`;
-  return `<div class="chart-axis"><span>${escapeHtml(label(first))}</span><span>${escapeHtml(label(last))}</span></div>`;
+    unit === 'day'
+      ? `${date.getUTCMonth() + 1}/${date.getUTCDate()}`
+      : `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
+  const first = series[0].bucket;
+  const middle = series[Math.floor((series.length - 1) / 2)].bucket;
+  const last = series[series.length - 1].bucket;
+  return `<div class="chart-axis"><span>${escapeHtml(label(first))}</span><span>${escapeHtml(label(middle))}</span><span>${escapeHtml(label(last))} UTC</span></div>`;
+}
+
+function memoryAxis(samples: { at: Date }[]): string {
+  if (samples.length === 0) {
+    return '';
+  }
+  const pad = (value: number) => String(value).padStart(2, '0');
+  const label = (date: Date) => `${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}`;
+  const first = samples[0].at;
+  const middle = samples[Math.floor((samples.length - 1) / 2)].at;
+  const last = samples[samples.length - 1].at;
+  return `<div class="chart-axis"><span>${escapeHtml(label(first))}</span><span>${escapeHtml(label(middle))}</span><span>${escapeHtml(label(last))} UTC</span></div>`;
 }
 
 function tooltipTime(date: Date): string {
@@ -353,11 +448,11 @@ function tooltipTime(date: Date): string {
 
 function seriesLabels(query: StatsQuery, series: TimePoint[]): string[] {
   const window = statsWindow(query);
-  const hourly = chartGranularity(window.since, window.until) === 'hour';
+  const unit = chartGranularity(window.since, window.until);
   return series.map((point) => {
     const date = point.bucket;
     const key = tooltipTime(date);
-    return hourly ? key : key.slice(0, 10);
+    return unit === 'day' ? key.slice(0, 10) : key;
   });
 }
 
@@ -407,14 +502,10 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
   const lastMemory = memory.length > 0 ? memory[memory.length - 1] : null;
   const lastCacheRate = lastActiveBucket
     ? (lastActiveBucket.cacheHits / lastActiveBucket.total) * 100
-    : 0;
-  let lastKnownCacheRate = 0;
-  const cacheRateSeries = series.map((point) => {
-    if (point.total > 0) {
-      lastKnownCacheRate = (point.cacheHits / point.total) * 100;
-    }
-    return lastKnownCacheRate;
-  });
+    : null;
+  const cacheRateSeries = series.map((point) =>
+    point.total > 0 ? (point.cacheHits / point.total) * 100 : null,
+  );
 
   return `<div class="dashboard-grid">
     ${chartCard(
@@ -488,7 +579,7 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
     )}
     ${chartCard(
       'Cache Hit Rate Over Time',
-      `Latest ${lastCacheRate.toFixed(1)}%`,
+      lastCacheRate === null ? 'No samples in range' : `Latest ${lastCacheRate.toFixed(1)}%`,
       lineChart(
         [
           {
@@ -502,17 +593,17 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
         'Cache hit rate over time',
         seriesLabels(query, series),
       ),
-      timeAxis(query, series),
+      `${timeAxis(query, series)}<p class="meta chart-foot">Gaps are periods with no lookups</p>`,
     )}
     ${chartCard(
       'Latency Distribution',
-      'Sample counts',
+      'Milliseconds',
       barChart(
-        charts.latencyHistogram.map((slice) => ({ label: slice.label, value: slice.count })),
+        charts.latencyHistogram.map((slice) => ({ label: `${slice.label} ms`, value: slice.count })),
         'Latency distribution in milliseconds',
       ),
       barLabels(
-        charts.latencyHistogram.map((slice) => slice.label),
+        charts.latencyHistogram.map((slice) => `${slice.label} ms`),
         charts.latencyHistogram.map((slice) => slice.count),
       ),
     )}
@@ -539,16 +630,17 @@ function renderCharts(query: StatsQuery, data: StatsPageData): string {
         'Process memory over time',
         memory.map((sample) => tooltipTime(sample.at)),
       ),
-      `<p class="meta chart-foot">Blue: RSS · cyan: heap · ${formatNumber(memory.length)} ${memory.length === 1 ? 'sample' : 'samples'}</p>`,
+      `${memoryAxis(memory)}<p class="meta chart-foot">Blue: RSS · cyan: heap · last ${formatNumber(memory.length)} ${memory.length === 1 ? 'sample' : 'samples'} (in-process, ≈2h, not affected by the range filter)</p>`,
     )}
   </div>`;
 }
 
-function statusBadge(status: number): string {
-  return `<span class="status-badge status-${Math.floor(status / 100)}xx">${escapeHtml(status)}</span>`;
+function statusBadge(status: number, href: string): string {
+  const group = `${Math.floor(status / 100)}xx`;
+  return `<a class="status-badge status-${group}" href="${escapeHtml(href)}" title="Show ${group} lookups">${escapeHtml(status)}</a>`;
 }
 
-function renderRow(row: LookupLogTable): string {
+function renderRow(row: LookupLogTable, query: StatsQuery): string {
   const resolved = row.nicked ? '(nicked)' : row.username ?? 'unknown';
   const stars = row.stars === null ? '--' : formatNumber(row.stars);
   const source = row.source === 'cache' ? 'Cache' : 'Network';
@@ -561,20 +653,21 @@ function renderRow(row: LookupLogTable): string {
     <td class="stars">${escapeHtml(stars)}</td>
     <td class="col-source">${escapeHtml(source)}</td>
     <td class="col-source">${escapeHtml(row.route)}</td>
-    <td>${statusBadge(row.status)}</td>
+    <td>${statusBadge(row.status, statsHref(query, { status: `${Math.floor(row.status / 100)}xx` as StatsQuery['status'], page: 1 }))}</td>
     <td class="col-latency latency">${escapeHtml(formatLatency(row.latency_ms))}</td>
   </tr>`;
 }
 
 function renderTable(query: StatsQuery, data: StatsPageData): string {
   const totalPages = Math.max(1, Math.ceil(data.matching / data.pageSize));
-  const rows = data.rows.map(renderRow).join('');
+  const rows = data.rows.map((row) => renderRow(row, query)).join('');
+  const filtered = Boolean(query.search) || query.status !== 'all' || query.route !== 'all' || query.source !== 'all';
 
   const body = rows
     ? `<div class="table-wrap"><table>
         <thead>
           <tr>
-            <th scope="col" class="col-seen">Queried At</th>
+            <th scope="col" class="col-seen">Queried At (local)</th>
             <th scope="col" class="col-lookup">Lookup</th>
             <th scope="col">Resolved</th>
             <th scope="col">Stars</th>
@@ -587,8 +680,8 @@ function renderTable(query: StatsQuery, data: StatsPageData): string {
         <tbody>${rows}</tbody>
       </table></div>`
     : `<div class="empty-state">
-        <strong>${query.search ? 'No lookups match this search' : 'No lookups recorded yet'}</strong>
-        <span class="sub-text">${query.search ? `Nothing found for “${escapeHtml(query.search)}”.` : 'Lookups appear here as soon as the mod asks the proxy for a player.'}</span>
+        <strong>${filtered ? 'No lookups match these filters' : 'No lookups recorded yet'}</strong>
+        <span class="sub-text">${filtered ? 'Try widening the time range or clearing a filter.' : 'Lookups appear here as soon as the mod asks the proxy for a player.'}</span>
       </div>`;
 
   const previous =
@@ -604,26 +697,63 @@ function renderTable(query: StatsQuery, data: StatsPageData): string {
   <p class="meta">${plural(data.matching, 'lookup', 'lookups')} · page ${formatNumber(data.page)} of ${formatNumber(totalPages)}</p>
   <div class="controls">
     <form class="search-box" method="get" action="/stats">
-      ${hiddenQuery(query, ['q', 'sort', 'page'])}
+      ${hiddenQuery(query, ['q', 'sort', 'page', 'status', 'route', 'source'])}
       <input type="search" name="q" value="${escapeHtml(query.search)}" placeholder="Search by username or UUID" aria-label="Search players">
       <select name="sort" aria-label="Sort lookups" onchange="this.form.submit()">
         <option value="recent"${query.sort === 'recent' ? ' selected' : ''}>Recent first</option>
         <option value="slowest"${query.sort === 'slowest' ? ' selected' : ''}>Slowest first</option>
         <option value="stars"${query.sort === 'stars' ? ' selected' : ''}>Highest stars</option>
       </select>
+      ${filterSelect('status', 'Status filter', STATUS_OPTIONS, query.status)}
+      ${filterSelect('route', 'Route filter', ROUTE_OPTIONS, query.route)}
+      ${filterSelect('source', 'Source filter', SOURCE_OPTIONS, query.source)}
       <button type="submit">Search</button>
-      ${query.search ? `<a class="preset-btn" href="${statsHref(query, { search: '', page: 1 })}">Clear</a>` : ''}
+      ${query.search || query.status !== 'all' || query.route !== 'all' || query.source !== 'all'
+        ? `<a class="preset-btn" href="${statsHref(query, { search: '', status: 'all', route: 'all', source: 'all', page: 1 })}">Clear</a>`
+        : ''}
     </form>
     <div class="pager">${previous} ${next}</div>
   </div>
   ${body}`;
 }
 
-const LOCAL_TIME_SCRIPT = `document.querySelectorAll('time[data-utc]').forEach(function (el) {
+const PAGE_SCRIPT = `document.querySelectorAll('time[data-utc]').forEach(function (el) {
   var date = new Date(el.getAttribute('data-utc'));
   if (isNaN(date.getTime())) return;
   el.textContent = date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
-});`;
+});
+(function () {
+  var tip = document.createElement('div');
+  tip.className = 'chart-tip';
+  tip.hidden = true;
+  document.body.appendChild(tip);
+  var current = null;
+  document.addEventListener('mouseover', function (event) {
+    var target = event.target;
+    if (!target || !target.closest) return;
+    var host = target.closest('[data-tip]');
+    if (!host || host === current) return;
+    current = host;
+    tip.textContent = host.getAttribute('data-tip');
+    tip.hidden = false;
+  });
+  document.addEventListener('mousemove', function (event) {
+    if (tip.hidden) return;
+    var x = event.clientX + 14;
+    var y = event.clientY + 16;
+    if (x + tip.offsetWidth > window.innerWidth) x = event.clientX - tip.offsetWidth - 14;
+    if (y + tip.offsetHeight > window.innerHeight) y = event.clientY - tip.offsetHeight - 16;
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+  });
+  document.addEventListener('mouseout', function (event) {
+    var target = event.target;
+    if (target && target.closest && target.closest('[data-tip]')) {
+      current = null;
+      tip.hidden = true;
+    }
+  });
+})();`;
 
 export function renderStatsPage({ query, data, retentionDays }: StatsPageProps): string {
   const exportParams = queryParams(query);
@@ -635,7 +765,7 @@ export function renderStatsPage({ query, data, retentionDays }: StatsPageProps):
     heading: 'Levelhead Analytics',
     subtitle: 'Live snapshot of player lookups: BedWars stars, cache hit rate and upstream latency. Rendered locally, no external dashboards.',
     refreshSeconds: query.refresh,
-    script: LOCAL_TIME_SCRIPT,
+    script: PAGE_SCRIPT,
     body: `${renderFilters(query, data)}
 ${renderStats(query, data)}
 ${renderInfrastructure(data)}

@@ -1,14 +1,18 @@
-
 const WIDTH = 640;
 const HEIGHT = 180;
 const PAD = 8;
 
 export interface LineSeries {
-  values: number[];
+  values: (number | null)[];
   color: string;
   fill?: boolean;
   name?: string;
   format?: (value: number) => string;
+}
+
+interface Point {
+  x: number;
+  y: number;
 }
 
 function niceMax(values: number[]): number {
@@ -58,6 +62,28 @@ function yAxis(max: number): string {
   return `<div class="chart-yaxis" aria-hidden="true"><span>${formatTick(max)}</span><span>${formatTick(max / 2)}</span><span>0</span></div>`;
 }
 
+function segmentsOf(values: (number | null)[], max: number, step: number): Point[][] {
+  const segments: Point[][] = [];
+  let current: Point[] = [];
+  values.forEach((value, position) => {
+    if (value === null || !Number.isFinite(value)) {
+      if (current.length > 0) {
+        segments.push(current);
+        current = [];
+      }
+      return;
+    }
+    current.push({
+      x: PAD + position * step,
+      y: HEIGHT - 1 - (Math.min(max, Math.max(0, value)) / max) * (HEIGHT - 2),
+    });
+  });
+  if (current.length > 0) {
+    segments.push(current);
+  }
+  return segments;
+}
+
 let chartSequence = 0;
 
 export function lineChart(series: LineSeries[], ariaLabel: string, labels?: string[], chartId?: string): string {
@@ -66,21 +92,36 @@ export function lineChart(series: LineSeries[], ariaLabel: string, labels?: stri
     ...entry,
     values: entry.values.length === 1 ? [entry.values[0], entry.values[0]] : entry.values,
   }));
-  const max = niceMax(prepared.flatMap((entry) => entry.values));
+  const max = niceMax(
+    prepared.flatMap((entry) => entry.values.filter((value): value is number => value !== null)),
+  );
   const count = Math.max(...prepared.map((entry) => entry.values.length), 2);
   const step = (WIDTH - PAD * 2) / (count - 1);
 
   const paths = prepared
     .map((entry, index) => {
-      const points = entry.values.map((value, position) => ({
-        x: PAD + position * step,
-        y: HEIGHT - 1 - (Math.min(max, Math.max(0, value)) / max) * (HEIGHT - 2),
-      }));
-      const line = points
-        .map((point, position) => `${position === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+      const segments = segmentsOf(entry.values, max, step);
+      const points = segments.flat();
+      const line = segments
+        .filter((segment) => segment.length > 1)
+        .map((segment) =>
+          segment
+            .map((point, position) => `${position === 0 ? 'M' : 'L'}${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+            .join(' '),
+        )
         .join(' ');
       const area = entry.fill
-        ? `<path d="${line} L${(WIDTH - PAD).toFixed(1)},${HEIGHT - 1} L${PAD},${HEIGHT - 1} Z" fill="url(#${idBase}-fill-${index})" />`
+        ? segments
+            .filter((segment) => segment.length > 1)
+            .map((segment) => {
+              const start = segment[0];
+              const end = segment[segment.length - 1];
+              const body = segment
+                .map((point) => `L${point.x.toFixed(1)},${point.y.toFixed(1)}`)
+                .join(' ');
+              return `<path d="M${start.x.toFixed(1)},${start.y.toFixed(1)} ${body} L${end.x.toFixed(1)},${HEIGHT - 1} L${start.x.toFixed(1)},${HEIGHT - 1} Z" fill="url(#${idBase}-fill-${index})" />`;
+            })
+            .join('')
         : '';
       const gradient = entry.fill
         ? `<defs><linearGradient id="${idBase}-fill-${index}" x1="0" y1="0" x2="0" y2="1">
@@ -97,36 +138,36 @@ export function lineChart(series: LineSeries[], ariaLabel: string, labels?: stri
               )
               .join('')
           : '';
-      return `${gradient}${area}<path d="${line}" fill="none" stroke="${entry.color}" stroke-width="2" vector-effect="non-scaling-stroke" />${dots}`;
+      return `${gradient}${area}${line ? `<path d="${line}" fill="none" stroke="${entry.color}" stroke-width="2" vector-effect="non-scaling-stroke" />` : ''}${dots}`;
     })
     .join('');
 
-  const hasPoints = prepared.some((entry) => entry.values.length > 0);
+  const hasPoints = prepared.some((entry) => entry.values.some((value) => value !== null));
   const hoverStride = Math.max(1, Math.ceil(count / 48));
   const hoverBands = !hasPoints
     ? ''
     : Array.from({ length: count }, (_, position) => position)
         .filter((position) => position % hoverStride === 0 || position === count - 1)
         .map((position) => {
-      const x = PAD + position * step;
-      const x0 = Math.max(0, x - step / 2);
-      const x1 = Math.min(WIDTH, x + step / 2);
-      const label = labels?.[Math.min(position, Math.max(0, (labels?.length ?? 1) - 1))];
-      const values = prepared
-        .map((entry) => {
-          const value = entry.values[position];
-          if (value === undefined) {
-            return null;
-          }
-          const text = entry.format ? entry.format(value) : formatTick(value);
-          return `${entry.name ? `${entry.name}: ` : ''}${text}`;
+          const x = PAD + position * step;
+          const x0 = Math.max(0, x - step / 2);
+          const x1 = Math.min(WIDTH, x + step / 2);
+          const label = labels?.[Math.min(position, Math.max(0, (labels?.length ?? 1) - 1))];
+          const values = prepared
+            .map((entry) => {
+              const value = entry.values[position];
+              if (value === null || value === undefined) {
+                return null;
+              }
+              const text = entry.format ? entry.format(value) : formatTick(value);
+              return `${entry.name ? `${entry.name}: ` : ''}${text}`;
+            })
+            .filter((value): value is string => value !== null)
+            .join(' · ');
+          const tooltip = `${label ? `${label} — ` : ''}${values || 'no samples'}`;
+          return `<rect class="chart-hit" x="${x0.toFixed(1)}" y="0" width="${Math.max(1, x1 - x0).toFixed(1)}" height="${HEIGHT}" fill="transparent" pointer-events="all" data-tip="${escapeAttr(tooltip)}" />`;
         })
-        .filter((value): value is string => value !== null)
-        .join(' · ');
-      const tooltip = `${label ? `${label} — ` : ''}${values}`;
-      return `<rect class="chart-hit" x="${x0.toFixed(1)}" y="0" width="${Math.max(1, x1 - x0).toFixed(1)}" height="${HEIGHT}" fill="transparent" pointer-events="all"><title>${escapeText(tooltip)}</title></rect>`;
-    })
-    .join('');
+        .join('');
 
   const svg = `<svg viewBox="0 0 ${WIDTH} ${HEIGHT}" preserveAspectRatio="none" role="img" aria-label="${escapeAttr(ariaLabel)}">
     ${grid()}${paths}${hoverBands}
@@ -148,7 +189,7 @@ export function barChart(bars: { label: string; value: number }[], ariaLabel: st
       const height = (bar.value / max) * (HEIGHT - 10);
       const x = index * slot + (slot - barWidth) / 2;
       const y = HEIGHT - 4 - height;
-      return `<rect class="chart-hit" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(1, height).toFixed(1)}" rx="2" fill="#3b82f6"><title>${escapeText(`${bar.label}: ${formatValue(bar.value)}`)}</title></rect>`;
+      return `<rect class="chart-hit" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barWidth.toFixed(1)}" height="${Math.max(1, height).toFixed(1)}" rx="2" fill="#3b82f6" data-tip="${escapeAttr(`${bar.label}: ${formatValue(bar.value)}`)}" />`;
     })
     .join('');
 
@@ -185,7 +226,7 @@ export function donut(
             const percent = ((Math.max(0, slice.value) / total) * 100).toFixed(1);
             const segment = `<circle class="chart-hit" cx="80" cy="80" r="${radius}" fill="none" stroke="${slice.color}" stroke-width="14"
               stroke-dasharray="${length.toFixed(2)} ${(circumference - length).toFixed(2)}"
-              stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 80 80)"><title>${escapeText(`${slice.label}: ${formatValue(slice.value)} (${percent}%)`)}</title></circle>`;
+              stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 80 80)" data-tip="${escapeAttr(`${slice.label}: ${formatValue(slice.value)} (${percent}%)`)}" />`;
             offset += length;
             return segment;
           })

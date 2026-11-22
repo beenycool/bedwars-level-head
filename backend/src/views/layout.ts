@@ -161,6 +161,13 @@ tbody tr:nth-child(even) td { background: rgba(148, 163, 184, 0.05); }
   padding: 0.1rem 0.4rem; border-radius: 6px;
   font-weight: 600; font-size: 0.78rem; line-height: 1.3;
 }
+a.status-badge { text-decoration: none; }
+.chart-tip {
+  position: fixed; z-index: 50; pointer-events: none;
+  background: rgba(15, 23, 42, 0.96); border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 6px; padding: 0.3rem 0.45rem; font-size: 0.75rem; color: #e2e8f0;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.45); max-width: 280px;
+}
 .status-2xx { color: #4ade80; background: rgba(74, 222, 128, 0.15); }
 .status-3xx { color: #67e8f9; background: rgba(103, 232, 249, 0.15); }
 .status-4xx { color: #fde047; background: rgba(253, 224, 71, 0.15); }

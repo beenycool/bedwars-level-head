@@ -163,6 +163,9 @@ export function createPlayerLookupHandler(options: PlayerLookupHandlerOptions): 
         ],
         options.route,
       );
+      if (isUpstreamFailure(error)) {
+        refundPublicTokens(req, 1, 'single');
+      }
       next(error);
     }
   };
@@ -226,7 +229,6 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
         const observations: LookupObservation[] = [];
         const data: Record<string, ResolvedPlayer['payload'] & { nicked: boolean }> = {};
         for (const identifier of hits) {
-          const itemStartedAt = Date.now();
           const resolved = await readCachedPlayer(identifier);
           // The entry can expire between warmup and this read; omit it rather than
           // fall through to an upstream fetch.
@@ -241,7 +243,7 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
             nicked: resolved.nicked,
             source: 'cache',
             status: 200,
-            latencyMs: Date.now() - itemStartedAt,
+            latencyMs: Date.now() - startedAt,
           });
         }
 
@@ -358,15 +360,15 @@ export function createPlayerBatchHandler(options: PlayerBatchHandlerOptions): Re
       }
 
       if (successes === 0) {
-        if (skipped.size === outcomes.length) {
-          throw new HttpError(429, 'RATE_LIMIT', 'Identifier budget exhausted. Try again shortly.', {
-            'Retry-After': '5',
-          });
-        }
-        if (upstreamFailures === outcomes.length) {
+        if (upstreamFailures > 0) {
           refundPublicTokens(req, granted, 'batch');
           const retryAfter = deriveRetryAfterSeconds(outcomes) ?? BATCH_RETRY_AFTER_DEFAULT_SECONDS;
           throw upstreamUnavailable(retryAfter);
+        }
+        if (skipped.size > 0) {
+          throw new HttpError(429, 'RATE_LIMIT', 'Identifier budget exhausted. Try again shortly.', {
+            'Retry-After': '5',
+          });
         }
         throw new HttpError(400, 'INVALID_IDENTIFIER', 'All identifiers were rejected.');
       }

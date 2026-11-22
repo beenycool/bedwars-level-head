@@ -1,4 +1,3 @@
-
 export const STATS_RANGES = ['24h', '7d', '30d', 'all'] as const;
 export type StatsRange = (typeof STATS_RANGES)[number];
 
@@ -8,10 +7,21 @@ export type LatencyMetric = (typeof LATENCY_METRICS)[number];
 export const STATS_SORTS = ['recent', 'slowest', 'stars'] as const;
 export type StatsSort = (typeof STATS_SORTS)[number];
 
+export const STATS_STATUS_FILTERS = ['all', '2xx', '4xx', '5xx'] as const;
+export type StatsStatusFilter = (typeof STATS_STATUS_FILTERS)[number];
+
+export const STATS_ROUTE_FILTERS = ['all', 'public', 'legacy', 'batch', 'batch-cache'] as const;
+export type StatsRouteFilter = (typeof STATS_ROUTE_FILTERS)[number];
+
+export const STATS_SOURCE_FILTERS = ['all', 'cache', 'network'] as const;
+export type StatsSourceFilter = (typeof STATS_SOURCE_FILTERS)[number];
+
 export const STATS_LIMITS = [25, 50, 100, 250] as const;
 export const STATS_REFRESH = [0, 10, 30, 60, 300] as const;
 
 export const STATS_MAX_SEARCH_LENGTH = 64;
+
+export type ChartGranularity = '5 minute' | 'hour' | 'day';
 
 export interface StatsQuery {
   range: StatsRange;
@@ -21,6 +31,9 @@ export interface StatsQuery {
   metric: LatencyMetric;
   sort: StatsSort;
   search: string;
+  status: StatsStatusFilter;
+  route: StatsRouteFilter;
+  source: StatsSourceFilter;
   page: number;
   refresh: number;
 }
@@ -72,6 +85,9 @@ export function parseStatsQuery(raw: Record<string, unknown>): StatsQuery {
   const range = firstValue(raw.range);
   const metric = firstValue(raw.metric);
   const sort = firstValue(raw.sort);
+  const status = firstValue(raw.status);
+  const route = firstValue(raw.route);
+  const source = firstValue(raw.source);
 
   const rawSearch = firstValue(raw.q) ?? '';
   const search = rawSearch.replace(/[\u0000-\u001f\u007f]/g, '').trim().slice(0, STATS_MAX_SEARCH_LENGTH);
@@ -87,6 +103,9 @@ export function parseStatsQuery(raw: Record<string, unknown>): StatsQuery {
     metric: includes(LATENCY_METRICS, metric) ? metric : 'p95',
     sort: includes(STATS_SORTS, sort) ? sort : 'recent',
     search,
+    status: includes(STATS_STATUS_FILTERS, status) ? status : 'all',
+    route: includes(STATS_ROUTE_FILTERS, route) ? route : 'all',
+    source: includes(STATS_SOURCE_FILTERS, source) ? source : 'all',
     page,
     refresh: pickNumber(STATS_REFRESH, firstValue(raw.refresh), 0),
   };
@@ -106,10 +125,17 @@ export function statsWindow(query: StatsQuery, now: number = Date.now()): { sinc
   return { since: new Date(now - RANGE_DURATIONS_MS[query.range]), until: null };
 }
 
-export function chartGranularity(since: Date | null, until: Date | null, now: number = Date.now()): 'hour' | 'day' {
+export function chartGranularity(
+  since: Date | null,
+  until: Date | null,
+  now: number = Date.now(),
+): ChartGranularity {
   if (!since) {
     return 'day';
   }
   const spanMs = (until?.getTime() ?? now) - since.getTime();
+  if (spanMs <= 6 * 60 * 60 * 1000) {
+    return '5 minute';
+  }
   return spanMs <= 3 * 24 * 60 * 60 * 1000 ? 'hour' : 'day';
 }

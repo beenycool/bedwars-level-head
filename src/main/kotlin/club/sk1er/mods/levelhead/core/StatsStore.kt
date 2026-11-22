@@ -33,6 +33,7 @@ class StatsStore(
     private val entries = ConcurrentHashMap<StatsKey, Entry>()
     private val accessCounter = AtomicLong(0L)
     private val versionCounter = AtomicLong(0L)
+    private val mutationCounter = AtomicLong(0L)
     private val metrics = StatsCacheMetrics()
 
     fun state(uuid: UUID, gameMode: GameMode): StatsState? = entries[StatsKey(uuid, gameMode)]?.let {
@@ -99,6 +100,7 @@ class StatsStore(
             return
         }
         entries.remove(key, existing)
+        mutationCounter.incrementAndGet()
     }
 
     fun markLoading(uuid: UUID, gameMode: GameMode, now: Long = clock()) {
@@ -128,6 +130,7 @@ class StatsStore(
     /** Explicit refresh only; world joins must not call this. */
     fun clear() {
         entries.clear()
+        mutationCounter.incrementAndGet()
     }
 
     /**
@@ -138,14 +141,19 @@ class StatsStore(
      */
     fun clearLoading() {
         val iterator = entries.entries.iterator()
+        var removed = false
         while (iterator.hasNext()) {
             if (iterator.next().value.state is StatsState.Loading) {
                 iterator.remove()
+                removed = true
             }
         }
+        if (removed) mutationCounter.incrementAndGet()
     }
 
     fun size(): Int = entries.size
+
+    fun revision(): Long = mutationCounter.get()
 
     /** Point-in-time copy for persistence. Entries without usable stats are skipped. */
     fun snapshot(): Map<StatsKey, GameStats> {
@@ -171,6 +179,7 @@ class StatsStore(
         val key = StatsKey(uuid, gameMode)
         val entry = Entry(state, versionCounter.incrementAndGet(), accessCounter.incrementAndGet())
         entries[key] = entry
+        mutationCounter.incrementAndGet()
         if (entries.size > maxEntries) {
             evictOldest(except = key)
         }
